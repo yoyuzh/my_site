@@ -20,6 +20,7 @@ public class CquDataService {
     private final GradeRepository gradeRepository;
     private final CquApiProperties cquApiProperties;
 
+    @Transactional
     public List<CourseResponse> getSchedule(User user, String semester, String studentId) {
         requireLoginIfNecessary(user);
         List<CourseResponse> responses = cquApiClient.fetchSchedule(semester, studentId).stream()
@@ -42,6 +43,7 @@ public class CquDataService {
         return responses;
     }
 
+    @Transactional
     public List<GradeResponse> getGrades(User user, String semester, String studentId) {
         requireLoginIfNecessary(user);
         List<GradeResponse> responses = cquApiClient.fetchGrades(semester, studentId).stream()

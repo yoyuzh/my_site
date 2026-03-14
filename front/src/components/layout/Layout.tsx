@@ -1,7 +1,9 @@
 import React from 'react';
 import { NavLink, Outlet, useNavigate } from 'react-router-dom';
-import { cn } from '@/src/lib/utils';
 import { LayoutDashboard, FolderOpen, GraduationCap, Gamepad2, LogOut } from 'lucide-react';
+
+import { clearStoredSession } from '@/src/lib/session';
+import { cn } from '@/src/lib/utils';
 
 const NAV_ITEMS = [
   { name: '总览', path: '/overview', icon: LayoutDashboard },
@@ -14,6 +16,7 @@ export function Layout() {
   const navigate = useNavigate();
 
   const handleLogout = () => {
+    clearStoredSession();
     navigate('/login');
   };
 
@@ -88,4 +91,3 @@ export function Layout() {
     </div>
   );
 }
-

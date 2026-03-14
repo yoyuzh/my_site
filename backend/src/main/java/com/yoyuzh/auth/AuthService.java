@@ -6,6 +6,7 @@ import com.yoyuzh.auth.dto.RegisterRequest;
 import com.yoyuzh.auth.dto.UserProfileResponse;
 import com.yoyuzh.common.BusinessException;
 import com.yoyuzh.common.ErrorCode;
+import com.yoyuzh.files.FileService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.BadCredentialsException;
@@ -22,6 +23,7 @@ public class AuthService {
     private final PasswordEncoder passwordEncoder;
     private final AuthenticationManager authenticationManager;
     private final JwtTokenProvider jwtTokenProvider;
+    private final FileService fileService;
 
     @Transactional
     public AuthResponse register(RegisterRequest request) {
@@ -37,6 +39,7 @@ public class AuthService {
         user.setEmail(request.email());
         user.setPasswordHash(passwordEncoder.encode(request.password()));
         User saved = userRepository.save(user);
+        fileService.ensureDefaultDirectories(saved);
         return new AuthResponse(jwtTokenProvider.generateToken(saved.getId(), saved.getUsername()), toProfile(saved));
     }
 
@@ -50,6 +53,7 @@ public class AuthService {
 
         User user = userRepository.findByUsername(request.username())
                 .orElseThrow(() -> new BusinessException(ErrorCode.NOT_LOGGED_IN, "用户不存在"));
+        fileService.ensureDefaultDirectories(user);
         return new AuthResponse(jwtTokenProvider.generateToken(user.getId(), user.getUsername()), toProfile(user));
     }
 
@@ -68,6 +72,7 @@ public class AuthService {
             created.setPasswordHash(passwordEncoder.encode("1"));
             return userRepository.save(created);
         });
+        fileService.ensureDefaultDirectories(user);
         return new AuthResponse(jwtTokenProvider.generateToken(user.getId(), user.getUsername()), toProfile(user));
     }
 

@@ -1,16 +1,76 @@
-import React from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { motion } from 'motion/react';
 import { useNavigate } from 'react-router-dom';
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/src/components/ui/card';
-import { Button } from '@/src/components/ui/button';
-import { 
-  FileText, Upload, FolderPlus, Database, 
-  GraduationCap, BookOpen, Clock, HardDrive,
-  User, Mail, ChevronRight
+import {
+  FileText,
+  Upload,
+  FolderPlus,
+  Database,
+  GraduationCap,
+  BookOpen,
+  Clock,
+  User,
+  Mail,
+  ChevronRight,
 } from 'lucide-react';
+
+import { Button } from '@/src/components/ui/button';
+import { Card, CardContent, CardHeader, CardTitle } from '@/src/components/ui/card';
+import { apiRequest } from '@/src/lib/api';
+import { readCachedValue, writeCachedValue } from '@/src/lib/cache';
+import { getOverviewCacheKey, getSchoolResultsCacheKey, readStoredSchoolQuery } from '@/src/lib/page-cache';
+import { readStoredSession } from '@/src/lib/session';
+import type { CourseResponse, FileMetadata, GradeResponse, PageResponse, UserProfile } from '@/src/lib/types';
+
+function formatFileSize(size: number) {
+  if (size <= 0) {
+    return '0 B';
+  }
+
+  const units = ['B', 'KB', 'MB', 'GB'];
+  const index = Math.min(Math.floor(Math.log(size) / Math.log(1024)), units.length - 1);
+  const value = size / 1024 ** index;
+  return `${value.toFixed(value >= 10 || index === 0 ? 0 : 1)} ${units[index]}`;
+}
+
+function formatRecentTime(value: string) {
+  const date = new Date(value);
+  const diffHours = Math.floor((Date.now() - date.getTime()) / (1000 * 60 * 60));
+  if (diffHours < 24) {
+    return `${Math.max(diffHours, 0)}小时前`;
+  }
+
+  return new Intl.DateTimeFormat('zh-CN', {
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+  }).format(date);
+}
 
 export default function Overview() {
   const navigate = useNavigate();
+  const storedSchoolQuery = readStoredSchoolQuery();
+  const cachedSchoolResults =
+    storedSchoolQuery?.studentId && storedSchoolQuery?.semester
+      ? readCachedValue<{
+          schedule: CourseResponse[];
+          grades: GradeResponse[];
+        }>(getSchoolResultsCacheKey(storedSchoolQuery.studentId, storedSchoolQuery.semester))
+      : null;
+  const cachedOverview = readCachedValue<{
+    profile: UserProfile | null;
+    recentFiles: FileMetadata[];
+    rootFiles: FileMetadata[];
+    schedule: CourseResponse[];
+    grades: GradeResponse[];
+  }>(getOverviewCacheKey());
+  const [profile, setProfile] = useState<UserProfile | null>(cachedOverview?.profile ?? readStoredSession()?.user ?? null);
+  const [recentFiles, setRecentFiles] = useState<FileMetadata[]>(cachedOverview?.recentFiles ?? []);
+  const [rootFiles, setRootFiles] = useState<FileMetadata[]>(cachedOverview?.rootFiles ?? []);
+  const [schedule, setSchedule] = useState<CourseResponse[]>(cachedOverview?.schedule ?? cachedSchoolResults?.schedule ?? []);
+  const [grades, setGrades] = useState<GradeResponse[]>(cachedOverview?.grades ?? cachedSchoolResults?.grades ?? []);
+
   const currentHour = new Date().getHours();
   let greeting = '晚上好';
   if (currentHour < 6) greeting = '凌晨好';
@@ -18,18 +78,106 @@ export default function Overview() {
   else if (currentHour < 18) greeting = '下午好';
 
   const currentTime = new Date().toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' });
+  const recentWeekUploads = recentFiles.filter(
+    (file) => Date.now() - new Date(file.createdAt).getTime() <= 7 * 24 * 60 * 60 * 1000
+  ).length;
+  const usedBytes = useMemo(
+    () => rootFiles.filter((file) => !file.directory).reduce((sum, file) => sum + file.size, 0),
+    [rootFiles]
+  );
+  const usedGb = usedBytes / 1024 / 1024 / 1024;
+  const storagePercent = Math.min((usedGb / 50) * 100, 100);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadOverview() {
+      try {
+        const [user, filesRecent, filesRoot] = await Promise.all([
+          apiRequest<UserProfile>('/user/profile'),
+          apiRequest<FileMetadata[]>('/files/recent'),
+          apiRequest<PageResponse<FileMetadata>>('/files/list?path=%2F&page=0&size=100'),
+        ]);
+
+        if (cancelled) {
+          return;
+        }
+
+        setProfile(user);
+        setRecentFiles(filesRecent);
+        setRootFiles(filesRoot.items);
+
+        const schoolQuery = readStoredSchoolQuery();
+        if (!schoolQuery?.studentId || !schoolQuery?.semester) {
+          writeCachedValue(getOverviewCacheKey(), {
+            profile: user,
+            recentFiles: filesRecent,
+            rootFiles: filesRoot.items,
+            schedule: [],
+            grades: [],
+          });
+          return;
+        }
+
+        const queryString = new URLSearchParams({
+          studentId: schoolQuery.studentId,
+          semester: schoolQuery.semester,
+        }).toString();
+
+        const [scheduleData, gradesData] = await Promise.all([
+          apiRequest<CourseResponse[]>(`/cqu/schedule?${queryString}`),
+          apiRequest<GradeResponse[]>(`/cqu/grades?${queryString}`),
+        ]);
+
+        if (!cancelled) {
+          setSchedule(scheduleData);
+          setGrades(gradesData);
+          writeCachedValue(getOverviewCacheKey(), {
+            profile: user,
+            recentFiles: filesRecent,
+            rootFiles: filesRoot.items,
+            schedule: scheduleData,
+            grades: gradesData,
+          });
+        }
+      } catch {
+        const schoolQuery = readStoredSchoolQuery();
+        if (!cancelled && schoolQuery?.studentId && schoolQuery?.semester) {
+          const cachedSchoolResults = readCachedValue<{
+            schedule: CourseResponse[];
+            grades: GradeResponse[];
+          }>(getSchoolResultsCacheKey(schoolQuery.studentId, schoolQuery.semester));
+
+          if (cachedSchoolResults) {
+            setSchedule(cachedSchoolResults.schedule);
+            setGrades(cachedSchoolResults.grades);
+          }
+        }
+      }
+    }
+
+    loadOverview();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const latestSemester = grades[0]?.semester ?? '--';
+  const previewCourses = schedule.slice(0, 3);
 
   return (
     <div className="space-y-6">
       {/* Hero Section */}
-      <motion.div 
+      <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
         className="glass-panel rounded-3xl p-8 relative overflow-hidden"
       >
         <div className="absolute top-0 right-0 w-64 h-64 bg-[#336EFF] rounded-full mix-blend-screen filter blur-[100px] opacity-20" />
         <div className="relative z-10 space-y-2">
-          <h1 className="text-3xl md:text-4xl font-bold text-white tracking-tight">欢迎回来，tester5595</h1>
+          <h1 className="text-3xl md:text-4xl font-bold text-white tracking-tight">
+            欢迎回来，{profile?.username ?? '访客'}
+          </h1>
           <p className="text-[#336EFF] font-medium">现在时间 {currentTime} · {greeting}</p>
           <p className="text-sm text-slate-400 mt-4 max-w-xl leading-relaxed">
             这是您的个人门户总览。在这里您可以快速查看网盘文件状态、近期课程安排以及教务成绩摘要。
@@ -39,10 +187,28 @@ export default function Overview() {
 
       {/* Metrics Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-        <MetricCard title="网盘文件总数" value="128" desc="包含 4 个分类" icon={FileText} delay={0.1} />
-        <MetricCard title="最近 7 天上传" value="6" desc="最新更新于 2 小时前" icon={Upload} delay={0.2} />
-        <MetricCard title="本周课程" value="18" desc="今日还有 2 节课" icon={BookOpen} delay={0.3} />
-        <MetricCard title="已录入成绩" value="42" desc="最近学期：2025 秋" icon={GraduationCap} delay={0.4} />
+        <MetricCard title="网盘文件总数" value={`${rootFiles.length}`} desc="当前根目录统计" icon={FileText} delay={0.1} />
+        <MetricCard
+          title="最近 7 天上传"
+          value={`${recentWeekUploads}`}
+          desc={recentFiles[0] ? `最新更新于 ${formatRecentTime(recentFiles[0].createdAt)}` : '暂无最近上传'}
+          icon={Upload}
+          delay={0.2}
+        />
+        <MetricCard
+          title="本周课程"
+          value={`${schedule.length}`}
+          desc={schedule.length > 0 ? `当前已同步 ${schedule.length} 节课` : '请先前往教务页查询'}
+          icon={BookOpen}
+          delay={0.3}
+        />
+        <MetricCard
+          title="已录入成绩"
+          value={`${grades.length}`}
+          desc={`最近学期：${latestSemester}`}
+          icon={GraduationCap}
+          delay={0.4}
+        />
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -58,24 +224,25 @@ export default function Overview() {
             </CardHeader>
             <CardContent>
               <div className="space-y-2">
-                {[
-                  { name: '软件工程期末复习资料.pdf', size: '2.4 MB', time: '2小时前' },
-                  { name: '2025春季学期课表.xlsx', size: '156 KB', time: '昨天 14:30' },
-                  { name: '项目架构设计图.png', size: '4.1 MB', time: '3天前' },
-                ].map((file, i) => (
+                {recentFiles.slice(0, 3).map((file, i) => (
                   <div key={i} className="flex items-center justify-between p-3 rounded-xl hover:bg-white/5 transition-colors cursor-pointer group" onClick={() => navigate('/files')}>
                     <div className="flex items-center gap-4 overflow-hidden">
                       <div className="w-10 h-10 rounded-xl bg-[#336EFF]/10 flex items-center justify-center shrink-0 group-hover:bg-[#336EFF]/20 transition-colors">
                         <FileText className="w-5 h-5 text-[#336EFF]" />
                       </div>
                       <div className="truncate">
-                        <p className="text-sm font-medium text-white truncate">{file.name}</p>
-                        <p className="text-xs text-slate-400 mt-0.5">{file.time}</p>
+                        <p className="text-sm font-medium text-white truncate">{file.filename}</p>
+                        <p className="text-xs text-slate-400 mt-0.5">{formatRecentTime(file.createdAt)}</p>
                       </div>
                     </div>
-                    <span className="text-xs text-slate-500 font-mono shrink-0 ml-4">{file.size}</span>
+                    <span className="text-xs text-slate-500 font-mono shrink-0 ml-4">{formatFileSize(file.size)}</span>
                   </div>
                 ))}
+                {recentFiles.length === 0 && (
+                  <div className="p-3 rounded-xl border border-dashed border-white/10 text-sm text-slate-500">
+                    暂无最近文件
+                  </div>
+                )}
               </div>
             </CardContent>
           </Card>
@@ -91,21 +258,24 @@ export default function Overview() {
             </CardHeader>
             <CardContent>
               <div className="space-y-3">
-                {[
-                  { time: '08:00 - 09:35', name: '高等数学 (下)', room: '教1-204' },
-                  { time: '10:00 - 11:35', name: '大学物理', room: '教2-101' },
-                  { time: '14:00 - 15:35', name: '软件工程', room: '计科楼 302' },
-                ].map((course, i) => (
+                {previewCourses.map((course, i) => (
                   <div key={i} className="flex items-center gap-4 p-4 rounded-xl border border-white/5 bg-white/[0.02] hover:bg-white/[0.04] transition-colors">
-                    <div className="w-28 shrink-0 text-sm font-mono text-[#336EFF] bg-[#336EFF]/10 px-2 py-1 rounded-md text-center">{course.time}</div>
+                    <div className="w-28 shrink-0 text-sm font-mono text-[#336EFF] bg-[#336EFF]/10 px-2 py-1 rounded-md text-center">
+                      第 {course.startTime ?? '--'} - {course.endTime ?? '--'} 节
+                    </div>
                     <div className="flex-1 truncate">
-                      <p className="text-sm font-medium text-white truncate">{course.name}</p>
+                      <p className="text-sm font-medium text-white truncate">{course.courseName}</p>
                       <p className="text-xs text-slate-400 flex items-center gap-1.5 mt-1">
-                        <Clock className="w-3.5 h-3.5" /> {course.room}
+                        <Clock className="w-3.5 h-3.5" /> {course.classroom ?? '教室待定'}
                       </p>
                     </div>
                   </div>
                 ))}
+                {previewCourses.length === 0 && (
+                  <div className="p-4 rounded-xl border border-dashed border-white/10 text-sm text-slate-500">
+                    暂无课程数据，请先前往教务页查询
+                  </div>
+                )}
               </div>
             </CardContent>
           </Card>
@@ -136,13 +306,15 @@ export default function Overview() {
             <CardContent className="space-y-5">
               <div className="flex justify-between items-end">
                 <div className="space-y-1">
-                  <p className="text-3xl font-bold text-white tracking-tight">12.6 <span className="text-sm text-slate-400 font-normal">GB</span></p>
+                  <p className="text-3xl font-bold text-white tracking-tight">
+                    {usedGb.toFixed(2)} <span className="text-sm text-slate-400 font-normal">GB</span>
+                  </p>
                   <p className="text-xs text-slate-500 uppercase tracking-wider">已使用 / 共 50 GB</p>
                 </div>
-                <span className="text-xl font-mono text-[#336EFF] font-medium">25%</span>
+                <span className="text-xl font-mono text-[#336EFF] font-medium">{storagePercent.toFixed(1)}%</span>
               </div>
               <div className="h-2.5 w-full bg-black/40 rounded-full overflow-hidden shadow-inner">
-                <div className="h-full bg-gradient-to-r from-[#336EFF] to-blue-400 rounded-full" style={{ width: '25%' }} />
+                <div className="h-full bg-gradient-to-r from-[#336EFF] to-blue-400 rounded-full" style={{ width: `${storagePercent}%` }} />
               </div>
             </CardContent>
           </Card>
@@ -155,11 +327,11 @@ export default function Overview() {
             <CardContent>
               <div className="flex items-center gap-4 p-4 rounded-xl bg-white/[0.02] border border-white/5">
                 <div className="w-12 h-12 rounded-full bg-gradient-to-br from-indigo-500 to-purple-500 flex items-center justify-center text-white font-bold text-xl shadow-lg">
-                  T
+                  {(profile?.username?.[0] ?? 'T').toUpperCase()}
                 </div>
                 <div className="flex-1 min-w-0">
-                  <p className="text-sm font-semibold text-white truncate">tester5595</p>
-                  <p className="text-xs text-slate-400 truncate mt-0.5">tester5595@example.com</p>
+                  <p className="text-sm font-semibold text-white truncate">{profile?.username ?? '未登录'}</p>
+                  <p className="text-xs text-slate-400 truncate mt-0.5">{profile?.email ?? '暂无邮箱'}</p>
                 </div>
               </div>
             </CardContent>

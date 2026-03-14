@@ -4,7 +4,6 @@ import com.yoyuzh.auth.dto.AuthResponse;
 import com.yoyuzh.auth.dto.LoginRequest;
 import com.yoyuzh.auth.dto.RegisterRequest;
 import com.yoyuzh.common.BusinessException;
-import com.yoyuzh.files.FileService;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
@@ -39,9 +38,6 @@ class AuthServiceTest {
     @Mock
     private JwtTokenProvider jwtTokenProvider;
 
-    @Mock
-    private FileService fileService;
-
     @InjectMocks
     private AuthService authService;
 
@@ -64,7 +60,6 @@ class AuthServiceTest {
         assertThat(response.token()).isEqualTo("jwt-token");
         assertThat(response.user().username()).isEqualTo("alice");
         verify(passwordEncoder).encode("plain-password");
-        verify(fileService).ensureDefaultDirectories(any(User.class));
     }
 
     @Test
@@ -95,7 +90,6 @@ class AuthServiceTest {
                 new UsernamePasswordAuthenticationToken("alice", "plain-password"));
         assertThat(response.token()).isEqualTo("jwt-token");
         assertThat(response.user().email()).isEqualTo("alice@example.com");
-        verify(fileService).ensureDefaultDirectories(user);
     }
 
     @Test
@@ -107,23 +101,5 @@ class AuthServiceTest {
         assertThatThrownBy(() -> authService.login(request))
                 .isInstanceOf(BusinessException.class)
                 .hasMessageContaining("用户名或密码错误");
-    }
-
-    @Test
-    void shouldCreateDefaultDirectoriesForDevLoginUser() {
-        when(userRepository.findByUsername("demo")).thenReturn(Optional.empty());
-        when(passwordEncoder.encode("1")).thenReturn("encoded-password");
-        when(userRepository.save(any(User.class))).thenAnswer(invocation -> {
-            User user = invocation.getArgument(0);
-            user.setId(9L);
-            user.setCreatedAt(LocalDateTime.now());
-            return user;
-        });
-        when(jwtTokenProvider.generateToken(9L, "demo")).thenReturn("jwt-token");
-
-        AuthResponse response = authService.devLogin("demo");
-
-        assertThat(response.user().username()).isEqualTo("demo");
-        verify(fileService).ensureDefaultDirectories(any(User.class));
     }
 }

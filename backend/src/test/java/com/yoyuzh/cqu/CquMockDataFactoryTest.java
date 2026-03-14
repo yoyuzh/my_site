@@ -26,4 +26,17 @@ class CquMockDataFactoryTest {
         assertThat(result.get(0)).containsEntry("studentId", "20230001");
         assertThat(result.get(0)).containsKey("grade");
     }
+
+    @Test
+    void shouldReturnDifferentMockDataForDifferentStudents() {
+        List<Map<String, Object>> firstSchedule = CquMockDataFactory.createSchedule("2025-2026-1", "2023123456");
+        List<Map<String, Object>> secondSchedule = CquMockDataFactory.createSchedule("2025-2026-1", "2022456789");
+        List<Map<String, Object>> firstGrades = CquMockDataFactory.createGrades("2025-2026-1", "2023123456");
+        List<Map<String, Object>> secondGrades = CquMockDataFactory.createGrades("2025-2026-1", "2022456789");
+
+        assertThat(firstSchedule).extracting(item -> item.get("courseName"))
+                .isNotEqualTo(secondSchedule.stream().map(item -> item.get("courseName")).toList());
+        assertThat(firstGrades).extracting(item -> item.get("grade"))
+                .isNotEqualTo(secondGrades.stream().map(item -> item.get("grade")).toList());
+    }
 }

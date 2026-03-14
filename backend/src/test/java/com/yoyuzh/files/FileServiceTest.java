@@ -7,7 +7,6 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.data.domain.PageImpl;
@@ -22,6 +21,8 @@ import java.util.Optional;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -87,6 +88,25 @@ class FileServiceTest {
 
         assertThat(result.items()).hasSize(1);
         assertThat(result.items().get(0).filename()).isEqualTo("notes.txt");
+    }
+
+    @Test
+    void shouldCreateDefaultDirectoriesForUserWorkspace() {
+        User user = createUser(7L);
+        when(storedFileRepository.existsByUserIdAndPathAndFilename(7L, "/", "下载")).thenReturn(false);
+        when(storedFileRepository.existsByUserIdAndPathAndFilename(7L, "/", "文档")).thenReturn(false);
+        when(storedFileRepository.existsByUserIdAndPathAndFilename(7L, "/", "图片")).thenReturn(false);
+        when(storedFileRepository.save(any(StoredFile.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        fileService.ensureDefaultDirectories(user);
+
+        assertThat(tempDir.resolve("7/下载")).exists();
+        assertThat(tempDir.resolve("7/文档")).exists();
+        assertThat(tempDir.resolve("7/图片")).exists();
+        verify(storedFileRepository).existsByUserIdAndPathAndFilename(7L, "/", "下载");
+        verify(storedFileRepository).existsByUserIdAndPathAndFilename(7L, "/", "文档");
+        verify(storedFileRepository).existsByUserIdAndPathAndFilename(7L, "/", "图片");
+        verify(storedFileRepository, times(3)).save(any(StoredFile.class));
     }
 
     private User createUser(Long id) {

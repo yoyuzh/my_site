@@ -1,23 +1,119 @@
-import React, { useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { motion } from 'motion/react';
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/src/components/ui/card';
-import { Button } from '@/src/components/ui/button';
-import { Input } from '@/src/components/ui/input';
 import { GraduationCap, Calendar, User, Lock, Search, BookOpen, ChevronRight, Award } from 'lucide-react';
+
+import { Button } from '@/src/components/ui/button';
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/src/components/ui/card';
+import { Input } from '@/src/components/ui/input';
+import { apiRequest } from '@/src/lib/api';
+import { readCachedValue, writeCachedValue } from '@/src/lib/cache';
+import { getSchoolResultsCacheKey, readStoredSchoolQuery, writeStoredSchoolQuery } from '@/src/lib/page-cache';
+import type { CourseResponse, GradeResponse } from '@/src/lib/types';
 import { cn } from '@/src/lib/utils';
 
-export default function School() {
-  const [activeTab, setActiveTab] = useState<'schedule' | 'grades'>('schedule');
-  const [loading, setLoading] = useState(false);
-  const [queried, setQueried] = useState(false);
+function formatSections(startTime?: number | null, endTime?: number | null) {
+  if (!startTime || !endTime) {
+    return '节次待定';
+  }
 
-  const handleQuery = (e: React.FormEvent) => {
-    e.preventDefault();
-    setLoading(true);
-    setTimeout(() => {
-      setLoading(false);
+  return `第 ${startTime}-${endTime} 节`;
+}
+
+export default function School() {
+  const storedQuery = readStoredSchoolQuery();
+  const initialStudentId = storedQuery?.studentId ?? '2023123456';
+  const initialSemester = storedQuery?.semester ?? '2025-spring';
+  const initialCachedResults = readCachedValue<{
+    queried: boolean;
+    schedule: CourseResponse[];
+    grades: GradeResponse[];
+  }>(getSchoolResultsCacheKey(initialStudentId, initialSemester));
+  const [activeTab, setActiveTab] = useState<'schedule' | 'grades'>('schedule');
+  const [studentId, setStudentId] = useState(initialStudentId);
+  const [password, setPassword] = useState('password123');
+  const [semester, setSemester] = useState(initialSemester);
+  const [loading, setLoading] = useState(false);
+  const [queried, setQueried] = useState(initialCachedResults?.queried ?? false);
+  const [schedule, setSchedule] = useState<CourseResponse[]>(initialCachedResults?.schedule ?? []);
+  const [grades, setGrades] = useState<GradeResponse[]>(initialCachedResults?.grades ?? []);
+
+  const averageGrade = useMemo(() => {
+    if (grades.length === 0) {
+      return '0.0';
+    }
+
+    const sum = grades.reduce((total, item) => total + (item.grade ?? 0), 0);
+    return (sum / grades.length).toFixed(1);
+  }, [grades]);
+
+  const loadSchoolData = async (
+    nextStudentId: string,
+    nextSemester: string,
+    options: { background?: boolean } = {}
+  ) => {
+    const cacheKey = getSchoolResultsCacheKey(nextStudentId, nextSemester);
+    const cachedResults = readCachedValue<{
+      queried: boolean;
+      schedule: CourseResponse[];
+      grades: GradeResponse[];
+    }>(cacheKey);
+
+    if (!options.background) {
+      setLoading(true);
+    }
+
+    writeStoredSchoolQuery({
+      studentId: nextStudentId,
+      semester: nextSemester,
+    });
+
+    try {
+      const queryString = new URLSearchParams({
+        studentId: nextStudentId,
+        semester: nextSemester,
+      }).toString();
+
+      const [scheduleData, gradeData] = await Promise.all([
+        apiRequest<CourseResponse[]>(`/cqu/schedule?${queryString}`),
+        apiRequest<GradeResponse[]>(`/cqu/grades?${queryString}`),
+      ]);
+
       setQueried(true);
-    }, 1500);
+      setSchedule(scheduleData);
+      setGrades(gradeData);
+      writeCachedValue(cacheKey, {
+        queried: true,
+        studentId: nextStudentId,
+        semester: nextSemester,
+        schedule: scheduleData,
+        grades: gradeData,
+      });
+    } catch {
+      if (!cachedResults) {
+        setQueried(false);
+        setSchedule([]);
+        setGrades([]);
+      }
+    } finally {
+      if (!options.background) {
+        setLoading(false);
+      }
+    }
+  };
+
+  useEffect(() => {
+    if (!storedQuery) {
+      return;
+    }
+
+    loadSchoolData(storedQuery.studentId, storedQuery.semester, {
+      background: true,
+    }).catch(() => undefined);
+  }, []);
+
+  const handleQuery = async (e: React.FormEvent) => {
+    e.preventDefault();
+    await loadSchoolData(studentId, semester);
   };
 
   return (
@@ -38,19 +134,19 @@ export default function School() {
                 <label className="text-xs font-medium text-slate-400 ml-1">学号</label>
                 <div className="relative">
                   <User className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
-                  <Input defaultValue="2023123456" className="pl-9 bg-black/20" required />
+                  <Input value={studentId} onChange={(event) => setStudentId(event.target.value)} className="pl-9 bg-black/20" required />
                 </div>
               </div>
               <div className="space-y-2">
                 <label className="text-xs font-medium text-slate-400 ml-1">密码</label>
                 <div className="relative">
                   <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
-                  <Input type="password" defaultValue="password123" className="pl-9 bg-black/20" required />
+                  <Input type="password" value={password} onChange={(event) => setPassword(event.target.value)} className="pl-9 bg-black/20" required />
                 </div>
               </div>
               <div className="space-y-2">
                 <label className="text-xs font-medium text-slate-400 ml-1">学期</label>
-                <select className="flex h-11 w-full rounded-xl border border-white/10 bg-black/20 px-3 py-2 text-sm text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#336EFF]">
+                <select value={semester} onChange={(event) => setSemester(event.target.value)} className="flex h-11 w-full rounded-xl border border-white/10 bg-black/20 px-3 py-2 text-sm text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#336EFF]">
                   <option value="2025-spring">2025 春</option>
                   <option value="2024-fall">2024 秋</option>
                   <option value="2024-spring">2024 春</option>
@@ -81,9 +177,9 @@ export default function School() {
           <CardContent>
             {queried ? (
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <SummaryItem label="当前缓存账号" value="2023123456" icon={User} />
-                <SummaryItem label="已保存课表学期" value="2025 春" icon={Calendar} />
-                <SummaryItem label="已保存成绩" value="3 个学期" icon={Award} />
+                <SummaryItem label="当前缓存账号" value={studentId} icon={User} />
+                <SummaryItem label="已保存课表学期" value={semester} icon={Calendar} />
+                <SummaryItem label="已保存成绩" value={`${averageGrade} 分`} icon={Award} />
               </div>
             ) : (
               <div className="h-40 flex flex-col items-center justify-center text-slate-500 space-y-3 border border-dashed border-white/10 rounded-xl bg-white/[0.01]">
@@ -100,8 +196,8 @@ export default function School() {
         <button
           onClick={() => setActiveTab('schedule')}
           className={cn(
-            "px-6 py-2 text-sm font-medium rounded-lg transition-all",
-            activeTab === 'schedule' ? "bg-[#336EFF] text-white shadow-md" : "text-slate-400 hover:text-white"
+            'px-6 py-2 text-sm font-medium rounded-lg transition-all',
+            activeTab === 'schedule' ? 'bg-[#336EFF] text-white shadow-md' : 'text-slate-400 hover:text-white'
           )}
         >
           课表抽屉
@@ -109,8 +205,8 @@ export default function School() {
         <button
           onClick={() => setActiveTab('grades')}
           className={cn(
-            "px-6 py-2 text-sm font-medium rounded-lg transition-all",
-            activeTab === 'grades' ? "bg-[#336EFF] text-white shadow-md" : "text-slate-400 hover:text-white"
+            'px-6 py-2 text-sm font-medium rounded-lg transition-all',
+            activeTab === 'grades' ? 'bg-[#336EFF] text-white shadow-md' : 'text-slate-400 hover:text-white'
           )}
         >
           成绩热力图
@@ -124,7 +220,7 @@ export default function School() {
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.3 }}
       >
-        {activeTab === 'schedule' ? <ScheduleView queried={queried} /> : <GradesView queried={queried} />}
+        {activeTab === 'schedule' ? <ScheduleView queried={queried} schedule={schedule} /> : <GradesView queried={queried} grades={grades} />}
       </motion.div>
     </div>
   );
@@ -165,7 +261,7 @@ function SummaryItem({ label, value, icon: Icon }: any) {
   );
 }
 
-function ScheduleView({ queried }: { queried: boolean }) {
+function ScheduleView({ queried, schedule }: { queried: boolean; schedule: CourseResponse[] }) {
   if (!queried) {
     return (
       <Card>
@@ -178,14 +274,6 @@ function ScheduleView({ queried }: { queried: boolean }) {
   }
 
   const days = ['周一', '周二', '周三', '周四', '周五'];
-  const mockSchedule = [
-    { day: 0, time: '08:00 - 09:35', name: '高等数学 (下)', room: '教1-204' },
-    { day: 0, time: '10:00 - 11:35', name: '大学物理', room: '教2-101' },
-    { day: 1, time: '14:00 - 15:35', name: '软件工程', room: '计科楼 302' },
-    { day: 2, time: '08:00 - 09:35', name: '数据结构', room: '教1-105' },
-    { day: 3, time: '16:00 - 17:35', name: '计算机网络', room: '计科楼 401' },
-    { day: 4, time: '10:00 - 11:35', name: '操作系统', room: '教3-202' },
-  ];
 
   return (
     <Card>
@@ -194,36 +282,39 @@ function ScheduleView({ queried }: { queried: boolean }) {
       </CardHeader>
       <CardContent>
         <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
-          {days.map((day, index) => (
-            <div key={day} className="space-y-3">
-              <div className="text-center py-2 bg-white/5 rounded-lg text-sm font-medium text-slate-300">
-                {day}
+          {days.map((day, index) => {
+            const dayCourses = schedule.filter((item) => (item.dayOfWeek ?? 0) - 1 === index);
+            return (
+              <div key={day} className="space-y-3">
+                <div className="text-center py-2 bg-white/5 rounded-lg text-sm font-medium text-slate-300">
+                  {day}
+                </div>
+                <div className="space-y-2">
+                  {dayCourses.map((course, i) => (
+                    <div key={i} className="p-3 rounded-xl bg-[#336EFF]/10 border border-[#336EFF]/20 hover:bg-[#336EFF]/20 transition-colors">
+                      <p className="text-xs font-mono text-[#336EFF] mb-1">{formatSections(course.startTime, course.endTime)}</p>
+                      <p className="text-sm font-medium text-white leading-tight mb-2">{course.courseName}</p>
+                      <p className="text-xs text-slate-400 flex items-center gap-1">
+                        <ChevronRight className="w-3 h-3" /> {course.classroom ?? '教室待定'}
+                      </p>
+                    </div>
+                  ))}
+                  {dayCourses.length === 0 && (
+                    <div className="h-24 rounded-xl border border-dashed border-white/10 flex items-center justify-center text-xs text-slate-500">
+                      无课程
+                    </div>
+                  )}
+                </div>
               </div>
-              <div className="space-y-2">
-                {mockSchedule.filter(s => s.day === index).map((course, i) => (
-                  <div key={i} className="p-3 rounded-xl bg-[#336EFF]/10 border border-[#336EFF]/20 hover:bg-[#336EFF]/20 transition-colors">
-                    <p className="text-xs font-mono text-[#336EFF] mb-1">{course.time}</p>
-                    <p className="text-sm font-medium text-white leading-tight mb-2">{course.name}</p>
-                    <p className="text-xs text-slate-400 flex items-center gap-1">
-                      <ChevronRight className="w-3 h-3" /> {course.room}
-                    </p>
-                  </div>
-                ))}
-                {mockSchedule.filter(s => s.day === index).length === 0 && (
-                  <div className="h-24 rounded-xl border border-dashed border-white/10 flex items-center justify-center text-xs text-slate-500">
-                    无课程
-                  </div>
-                )}
-              </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       </CardContent>
     </Card>
   );
 }
 
-function GradesView({ queried }: { queried: boolean }) {
+function GradesView({ queried, grades }: { queried: boolean; grades: GradeResponse[] }) {
   if (!queried) {
     return (
       <Card>
@@ -235,20 +326,14 @@ function GradesView({ queried }: { queried: boolean }) {
     );
   }
 
-  const terms = [
-    {
-      name: '2024 秋',
-      grades: [75, 78, 80, 83, 85, 88, 89, 96]
-    },
-    {
-      name: '2025 春',
-      grades: [70, 78, 82, 84, 85, 85, 86, 88, 93]
-    },
-    {
-      name: '2025 秋',
-      grades: [68, 70, 76, 80, 85, 86, 90, 94, 97]
+  const terms = grades.reduce<Record<string, number[]>>((accumulator, grade) => {
+    const semester = grade.semester ?? '未分类';
+    if (!accumulator[semester]) {
+      accumulator[semester] = [];
     }
-  ];
+    accumulator[semester].push(grade.grade ?? 0);
+    return accumulator;
+  }, {});
 
   const getScoreStyle = (score: number) => {
     if (score >= 95) return 'bg-[#336EFF]/50 text-white';
@@ -266,15 +351,15 @@ function GradesView({ queried }: { queried: boolean }) {
       </CardHeader>
       <CardContent>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-          {terms.map((term, i) => (
+          {Object.entries(terms).map(([term, scores], i) => (
             <div key={i} className="flex flex-col">
-              <h3 className="text-sm font-bold text-white border-b border-white/5 pb-3 mb-4">{term.name}</h3>
+              <h3 className="text-sm font-bold text-white border-b border-white/5 pb-3 mb-4">{term}</h3>
               <div className="flex flex-col gap-2">
-                {term.grades.map((score, j) => (
-                  <div 
-                    key={j} 
+                {scores.map((score, j) => (
+                  <div
+                    key={j}
                     className={cn(
-                      "w-full py-1.5 rounded-full text-xs font-mono font-medium text-center transition-colors",
+                      'w-full py-1.5 rounded-full text-xs font-mono font-medium text-center transition-colors',
                       getScoreStyle(score)
                     )}
                   >
@@ -284,6 +369,7 @@ function GradesView({ queried }: { queried: boolean }) {
               </div>
             </div>
           ))}
+          {Object.keys(terms).length === 0 && <div className="text-sm text-slate-500">暂无成绩数据</div>}
         </div>
       </CardContent>
     </Card>

@@ -25,6 +25,7 @@ import java.util.List;
 
 @Service
 public class FileService {
+    private static final List<String> DEFAULT_DIRECTORIES = List.of("下载", "文档", "图片");
 
     private final StoredFileRepository storedFileRepository;
     private final Path rootPath;
@@ -116,6 +117,31 @@ public class FileService {
                 .stream()
                 .map(this::toResponse)
                 .toList();
+    }
+
+    @Transactional
+    public void ensureDefaultDirectories(User user) {
+        for (String directoryName : DEFAULT_DIRECTORIES) {
+            if (storedFileRepository.existsByUserIdAndPathAndFilename(user.getId(), "/", directoryName)) {
+                continue;
+            }
+
+            try {
+                Files.createDirectories(resolveUserPath(user.getId(), "/").resolve(directoryName));
+            } catch (IOException ex) {
+                throw new BusinessException(ErrorCode.UNKNOWN, "默认目录初始化失败");
+            }
+
+            StoredFile storedFile = new StoredFile();
+            storedFile.setUser(user);
+            storedFile.setFilename(directoryName);
+            storedFile.setPath("/");
+            storedFile.setStorageName(directoryName);
+            storedFile.setContentType("directory");
+            storedFile.setSize(0L);
+            storedFile.setDirectory(true);
+            storedFileRepository.save(storedFile);
+        }
     }
 
     @Transactional

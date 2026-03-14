@@ -1,7 +1,7 @@
 $ErrorActionPreference = 'Stop'
 
 $root = Split-Path -Parent $PSScriptRoot
-$javaExe = 'C:\Program Files\Java\jdk-22\bin\java.exe'
+$mavenExe = 'mvn.cmd'
 $out = Join-Path $root 'backend-dev.out.log'
 $err = Join-Path $root 'backend-dev.err.log'
 
@@ -13,9 +13,9 @@ if (Test-Path $err) {
 }
 
 $proc = Start-Process `
-    -FilePath $javaExe `
-    -ArgumentList '-jar', 'backend/target/yoyuzh-portal-backend-0.0.1-SNAPSHOT.jar', '--spring.profiles.active=dev' `
-    -WorkingDirectory $root `
+    -FilePath $mavenExe `
+    -ArgumentList 'spring-boot:run', '-Dspring-boot.run.profiles=dev' `
+    -WorkingDirectory (Join-Path $root 'backend') `
     -PassThru `
     -RedirectStandardOutput $out `
     -RedirectStandardError $err
