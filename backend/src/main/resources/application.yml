@@ -1,0 +1,41 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: yoyuzh-portal-backend
+  datasource:
+    url: jdbc:mysql://localhost:3306/yoyuzh_portal?useSSL=false&serverTimezone=Asia/Shanghai&characterEncoding=utf8
+    username: root
+    password: root
+    driver-class-name: com.mysql.cj.jdbc.Driver
+  jpa:
+    hibernate:
+      ddl-auto: update
+    open-in-view: false
+    properties:
+      hibernate:
+        format_sql: true
+  servlet:
+    multipart:
+      max-file-size: 50MB
+      max-request-size: 50MB
+
+app:
+  jwt:
+    secret: change-me-change-me-change-me-change-me
+    expiration-seconds: 86400
+  storage:
+    root-dir: ./storage
+    max-file-size: 52428800
+  cqu:
+    base-url: https://example-cqu-api.local
+    require-login: false
+    mock-enabled: false
+
+springdoc:
+  swagger-ui:
+    path: /swagger-ui.html
+
+logging:
+  config: classpath:logback.xml

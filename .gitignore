@@ -1,0 +1,8 @@
+backend/target/
+data/
+storage/
+backend-dev.out.log
+backend-dev.err.log
+frontend-dev.out.log
+frontend-dev.err.log
+vue/dist/
