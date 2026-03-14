@@ -26,16 +26,24 @@ public class CquController {
     @GetMapping("/schedule")
     public ApiResponse<List<CourseResponse>> schedule(@AuthenticationPrincipal UserDetails userDetails,
                                                       @RequestParam String semester,
-                                                      @RequestParam String studentId) {
-        return ApiResponse.success(cquDataService.getSchedule(resolveUser(userDetails), semester, studentId));
+                                                      @RequestParam String studentId,
+                                                      @RequestParam(defaultValue = "false") boolean refresh) {
+        return ApiResponse.success(cquDataService.getSchedule(resolveUser(userDetails), semester, studentId, refresh));
     }
 
     @Operation(summary = "获取成绩")
     @GetMapping("/grades")
     public ApiResponse<List<GradeResponse>> grades(@AuthenticationPrincipal UserDetails userDetails,
                                                    @RequestParam String semester,
-                                                   @RequestParam String studentId) {
-        return ApiResponse.success(cquDataService.getGrades(resolveUser(userDetails), semester, studentId));
+                                                   @RequestParam String studentId,
+                                                   @RequestParam(defaultValue = "false") boolean refresh) {
+        return ApiResponse.success(cquDataService.getGrades(resolveUser(userDetails), semester, studentId, refresh));
+    }
+
+    @Operation(summary = "获取最近一次教务数据")
+    @GetMapping("/latest")
+    public ApiResponse<LatestSchoolDataResponse> latest(@AuthenticationPrincipal UserDetails userDetails) {
+        return ApiResponse.success(cquDataService.getLatest(resolveUser(userDetails)));
     }
 
     private User resolveUser(UserDetails userDetails) {

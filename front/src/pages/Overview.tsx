@@ -18,7 +18,8 @@ import { Button } from '@/src/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/src/components/ui/card';
 import { apiRequest } from '@/src/lib/api';
 import { readCachedValue, writeCachedValue } from '@/src/lib/cache';
-import { getOverviewCacheKey, getSchoolResultsCacheKey, readStoredSchoolQuery } from '@/src/lib/page-cache';
+import { getOverviewCacheKey, getSchoolResultsCacheKey, readStoredSchoolQuery, writeStoredSchoolQuery } from '@/src/lib/page-cache';
+import { cacheLatestSchoolData, fetchLatestSchoolData } from '@/src/lib/school';
 import { readStoredSession } from '@/src/lib/session';
 import type { CourseResponse, FileMetadata, GradeResponse, PageResponse, UserProfile } from '@/src/lib/types';
 
@@ -107,27 +108,32 @@ export default function Overview() {
         setRecentFiles(filesRecent);
         setRootFiles(filesRoot.items);
 
+        let scheduleData: CourseResponse[] = [];
+        let gradesData: GradeResponse[] = [];
         const schoolQuery = readStoredSchoolQuery();
-        if (!schoolQuery?.studentId || !schoolQuery?.semester) {
-          writeCachedValue(getOverviewCacheKey(), {
-            profile: user,
-            recentFiles: filesRecent,
-            rootFiles: filesRoot.items,
-            schedule: [],
-            grades: [],
-          });
-          return;
+
+        if (schoolQuery?.studentId && schoolQuery?.semester) {
+          const queryString = new URLSearchParams({
+            studentId: schoolQuery.studentId,
+            semester: schoolQuery.semester,
+          }).toString();
+
+          [scheduleData, gradesData] = await Promise.all([
+            apiRequest<CourseResponse[]>(`/cqu/schedule?${queryString}`),
+            apiRequest<GradeResponse[]>(`/cqu/grades?${queryString}`),
+          ]);
+        } else {
+          const latest = await fetchLatestSchoolData();
+          if (latest) {
+            cacheLatestSchoolData(latest);
+            writeStoredSchoolQuery({
+              studentId: latest.studentId,
+              semester: latest.semester,
+            });
+            scheduleData = latest.schedule;
+            gradesData = latest.grades;
+          }
         }
-
-        const queryString = new URLSearchParams({
-          studentId: schoolQuery.studentId,
-          semester: schoolQuery.semester,
-        }).toString();
-
-        const [scheduleData, gradesData] = await Promise.all([
-          apiRequest<CourseResponse[]>(`/cqu/schedule?${queryString}`),
-          apiRequest<GradeResponse[]>(`/cqu/grades?${queryString}`),
-        ]);
 
         if (!cancelled) {
           setSchedule(scheduleData);

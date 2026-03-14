@@ -64,7 +64,7 @@ class CquDataServiceTransactionTest {
                 )
         ));
 
-        List<GradeResponse> response = cquDataService.getGrades(user, "2025-spring", "2023123456");
+        List<GradeResponse> response = cquDataService.getGrades(user, "2025-spring", "2023123456", true);
 
         assertThat(response).hasSize(1);
         assertThat(response.get(0).courseName()).isEqualTo("Java");
@@ -74,5 +74,9 @@ class CquDataServiceTransactionTest {
                 .first()
                 .extracting(Grade::getCourseName)
                 .isEqualTo("Java");
+        assertThat(userRepository.findById(user.getId()))
+                .get()
+                .extracting(User::getLastSchoolStudentId, User::getLastSchoolSemester)
+                .containsExactly("2023123456", "2025-spring");
     }
 }

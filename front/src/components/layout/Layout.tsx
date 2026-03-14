@@ -30,7 +30,7 @@ export function Layout() {
       </div>
 
       {/* Top Navigation */}
-      <header className="sticky top-0 z-50 w-full glass-panel border-b border-white/10 bg-[#07101D]/60 backdrop-blur-xl">
+      <header className="fixed inset-x-0 top-0 z-50 w-full glass-panel border-b border-white/10 bg-[#07101D]/60 backdrop-blur-xl">
         <div className="container mx-auto px-4 h-16 flex items-center justify-between">
           {/* Brand */}
           <div className="flex items-center gap-3">
@@ -85,7 +85,7 @@ export function Layout() {
       </header>
 
       {/* Main Content */}
-      <main className="flex-1 container mx-auto px-4 py-8 relative z-10">
+      <main className="relative z-10 flex-1 container mx-auto px-4 pb-8 pt-24">
         <Outlet />
       </main>
     </div>

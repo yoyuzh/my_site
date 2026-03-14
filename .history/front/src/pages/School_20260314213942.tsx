@@ -1,4 +1,4 @@
-﻿import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { motion } from 'motion/react';
 import { Award, BookOpen, Calendar, Lock, MapPin, Search, User } from 'lucide-react';
 
@@ -8,88 +8,9 @@ import { Input } from '@/src/components/ui/input';
 import { apiRequest } from '@/src/lib/api';
 import { readCachedValue, writeCachedValue } from '@/src/lib/cache';
 import { getSchoolResultsCacheKey, readStoredSchoolQuery, writeStoredSchoolQuery } from '@/src/lib/page-cache';
-import { cacheLatestSchoolData, fetchLatestSchoolData } from '@/src/lib/school';
 import { buildScheduleTable } from '@/src/lib/schedule-table';
-import type { CourseResponse, GradeResponse, LatestSchoolDataResponse } from '@/src/lib/types';
+import type { CourseResponse, GradeResponse } from '@/src/lib/types';
 import { cn } from '@/src/lib/utils';
-
-function formatSections(startTime?: number | null, endTime?: number | null) {
-  if (!startTime || !endTime) {
-    return '节次待定';
-  }
-
-  return `第 ${startTime}-${endTime} 节`;
-}
-
-function getCourseTheme(courseName?: string) {
-  const themes = [
-    {
-      panel: 'bg-gradient-to-br from-[#336EFF]/26 via-[#4D7FFF]/18 to-[#7AA2FF]/12',
-      border: 'border-[#5E88FF]/45',
-      accent: 'bg-[#5D8BFF]',
-      title: 'text-blue-50',
-      meta: 'text-blue-100/80',
-      badge: 'bg-[#336EFF]/22 text-blue-100',
-      shadow: 'shadow-[0_10px_30px_rgba(51,110,255,0.18)]',
-    },
-    {
-      panel: 'bg-gradient-to-br from-cyan-500/24 via-sky-500/18 to-blue-500/10',
-      border: 'border-cyan-400/40',
-      accent: 'bg-cyan-400',
-      title: 'text-cyan-50',
-      meta: 'text-cyan-100/80',
-      badge: 'bg-cyan-500/18 text-cyan-100',
-      shadow: 'shadow-[0_10px_30px_rgba(34,211,238,0.16)]',
-    },
-    {
-      panel: 'bg-gradient-to-br from-indigo-500/24 via-blue-500/18 to-slate-500/8',
-      border: 'border-indigo-400/40',
-      accent: 'bg-indigo-400',
-      title: 'text-indigo-50',
-      meta: 'text-indigo-100/80',
-      badge: 'bg-indigo-500/18 text-indigo-100',
-      shadow: 'shadow-[0_10px_30px_rgba(99,102,241,0.16)]',
-    },
-    {
-      panel: 'bg-gradient-to-br from-sky-500/24 via-blue-500/16 to-violet-500/10',
-      border: 'border-sky-400/40',
-      accent: 'bg-sky-400',
-      title: 'text-sky-50',
-      meta: 'text-sky-100/80',
-      badge: 'bg-sky-500/18 text-sky-100',
-      shadow: 'shadow-[0_10px_30px_rgba(14,165,233,0.16)]',
-    },
-    {
-      panel: 'bg-gradient-to-br from-violet-500/22 via-indigo-500/16 to-blue-500/10',
-      border: 'border-violet-400/38',
-      accent: 'bg-violet-400',
-      title: 'text-violet-50',
-      meta: 'text-violet-100/80',
-      badge: 'bg-violet-500/18 text-violet-100',
-      shadow: 'shadow-[0_10px_30px_rgba(139,92,246,0.14)]',
-    },
-    {
-      panel: 'bg-gradient-to-br from-teal-500/22 via-cyan-500/16 to-sky-500/10',
-      border: 'border-teal-400/38',
-      accent: 'bg-teal-400',
-      title: 'text-teal-50',
-      meta: 'text-teal-100/80',
-      badge: 'bg-teal-500/18 text-teal-100',
-      shadow: 'shadow-[0_10px_30px_rgba(45,212,191,0.14)]',
-    },
-  ];
-
-  if (!courseName) {
-    return themes[0];
-  }
-
-  let hash = 0;
-  for (let index = 0; index < courseName.length; index += 1) {
-    hash = courseName.charCodeAt(index) + ((hash << 5) - hash);
-  }
-
-  return themes[Math.abs(hash) % themes.length];
-}
 
 export default function School() {
   const storedQuery = readStoredSchoolQuery();
@@ -110,15 +31,6 @@ export default function School() {
   const [schedule, setSchedule] = useState<CourseResponse[]>(initialCachedResults?.schedule ?? []);
   const [grades, setGrades] = useState<GradeResponse[]>(initialCachedResults?.grades ?? []);
 
-  const applySchoolResults = (results: LatestSchoolDataResponse) => {
-    setStudentId(results.studentId);
-    setSemester(results.semester);
-    setQueried(true);
-    setSchedule(results.schedule);
-    setGrades(results.grades);
-    cacheLatestSchoolData(results);
-  };
-
   const averageGrade = useMemo(() => {
     if (grades.length === 0) {
       return '0.0';
@@ -131,7 +43,7 @@ export default function School() {
   const loadSchoolData = async (
     nextStudentId: string,
     nextSemester: string,
-    options: { background?: boolean; refresh?: boolean } = {},
+    options: { background?: boolean } = {},
   ) => {
     const cacheKey = getSchoolResultsCacheKey(nextStudentId, nextSemester);
     const cachedResults = readCachedValue<{
@@ -153,7 +65,6 @@ export default function School() {
       const queryString = new URLSearchParams({
         studentId: nextStudentId,
         semester: nextSemester,
-        refresh: options.refresh ? 'true' : 'false',
       }).toString();
 
       const [scheduleData, gradeData] = await Promise.all([
@@ -185,33 +96,18 @@ export default function School() {
   };
 
   useEffect(() => {
-    let cancelled = false;
-
-    async function loadInitialSchoolData() {
-      if (storedQuery) {
-        await loadSchoolData(storedQuery.studentId, storedQuery.semester, {
-          background: true,
-        });
-        return;
-      }
-
-      const latest = await fetchLatestSchoolData();
-      if (!latest || cancelled) {
-        return;
-      }
-      applySchoolResults(latest);
+    if (!storedQuery) {
+      return;
     }
 
-    loadInitialSchoolData().catch(() => undefined);
-
-    return () => {
-      cancelled = true;
-    };
+    loadSchoolData(storedQuery.studentId, storedQuery.semester, {
+      background: true,
+    }).catch(() => undefined);
   }, []);
 
   const handleQuery = async (event: React.FormEvent) => {
     event.preventDefault();
-    await loadSchoolData(studentId, semester, { refresh: true });
+    await loadSchoolData(studentId, semester);
   };
 
   return (
@@ -373,157 +269,171 @@ function SummaryItem({
   );
 }
 
+function getCourseTheme(courseName?: string) {
+  if (!courseName) {
+    return {
+      bg: 'bg-slate-500/10',
+      border: 'border-slate-500/20',
+      text: 'text-slate-300',
+    };
+  }
+
+  const themes = [
+    {
+      bg: 'bg-blue-500/20 hover:bg-blue-500/30',
+      border: 'border-blue-400/30',
+      text: 'text-blue-100',
+    },
+    {
+      bg: 'bg-indigo-500/20 hover:bg-indigo-500/30',
+      border: 'border-indigo-400/30',
+      text: 'text-indigo-100',
+    },
+    {
+      bg: 'bg-cyan-500/20 hover:bg-cyan-500/30',
+      border: 'border-cyan-400/30',
+      text: 'text-cyan-100',
+    },
+    {
+      bg: 'bg-sky-500/20 hover:bg-sky-500/30',
+      border: 'border-sky-400/30',
+      text: 'text-sky-100',
+    },
+    {
+      bg: 'bg-violet-500/20 hover:bg-violet-500/30',
+      border: 'border-violet-400/30',
+      text: 'text-violet-100',
+    },
+    {
+      bg: 'bg-teal-500/20 hover:bg-teal-500/30',
+      border: 'border-teal-400/30',
+      text: 'text-teal-100',
+    },
+  ];
+
+  let hash = 0;
+  for (let i = 0; i < courseName.length; i += 1) {
+    hash = courseName.charCodeAt(i) + ((hash << 5) - hash);
+  }
+  return themes[Math.abs(hash) % themes.length];
+}
+
 function ScheduleView({ queried, schedule }: { queried: boolean; schedule: CourseResponse[] }) {
   if (!queried) {
     return (
       <Card>
-        <CardContent className="flex h-64 flex-col items-center justify-center text-slate-500">
-          <BookOpen className="mb-4 h-12 w-12 opacity-20" />
+        <CardContent className="h-64 flex flex-col items-center justify-center text-slate-500">
+          <BookOpen className="w-12 h-12 mb-4 opacity-20" />
           <p>请先查询课表</p>
         </CardContent>
       </Card>
     );
   }
 
-  const days = ['周一', '周二', '周三', '周四', '周五', '周六', '周日'];
-  const periodLabels: Record<'morning' | 'noon' | 'afternoon' | 'evening', string> = {
-    morning: '上午',
-    noon: '中午',
-    afternoon: '下午',
-    evening: '晚上',
-  };
-  const periodOrder = ['morning', 'noon', 'afternoon', 'evening'] as const;
+  const days = ['周一', '周二', '周三', '周四', '周五'];
   const rows = buildScheduleTable(schedule);
 
   return (
-    <Card className="overflow-hidden border-white/10 bg-[linear-gradient(180deg,rgba(15,23,42,0.9),rgba(15,23,42,0.72))]">
-      <CardHeader className="border-b border-white/8 bg-white/[0.02]">
-        <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+    <Card className="border-none bg-transparent shadow-none">
+      <CardHeader className="px-0 pt-0">
+        <div className="flex items-center justify-between mb-2">
           <div>
-            <CardTitle className="text-xl">本周课表</CardTitle>
-            <CardDescription>周一到周日完整展示，空白节次保持固定格子，跨节课程会按节数占满网格。</CardDescription>
+            <CardTitle className="text-xl">我的课表</CardTitle>
+            <CardDescription>2025 春季学期</CardDescription>
           </div>
-          <div className="flex flex-wrap gap-2 text-xs text-slate-300">
-            <span className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1">上午 1-4 节</span>
-            <span className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1">中午 5 节</span>
-            <span className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1">下午 6-9 节</span>
-            <span className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1">晚上 10-12 节</span>
+          <div className="flex gap-2 text-xs text-slate-400">
+            <span className="flex items-center gap-1">
+              <span className="w-2 h-2 rounded-full bg-blue-500" />
+              {' '}
+              必修
+            </span>
+            <span className="flex items-center gap-1">
+              <span className="w-2 h-2 rounded-full bg-cyan-500" />
+              {' '}
+              选修
+            </span>
           </div>
         </div>
       </CardHeader>
-      <CardContent className="p-4 md:p-5">
-        <div className="overflow-x-auto">
-          <div
-            className="grid min-w-[1180px] gap-2"
-            style={{
-              gridTemplateColumns: '88px 96px repeat(7, minmax(138px, 1fr))',
-              gridTemplateRows: '48px repeat(12, 96px)',
-            }}
-          >
-            <div className="rounded-2xl bg-white/[0.04] px-3 py-3 text-left text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">
-              时段
-            </div>
-            <div className="rounded-2xl bg-white/[0.04] px-3 py-3 text-left text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">
-              节次
-            </div>
-            {days.map((day) => (
-              <div key={day} className="rounded-2xl bg-white/[0.04] px-3 py-3 text-center text-sm font-medium text-slate-200">
-                {day}
-              </div>
-            ))}
-
-            {periodOrder.map((period, index) => (
-              <div
-                key={period}
-                style={{
-                  gridColumn: 1,
-                  gridRow:
-                    period === 'morning'
-                      ? '2 / span 4'
-                      : period === 'noon'
-                        ? '6 / span 1'
-                        : period === 'afternoon'
-                          ? '7 / span 4'
-                        : '11 / span 3',
-                }}
-                className="flex h-full rounded-2xl border border-white/8 bg-white/[0.03] px-3 py-4"
-              >
-                <div className="flex flex-1 items-center justify-center rounded-xl bg-black/20 text-sm font-semibold tracking-[0.25em] text-slate-300 [writing-mode:vertical-rl]">
-                  {periodLabels[period]}
-                </div>
-              </div>
-            ))}
-
-            {rows.map((row) => (
-              <div
-                key={`section-${row.section}`}
-                style={{ gridColumn: 2, gridRow: row.section + 1 }}
-                className="flex h-full flex-col justify-center rounded-2xl border border-white/8 bg-white/[0.03] px-3"
-              >
-                <span className="text-[11px] uppercase tracking-[0.22em] text-slate-500">Section</span>
-                <span className="mt-1 text-lg font-semibold text-white">{row.section}</span>
-              </div>
-            ))}
-
-            {rows.flatMap((row) =>
-              row.slots.map((slot, columnIndex) => {
-                if (slot.type !== 'empty') {
-                  return null;
-                }
-
-                return (
-                  <div
-                    key={`empty-${row.section}-${columnIndex}`}
-                    style={{ gridColumn: columnIndex + 3, gridRow: row.section + 1 }}
-                    className="rounded-2xl border border-dashed border-white/8 bg-white/[0.015]"
-                  />
-                );
-              }),
-            )}
-
-            {rows.flatMap((row) =>
-              row.slots.map((slot, columnIndex) => {
-                if (slot.type !== 'course') {
-                  return null;
-                }
-
-                const theme = getCourseTheme(slot.course?.courseName);
-                const rowSpan = slot.rowSpan ?? 1;
-
-                return (
-                  <div
-                    key={`course-${row.section}-${columnIndex}`}
-                    style={{ gridColumn: columnIndex + 3, gridRow: `${row.section + 1} / span ${rowSpan}` }}
-                    className={cn(
-                      'group relative z-10 flex h-full min-h-0 flex-col overflow-hidden rounded-2xl border p-3 transition duration-200 hover:-translate-y-0.5 hover:brightness-110',
-                      theme.panel,
-                      theme.border,
-                      theme.shadow,
+      <CardContent className="p-0">
+        <div className="overflow-x-auto pb-2 -mx-1 px-1">
+          <div className="min-w-[800px]">
+            <table className="w-full border-separate border-spacing-2">
+              <thead>
+                <tr>
+                  <th className="w-10" aria-label="时段" />
+                  <th className="w-8" aria-label="节次" />
+                  {days.map((d) => (
+                    <th key={d} className="pb-2 text-center text-sm font-medium text-slate-400">
+                      {d}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map((row, index) => (
+                  <tr key={row.section}>
+                    {/* Morning/Afternoon label */}
+                    {index % 4 === 0 && (
+                      <td rowSpan={4} className="align-top pt-2">
+                        <div className="py-3 rounded-lg bg-white/5 text-center text-xs font-bold text-slate-400 [writing-mode:vertical-lr] h-full flex items-center justify-center tracking-widest border border-white/5">
+                          {row.section <= 4 ? '上午' : row.section <= 8 ? '下午' : '晚上'}
+                        </div>
+                      </td>
                     )}
-                  >
-                    <div className={cn('absolute inset-x-0 top-0 h-1.5', theme.accent)} />
-                    <div className="flex items-start justify-between gap-2">
-                      <p className={cn('text-sm font-semibold leading-5', theme.title)}>
-                        {slot.course?.courseName}
-                      </p>
-                      <span className={cn('shrink-0 rounded-full px-2 py-1 text-[10px] font-medium', theme.badge)}>
-                        {formatSections(slot.course?.startTime, slot.course?.endTime)}
-                      </span>
-                    </div>
-                    <div className="mt-3 space-y-2">
-                      <p className={cn('flex items-center gap-1.5 text-xs', theme.meta)}>
-                        <MapPin className="h-3.5 w-3.5" />
-                        <span>{slot.course?.classroom ?? '教室待定'}</span>
-                      </p>
-                      <p className={cn('flex items-center gap-1.5 text-xs', theme.meta)}>
-                        <User className="h-3.5 w-3.5" />
-                        <span>{slot.course?.teacher ?? '教师待定'}</span>
-                      </p>
-                    </div>
-                  </div>
-                );
-              }),
-            )}
+
+                    {/* Section Number */}
+                    <td className="align-middle text-center">
+                      <div className="text-sm font-mono text-slate-600 font-bold">{row.section}</div>
+                    </td>
+
+                    {/* Cells */}
+                    {row.slots.map((slot, colIdx) => {
+                      if (slot.type === 'covered') return null;
+                      if (slot.type === 'empty') {
+                        return (
+                          <td key={`${row.section}-${colIdx}`} className="h-20 bg-white/[0.02] rounded-xl border border-white/5" />
+                        );
+                      }
+
+                      const theme = getCourseTheme(slot.course?.courseName ?? '');
+                      return (
+                        <td key={`${row.section}-${colIdx}`} rowSpan={slot.rowSpan} className="h-20 align-top">
+                          <div
+                            className={cn(
+                              'w-full h-full p-3 rounded-xl border backdrop-blur-md transition-all hover:scale-[1.02] hover:shadow-lg flex flex-col justify-between group cursor-pointer',
+                              theme.bg,
+                              theme.border,
+                            )}
+                          >
+                            <div>
+                              <h3 className={cn('font-bold text-sm line-clamp-2 leading-tight mb-2', theme.text)}>
+                                {slot.course?.courseName}
+                              </h3>
+                              <p className={cn('text-xs flex items-center gap-1 opacity-80', theme.text)}>
+                                <MapPin className="w-3 h-3 opacity-70" />
+                                {' '}
+                                {slot.course?.classroom ?? '未知'}
+                              </p>
+                            </div>
+                            <div className="mt-2 flex items-center justify-between">
+                              <span
+                                className={cn(
+                                  'text-[10px] px-1.5 py-0.5 rounded opacity-80 font-medium bg-black/10',
+                                  theme.text,
+                                )}
+                              >
+                                {slot.course?.teacher ?? '老师'}
+                              </span>
+                            </div>
+                          </div>
+                        </td>
+                      );
+                    })}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
         </div>
       </CardContent>
@@ -544,11 +454,11 @@ function GradesView({ queried, grades }: { queried: boolean; grades: GradeRespon
   }
 
   const terms = grades.reduce<Record<string, number[]>>((accumulator, grade) => {
-    const semester = grade.semester ?? '未分类';
-    if (!accumulator[semester]) {
-      accumulator[semester] = [];
+    const term = grade.semester ?? '未分类';
+    if (!accumulator[term]) {
+      accumulator[term] = [];
     }
-    accumulator[semester].push(grade.grade ?? 0);
+    accumulator[term].push(grade.grade ?? 0);
     return accumulator;
   }, {});
 
@@ -567,16 +477,16 @@ function GradesView({ queried, grades }: { queried: boolean; grades: GradeRespon
         <CardTitle className="text-lg font-medium text-white">成绩热力图</CardTitle>
       </CardHeader>
       <CardContent>
-        <div className="grid grid-cols-1 gap-8 md:grid-cols-3">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
           {Object.entries(terms).map(([term, scores]) => (
             <div key={term} className="flex flex-col">
-              <h3 className="mb-4 border-b border-white/5 pb-3 text-sm font-bold text-white">{term}</h3>
+              <h3 className="text-sm font-bold text-white border-b border-white/5 pb-3 mb-4">{term}</h3>
               <div className="flex flex-col gap-2">
                 {scores.map((score, index) => (
                   <div
                     key={`${term}-${index}`}
                     className={cn(
-                      'w-full rounded-full py-1.5 text-center text-xs font-mono font-medium transition-colors',
+                      'w-full py-1.5 rounded-full text-xs font-mono font-medium text-center transition-colors',
                       getScoreStyle(score),
                     )}
                   >
@@ -586,11 +496,9 @@ function GradesView({ queried, grades }: { queried: boolean; grades: GradeRespon
               </div>
             </div>
           ))}
-          {Object.keys(terms).length === 0 ? <div className="text-sm text-slate-500">暂无成绩数据</div> : null}
+          {Object.keys(terms).length === 0 && <div className="text-sm text-slate-500">暂无成绩数据</div>}
         </div>
       </CardContent>
     </Card>
   );
 }
-
-

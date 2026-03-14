@@ -46,3 +46,10 @@ export interface GradeResponse {
   grade: number | null;
   semester: string | null;
 }
+
+export interface LatestSchoolDataResponse {
+  studentId: string;
+  semester: string;
+  schedule: CourseResponse[];
+  grades: GradeResponse[];
+}
