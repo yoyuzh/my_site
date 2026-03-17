@@ -43,6 +43,43 @@ mvn spring-boot:run -Dspring-boot.run.profiles=dev
 - MySQL: `sql/mysql-init.sql`
 - openGauss: `sql/opengauss-init.sql`
 
+## 旧库升级
+
+如果服务器数据库是按旧版脚本初始化的，需要先补齐下面这些字段，否则登录后的首页接口可能在查询用户、课表或成绩时直接报 500。
+
+MySQL:
+
+```sql
+ALTER TABLE portal_user
+    ADD COLUMN last_school_student_id VARCHAR(64) NULL,
+    ADD COLUMN last_school_semester VARCHAR(64) NULL;
+
+ALTER TABLE portal_course
+    ADD COLUMN semester VARCHAR(64) NULL,
+    ADD COLUMN student_id VARCHAR(64) NULL;
+
+ALTER TABLE portal_grade
+    ADD COLUMN student_id VARCHAR(64) NULL;
+
+CREATE INDEX idx_course_user_semester ON portal_course (user_id, semester, student_id);
+CREATE INDEX idx_grade_user_semester ON portal_grade (user_id, semester, student_id);
+```
+
+openGauss:
+
+```sql
+ALTER TABLE portal_user ADD COLUMN IF NOT EXISTS last_school_student_id VARCHAR(64);
+ALTER TABLE portal_user ADD COLUMN IF NOT EXISTS last_school_semester VARCHAR(64);
+
+ALTER TABLE portal_course ADD COLUMN IF NOT EXISTS semester VARCHAR(64);
+ALTER TABLE portal_course ADD COLUMN IF NOT EXISTS student_id VARCHAR(64);
+
+ALTER TABLE portal_grade ADD COLUMN IF NOT EXISTS student_id VARCHAR(64);
+
+CREATE INDEX IF NOT EXISTS idx_course_user_semester ON portal_course (user_id, semester, student_id);
+CREATE INDEX IF NOT EXISTS idx_grade_user_semester ON portal_grade (user_id, semester, student_id);
+```
+
 ## 主要接口
 
 - `POST /api/auth/register`
