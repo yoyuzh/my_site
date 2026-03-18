@@ -1,0 +1,103 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<apiVerification>
+  <project>yoyuzh.xyz</project>
+  <purpose>校验服务器侧 API 与反向代理配置，确保前端登录请求不会因服务器配置错误而失败。</purpose>
+
+  <domains>
+    <frontend>https://yoyuzh.xyz</frontend>
+    <api>https://api.yoyuzh.xyz</api>
+    <apiBase>https://api.yoyuzh.xyz/api</apiBase>
+  </domains>
+
+  <loginApi>
+    <method>POST</method>
+    <path>/api/auth/login</path>
+    <url>https://api.yoyuzh.xyz/api/auth/login</url>
+    <contentType>application/json</contentType>
+    <accept>application/json</accept>
+    <requestBody><![CDATA[
+{
+  "username": "your_username",
+  "password": "your_password"
+}
+    ]]></requestBody>
+    <notes>
+      <note>浏览器直接打开该地址会发起 GET，请不要把 GET 返回 405 误判为接口故障。</note>
+      <note>真正需要成功的是前端发出的 POST 请求。</note>
+    </notes>
+  </loginApi>
+
+  <frontendExpectation>
+    <item>前端生产环境应请求 https://api.yoyuzh.xyz/api/auth/login。</item>
+    <item>前端登录不应跳转到 /api/auth/login 页面，也不应以 GET 方式访问该接口。</item>
+    <item>浏览器 Network 中必须看到 Request Method=POST。</item>
+  </frontendExpectation>
+
+  <serverRequirements>
+    <reverseProxy>
+      <domain>api.yoyuzh.xyz</domain>
+      <upstream>127.0.0.1:8080</upstream>
+      <mustPreserve>HTTP method</mustPreserve>
+      <mustPreserve>request body</mustPreserve>
+      <mustPreserve>Content-Type</mustPreserve>
+      <mustPreserve>Authorization</mustPreserve>
+      <mustPreserve>Origin</mustPreserve>
+      <mustPreserve>Host</mustPreserve>
+      <mustPreserve>X-Forwarded-For</mustPreserve>
+      <mustPreserve>X-Forwarded-Proto</mustPreserve>
+    </reverseProxy>
+
+    <cors>
+      <allowOrigin>https://yoyuzh.xyz</allowOrigin>
+      <allowMethod>GET</allowMethod>
+      <allowMethod>POST</allowMethod>
+      <allowMethod>PUT</allowMethod>
+      <allowMethod>DELETE</allowMethod>
+      <allowMethod>OPTIONS</allowMethod>
+      <allowHeader>Content-Type</allowHeader>
+      <allowHeader>Authorization</allowHeader>
+      <note>OPTIONS 预检请求不应返回 405。</note>
+    </cors>
+  </serverRequirements>
+
+  <expectedBehavior>
+    <item>POST https://api.yoyuzh.xyz/api/auth/login 应返回 JSON。</item>
+    <item>OPTIONS https://api.yoyuzh.xyz/api/auth/login 不应返回 405。</item>
+    <item>GET https://api.yoyuzh.xyz/api/auth/login 返回 405 属正常现象。</item>
+    <item>Nginx 不应把 POST 改成 GET。</item>
+    <item>Nginx 不应丢失 JSON 请求体。</item>
+    <item>Nginx 不应把 /api/auth/login 重写到其他路径。</item>
+  </expectedBehavior>
+
+  <verificationCommands>
+    <command><![CDATA[curl -i https://api.yoyuzh.xyz/api/auth/login]]></command>
+    <command><![CDATA[curl -i -X POST 'https://api.yoyuzh.xyz/api/auth/login' -H 'Content-Type: application/json' -H 'Accept: application/json' --data '{"username":"test","password":"test"}']]></command>
+    <command><![CDATA[curl -i -X OPTIONS 'https://api.yoyuzh.xyz/api/auth/login' -H 'Origin: https://yoyuzh.xyz' -H 'Access-Control-Request-Method: POST' -H 'Access-Control-Request-Headers: content-type,authorization']]></command>
+  </verificationCommands>
+
+  <resultInterpretation>
+    <case>
+      <status>GET returns 405</status>
+      <meaning>正常，不代表接口异常。</meaning>
+    </case>
+    <case>
+      <status>POST returns JSON business response</status>
+      <meaning>服务器链路正常。</meaning>
+    </case>
+    <case>
+      <status>POST returns 404/405/502 or HTML</status>
+      <meaning>服务器或反向代理配置异常，需要检查转发、方法、路径或上游服务。</meaning>
+    </case>
+    <case>
+      <status>OPTIONS returns 405</status>
+      <meaning>CORS 预检处理异常，需要修复服务器配置。</meaning>
+    </case>
+  </resultInterpretation>
+
+  <acceptanceCriteria>
+    <item>POST /api/auth/login 返回 JSON。</item>
+    <item>OPTIONS /api/auth/login 不返回 405。</item>
+    <item>响应中允许 Origin=https://yoyuzh.xyz。</item>
+    <item>前端浏览器 Network 中登录请求为 POST 到 https://api.yoyuzh.xyz/api/auth/login。</item>
+  </acceptanceCriteria>
+ </apiVerification>
