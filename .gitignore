@@ -9,3 +9,6 @@ vue/dist/
 .env.oss.local
 账号密码.txt
 .history/
+.vscode/
+.gemini/
+.codex/
