@@ -15,13 +15,55 @@ const API_BASE_URL = (import.meta.env?.VITE_API_BASE_URL || '/api').replace(/\/$
 export class ApiError extends Error {
   code?: number;
   status: number;
+  isNetworkError: boolean;
 
   constructor(message: string, status = 500, code?: number) {
     super(message);
     this.name = 'ApiError';
     this.status = status;
     this.code = code;
+    this.isNetworkError = status === 0;
   }
+}
+
+function isNetworkFailure(error: unknown) {
+  return error instanceof TypeError || error instanceof DOMException;
+}
+
+function sleep(ms: number) {
+  return new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
+}
+
+function getRetryDelayMs(attempt: number) {
+  const schedule = [500, 1200, 2200];
+  return schedule[Math.min(attempt, schedule.length - 1)];
+}
+
+function getMaxRetryAttempts(path: string, init: ApiRequestInit = {}) {
+  const method = (init.method || 'GET').toUpperCase();
+
+  if (method === 'POST' && path === '/auth/login') {
+    return 1;
+  }
+
+  if (method === 'GET' || method === 'HEAD' || method === 'OPTIONS') {
+    return 2;
+  }
+
+  return -1;
+}
+
+function getRetryDelayForRequest(path: string, init: ApiRequestInit = {}, attempt: number) {
+  const method = (init.method || 'GET').toUpperCase();
+
+  if (method === 'POST' && path === '/auth/login') {
+    const loginSchedule = [350, 800];
+    return loginSchedule[Math.min(attempt, loginSchedule.length - 1)];
+  }
+
+  return getRetryDelayMs(attempt);
 }
 
 function resolveUrl(path: string) {
@@ -61,6 +103,25 @@ async function parseApiError(response: Response) {
   return new ApiError(payload.msg || `请求失败 (${response.status})`, response.status, payload.code);
 }
 
+export function toNetworkApiError(error: unknown) {
+  const fallbackMessage = '网络连接异常，请稍后重试';
+  const message = error instanceof Error && error.message ? error.message : fallbackMessage;
+  return new ApiError(message === 'Failed to fetch' ? fallbackMessage : message, 0);
+}
+
+export function shouldRetryRequest(
+  path: string,
+  init: ApiRequestInit = {},
+  error: unknown,
+  attempt: number,
+) {
+  if (!isNetworkFailure(error)) {
+    return false;
+  }
+
+  return attempt <= getMaxRetryAttempts(path, init);
+}
+
 async function performRequest(path: string, init: ApiRequestInit = {}) {
   const session = readStoredSession();
   const headers = new Headers(init.headers);
@@ -76,11 +137,30 @@ async function performRequest(path: string, init: ApiRequestInit = {}) {
     headers.set('Accept', 'application/json');
   }
 
-  const response = await fetch(resolveUrl(path), {
-    ...init,
-    headers,
-    body: requestBody,
-  });
+  let response: Response;
+  let lastError: unknown;
+
+  for (let attempt = 0; attempt <= 3; attempt += 1) {
+    try {
+      response = await fetch(resolveUrl(path), {
+        ...init,
+        headers,
+        body: requestBody,
+      });
+      break;
+    } catch (error) {
+      lastError = error;
+      if (!shouldRetryRequest(path, init, error, attempt)) {
+        throw toNetworkApiError(error);
+      }
+
+      await sleep(getRetryDelayForRequest(path, init, attempt));
+    }
+  }
+
+  if (!response!) {
+    throw toNetworkApiError(lastError);
+  }
 
   if (response.status === 401 || response.status === 403) {
     clearStoredSession();

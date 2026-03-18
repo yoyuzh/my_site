@@ -1,6 +1,7 @@
 import type { AuthSession } from './types';
 
 const SESSION_STORAGE_KEY = 'portal-session';
+const POST_LOGIN_PENDING_KEY = 'portal-post-login-pending';
 export const SESSION_EVENT_NAME = 'portal-session-change';
 
 function notifySessionChanged() {
@@ -43,4 +44,28 @@ export function clearStoredSession() {
 
   localStorage.removeItem(SESSION_STORAGE_KEY);
   notifySessionChanged();
+}
+
+export function markPostLoginPending() {
+  if (typeof sessionStorage === 'undefined') {
+    return;
+  }
+
+  sessionStorage.setItem(POST_LOGIN_PENDING_KEY, String(Date.now()));
+}
+
+export function hasPostLoginPending() {
+  if (typeof sessionStorage === 'undefined') {
+    return false;
+  }
+
+  return sessionStorage.getItem(POST_LOGIN_PENDING_KEY) != null;
+}
+
+export function clearPostLoginPending() {
+  if (typeof sessionStorage === 'undefined') {
+    return;
+  }
+
+  sessionStorage.removeItem(POST_LOGIN_PENDING_KEY);
 }

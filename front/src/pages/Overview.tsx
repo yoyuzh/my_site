@@ -20,8 +20,9 @@ import { apiRequest } from '@/src/lib/api';
 import { readCachedValue, writeCachedValue } from '@/src/lib/cache';
 import { getOverviewCacheKey, getSchoolResultsCacheKey, readStoredSchoolQuery, writeStoredSchoolQuery } from '@/src/lib/page-cache';
 import { cacheLatestSchoolData, fetchLatestSchoolData } from '@/src/lib/school';
-import { readStoredSession } from '@/src/lib/session';
+import { clearPostLoginPending, hasPostLoginPending, readStoredSession } from '@/src/lib/session';
 import type { CourseResponse, FileMetadata, GradeResponse, PageResponse, UserProfile } from '@/src/lib/types';
+import { getOverviewLoadErrorMessage } from './overview-state';
 
 function formatFileSize(size: number) {
   if (size <= 0) {
@@ -71,6 +72,8 @@ export default function Overview() {
   const [rootFiles, setRootFiles] = useState<FileMetadata[]>(cachedOverview?.rootFiles ?? []);
   const [schedule, setSchedule] = useState<CourseResponse[]>(cachedOverview?.schedule ?? cachedSchoolResults?.schedule ?? []);
   const [grades, setGrades] = useState<GradeResponse[]>(cachedOverview?.grades ?? cachedSchoolResults?.grades ?? []);
+  const [loadingError, setLoadingError] = useState('');
+  const [retryToken, setRetryToken] = useState(0);
 
   const currentHour = new Date().getHours();
   let greeting = '晚上好';
@@ -93,24 +96,38 @@ export default function Overview() {
     let cancelled = false;
 
     async function loadOverview() {
+      const pendingAfterLogin = hasPostLoginPending();
+      setLoadingError('');
+
       try {
-        const [user, filesRecent, filesRoot] = await Promise.all([
+        const [userResult, recentResult, rootResult] = await Promise.allSettled([
           apiRequest<UserProfile>('/user/profile'),
           apiRequest<FileMetadata[]>('/files/recent'),
           apiRequest<PageResponse<FileMetadata>>('/files/list?path=%2F&page=0&size=100'),
         ]);
 
+        const primaryFailures = [userResult, recentResult, rootResult].filter(
+          (result) => result.status === 'rejected'
+        );
+
         if (cancelled) {
           return;
         }
 
-        setProfile(user);
-        setRecentFiles(filesRecent);
-        setRootFiles(filesRoot.items);
+        if (userResult.status === 'fulfilled') {
+          setProfile(userResult.value);
+        }
+        if (recentResult.status === 'fulfilled') {
+          setRecentFiles(recentResult.value);
+        }
+        if (rootResult.status === 'fulfilled') {
+          setRootFiles(rootResult.value.items);
+        }
 
         let scheduleData: CourseResponse[] = [];
         let gradesData: GradeResponse[] = [];
         const schoolQuery = readStoredSchoolQuery();
+        let schoolFailed = false;
 
         if (schoolQuery?.studentId && schoolQuery?.semester) {
           const queryString = new URLSearchParams({
@@ -118,20 +135,35 @@ export default function Overview() {
             semester: schoolQuery.semester,
           }).toString();
 
-          [scheduleData, gradesData] = await Promise.all([
+          const [scheduleResult, gradesResult] = await Promise.allSettled([
             apiRequest<CourseResponse[]>(`/cqu/schedule?${queryString}`),
             apiRequest<GradeResponse[]>(`/cqu/grades?${queryString}`),
           ]);
+
+          if (scheduleResult.status === 'fulfilled') {
+            scheduleData = scheduleResult.value;
+          } else {
+            schoolFailed = true;
+          }
+          if (gradesResult.status === 'fulfilled') {
+            gradesData = gradesResult.value;
+          } else {
+            schoolFailed = true;
+          }
         } else {
-          const latest = await fetchLatestSchoolData();
-          if (latest) {
-            cacheLatestSchoolData(latest);
-            writeStoredSchoolQuery({
-              studentId: latest.studentId,
-              semester: latest.semester,
-            });
-            scheduleData = latest.schedule;
-            gradesData = latest.grades;
+          try {
+            const latest = await fetchLatestSchoolData();
+            if (latest) {
+              cacheLatestSchoolData(latest);
+              writeStoredSchoolQuery({
+                studentId: latest.studentId,
+                semester: latest.semester,
+              });
+              scheduleData = latest.schedule;
+              gradesData = latest.grades;
+            }
+          } catch {
+            schoolFailed = true;
           }
         }
 
@@ -139,12 +171,27 @@ export default function Overview() {
           setSchedule(scheduleData);
           setGrades(gradesData);
           writeCachedValue(getOverviewCacheKey(), {
-            profile: user,
-            recentFiles: filesRecent,
-            rootFiles: filesRoot.items,
+            profile:
+              userResult.status === 'fulfilled'
+                ? userResult.value
+                : profile,
+            recentFiles:
+              recentResult.status === 'fulfilled'
+                ? recentResult.value
+                : recentFiles,
+            rootFiles:
+              rootResult.status === 'fulfilled'
+                ? rootResult.value.items
+                : rootFiles,
             schedule: scheduleData,
             grades: gradesData,
           });
+
+          if (primaryFailures.length > 0 || schoolFailed) {
+            setLoadingError(getOverviewLoadErrorMessage(pendingAfterLogin));
+          } else {
+            clearPostLoginPending();
+          }
         }
       } catch {
         const schoolQuery = readStoredSchoolQuery();
@@ -159,6 +206,10 @@ export default function Overview() {
             setGrades(cachedSchoolResults.grades);
           }
         }
+
+        if (!cancelled) {
+          setLoadingError(getOverviewLoadErrorMessage(pendingAfterLogin));
+        }
       }
     }
 
@@ -166,7 +217,7 @@ export default function Overview() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [retryToken]);
 
   const latestSemester = grades[0]?.semester ?? '--';
   const previewCourses = schedule.slice(0, 3);
@@ -190,6 +241,19 @@ export default function Overview() {
           </p>
         </div>
       </motion.div>
+
+      {loadingError && (
+        <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }}>
+          <Card className="border-amber-400/20 bg-amber-500/10">
+            <CardContent className="flex flex-col gap-3 p-4 text-sm text-amber-100 md:flex-row md:items-center md:justify-between">
+              <span>{loadingError}</span>
+              <Button variant="secondary" size="sm" onClick={() => setRetryToken((value) => value + 1)}>
+                重新加载总览
+              </Button>
+            </CardContent>
+          </Card>
+        </motion.div>
+      )}
 
       {/* Metrics Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
