@@ -12,12 +12,24 @@ frontend-dev.err.log
 *.log
 
 .env.oss.local
+.env.local
+.env.*.local
 front/.env.production
 
 账号密码.txt
 .history/
 .vscode/
+.idea/
 .gemini/
 .codex/
+开发测试账号.md
 
 .DS_Store
+*.swp
+*.swo
+coverage/
+*.tsbuildinfo
+
+草图/
+模板/
+需求文档.md
