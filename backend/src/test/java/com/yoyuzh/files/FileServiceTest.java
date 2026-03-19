@@ -42,7 +42,7 @@ class FileServiceTest {
     @BeforeEach
     void setUp() {
         FileStorageProperties properties = new FileStorageProperties();
-        properties.setMaxFileSize(50 * 1024 * 1024);
+        properties.setMaxFileSize(500L * 1024 * 1024);
         fileService = new FileService(storedFileRepository, fileContentStorage, properties);
     }
 
@@ -78,6 +78,21 @@ class FileServiceTest {
         assertThat(response.direct()).isTrue();
         assertThat(response.uploadUrl()).isEqualTo("https://upload.example.com");
         verify(fileContentStorage).prepareUpload(7L, "/docs", "notes.txt", "text/plain", 12L);
+    }
+
+    @Test
+    void shouldAllowInitiatingUploadAtFiveHundredMegabytes() {
+        User user = createUser(7L);
+        long uploadSize = 500L * 1024 * 1024;
+        when(storedFileRepository.existsByUserIdAndPathAndFilename(7L, "/docs", "movie.zip")).thenReturn(false);
+        when(fileContentStorage.prepareUpload(7L, "/docs", "movie.zip", "application/zip", uploadSize))
+                .thenReturn(new PreparedUpload(true, "https://upload.example.com", "PUT", Map.of(), "movie.zip"));
+
+        InitiateUploadResponse response = fileService.initiateUpload(user,
+                new InitiateUploadRequest("/docs", "movie.zip", "application/zip", uploadSize));
+
+        assertThat(response.direct()).isTrue();
+        verify(fileContentStorage).prepareUpload(7L, "/docs", "movie.zip", "application/zip", uploadSize);
     }
 
     @Test

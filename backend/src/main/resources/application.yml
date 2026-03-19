@@ -18,8 +18,8 @@ spring:
         format_sql: true
   servlet:
     multipart:
-      max-file-size: 50MB
-      max-request-size: 50MB
+      max-file-size: 500MB
+      max-request-size: 500MB
 
 app:
   jwt:
@@ -27,7 +27,7 @@ app:
     expiration-seconds: 86400
   storage:
     root-dir: ./storage
-    max-file-size: 52428800
+    max-file-size: 524288000
   cqu:
     base-url: https://example-cqu-api.local
     require-login: true

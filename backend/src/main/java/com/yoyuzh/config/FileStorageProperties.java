@@ -8,7 +8,7 @@ public class FileStorageProperties {
     private String provider = "local";
     private final Local local = new Local();
     private final Oss oss = new Oss();
-    private long maxFileSize = 50 * 1024 * 1024L;
+    private long maxFileSize = 500L * 1024 * 1024L;
 
     public String getProvider() {
         return provider;
