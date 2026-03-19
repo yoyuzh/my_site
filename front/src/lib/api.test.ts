@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { afterEach, beforeEach, test } from 'node:test';
 
-import { apiRequest, shouldRetryRequest, toNetworkApiError } from './api';
+import { apiBinaryUploadRequest, apiRequest, apiUploadRequest, shouldRetryRequest, toNetworkApiError } from './api';
 import { clearStoredSession, saveStoredSession } from './session';
 
 class MemoryStorage implements Storage {
@@ -34,12 +34,88 @@ class MemoryStorage implements Storage {
 
 const originalFetch = globalThis.fetch;
 const originalStorage = globalThis.localStorage;
+const originalXMLHttpRequest = globalThis.XMLHttpRequest;
+
+class FakeXMLHttpRequest {
+  static latest: FakeXMLHttpRequest | null = null;
+
+  method = '';
+  url = '';
+  requestBody: Document | XMLHttpRequestBodyInit | null = null;
+  responseText = '';
+  status = 200;
+  headers = new Map<string, string>();
+  responseHeaders = new Map<string, string>();
+  onload: null | (() => void) = null;
+  onerror: null | (() => void) = null;
+
+  upload = {
+    addEventListener: (type: string, listener: EventListenerOrEventListenerObject) => {
+      if (type !== 'progress') {
+        return;
+      }
+
+      this.progressListeners.push(listener);
+    },
+  };
+
+  private progressListeners: EventListenerOrEventListenerObject[] = [];
+
+  constructor() {
+    FakeXMLHttpRequest.latest = this;
+  }
+
+  open(method: string, url: string) {
+    this.method = method;
+    this.url = url;
+  }
+
+  setRequestHeader(name: string, value: string) {
+    this.headers.set(name.toLowerCase(), value);
+  }
+
+  getResponseHeader(name: string) {
+    return this.responseHeaders.get(name) ?? null;
+  }
+
+  send(body: Document | XMLHttpRequestBodyInit | null) {
+    this.requestBody = body;
+  }
+
+  triggerProgress(loaded: number, total: number) {
+    const event = {
+      lengthComputable: true,
+      loaded,
+      total,
+    } as ProgressEvent<EventTarget>;
+
+    for (const listener of this.progressListeners) {
+      if (typeof listener === 'function') {
+        listener(event);
+      } else {
+        listener.handleEvent(event);
+      }
+    }
+  }
+
+  respond(body: unknown, status = 200, contentType = 'application/json') {
+    this.status = status;
+    this.responseText = typeof body === 'string' ? body : JSON.stringify(body);
+    this.responseHeaders.set('content-type', contentType);
+    this.onload?.();
+  }
+}
 
 beforeEach(() => {
   Object.defineProperty(globalThis, 'localStorage', {
     configurable: true,
     value: new MemoryStorage(),
   });
+  Object.defineProperty(globalThis, 'XMLHttpRequest', {
+    configurable: true,
+    value: FakeXMLHttpRequest,
+  });
+  FakeXMLHttpRequest.latest = null;
   clearStoredSession();
 });
 
@@ -48,6 +124,10 @@ afterEach(() => {
   Object.defineProperty(globalThis, 'localStorage', {
     configurable: true,
     value: originalStorage,
+  });
+  Object.defineProperty(globalThis, 'XMLHttpRequest', {
+    configurable: true,
+    value: originalXMLHttpRequest,
   });
 });
 
@@ -133,9 +213,99 @@ test('network get failures are retried up to two times after the first attempt',
   assert.equal(shouldRetryRequest('/files/list', {method: 'GET'}, error, 3), false);
 });
 
+test('network rename failures are retried once for idempotent file rename requests', () => {
+  const error = new TypeError('Failed to fetch');
+
+  assert.equal(shouldRetryRequest('/files/32/rename', {method: 'PATCH'}, error, 0), true);
+  assert.equal(shouldRetryRequest('/files/32/rename', {method: 'PATCH'}, error, 1), false);
+});
+
 test('network fetch failures are converted to readable api errors', () => {
   const apiError = toNetworkApiError(new TypeError('Failed to fetch'));
 
   assert.equal(apiError.status, 0);
   assert.match(apiError.message, /网络连接异常|Failed to fetch/);
+});
+
+test('apiUploadRequest attaches auth header and forwards upload progress', async () => {
+  saveStoredSession({
+    token: 'token-456',
+    user: {
+      id: 2,
+      username: 'uploader',
+      email: 'uploader@example.com',
+      createdAt: '2026-03-18T10:00:00',
+    },
+  });
+
+  const progressCalls: Array<{loaded: number; total: number}> = [];
+  const formData = new FormData();
+  formData.append('file', new Blob(['hello']), 'hello.txt');
+
+  const uploadPromise = apiUploadRequest<{id: number}>('/files/upload?path=%2F', {
+    body: formData,
+    onProgress: (progress) => {
+      progressCalls.push(progress);
+    },
+  });
+
+  const request = FakeXMLHttpRequest.latest;
+  assert.ok(request);
+  assert.equal(request.method, 'POST');
+  assert.equal(request.url, '/api/files/upload?path=%2F');
+  assert.equal(request.headers.get('authorization'), 'Bearer token-456');
+  assert.equal(request.headers.get('accept'), 'application/json');
+  assert.equal(request.requestBody, formData);
+
+  request.triggerProgress(128, 512);
+  request.triggerProgress(512, 512);
+  request.respond({
+    code: 0,
+    msg: 'success',
+    data: {
+      id: 7,
+    },
+  });
+
+  const payload = await uploadPromise;
+  assert.deepEqual(payload, {id: 7});
+  assert.deepEqual(progressCalls, [
+    {loaded: 128, total: 512},
+    {loaded: 512, total: 512},
+  ]);
+});
+
+test('apiBinaryUploadRequest sends raw file body to signed upload url', async () => {
+  const progressCalls: Array<{loaded: number; total: number}> = [];
+  const fileBody = new Blob(['hello-oss']);
+
+  const uploadPromise = apiBinaryUploadRequest('https://upload.example.com/object', {
+    method: 'PUT',
+    headers: {
+      'Content-Type': 'text/plain',
+      'x-oss-meta-test': '1',
+    },
+    body: fileBody,
+    onProgress: (progress) => {
+      progressCalls.push(progress);
+    },
+  });
+
+  const request = FakeXMLHttpRequest.latest;
+  assert.ok(request);
+  assert.equal(request.method, 'PUT');
+  assert.equal(request.url, 'https://upload.example.com/object');
+  assert.equal(request.headers.get('content-type'), 'text/plain');
+  assert.equal(request.headers.get('x-oss-meta-test'), '1');
+  assert.equal(request.requestBody, fileBody);
+
+  request.triggerProgress(64, 128);
+  request.triggerProgress(128, 128);
+  request.respond('', 200, 'text/plain');
+
+  await uploadPromise;
+  assert.deepEqual(progressCalls, [
+    {loaded: 64, total: 128},
+    {loaded: 128, total: 128},
+  ]);
 });

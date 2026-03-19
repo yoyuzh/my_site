@@ -86,9 +86,12 @@ CREATE INDEX IF NOT EXISTS idx_grade_user_semester ON portal_grade (user_id, sem
 - `POST /api/auth/login`
 - `GET /api/user/profile`
 - `POST /api/files/upload`
+- `POST /api/files/upload/initiate`
+- `POST /api/files/upload/complete`
 - `POST /api/files/mkdir`
 - `GET /api/files/list`
 - `GET /api/files/download/{fileId}`
+- `GET /api/files/download/{fileId}/url`
 - `DELETE /api/files/{fileId}`
 - `GET /api/cqu/schedule`
 - `GET /api/cqu/grades`
@@ -106,3 +109,23 @@ app:
 ```
 
 当前 Java 后端保留了 HTTP 适配点；本地 `dev` 环境使用 mock 数据先把前后端链路跑通。
+
+## OSS 直传说明
+
+生产环境如果启用：
+
+```env
+YOYUZH_STORAGE_PROVIDER=oss
+YOYUZH_OSS_ENDPOINT=https://oss-ap-northeast-1.aliyuncs.com
+YOYUZH_OSS_BUCKET=your-bucket
+YOYUZH_OSS_ACCESS_KEY_ID=...
+YOYUZH_OSS_ACCESS_KEY_SECRET=...
+```
+
+前端会先调用后端拿签名上传地址，再由浏览器直接把文件内容传到 OSS。为保证浏览器可以直传，请在 OSS Bucket 上放行站点域名对应的 CORS 规则，至少允许：
+
+- Origin: `https://yoyuzh.xyz`
+- Methods: `PUT`, `GET`, `HEAD`
+- Headers: `Content-Type`, `x-oss-*`
+
+如果生产环境里曾经存在“数据库元数据已经在 OSS 模式下运行，但本地磁盘里没有对应文件”的历史数据，需要额外做一次对象迁移或元数据修复；否则旧记录在重命名/删除时仍可能失败。

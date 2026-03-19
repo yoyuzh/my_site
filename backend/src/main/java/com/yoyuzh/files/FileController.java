@@ -14,8 +14,10 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.ModelAttribute;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestPart;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
@@ -36,6 +38,26 @@ public class FileController {
                                                     @RequestParam(defaultValue = "/") String path,
                                                     @RequestPart("file") MultipartFile file) {
         return ApiResponse.success(fileService.upload(userDetailsService.loadDomainUser(userDetails.getUsername()), path, file));
+    }
+
+    @Operation(summary = "初始化上传")
+    @PostMapping("/upload/initiate")
+    public ApiResponse<InitiateUploadResponse> initiateUpload(@AuthenticationPrincipal UserDetails userDetails,
+                                                              @Valid @RequestBody InitiateUploadRequest request) {
+        return ApiResponse.success(fileService.initiateUpload(
+                userDetailsService.loadDomainUser(userDetails.getUsername()),
+                request
+        ));
+    }
+
+    @Operation(summary = "完成上传")
+    @PostMapping("/upload/complete")
+    public ApiResponse<FileMetadataResponse> completeUpload(@AuthenticationPrincipal UserDetails userDetails,
+                                                            @Valid @RequestBody CompleteUploadRequest request) {
+        return ApiResponse.success(fileService.completeUpload(
+                userDetailsService.loadDomainUser(userDetails.getUsername()),
+                request
+        ));
     }
 
     @Operation(summary = "创建目录")
@@ -62,9 +84,28 @@ public class FileController {
 
     @Operation(summary = "下载文件")
     @GetMapping("/download/{fileId}")
-    public ResponseEntity<byte[]> download(@AuthenticationPrincipal UserDetails userDetails,
-                                           @PathVariable Long fileId) {
+    public ResponseEntity<?> download(@AuthenticationPrincipal UserDetails userDetails,
+                                      @PathVariable Long fileId) {
         return fileService.download(userDetailsService.loadDomainUser(userDetails.getUsername()), fileId);
+    }
+
+    @Operation(summary = "获取下载链接")
+    @GetMapping("/download/{fileId}/url")
+    public ApiResponse<DownloadUrlResponse> downloadUrl(@AuthenticationPrincipal UserDetails userDetails,
+                                                        @PathVariable Long fileId) {
+        return ApiResponse.success(fileService.getDownloadUrl(
+                userDetailsService.loadDomainUser(userDetails.getUsername()),
+                fileId
+        ));
+    }
+
+    @Operation(summary = "重命名文件")
+    @PatchMapping("/{fileId}/rename")
+    public ApiResponse<FileMetadataResponse> rename(@AuthenticationPrincipal UserDetails userDetails,
+                                                    @PathVariable Long fileId,
+                                                    @Valid @RequestBody RenameFileRequest request) {
+        return ApiResponse.success(
+                fileService.rename(userDetailsService.loadDomainUser(userDetails.getUsername()), fileId, request.filename()));
     }
 
     @Operation(summary = "删除文件")

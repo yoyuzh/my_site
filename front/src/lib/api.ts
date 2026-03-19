@@ -10,6 +10,20 @@ interface ApiRequestInit extends Omit<RequestInit, 'body'> {
   body?: unknown;
 }
 
+interface ApiUploadRequestInit {
+  body: FormData;
+  headers?: HeadersInit;
+  method?: 'POST' | 'PUT' | 'PATCH';
+  onProgress?: (progress: {loaded: number; total: number}) => void;
+}
+
+interface ApiBinaryUploadRequestInit {
+  body: Blob;
+  headers?: HeadersInit;
+  method?: 'PUT' | 'POST';
+  onProgress?: (progress: {loaded: number; total: number}) => void;
+}
+
 const API_BASE_URL = (import.meta.env?.VITE_API_BASE_URL || '/api').replace(/\/$/, '');
 
 export class ApiError extends Error {
@@ -46,6 +60,10 @@ function getMaxRetryAttempts(path: string, init: ApiRequestInit = {}) {
 
   if (method === 'POST' && path === '/auth/login') {
     return 1;
+  }
+
+  if (method === 'PATCH' && /^\/files\/\d+\/rename$/.test(path)) {
+    return 0;
   }
 
   if (method === 'GET' || method === 'HEAD' || method === 'OPTIONS') {
@@ -189,6 +207,116 @@ export async function apiRequest<T>(path: string, init?: ApiRequestInit) {
   }
 
   return payload.data;
+}
+
+export function apiUploadRequest<T>(path: string, init: ApiUploadRequestInit) {
+  const session = readStoredSession();
+  const headers = new Headers(init.headers);
+
+  if (session?.token) {
+    headers.set('Authorization', `Bearer ${session.token}`);
+  }
+  if (!headers.has('Accept')) {
+    headers.set('Accept', 'application/json');
+  }
+
+  return new Promise<T>((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open(init.method || 'POST', resolveUrl(path));
+
+    headers.forEach((value, key) => {
+      xhr.setRequestHeader(key, value);
+    });
+
+    if (init.onProgress) {
+      xhr.upload.addEventListener('progress', (event) => {
+        if (!event.lengthComputable) {
+          return;
+        }
+
+        init.onProgress?.({
+          loaded: event.loaded,
+          total: event.total,
+        });
+      });
+    }
+
+    xhr.onerror = () => {
+      reject(toNetworkApiError(new TypeError('Failed to fetch')));
+    };
+
+    xhr.onload = () => {
+      const contentType = xhr.getResponseHeader('content-type') || '';
+
+      if (xhr.status === 401 || xhr.status === 403) {
+        clearStoredSession();
+      }
+
+      if (!contentType.includes('application/json')) {
+        if (xhr.status >= 200 && xhr.status < 300) {
+          resolve(undefined as T);
+          return;
+        }
+
+        reject(new ApiError(`请求失败 (${xhr.status})`, xhr.status));
+        return;
+      }
+
+      const payload = JSON.parse(xhr.responseText) as ApiEnvelope<T>;
+      if (xhr.status < 200 || xhr.status >= 300 || payload.code !== 0) {
+        if (xhr.status === 401 || payload.code === 401) {
+          clearStoredSession();
+        }
+        reject(new ApiError(payload.msg || `请求失败 (${xhr.status})`, xhr.status, payload.code));
+        return;
+      }
+
+      resolve(payload.data);
+    };
+
+    xhr.send(init.body);
+  });
+}
+
+export function apiBinaryUploadRequest(path: string, init: ApiBinaryUploadRequestInit) {
+  const headers = new Headers(init.headers);
+
+  return new Promise<void>((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open(init.method || 'PUT', resolveUrl(path));
+
+    headers.forEach((value, key) => {
+      xhr.setRequestHeader(key, value);
+    });
+
+    if (init.onProgress) {
+      xhr.upload.addEventListener('progress', (event) => {
+        if (!event.lengthComputable) {
+          return;
+        }
+
+        init.onProgress?.({
+          loaded: event.loaded,
+          total: event.total,
+        });
+      });
+    }
+
+    xhr.onerror = () => {
+      reject(toNetworkApiError(new TypeError('Failed to fetch')));
+    };
+
+    xhr.onload = () => {
+      if (xhr.status >= 200 && xhr.status < 300) {
+        resolve();
+        return;
+      }
+
+      reject(new ApiError(`请求失败 (${xhr.status})`, xhr.status));
+    };
+
+    xhr.send(init.body);
+  });
 }
 
 export async function apiDownload(path: string) {

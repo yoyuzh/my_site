@@ -5,6 +5,8 @@ import com.yoyuzh.common.BusinessException;
 import com.yoyuzh.common.ErrorCode;
 import com.yoyuzh.common.PageResponse;
 import com.yoyuzh.config.FileStorageProperties;
+import com.yoyuzh.files.storage.FileContentStorage;
+import com.yoyuzh.files.storage.PreparedUpload;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.http.HttpHeaders;
@@ -15,12 +17,9 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 import org.springframework.web.multipart.MultipartFile;
 
-import java.io.IOException;
+import java.net.URI;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.StandardCopyOption;
 import java.util.List;
 
 @Service
@@ -28,52 +27,58 @@ public class FileService {
     private static final List<String> DEFAULT_DIRECTORIES = List.of("下载", "文档", "图片");
 
     private final StoredFileRepository storedFileRepository;
-    private final Path rootPath;
+    private final FileContentStorage fileContentStorage;
     private final long maxFileSize;
 
-    public FileService(StoredFileRepository storedFileRepository, FileStorageProperties properties) {
+    public FileService(StoredFileRepository storedFileRepository,
+                       FileContentStorage fileContentStorage,
+                       FileStorageProperties properties) {
         this.storedFileRepository = storedFileRepository;
-        this.rootPath = Path.of(properties.getRootDir()).toAbsolutePath().normalize();
+        this.fileContentStorage = fileContentStorage;
         this.maxFileSize = properties.getMaxFileSize();
-        try {
-            Files.createDirectories(rootPath);
-        } catch (IOException ex) {
-            throw new IllegalStateException("无法初始化存储目录", ex);
-        }
     }
 
     @Transactional
     public FileMetadataResponse upload(User user, String path, MultipartFile multipartFile) {
         String normalizedPath = normalizeDirectoryPath(path);
-        String filename = StringUtils.cleanPath(multipartFile.getOriginalFilename());
-        if (!StringUtils.hasText(filename)) {
-            throw new BusinessException(ErrorCode.UNKNOWN, "文件名不能为空");
-        }
-        if (multipartFile.getSize() > maxFileSize) {
-            throw new BusinessException(ErrorCode.UNKNOWN, "文件大小超出限制");
-        }
-        if (storedFileRepository.existsByUserIdAndPathAndFilename(user.getId(), normalizedPath, filename)) {
-            throw new BusinessException(ErrorCode.UNKNOWN, "同目录下文件已存在");
-        }
+        String filename = normalizeUploadFilename(multipartFile.getOriginalFilename());
+        validateUpload(user.getId(), normalizedPath, filename, multipartFile.getSize());
 
-        Path targetDir = resolveUserPath(user.getId(), normalizedPath);
-        Path targetFile = targetDir.resolve(filename).normalize();
-        try {
-            Files.createDirectories(targetDir);
-            Files.copy(multipartFile.getInputStream(), targetFile, StandardCopyOption.REPLACE_EXISTING);
-        } catch (IOException ex) {
-            throw new BusinessException(ErrorCode.UNKNOWN, "文件上传失败");
-        }
+        fileContentStorage.upload(user.getId(), normalizedPath, filename, multipartFile);
+        return saveFileMetadata(user, normalizedPath, filename, filename, multipartFile.getContentType(), multipartFile.getSize());
+    }
 
-        StoredFile storedFile = new StoredFile();
-        storedFile.setUser(user);
-        storedFile.setFilename(filename);
-        storedFile.setPath(normalizedPath);
-        storedFile.setStorageName(filename);
-        storedFile.setContentType(multipartFile.getContentType());
-        storedFile.setSize(multipartFile.getSize());
-        storedFile.setDirectory(false);
-        return toResponse(storedFileRepository.save(storedFile));
+    public InitiateUploadResponse initiateUpload(User user, InitiateUploadRequest request) {
+        String normalizedPath = normalizeDirectoryPath(request.path());
+        String filename = normalizeLeafName(request.filename());
+        validateUpload(user.getId(), normalizedPath, filename, request.size());
+
+        PreparedUpload preparedUpload = fileContentStorage.prepareUpload(
+                user.getId(),
+                normalizedPath,
+                filename,
+                request.contentType(),
+                request.size()
+        );
+
+        return new InitiateUploadResponse(
+                preparedUpload.direct(),
+                preparedUpload.uploadUrl(),
+                preparedUpload.method(),
+                preparedUpload.headers(),
+                preparedUpload.storageName()
+        );
+    }
+
+    @Transactional
+    public FileMetadataResponse completeUpload(User user, CompleteUploadRequest request) {
+        String normalizedPath = normalizeDirectoryPath(request.path());
+        String filename = normalizeLeafName(request.filename());
+        String storageName = normalizeLeafName(request.storageName());
+        validateUpload(user.getId(), normalizedPath, filename, request.size());
+
+        fileContentStorage.completeUpload(user.getId(), normalizedPath, storageName, request.contentType(), request.size());
+        return saveFileMetadata(user, normalizedPath, filename, storageName, request.contentType(), request.size());
     }
 
     @Transactional
@@ -87,11 +92,8 @@ public class FileService {
         if (storedFileRepository.existsByUserIdAndPathAndFilename(user.getId(), parentPath, directoryName)) {
             throw new BusinessException(ErrorCode.UNKNOWN, "目录已存在");
         }
-        try {
-            Files.createDirectories(resolveUserPath(user.getId(), normalizedPath));
-        } catch (IOException ex) {
-            throw new BusinessException(ErrorCode.UNKNOWN, "目录创建失败");
-        }
+
+        fileContentStorage.createDirectory(user.getId(), normalizedPath);
 
         StoredFile storedFile = new StoredFile();
         storedFile.setUser(user);
@@ -126,11 +128,8 @@ public class FileService {
                 continue;
             }
 
-            try {
-                Files.createDirectories(resolveUserPath(user.getId(), "/").resolve(directoryName));
-            } catch (IOException ex) {
-                throw new BusinessException(ErrorCode.UNKNOWN, "默认目录初始化失败");
-            }
+            String logicalPath = "/" + directoryName;
+            fileContentStorage.ensureDirectory(user.getId(), logicalPath);
 
             StoredFile storedFile = new StoredFile();
             storedFile.setUser(user);
@@ -146,53 +145,146 @@ public class FileService {
 
     @Transactional
     public void delete(User user, Long fileId) {
-        StoredFile storedFile = storedFileRepository.findById(fileId)
-                .orElseThrow(() -> new BusinessException(ErrorCode.FILE_NOT_FOUND, "文件不存在"));
-        if (!storedFile.getUser().getId().equals(user.getId())) {
-            throw new BusinessException(ErrorCode.PERMISSION_DENIED, "没有权限删除该文件");
-        }
-        try {
-            Path basePath = resolveUserPath(user.getId(), storedFile.getPath());
-            Path target = storedFile.isDirectory()
-                    ? basePath.resolve(storedFile.getFilename()).normalize()
-                    : basePath.resolve(storedFile.getStorageName()).normalize();
-            Files.deleteIfExists(target);
-        } catch (IOException ex) {
-            throw new BusinessException(ErrorCode.UNKNOWN, "删除文件失败");
+        StoredFile storedFile = getOwnedFile(user, fileId, "删除");
+        if (storedFile.isDirectory()) {
+            String logicalPath = buildLogicalPath(storedFile);
+            List<StoredFile> descendants = storedFileRepository.findByUserIdAndPathEqualsOrDescendant(user.getId(), logicalPath);
+            fileContentStorage.deleteDirectory(user.getId(), logicalPath, descendants);
+            if (!descendants.isEmpty()) {
+                storedFileRepository.deleteAll(descendants);
+            }
+        } else {
+            fileContentStorage.deleteFile(user.getId(), storedFile.getPath(), storedFile.getStorageName());
         }
         storedFileRepository.delete(storedFile);
     }
 
-    public ResponseEntity<byte[]> download(User user, Long fileId) {
-        StoredFile storedFile = storedFileRepository.findById(fileId)
-                .orElseThrow(() -> new BusinessException(ErrorCode.FILE_NOT_FOUND, "文件不存在"));
-        if (!storedFile.getUser().getId().equals(user.getId())) {
-            throw new BusinessException(ErrorCode.PERMISSION_DENIED, "没有权限下载该文件");
+    @Transactional
+    public FileMetadataResponse rename(User user, Long fileId, String nextFilename) {
+        StoredFile storedFile = getOwnedFile(user, fileId, "重命名");
+        String sanitizedFilename = normalizeLeafName(nextFilename);
+        if (sanitizedFilename.equals(storedFile.getFilename())) {
+            return toResponse(storedFile);
         }
+        if (storedFileRepository.existsByUserIdAndPathAndFilename(user.getId(), storedFile.getPath(), sanitizedFilename)) {
+            throw new BusinessException(ErrorCode.UNKNOWN, "同目录下文件已存在");
+        }
+
+        if (storedFile.isDirectory()) {
+            String oldLogicalPath = buildLogicalPath(storedFile);
+            String newLogicalPath = "/".equals(storedFile.getPath())
+                    ? "/" + sanitizedFilename
+                    : storedFile.getPath() + "/" + sanitizedFilename;
+
+            List<StoredFile> descendants = storedFileRepository.findByUserIdAndPathEqualsOrDescendant(user.getId(), oldLogicalPath);
+            fileContentStorage.renameDirectory(user.getId(), oldLogicalPath, newLogicalPath, descendants);
+            for (StoredFile descendant : descendants) {
+                if (descendant.getPath().equals(oldLogicalPath)) {
+                    descendant.setPath(newLogicalPath);
+                    continue;
+                }
+
+                descendant.setPath(newLogicalPath + descendant.getPath().substring(oldLogicalPath.length()));
+            }
+            if (!descendants.isEmpty()) {
+                storedFileRepository.saveAll(descendants);
+            }
+        } else {
+            fileContentStorage.renameFile(user.getId(), storedFile.getPath(), storedFile.getStorageName(), sanitizedFilename);
+        }
+
+        storedFile.setFilename(sanitizedFilename);
+        storedFile.setStorageName(sanitizedFilename);
+        return toResponse(storedFileRepository.save(storedFile));
+    }
+
+    public ResponseEntity<?> download(User user, Long fileId) {
+        StoredFile storedFile = getOwnedFile(user, fileId, "下载");
         if (storedFile.isDirectory()) {
             throw new BusinessException(ErrorCode.UNKNOWN, "目录不支持下载");
         }
-        try {
-            Path filePath = resolveUserPath(user.getId(), storedFile.getPath()).resolve(storedFile.getStorageName()).normalize();
-            byte[] body = Files.readAllBytes(filePath);
-            return ResponseEntity.ok()
-                    .header(HttpHeaders.CONTENT_DISPOSITION,
-                            "attachment; filename*=UTF-8''" + URLEncoder.encode(storedFile.getFilename(), StandardCharsets.UTF_8))
-                    .contentType(MediaType.parseMediaType(
-                            storedFile.getContentType() == null ? MediaType.APPLICATION_OCTET_STREAM_VALUE : storedFile.getContentType()))
-                    .body(body);
-        } catch (IOException ex) {
-            throw new BusinessException(ErrorCode.FILE_NOT_FOUND, "文件不存在");
+
+        if (fileContentStorage.supportsDirectDownload()) {
+            return ResponseEntity.status(302)
+                    .location(URI.create(fileContentStorage.createDownloadUrl(
+                            user.getId(),
+                            storedFile.getPath(),
+                            storedFile.getStorageName(),
+                            storedFile.getFilename())))
+                    .build();
+        }
+
+        return ResponseEntity.ok()
+                .header(HttpHeaders.CONTENT_DISPOSITION,
+                        "attachment; filename*=UTF-8''" + URLEncoder.encode(storedFile.getFilename(), StandardCharsets.UTF_8))
+                .contentType(MediaType.parseMediaType(
+                        storedFile.getContentType() == null ? MediaType.APPLICATION_OCTET_STREAM_VALUE : storedFile.getContentType()))
+                .body(fileContentStorage.readFile(user.getId(), storedFile.getPath(), storedFile.getStorageName()));
+    }
+
+    public DownloadUrlResponse getDownloadUrl(User user, Long fileId) {
+        StoredFile storedFile = getOwnedFile(user, fileId, "下载");
+        if (storedFile.isDirectory()) {
+            throw new BusinessException(ErrorCode.UNKNOWN, "目录不支持下载");
+        }
+
+        if (fileContentStorage.supportsDirectDownload()) {
+            return new DownloadUrlResponse(fileContentStorage.createDownloadUrl(
+                    user.getId(),
+                    storedFile.getPath(),
+                    storedFile.getStorageName(),
+                    storedFile.getFilename()
+            ));
+        }
+
+        return new DownloadUrlResponse("/api/files/download/" + storedFile.getId());
+    }
+
+    private FileMetadataResponse saveFileMetadata(User user,
+                                                  String normalizedPath,
+                                                  String filename,
+                                                  String storageName,
+                                                  String contentType,
+                                                  long size) {
+        StoredFile storedFile = new StoredFile();
+        storedFile.setUser(user);
+        storedFile.setFilename(filename);
+        storedFile.setPath(normalizedPath);
+        storedFile.setStorageName(storageName);
+        storedFile.setContentType(contentType);
+        storedFile.setSize(size);
+        storedFile.setDirectory(false);
+        return toResponse(storedFileRepository.save(storedFile));
+    }
+
+    private StoredFile getOwnedFile(User user, Long fileId, String action) {
+        StoredFile storedFile = storedFileRepository.findById(fileId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.FILE_NOT_FOUND, "文件不存在"));
+        if (!storedFile.getUser().getId().equals(user.getId())) {
+            throw new BusinessException(ErrorCode.PERMISSION_DENIED, "没有权限" + action + "该文件");
+        }
+        return storedFile;
+    }
+
+    private void validateUpload(Long userId, String normalizedPath, String filename, long size) {
+        if (size > maxFileSize) {
+            throw new BusinessException(ErrorCode.UNKNOWN, "文件大小超出限制");
+        }
+        if (storedFileRepository.existsByUserIdAndPathAndFilename(userId, normalizedPath, filename)) {
+            throw new BusinessException(ErrorCode.UNKNOWN, "同目录下文件已存在");
         }
     }
 
-    private FileMetadataResponse toResponse(StoredFile storedFile) {
-        String logicalPath = storedFile.getPath();
-        if (storedFile.isDirectory()) {
-            logicalPath = "/".equals(storedFile.getPath())
-                    ? "/" + storedFile.getFilename()
-                    : storedFile.getPath() + "/" + storedFile.getFilename();
+    private String normalizeUploadFilename(String originalFilename) {
+        String filename = StringUtils.cleanPath(originalFilename);
+        if (!StringUtils.hasText(filename)) {
+            throw new BusinessException(ErrorCode.UNKNOWN, "文件名不能为空");
         }
+        return normalizeLeafName(filename);
+    }
+
+    private FileMetadataResponse toResponse(StoredFile storedFile) {
+        String logicalPath = storedFile.isDirectory() ? buildLogicalPath(storedFile) : storedFile.getPath();
         return new FileMetadataResponse(
                 storedFile.getId(),
                 storedFile.getFilename(),
@@ -221,16 +313,6 @@ public class FileService {
         return normalized;
     }
 
-    private Path resolveUserPath(Long userId, String normalizedPath) {
-        Path userRoot = rootPath.resolve(userId.toString()).normalize();
-        Path relative = "/".equals(normalizedPath) ? Path.of("") : Path.of(normalizedPath.substring(1));
-        Path resolved = userRoot.resolve(relative).normalize();
-        if (!resolved.startsWith(userRoot)) {
-            throw new BusinessException(ErrorCode.UNKNOWN, "路径不合法");
-        }
-        return resolved;
-    }
-
     private String extractParentPath(String normalizedPath) {
         int lastSlash = normalizedPath.lastIndexOf('/');
         return lastSlash <= 0 ? "/" : normalizedPath.substring(0, lastSlash);
@@ -238,5 +320,22 @@ public class FileService {
 
     private String extractLeafName(String normalizedPath) {
         return normalizedPath.substring(normalizedPath.lastIndexOf('/') + 1);
+    }
+
+    private String buildLogicalPath(StoredFile storedFile) {
+        return "/".equals(storedFile.getPath())
+                ? "/" + storedFile.getFilename()
+                : storedFile.getPath() + "/" + storedFile.getFilename();
+    }
+
+    private String normalizeLeafName(String filename) {
+        String cleaned = StringUtils.cleanPath(filename == null ? "" : filename).trim();
+        if (!StringUtils.hasText(cleaned)) {
+            throw new BusinessException(ErrorCode.UNKNOWN, "文件名不能为空");
+        }
+        if (cleaned.contains("/") || cleaned.contains("\\") || cleaned.contains("..")) {
+            throw new BusinessException(ErrorCode.UNKNOWN, "文件名不合法");
+        }
+        return cleaned;
     }
 }

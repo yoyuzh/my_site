@@ -32,6 +32,18 @@ export interface FileMetadata {
   createdAt: string;
 }
 
+export interface InitiateUploadResponse {
+  direct: boolean;
+  uploadUrl: string;
+  method: 'POST' | 'PUT';
+  headers: Record<string, string>;
+  storageName: string;
+}
+
+export interface DownloadUrlResponse {
+  url: string;
+}
+
 export interface CourseResponse {
   courseName: string;
   teacher: string | null;

@@ -28,5 +28,13 @@ public interface StoredFileRepository extends JpaRepository<StoredFile, Long> {
                                                                           @Param("path") String path,
                                                                           Pageable pageable);
 
+    @Query("""
+            select f from StoredFile f
+            where f.user.id = :userId and (f.path = :path or f.path like concat(:path, '/%'))
+            order by f.createdAt asc
+            """)
+    List<StoredFile> findByUserIdAndPathEqualsOrDescendant(@Param("userId") Long userId,
+                                                           @Param("path") String path);
+
     List<StoredFile> findTop12ByUserIdAndDirectoryFalseOrderByCreatedAtDesc(Long userId);
 }
