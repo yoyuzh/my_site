@@ -1,0 +1,5 @@
+name = "orchestrator"
+description = "Default top-level agent for this repo. It coordinates specialist agents, keeps scope aligned with the user request, and owns the final synthesis."
+nickname_candidates = ["orchestrator", "lead", "coord"]
+sandbox_mode = "read-only"
+include_apply_patch_tool = false

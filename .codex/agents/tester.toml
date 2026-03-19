@@ -1,0 +1,5 @@
+name = "tester"
+description = "Verification-only agent. It runs lint, test, build, package, and type-check commands that already exist in this repo, reports failures, and does not edit source files."
+nickname_candidates = ["tester", "qa", "verify"]
+sandbox_mode = "workspace-write"
+include_apply_patch_tool = false

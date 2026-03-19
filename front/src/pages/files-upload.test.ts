@@ -4,9 +4,13 @@ import test from 'node:test';
 import {
   buildUploadProgressSnapshot,
   completeUploadTask,
+  createUploadTasks,
   createUploadTask,
+  prepareUploadTaskForCompletion,
   formatTransferSpeed,
+  prepareFolderUploadEntries,
   prepareUploadFile,
+  shouldUploadEntriesSequentially,
 } from './files-upload';
 
 test('createUploadTask uses current path as upload destination', () => {
@@ -94,4 +98,80 @@ test('prepareUploadFile keeps files without conflicts unchanged', () => {
 
   assert.equal(prepared.file.name, 'syllabus');
   assert.equal(prepared.noticeMessage, undefined);
+});
+
+test('prepareFolderUploadEntries keeps relative directories and renames conflicting root folders', () => {
+  const first = new File(['alpha'], 'a.txt', {type: 'text/plain'});
+  Object.defineProperty(first, 'webkitRelativePath', {
+    configurable: true,
+    value: '设计稿/a.txt',
+  });
+
+  const second = new File(['beta'], 'b.txt', {type: 'text/plain'});
+  Object.defineProperty(second, 'webkitRelativePath', {
+    configurable: true,
+    value: '设计稿/子目录/b.txt',
+  });
+
+  const entries = prepareFolderUploadEntries([first, second], ['文档'], ['设计稿']);
+
+  assert.equal(entries[0].pathParts.join('/'), '文档/设计稿 (1)');
+  assert.equal(entries[1].pathParts.join('/'), '文档/设计稿 (1)/子目录');
+  assert.equal(entries[0].noticeMessage, '检测到同名文件夹，已自动重命名为 设计稿 (1)');
+  assert.equal(entries[1].noticeMessage, '检测到同名文件夹，已自动重命名为 设计稿 (1)');
+  assert.equal(shouldUploadEntriesSequentially(entries), true);
+});
+
+test('shouldUploadEntriesSequentially keeps plain file uploads in parallel mode', () => {
+  const entries = [
+    {
+      file: new File(['alpha'], 'a.txt', {type: 'text/plain'}),
+      pathParts: ['文档'],
+      source: 'file' as const,
+    },
+    {
+      file: new File(['beta'], 'b.txt', {type: 'text/plain'}),
+      pathParts: ['文档'],
+      source: 'file' as const,
+    },
+  ];
+
+  assert.equal(shouldUploadEntriesSequentially(entries), false);
+});
+
+test('createUploadTasks creates a stable task list for the whole batch', () => {
+  const entries = [
+    {
+      file: new File(['alpha'], 'a.txt', {type: 'text/plain'}),
+      pathParts: ['文档'],
+      source: 'file' as const,
+      noticeMessage: 'alpha',
+    },
+    {
+      file: new File(['beta'], 'b.txt', {type: 'text/plain'}),
+      pathParts: ['文档', '资料'],
+      source: 'folder' as const,
+      noticeMessage: 'beta',
+    },
+  ];
+
+  const tasks = createUploadTasks(entries);
+
+  assert.equal(tasks.length, 2);
+  assert.equal(tasks[0].fileName, 'a.txt');
+  assert.equal(tasks[0].destination, '/文档');
+  assert.equal(tasks[0].noticeMessage, 'alpha');
+  assert.equal(tasks[1].fileName, 'b.txt');
+  assert.equal(tasks[1].destination, '/文档/资料');
+  assert.equal(tasks[1].noticeMessage, 'beta');
+});
+
+test('prepareUploadTaskForCompletion keeps a visible progress state before marking complete', () => {
+  const task = createUploadTask(new File(['alpha'], 'a.txt', {type: 'text/plain'}), ['文档'], 'task-3');
+
+  const nextTask = prepareUploadTaskForCompletion(task);
+
+  assert.equal(nextTask.status, 'uploading');
+  assert.equal(nextTask.progress, 99);
+  assert.equal(nextTask.speed, '即将完成...');
 });

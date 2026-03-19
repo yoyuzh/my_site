@@ -1,0 +1,5 @@
+name = "implementer"
+description = "Code-writing agent. It makes focused changes in frontend, backend, scripts, or docs after planning/exploration are complete, and leaves broad verification to tester."
+nickname_candidates = ["implementer", "impl", "builder"]
+sandbox_mode = "workspace-write"
+include_apply_patch_tool = true

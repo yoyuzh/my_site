@@ -1,3 +1,5 @@
+import { getNextAvailableName } from './files-state';
+
 export type UploadTaskStatus = 'uploading' | 'completed' | 'error';
 
 export interface UploadTask {
@@ -16,6 +18,13 @@ export interface UploadMeasurement {
   startedAt: number;
   lastLoaded: number;
   lastUpdatedAt: number;
+}
+
+export interface PendingUploadEntry {
+  file: File;
+  pathParts: string[];
+  source: 'file' | 'folder';
+  noticeMessage?: string;
 }
 
 function getUploadType(file: File) {
@@ -56,6 +65,18 @@ function splitFileName(fileName: string) {
   };
 }
 
+function getRelativePathSegments(file: File) {
+  const rawRelativePath = ('webkitRelativePath' in file && typeof file.webkitRelativePath === 'string' && file.webkitRelativePath)
+    ? file.webkitRelativePath
+    : file.name;
+
+  return rawRelativePath
+    .replaceAll('\\', '/')
+    .split('/')
+    .map((segment) => segment.trim())
+    .filter(Boolean);
+}
+
 export function getUploadDestination(pathParts: string[]) {
   return pathParts.length === 0 ? '/' : `/${pathParts.join('/')}`;
 }
@@ -86,6 +107,67 @@ export function prepareUploadFile(file: File, usedNames: Set<string>) {
   };
 }
 
+export function prepareFolderUploadEntries(
+  files: File[],
+  currentPathParts: string[],
+  existingRootNames: string[],
+): PendingUploadEntry[] {
+  const rootReservedNames = new Set(existingRootNames);
+  const renamedRootFolders = new Map<string, string>();
+  const usedNamesByDestination = new Map<string, Set<string>>();
+
+  return files.map((file) => {
+    const relativeSegments = getRelativePathSegments(file);
+    if (relativeSegments.length === 0) {
+      return {
+        file,
+        pathParts: [...currentPathParts],
+        source: 'folder',
+      };
+    }
+
+    let noticeMessage: string | undefined;
+    if (relativeSegments.length > 1) {
+      const originalRootFolder = relativeSegments[0];
+      let renamedRootFolder = renamedRootFolders.get(originalRootFolder);
+      if (!renamedRootFolder) {
+        renamedRootFolder = getNextAvailableName(originalRootFolder, rootReservedNames);
+        rootReservedNames.add(renamedRootFolder);
+        renamedRootFolders.set(originalRootFolder, renamedRootFolder);
+      }
+
+      if (renamedRootFolder !== originalRootFolder) {
+        relativeSegments[0] = renamedRootFolder;
+        noticeMessage = `检测到同名文件夹，已自动重命名为 ${renamedRootFolder}`;
+      }
+    }
+
+    const pathParts = [...currentPathParts, ...relativeSegments.slice(0, -1)];
+    const destinationKey = getUploadDestination(pathParts);
+    const usedNames = usedNamesByDestination.get(destinationKey) ?? new Set<string>();
+    const preparedUpload = prepareUploadFile(
+      new File([file], relativeSegments.at(-1) ?? file.name, {
+        type: file.type,
+        lastModified: file.lastModified,
+      }),
+      usedNames,
+    );
+    usedNames.add(preparedUpload.file.name);
+    usedNamesByDestination.set(destinationKey, usedNames);
+
+    return {
+      file: preparedUpload.file,
+      pathParts,
+      source: 'folder',
+      noticeMessage: noticeMessage ?? preparedUpload.noticeMessage,
+    };
+  });
+}
+
+export function shouldUploadEntriesSequentially(entries: PendingUploadEntry[]) {
+  return entries.some((entry) => entry.source === 'folder');
+}
+
 export function createUploadTask(
   file: File,
   pathParts: string[],
@@ -101,6 +183,28 @@ export function createUploadTask(
     status: 'uploading',
     type: getUploadType(file),
     noticeMessage,
+  };
+}
+
+export function createUploadTasks(entries: PendingUploadEntry[]) {
+  return entries.map((entry) =>
+    createUploadTask(entry.file, entry.pathParts, undefined, entry.noticeMessage),
+  );
+}
+
+export function createUploadMeasurement(startedAt: number): UploadMeasurement {
+  return {
+    startedAt,
+    lastLoaded: 0,
+    lastUpdatedAt: startedAt,
+  };
+}
+
+export function prepareUploadTaskForCompletion(task: UploadTask): UploadTask {
+  return {
+    ...task,
+    progress: Math.max(task.progress, 99),
+    speed: task.speed && task.speed !== '等待上传...' ? task.speed : '即将完成...',
   };
 }
 

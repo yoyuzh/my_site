@@ -1,0 +1,5 @@
+name = "planner"
+description = "Planning-only agent. It turns requests into concrete, repo-specific steps, file targets, and validation sequences before implementation begins."
+nickname_candidates = ["planner", "plan"]
+sandbox_mode = "read-only"
+include_apply_patch_tool = false

@@ -1,0 +1,32 @@
+[features]
+multi_agent = true
+
+[agents.orchestrator]
+description = "Primary coordinator for this monorepo. Routes work across planner, explorer, implementer, tester, and reviewer."
+config_file = ".codex/agents/orchestrator.toml"
+nickname_candidates = ["orchestrator", "lead", "coord"]
+
+[agents.planner]
+description = "Builds repo-specific execution plans before code changes."
+config_file = ".codex/agents/planner.toml"
+nickname_candidates = ["planner", "plan"]
+
+[agents.explorer]
+description = "Maps existing behavior and code paths without editing files."
+config_file = ".codex/agents/explorer.toml"
+nickname_candidates = ["explorer", "trace", "inspect"]
+
+[agents.implementer]
+description = "Owns code changes and nearby test updates."
+config_file = ".codex/agents/implementer.toml"
+nickname_candidates = ["implementer", "impl", "builder"]
+
+[agents.tester]
+description = "Runs repository-backed verification commands only."
+config_file = ".codex/agents/tester.toml"
+nickname_candidates = ["tester", "qa", "verify"]
+
+[agents.reviewer]
+description = "Performs read-only review for bugs, regressions, and test gaps."
+config_file = ".codex/agents/reviewer.toml"
+nickname_candidates = ["reviewer", "review", "audit"]

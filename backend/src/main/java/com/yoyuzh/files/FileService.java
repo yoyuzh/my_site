@@ -17,10 +17,17 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
 import java.net.URI;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
+import java.util.Comparator;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Set;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipOutputStream;
 
 @Service
 public class FileService {
@@ -43,6 +50,7 @@ public class FileService {
         String normalizedPath = normalizeDirectoryPath(path);
         String filename = normalizeUploadFilename(multipartFile.getOriginalFilename());
         validateUpload(user.getId(), normalizedPath, filename, multipartFile.getSize());
+        ensureDirectoryHierarchy(user, normalizedPath);
 
         fileContentStorage.upload(user.getId(), normalizedPath, filename, multipartFile);
         return saveFileMetadata(user, normalizedPath, filename, filename, multipartFile.getContentType(), multipartFile.getSize());
@@ -76,6 +84,7 @@ public class FileService {
         String filename = normalizeLeafName(request.filename());
         String storageName = normalizeLeafName(request.storageName());
         validateUpload(user.getId(), normalizedPath, filename, request.size());
+        ensureDirectoryHierarchy(user, normalizedPath);
 
         fileContentStorage.completeUpload(user.getId(), normalizedPath, storageName, request.contentType(), request.size());
         return saveFileMetadata(user, normalizedPath, filename, storageName, request.contentType(), request.size());
@@ -201,7 +210,7 @@ public class FileService {
     public ResponseEntity<?> download(User user, Long fileId) {
         StoredFile storedFile = getOwnedFile(user, fileId, "下载");
         if (storedFile.isDirectory()) {
-            throw new BusinessException(ErrorCode.UNKNOWN, "目录不支持下载");
+            return downloadDirectory(user, storedFile);
         }
 
         if (fileContentStorage.supportsDirectDownload()) {
@@ -240,6 +249,44 @@ public class FileService {
         return new DownloadUrlResponse("/api/files/download/" + storedFile.getId());
     }
 
+    private ResponseEntity<byte[]> downloadDirectory(User user, StoredFile directory) {
+        String logicalPath = buildLogicalPath(directory);
+        String archiveName = directory.getFilename() + ".zip";
+        List<StoredFile> descendants = storedFileRepository.findByUserIdAndPathEqualsOrDescendant(user.getId(), logicalPath)
+                .stream()
+                .sorted(Comparator.comparing(StoredFile::getPath).thenComparing(StoredFile::getFilename))
+                .toList();
+
+        byte[] archiveBytes;
+        try (ByteArrayOutputStream outputStream = new ByteArrayOutputStream();
+             ZipOutputStream zipOutputStream = new ZipOutputStream(outputStream, StandardCharsets.UTF_8)) {
+            Set<String> createdEntries = new LinkedHashSet<>();
+            writeDirectoryEntry(zipOutputStream, createdEntries, directory.getFilename() + "/");
+
+            for (StoredFile descendant : descendants) {
+                String entryName = buildZipEntryName(directory.getFilename(), logicalPath, descendant);
+                if (descendant.isDirectory()) {
+                    writeDirectoryEntry(zipOutputStream, createdEntries, entryName + "/");
+                    continue;
+                }
+
+                ensureParentDirectoryEntries(zipOutputStream, createdEntries, entryName);
+                writeFileEntry(zipOutputStream, createdEntries, entryName,
+                        fileContentStorage.readFile(user.getId(), descendant.getPath(), descendant.getStorageName()));
+            }
+            zipOutputStream.finish();
+            archiveBytes = outputStream.toByteArray();
+        } catch (IOException ex) {
+            throw new BusinessException(ErrorCode.UNKNOWN, "目录压缩失败");
+        }
+
+        return ResponseEntity.ok()
+                .header(HttpHeaders.CONTENT_DISPOSITION,
+                        "attachment; filename*=UTF-8''" + URLEncoder.encode(archiveName, StandardCharsets.UTF_8))
+                .contentType(MediaType.parseMediaType("application/zip"))
+                .body(archiveBytes);
+    }
+
     private FileMetadataResponse saveFileMetadata(User user,
                                                   String normalizedPath,
                                                   String filename,
@@ -272,6 +319,37 @@ public class FileService {
         }
         if (storedFileRepository.existsByUserIdAndPathAndFilename(userId, normalizedPath, filename)) {
             throw new BusinessException(ErrorCode.UNKNOWN, "同目录下文件已存在");
+        }
+    }
+
+    private void ensureDirectoryHierarchy(User user, String normalizedPath) {
+        if ("/".equals(normalizedPath)) {
+            return;
+        }
+
+        String[] segments = normalizedPath.substring(1).split("/");
+        String currentPath = "/";
+
+        for (String segment : segments) {
+            if (storedFileRepository.existsByUserIdAndPathAndFilename(user.getId(), currentPath, segment)) {
+                currentPath = "/".equals(currentPath) ? "/" + segment : currentPath + "/" + segment;
+                continue;
+            }
+
+            String logicalPath = "/".equals(currentPath) ? "/" + segment : currentPath + "/" + segment;
+            fileContentStorage.ensureDirectory(user.getId(), logicalPath);
+
+            StoredFile storedFile = new StoredFile();
+            storedFile.setUser(user);
+            storedFile.setFilename(segment);
+            storedFile.setPath(currentPath);
+            storedFile.setStorageName(segment);
+            storedFile.setContentType("directory");
+            storedFile.setSize(0L);
+            storedFile.setDirectory(true);
+            storedFileRepository.save(storedFile);
+
+            currentPath = logicalPath;
         }
     }
 
@@ -326,6 +404,43 @@ public class FileService {
         return "/".equals(storedFile.getPath())
                 ? "/" + storedFile.getFilename()
                 : storedFile.getPath() + "/" + storedFile.getFilename();
+    }
+
+    private String buildZipEntryName(String rootDirectoryName, String rootLogicalPath, StoredFile storedFile) {
+        StringBuilder entryName = new StringBuilder(rootDirectoryName).append('/');
+        if (!storedFile.getPath().equals(rootLogicalPath)) {
+            entryName.append(storedFile.getPath().substring(rootLogicalPath.length() + 1)).append('/');
+        }
+        entryName.append(storedFile.getFilename());
+        return entryName.toString();
+    }
+
+    private void ensureParentDirectoryEntries(ZipOutputStream zipOutputStream, Set<String> createdEntries, String entryName) throws IOException {
+        int slashIndex = entryName.indexOf('/');
+        while (slashIndex >= 0) {
+            writeDirectoryEntry(zipOutputStream, createdEntries, entryName.substring(0, slashIndex + 1));
+            slashIndex = entryName.indexOf('/', slashIndex + 1);
+        }
+    }
+
+    private void writeDirectoryEntry(ZipOutputStream zipOutputStream, Set<String> createdEntries, String entryName) throws IOException {
+        if (!createdEntries.add(entryName)) {
+            return;
+        }
+
+        zipOutputStream.putNextEntry(new ZipEntry(entryName));
+        zipOutputStream.closeEntry();
+    }
+
+    private void writeFileEntry(ZipOutputStream zipOutputStream, Set<String> createdEntries, String entryName, byte[] content)
+            throws IOException {
+        if (!createdEntries.add(entryName)) {
+            return;
+        }
+
+        zipOutputStream.putNextEntry(new ZipEntry(entryName));
+        zipOutputStream.write(content);
+        zipOutputStream.closeEntry();
     }
 
     private String normalizeLeafName(String filename) {

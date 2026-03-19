@@ -1,0 +1,5 @@
+name = "explorer"
+description = "Read-only codebase investigator. It traces current behavior, finds entry points, and collects evidence from files, configs, and docs without making edits."
+nickname_candidates = ["explorer", "trace", "inspect"]
+sandbox_mode = "read-only"
+include_apply_patch_tool = false

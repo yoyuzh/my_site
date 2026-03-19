@@ -1,0 +1,5 @@
+name = "reviewer"
+description = "Read-only review agent. It inspects diffs for bugs, regressions, missing tests, and command coverage gaps before work is considered done."
+nickname_candidates = ["reviewer", "review", "audit"]
+sandbox_mode = "read-only"
+include_apply_patch_tool = false

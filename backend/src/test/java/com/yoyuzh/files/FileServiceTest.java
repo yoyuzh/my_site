@@ -12,12 +12,18 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
 import org.springframework.mock.web.MockMultipartFile;
 
+import java.io.ByteArrayInputStream;
+import java.nio.charset.StandardCharsets;
 import java.time.LocalDateTime;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.zip.ZipInputStream;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -110,6 +116,23 @@ class FileServiceTest {
 
         assertThat(response.id()).isEqualTo(11L);
         verify(fileContentStorage).completeUpload(7L, "/docs", "notes.txt", "text/plain", 12L);
+    }
+
+    @Test
+    void shouldCreateMissingDirectoriesBeforeCompletingNestedUpload() {
+        User user = createUser(7L);
+        when(storedFileRepository.existsByUserIdAndPathAndFilename(7L, "/projects/site", "logo.png")).thenReturn(false);
+        when(storedFileRepository.existsByUserIdAndPathAndFilename(7L, "/", "projects")).thenReturn(false);
+        when(storedFileRepository.existsByUserIdAndPathAndFilename(7L, "/projects", "site")).thenReturn(false);
+        when(storedFileRepository.save(any(StoredFile.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        fileService.completeUpload(user,
+                new CompleteUploadRequest("/projects/site", "logo.png", "logo.png", "image/png", 12L));
+
+        verify(fileContentStorage).ensureDirectory(7L, "/projects");
+        verify(fileContentStorage).ensureDirectory(7L, "/projects/site");
+        verify(fileContentStorage).completeUpload(7L, "/projects/site", "logo.png", "image/png", 12L);
+        verify(storedFileRepository, times(3)).save(any(StoredFile.class));
     }
 
     @Test
@@ -227,6 +250,47 @@ class FileServiceTest {
 
         assertThat(response.url()).isEqualTo("/api/files/download/22");
         verify(fileContentStorage, never()).createDownloadUrl(any(), any(), any(), any());
+    }
+
+    @Test
+    void shouldDownloadDirectoryAsZipArchive() throws Exception {
+        User user = createUser(7L);
+        StoredFile directory = createDirectory(10L, user, "/docs", "archive");
+        StoredFile childDirectory = createDirectory(11L, user, "/docs/archive", "nested");
+        StoredFile childFile = createFile(12L, user, "/docs/archive", "notes.txt");
+        StoredFile nestedFile = createFile(13L, user, "/docs/archive/nested", "todo.txt");
+
+        when(storedFileRepository.findById(10L)).thenReturn(Optional.of(directory));
+        when(storedFileRepository.findByUserIdAndPathEqualsOrDescendant(7L, "/docs/archive"))
+                .thenReturn(List.of(childDirectory, childFile, nestedFile));
+        when(fileContentStorage.readFile(7L, "/docs/archive", "notes.txt"))
+                .thenReturn("hello".getBytes(StandardCharsets.UTF_8));
+        when(fileContentStorage.readFile(7L, "/docs/archive/nested", "todo.txt"))
+                .thenReturn("world".getBytes(StandardCharsets.UTF_8));
+
+        var response = fileService.download(user, 10L);
+
+        assertThat(response.getHeaders().getFirst(HttpHeaders.CONTENT_DISPOSITION))
+                .contains("archive.zip");
+        assertThat(response.getHeaders().getContentType())
+                .isEqualTo(MediaType.parseMediaType("application/zip"));
+
+        Map<String, String> entries = new LinkedHashMap<>();
+        try (ZipInputStream zipInputStream = new ZipInputStream(
+                new ByteArrayInputStream((byte[]) response.getBody()), StandardCharsets.UTF_8)) {
+            var entry = zipInputStream.getNextEntry();
+            while (entry != null) {
+                entries.put(entry.getName(), entry.isDirectory() ? "" : new String(zipInputStream.readAllBytes(), StandardCharsets.UTF_8));
+                entry = zipInputStream.getNextEntry();
+            }
+        }
+
+        assertThat(entries).containsEntry("archive/", "");
+        assertThat(entries).containsEntry("archive/nested/", "");
+        assertThat(entries).containsEntry("archive/notes.txt", "hello");
+        assertThat(entries).containsEntry("archive/nested/todo.txt", "world");
+        verify(fileContentStorage).readFile(7L, "/docs/archive", "notes.txt");
+        verify(fileContentStorage).readFile(7L, "/docs/archive/nested", "todo.txt");
     }
 
     private User createUser(Long id) {

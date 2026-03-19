@@ -11,6 +11,7 @@ import {
   ChevronRight,
   ChevronUp,
   FileUp,
+  FolderUp,
   Upload,
   UploadCloud,
   Plus,
@@ -34,10 +35,15 @@ import { cn } from '@/src/lib/utils';
 
 import {
   buildUploadProgressSnapshot,
+  createUploadMeasurement,
+  createUploadTasks,
   completeUploadTask,
-  createUploadTask,
   failUploadTask,
+  prepareUploadTaskForCompletion,
+  prepareFolderUploadEntries,
   prepareUploadFile,
+  shouldUploadEntriesSequentially,
+  type PendingUploadEntry,
   type UploadMeasurement,
   type UploadTask,
 } from './files-upload';
@@ -62,6 +68,12 @@ const DIRECTORIES = [
   { name: '文档', icon: Folder },
   { name: '图片', icon: Folder },
 ];
+
+function sleep(ms: number) {
+  return new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
+}
 
 function toBackendPath(pathParts: string[]) {
   return pathParts.length === 0 ? '/' : `/${pathParts.join('/')}`;
@@ -115,6 +127,7 @@ export default function Files() {
   const initialPath = readCachedValue<string[]>(getFilesLastPathCacheKey()) ?? [];
   const initialCachedFiles = readCachedValue<FileMetadata[]>(getFilesListCacheKey(toBackendPath(initialPath))) ?? [];
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const directoryInputRef = useRef<HTMLInputElement | null>(null);
   const uploadMeasurementsRef = useRef(new Map<string, UploadMeasurement>());
   const [currentPath, setCurrentPath] = useState<string[]>(initialPath);
   const currentPathRef = useRef(currentPath);
@@ -128,7 +141,7 @@ export default function Files() {
   const [fileToDelete, setFileToDelete] = useState<UiFile | null>(null);
   const [newFileName, setNewFileName] = useState('');
   const [activeDropdown, setActiveDropdown] = useState<number | null>(null);
-  const [viewMode, setViewMode] = useState<'list' | 'grid'>('grid');
+  const [viewMode, setViewMode] = useState<'list' | 'grid'>('list');
   const [renameError, setRenameError] = useState('');
   const [isRenaming, setIsRenaming] = useState(false);
 
@@ -156,6 +169,15 @@ export default function Files() {
       }
     });
   }, [currentPath]);
+
+  useEffect(() => {
+    if (!directoryInputRef.current) {
+      return;
+    }
+
+    directoryInputRef.current.setAttribute('webkitdirectory', '');
+    directoryInputRef.current.setAttribute('directory', '');
+  }, []);
 
   const handleSidebarClick = (pathParts: string[]) => {
     setCurrentPath(pathParts);
@@ -192,25 +214,28 @@ export default function Files() {
     fileInputRef.current?.click();
   };
 
-  const handleFileChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
-    const files = event.target.files ? (Array.from(event.target.files) as File[]) : [];
-    event.target.value = '';
+  const handleUploadFolderClick = () => {
+    directoryInputRef.current?.click();
+  };
 
-    if (files.length === 0) {
+  const runUploadEntries = async (entries: PendingUploadEntry[]) => {
+    if (entries.length === 0) {
       return;
     }
 
-    const uploadPathParts = [...currentPath];
-    const uploadPath = toBackendPath(uploadPathParts);
-    const reservedNames = new Set<string>(currentFiles.map((file) => file.name));
     setIsUploadPanelOpen(true);
+    uploadMeasurementsRef.current.clear();
 
-    const uploadJobs = files.map(async (file) => {
-      const preparedUpload = prepareUploadFile(file, reservedNames);
-      reservedNames.add(preparedUpload.file.name);
-      const uploadFile = preparedUpload.file;
-      const uploadTask = createUploadTask(uploadFile, uploadPathParts, undefined, preparedUpload.noticeMessage);
-      setUploads((previous) => [...previous, uploadTask]);
+    const batchTasks = createUploadTasks(entries);
+    setUploads(batchTasks);
+
+    const runSingleUpload = async (
+      {file: uploadFile, pathParts: uploadPathParts}: PendingUploadEntry,
+      uploadTask: UploadTask,
+    ) => {
+      const uploadPath = toBackendPath(uploadPathParts);
+      const startedAt = Date.now();
+      uploadMeasurementsRef.current.set(uploadTask.id, createUploadMeasurement(startedAt));
 
       try {
         const updateProgress = ({loaded, total}: {loaded: number; total: number}) => {
@@ -304,6 +329,10 @@ export default function Files() {
 
         uploadMeasurementsRef.current.delete(uploadTask.id);
         setUploads((previous) =>
+          previous.map((task) => (task.id === uploadTask.id ? prepareUploadTaskForCompletion(task) : task)),
+        );
+        await sleep(120);
+        setUploads((previous) =>
           previous.map((task) => (task.id === uploadTask.id ? completeUploadTask(task) : task)),
         );
         return uploadedFile;
@@ -315,12 +344,62 @@ export default function Files() {
         );
         return null;
       }
+    };
+
+    const results = shouldUploadEntriesSequentially(entries)
+      ? await entries.reduce<Promise<Array<FileMetadata | null>>>(
+          async (previousPromise, entry, index) => {
+            const previous = await previousPromise;
+            const current = await runSingleUpload(entry, batchTasks[index]);
+            return [...previous, current];
+          },
+          Promise.resolve([]),
+        )
+      : await Promise.all(entries.map((entry, index) => runSingleUpload(entry, batchTasks[index])));
+
+    if (results.some(Boolean)) {
+      await loadCurrentPath(currentPathRef.current).catch(() => undefined);
+    }
+  };
+
+  const handleFileChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const files = event.target.files ? (Array.from(event.target.files) as File[]) : [];
+    event.target.value = '';
+
+    if (files.length === 0) {
+      return;
+    }
+
+    const reservedNames = new Set<string>(currentFiles.map((file) => file.name));
+    const entries: PendingUploadEntry[] = files.map((file) => {
+      const preparedUpload = prepareUploadFile(file, reservedNames);
+      reservedNames.add(preparedUpload.file.name);
+      return {
+        file: preparedUpload.file,
+        pathParts: [...currentPath],
+        source: 'file' as const,
+        noticeMessage: preparedUpload.noticeMessage,
+      };
     });
 
-    const results = await Promise.all(uploadJobs);
-    if (results.some(Boolean) && toBackendPath(currentPathRef.current) === uploadPath) {
-      await loadCurrentPath(uploadPathParts).catch(() => undefined);
+    await runUploadEntries(entries);
+  };
+
+  const handleFolderChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const files = event.target.files ? (Array.from(event.target.files) as File[]) : [];
+    event.target.value = '';
+
+    if (files.length === 0) {
+      return;
     }
+
+    const entries = prepareFolderUploadEntries(
+      files,
+      [...currentPath],
+      currentFiles.map((file) => file.name),
+    );
+
+    await runUploadEntries(entries);
   };
 
   const handleCreateFolder = async () => {
@@ -399,17 +478,29 @@ export default function Files() {
     await loadCurrentPath(currentPath).catch(() => undefined);
   };
 
-  const handleDownload = async () => {
-    if (!selectedFile || selectedFile.type === 'folder') {
+  const handleDownload = async (targetFile: UiFile | null = selectedFile) => {
+    if (!targetFile) {
+      return;
+    }
+
+    if (targetFile.type === 'folder') {
+      const response = await apiDownload(`/files/download/${targetFile.id}`);
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `${targetFile.name}.zip`;
+      link.click();
+      window.URL.revokeObjectURL(url);
       return;
     }
 
     try {
-      const response = await apiRequest<DownloadUrlResponse>(`/files/download/${selectedFile.id}/url`);
+      const response = await apiRequest<DownloadUrlResponse>(`/files/download/${targetFile.id}/url`);
       const url = response.url;
       const link = document.createElement('a');
       link.href = url;
-      link.download = selectedFile.name;
+      link.download = targetFile.name;
       link.rel = 'noreferrer';
       link.target = '_blank';
       link.click();
@@ -420,12 +511,12 @@ export default function Files() {
       }
     }
 
-    const response = await apiDownload(`/files/download/${selectedFile.id}`);
+    const response = await apiDownload(`/files/download/${targetFile.id}`);
     const blob = await response.blob();
     const url = window.URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    link.download = selectedFile.name;
+    link.download = targetFile.name;
     link.click();
     window.URL.revokeObjectURL(url);
   };
@@ -573,6 +664,7 @@ export default function Files() {
                         file={file}
                         activeDropdown={activeDropdown}
                         onToggle={(fileId) => setActiveDropdown((previous) => (previous === fileId ? null : fileId))}
+                        onDownload={handleDownload}
                         onRename={openRenameModal}
                         onDelete={openDeleteModal}
                         onClose={() => setActiveDropdown(null)}
@@ -601,6 +693,7 @@ export default function Files() {
                       file={file}
                       activeDropdown={activeDropdown}
                       onToggle={(fileId) => setActiveDropdown((previous) => (previous === fileId ? null : fileId))}
+                      onDownload={handleDownload}
                       onRename={openRenameModal}
                       onDelete={openDeleteModal}
                       onClose={() => setActiveDropdown(null)}
@@ -634,10 +727,14 @@ export default function Files() {
           <Button variant="default" className="gap-2" onClick={handleUploadClick}>
             <Upload className="w-4 h-4" /> 上传文件
           </Button>
+          <Button variant="outline" className="gap-2" onClick={handleUploadFolderClick}>
+            <FolderUp className="w-4 h-4" /> 上传文件夹
+          </Button>
           <Button variant="outline" className="gap-2" onClick={handleCreateFolder}>
             <Plus className="w-4 h-4" /> 新建文件夹
           </Button>
           <input ref={fileInputRef} type="file" multiple className="hidden" onChange={handleFileChange} />
+          <input ref={directoryInputRef} type="file" multiple className="hidden" onChange={handleFolderChange} />
         </div>
       </Card>
 
@@ -686,14 +783,19 @@ export default function Files() {
                     <Trash2 className="w-4 h-4" /> 删除
                   </Button>
                 </div>
-                {selectedFile.type !== 'folder' && (
-                  <Button variant="default" className="w-full gap-2" onClick={handleDownload}>
-                    <Download className="w-4 h-4" /> 下载文件
-                  </Button>
-                )}
                 {selectedFile.type === 'folder' && (
-                  <Button variant="default" className="w-full gap-2" onClick={() => handleFolderDoubleClick(selectedFile)}>
-                    打开文件夹
+                  <div className="space-y-3">
+                    <Button variant="default" className="w-full gap-2" onClick={() => handleFolderDoubleClick(selectedFile)}>
+                      打开文件夹
+                    </Button>
+                    <Button variant="default" className="w-full gap-2" onClick={() => void handleDownload(selectedFile)}>
+                      <Download className="w-4 h-4" /> 下载文件夹
+                    </Button>
+                  </div>
+                )}
+                {selectedFile.type !== 'folder' && (
+                  <Button variant="default" className="w-full gap-2" onClick={() => void handleDownload(selectedFile)}>
+                    <Download className="w-4 h-4" /> 下载文件
                   </Button>
                 )}
               </div>
@@ -939,6 +1041,7 @@ function FileActionMenu({
   file,
   activeDropdown,
   onToggle,
+  onDownload,
   onRename,
   onDelete,
   onClose,
@@ -946,6 +1049,7 @@ function FileActionMenu({
   file: UiFile;
   activeDropdown: number | null;
   onToggle: (fileId: number) => void;
+  onDownload: (file: UiFile) => Promise<void>;
   onRename: (file: UiFile) => void;
   onDelete: (file: UiFile) => void;
   onClose: () => void;
@@ -979,6 +1083,16 @@ function FileActionMenu({
             transition={{ duration: 0.15 }}
             className="absolute right-0 top-full z-50 mt-1 w-32 overflow-hidden rounded-lg border border-white/10 bg-[#1e293b] py-1 shadow-xl"
           >
+            <button
+              onClick={(event) => {
+                event.stopPropagation();
+                void onDownload(file);
+                onClose();
+              }}
+              className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-slate-300 transition-colors hover:bg-white/10 hover:text-white"
+            >
+              <Download className="w-4 h-4" /> {file.type === 'folder' ? '下载文件夹' : '下载文件'}
+            </button>
             <button
               onClick={(event) => {
                 event.stopPropagation();

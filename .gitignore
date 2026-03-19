@@ -21,7 +21,11 @@ front/.env.production
 .vscode/
 .idea/
 .gemini/
-.codex/
+.codex/*
+!.codex/config.toml
+!.codex/agents/
+.codex/agents/*
+!.codex/agents/*.toml
 开发测试账号.md
 
 .DS_Store
