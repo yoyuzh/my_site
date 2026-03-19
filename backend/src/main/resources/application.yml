@@ -26,6 +26,8 @@ app:
     secret: ${APP_JWT_SECRET:}
     access-expiration-seconds: 900
     refresh-expiration-seconds: 1209600
+  admin:
+    usernames: ${APP_ADMIN_USERNAMES:}
   storage:
     root-dir: ./storage
     max-file-size: 524288000

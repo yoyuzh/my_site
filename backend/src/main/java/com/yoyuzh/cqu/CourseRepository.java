@@ -11,4 +11,6 @@ public interface CourseRepository extends JpaRepository<Course, Long> {
     Optional<Course> findTopByUserIdOrderByCreatedAtDesc(Long userId);
 
     void deleteByUserIdAndStudentIdAndSemester(Long userId, String studentId, String semester);
+
+    long countByUserIdAndStudentIdAndSemester(Long userId, String studentId, String semester);
 }

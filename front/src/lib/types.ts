@@ -1,8 +1,60 @@
 export interface UserProfile {
   id: number;
   username: string;
+  displayName?: string | null;
+  email: string;
+  bio?: string | null;
+  preferredLanguage?: string | null;
+  avatarUrl?: string | null;
+  role?: AdminUserRole;
+  createdAt: string;
+}
+
+export type AdminUserRole = 'USER' | 'MODERATOR' | 'ADMIN';
+
+export interface AdminSummary {
+  totalUsers: number;
+  totalFiles: number;
+  usersWithSchoolCache: number;
+}
+
+export interface AdminUser {
+  id: number;
+  username: string;
   email: string;
   createdAt: string;
+  lastSchoolStudentId: string | null;
+  lastSchoolSemester: string | null;
+  role: AdminUserRole;
+  banned: boolean;
+}
+
+export interface AdminFile {
+  id: number;
+  filename: string;
+  path: string;
+  size: number;
+  contentType: string | null;
+  directory: boolean;
+  createdAt: string;
+  ownerId: number;
+  ownerUsername: string;
+  ownerEmail: string;
+}
+
+export interface AdminSchoolSnapshot {
+  id: number;
+  userId: number;
+  username: string;
+  email: string;
+  studentId: string | null;
+  semester: string | null;
+  scheduleCount: number;
+  gradeCount: number;
+}
+
+export interface AdminPasswordResetResponse {
+  temporaryPassword: string;
 }
 
 export interface AuthSession {

@@ -60,6 +60,11 @@ public class RefreshTokenService {
         return new RotatedRefreshToken(user, nextRefreshToken);
     }
 
+    @Transactional
+    public void revokeAllForUser(Long userId) {
+        refreshTokenRepository.revokeAllActiveByUserId(userId, LocalDateTime.now());
+    }
+
     private String generateRawToken() {
         byte[] bytes = new byte[REFRESH_TOKEN_BYTES];
         secureRandom.nextBytes(bytes);

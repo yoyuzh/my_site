@@ -17,6 +17,18 @@ const CONTENT_TYPES = new Map([
   ['.webmanifest', 'application/manifest+json; charset=utf-8'],
 ]);
 
+const FRONTEND_SPA_ALIASES = [
+  'overview',
+  'files',
+  'school',
+  'games',
+  'login',
+  'admin',
+  'admin/users',
+  'admin/files',
+  'admin/schoolSnapshots',
+];
+
 export function normalizeEndpoint(endpoint) {
   return endpoint.replace(/^https?:\/\//, '').replace(/\/+$/, '');
 }
@@ -42,6 +54,18 @@ export function getCacheControl(relativePath) {
 export function getContentType(relativePath) {
   const ext = path.extname(relativePath).toLowerCase();
   return CONTENT_TYPES.get(ext) || 'application/octet-stream';
+}
+
+export function getFrontendSpaAliasKeys() {
+  return FRONTEND_SPA_ALIASES.flatMap((alias) => [
+    alias,
+    `${alias}/`,
+    `${alias}/index.html`,
+  ]);
+}
+
+export function getFrontendSpaAliasContentType() {
+  return 'text/html; charset=utf-8';
 }
 
 export function createAuthorizationHeader({

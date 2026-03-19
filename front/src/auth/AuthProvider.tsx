@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
 
 import { apiRequest } from '@/src/lib/api';
+import { fetchAdminAccessStatus } from './admin-access';
 import {
   clearStoredSession,
   createSession,
@@ -19,6 +20,7 @@ interface AuthContextValue {
   ready: boolean;
   session: AuthSession | null;
   user: UserProfile | null;
+  isAdmin: boolean;
   login: (payload: LoginPayload) => Promise<void>;
   devLogin: (username?: string) => Promise<void>;
   logout: () => void;
@@ -34,6 +36,7 @@ function buildSession(auth: AuthResponse): AuthSession {
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [session, setSession] = useState<AuthSession | null>(() => readStoredSession());
   const [ready, setReady] = useState(false);
+  const [isAdmin, setIsAdmin] = useState(false);
 
   useEffect(() => {
     const syncSession = () => {
@@ -93,6 +96,36 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     };
   }, []);
 
+  useEffect(() => {
+    let active = true;
+
+    async function syncAdminAccess() {
+      if (!session?.token) {
+        if (active) {
+          setIsAdmin(false);
+        }
+        return;
+      }
+
+      try {
+        const allowed = await fetchAdminAccessStatus();
+        if (active) {
+          setIsAdmin(allowed);
+        }
+      } catch {
+        if (active) {
+          setIsAdmin(false);
+        }
+      }
+    }
+
+    syncAdminAccess();
+
+    return () => {
+      active = false;
+    };
+  }, [session?.token]);
+
   async function refreshProfile() {
     const currentSession = readStoredSession();
     if (!currentSession) {
@@ -146,6 +179,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         ready,
         session,
         user: session?.user || null,
+        isAdmin,
         login,
         devLogin,
         logout,

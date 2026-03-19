@@ -20,7 +20,8 @@ public class CustomUserDetailsService implements UserDetailsService {
                 .orElseThrow(() -> new UsernameNotFoundException("用户不存在"));
         return org.springframework.security.core.userdetails.User.withUsername(user.getUsername())
                 .password(user.getPasswordHash())
-                .authorities("ROLE_USER")
+                .authorities("ROLE_" + user.getRole().name())
+                .disabled(user.isBanned())
                 .build();
     }
 

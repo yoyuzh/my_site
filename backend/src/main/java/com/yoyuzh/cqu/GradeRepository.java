@@ -13,4 +13,6 @@ public interface GradeRepository extends JpaRepository<Grade, Long> {
     Optional<Grade> findTopByUserIdOrderByCreatedAtDesc(Long userId);
 
     void deleteByUserIdAndStudentIdAndSemester(Long userId, String studentId, String semester);
+
+    long countByUserIdAndStudentIdAndSemester(Long userId, String studentId, String semester);
 }

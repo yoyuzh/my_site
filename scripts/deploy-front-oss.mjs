@@ -9,6 +9,8 @@ import {
   buildObjectKey,
   createAuthorizationHeader,
   encodeObjectKey,
+  getFrontendSpaAliasContentType,
+  getFrontendSpaAliasKeys,
   getCacheControl,
   getContentType,
   listFiles,
@@ -72,11 +74,12 @@ async function uploadFile({
   endpoint,
   objectKey,
   filePath,
+  contentTypeOverride,
   accessKeyId,
   accessKeySecret,
 }) {
   const body = await fs.readFile(filePath);
-  const contentType = getContentType(objectKey);
+  const contentType = contentTypeOverride || getContentType(objectKey);
   const date = new Date().toUTCString();
   const url = `https://${bucket}.${normalizeEndpoint(endpoint)}/${encodeObjectKey(objectKey)}`;
   const authorization = createAuthorizationHeader({
@@ -104,6 +107,39 @@ async function uploadFile({
   if (!response.ok) {
     const text = await response.text();
     throw new Error(`Upload failed for ${objectKey}: ${response.status} ${response.statusText}\n${text}`);
+  }
+}
+
+async function uploadSpaAliases({
+  bucket,
+  endpoint,
+  distIndexPath,
+  accessKeyId,
+  accessKeySecret,
+  remotePrefix,
+  dryRun,
+}) {
+  const aliases = getFrontendSpaAliasKeys();
+  const contentType = getFrontendSpaAliasContentType();
+
+  for (const alias of aliases) {
+    const objectKey = buildObjectKey(remotePrefix, alias);
+
+    if (dryRun) {
+      console.log(`[dry-run] upload alias ${alias} -> ${objectKey}`);
+      continue;
+    }
+
+    await uploadFile({
+      bucket,
+      endpoint,
+      objectKey,
+      filePath: distIndexPath,
+      contentTypeOverride: contentType,
+      accessKeyId,
+      accessKeySecret,
+    });
+    console.log(`uploaded alias ${objectKey}`);
   }
 }
 
@@ -146,6 +182,16 @@ async function main() {
     });
     console.log(`uploaded ${objectKey}`);
   }
+
+  await uploadSpaAliases({
+    bucket,
+    endpoint,
+    distIndexPath: path.join(distDir, 'index.html'),
+    accessKeyId,
+    accessKeySecret,
+    remotePrefix,
+    dryRun,
+  });
 }
 
 main().catch((error) => {

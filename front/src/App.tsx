@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { Suspense } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { Layout } from './components/layout/Layout';
 import { useAuth } from './auth/AuthProvider';
@@ -7,6 +7,8 @@ import Overview from './pages/Overview';
 import Files from './pages/Files';
 import School from './pages/School';
 import Games from './pages/Games';
+
+const PortalAdminApp = React.lazy(() => import('./admin/AdminApp'));
 
 function AppRoutes() {
   const { ready, session } = useAuth();
@@ -37,6 +39,24 @@ function AppRoutes() {
         <Route path="school" element={<School />} />
         <Route path="games" element={<Games />} />
       </Route>
+      <Route
+        path="/admin/*"
+        element={
+          isAuthenticated ? (
+            <Suspense
+              fallback={
+                <div className="min-h-screen flex items-center justify-center bg-white text-slate-700">
+                  正在加载后台管理台...
+                </div>
+              }
+            >
+              <PortalAdminApp />
+            </Suspense>
+          ) : (
+            <Navigate to="/login" replace />
+          )
+        }
+      />
       <Route
         path="*"
         element={<Navigate to={isAuthenticated ? '/overview' : '/login'} replace />}

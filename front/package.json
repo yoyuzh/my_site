@@ -12,7 +12,11 @@
     "test": "node --import tsx --test src/**/*.test.ts"
   },
   "dependencies": {
+    "@emotion/react": "^11.14.0",
+    "@emotion/styled": "^11.14.1",
     "@google/genai": "^1.29.0",
+    "@mui/icons-material": "^7.3.9",
+    "@mui/material": "^7.3.9",
     "@tailwindcss/vite": "^4.1.14",
     "@vitejs/plugin-react": "^5.0.4",
     "better-sqlite3": "^12.4.1",
@@ -23,6 +27,7 @@
     "lucide-react": "^0.546.0",
     "motion": "^12.23.24",
     "react": "^19.0.0",
+    "react-admin": "^5.14.4",
     "react-dom": "^19.0.0",
     "react-router-dom": "^7.13.1",
     "tailwind-merge": "^3.5.0",

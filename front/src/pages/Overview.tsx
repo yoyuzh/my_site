@@ -247,7 +247,7 @@ export default function Overview() {
           <Card className="border-amber-400/20 bg-amber-500/10">
             <CardContent className="flex flex-col gap-3 p-4 text-sm text-amber-100 md:flex-row md:items-center md:justify-between">
               <span>{loadingError}</span>
-              <Button variant="secondary" size="sm" onClick={() => setRetryToken((value) => value + 1)}>
+              <Button variant="outline" size="sm" onClick={() => setRetryToken((value) => value + 1)}>
                 重新加载总览
               </Button>
             </CardContent>

@@ -4,6 +4,8 @@ import test from 'node:test';
 import {
   buildObjectKey,
   createAuthorizationHeader,
+  getFrontendSpaAliasContentType,
+  getFrontendSpaAliasKeys,
   getCacheControl,
   getContentType,
   normalizeEndpoint,
@@ -29,6 +31,15 @@ test('getContentType resolves common frontend asset types', () => {
   assert.equal(getContentType('assets/app.css'), 'text/css; charset=utf-8');
   assert.equal(getContentType('assets/app.js'), 'text/javascript; charset=utf-8');
   assert.equal(getContentType('favicon.png'), 'image/png');
+});
+
+test('frontend spa aliases are uploaded as html entry points', () => {
+  const aliases = getFrontendSpaAliasKeys();
+
+  assert.ok(aliases.includes('overview'));
+  assert.ok(aliases.includes('admin/users'));
+  assert.ok(aliases.includes('admin/schoolSnapshots/index.html'));
+  assert.equal(getFrontendSpaAliasContentType(), 'text/html; charset=utf-8');
 });
 
 test('createAuthorizationHeader is stable for a known request', () => {
