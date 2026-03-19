@@ -22,11 +22,18 @@ Run these from `front/`:
 - `npm run lint`
 - `npm run test`
 
+Run this from the repository root for OSS publishing:
+
+- `node scripts/deploy-front-oss.mjs`
+- `node scripts/deploy-front-oss.mjs --dry-run`
+- `node scripts/deploy-front-oss.mjs --skip-build`
+
 Important:
 
 - `npm run lint` is the current TypeScript check because it runs `tsc --noEmit`.
 - There is no separate ESLint script.
 - There is no separate `typecheck` script beyond `npm run lint`.
+- OSS publishing uses `scripts/deploy-front-oss.mjs`, which reads credentials from environment variables or `.env.oss.local`.
 
 ## Frontend rules
 
@@ -35,3 +42,4 @@ Important:
 - Preserve the current Vite alias usage: `@/*` resolves from the `front/` directory root.
 - If a change depends on backend API behavior, verify the proxy expectations in `vite.config.ts` before hardcoding URLs.
 - Use the existing `npm run build`, `npm run test`, and `npm run lint` commands for validation; do not invent a separate frontend verification command.
+- For release work, let the deployer agent publish `front/dist` through `scripts/deploy-front-oss.mjs` instead of manual object uploads.

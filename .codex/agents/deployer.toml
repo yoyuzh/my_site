@@ -1,0 +1,5 @@
+name = "deployer"
+description = "Deployment-focused agent. It publishes the frontend using the checked-in OSS deploy script, packages the backend jar with Maven, and can upload/restart over SSH only after discovering or being given the target host, destination path, and remote run procedure."
+nickname_candidates = ["deployer", "deploy", "release", "publish"]
+sandbox_mode = "workspace-write"
+include_apply_patch_tool = false

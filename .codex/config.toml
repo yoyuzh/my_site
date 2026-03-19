@@ -30,3 +30,8 @@ nickname_candidates = ["tester", "qa", "verify"]
 description = "Performs read-only review for bugs, regressions, and test gaps."
 config_file = ".codex/agents/reviewer.toml"
 nickname_candidates = ["reviewer", "review", "audit"]
+
+[agents.deployer]
+description = "Handles release-style delivery: build and publish the frontend to OSS, and package/upload the backend jar over SSH when deployment details are available."
+config_file = ".codex/agents/deployer.toml"
+nickname_candidates = ["deployer", "deploy", "release", "publish"]
