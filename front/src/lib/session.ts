@@ -1,4 +1,4 @@
-import type { AuthSession } from './types';
+import type { AuthResponse, AuthSession } from './types';
 
 const SESSION_STORAGE_KEY = 'portal-session';
 const POST_LOGIN_PENDING_KEY = 'portal-post-login-pending';
@@ -8,6 +8,40 @@ function notifySessionChanged() {
   if (typeof window !== 'undefined') {
     window.dispatchEvent(new Event(SESSION_EVENT_NAME));
   }
+}
+
+function normalizeSession(value: unknown): AuthSession | null {
+  if (!value || typeof value !== 'object') {
+    return null;
+  }
+
+  const candidate = value as Partial<AuthSession> & {accessToken?: string};
+  const token = typeof candidate.token === 'string' && candidate.token.trim()
+    ? candidate.token
+    : typeof candidate.accessToken === 'string' && candidate.accessToken.trim()
+      ? candidate.accessToken
+      : null;
+
+  if (!token || !candidate.user) {
+    return null;
+  }
+
+  return {
+    token,
+    refreshToken:
+      typeof candidate.refreshToken === 'string' && candidate.refreshToken.trim()
+        ? candidate.refreshToken
+        : null,
+    user: candidate.user,
+  };
+}
+
+export function createSession(auth: AuthResponse): AuthSession {
+  return {
+    token: auth.accessToken || auth.token,
+    refreshToken: auth.refreshToken ?? null,
+    user: auth.user,
+  };
 }
 
 export function readStoredSession(): AuthSession | null {
@@ -21,7 +55,11 @@ export function readStoredSession(): AuthSession | null {
   }
 
   try {
-    return JSON.parse(rawValue) as AuthSession;
+    const session = normalizeSession(JSON.parse(rawValue));
+    if (!session) {
+      localStorage.removeItem(SESSION_STORAGE_KEY);
+    }
+    return session;
   } catch {
     localStorage.removeItem(SESSION_STORAGE_KEY);
     return null;

@@ -8,7 +8,7 @@ import { Button } from '@/src/components/ui/button';
 import { Input } from '@/src/components/ui/input';
 import { apiRequest, ApiError } from '@/src/lib/api';
 import { cn } from '@/src/lib/utils';
-import { markPostLoginPending, saveStoredSession } from '@/src/lib/session';
+import { createSession, markPostLoginPending, saveStoredSession } from '@/src/lib/session';
 import type { AuthResponse } from '@/src/lib/types';
 
 const DEV_LOGIN_ENABLED = import.meta.env.DEV || import.meta.env.VITE_ENABLE_DEV_LOGIN === 'true';
@@ -59,10 +59,7 @@ export default function Login() {
         }
       }
 
-      saveStoredSession({
-        token: auth.token,
-        user: auth.user,
-      });
+      saveStoredSession(createSession(auth));
       markPostLoginPending();
       setLoading(false);
       navigate('/overview');
@@ -87,10 +84,7 @@ export default function Login() {
         },
       });
 
-      saveStoredSession({
-        token: auth.token,
-        user: auth.user,
-      });
+      saveStoredSession(createSession(auth));
       markPostLoginPending();
       setLoading(false);
       navigate('/overview');
@@ -301,10 +295,13 @@ export default function Login() {
                               value={registerPassword}
                               onChange={(event) => setRegisterPassword(event.target.value)}
                               required
-                              minLength={6}
+                              minLength={10}
                               maxLength={64}
                             />
                           </div>
+                          <p className="text-xs text-slate-500 ml-1">
+                            至少 10 位，并包含大写字母、小写字母、数字和特殊字符。
+                          </p>
                         </div>
                       </div>
 

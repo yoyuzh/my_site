@@ -1,4 +1,5 @@
-import { clearStoredSession, readStoredSession } from './session';
+import type { AuthResponse } from './types';
+import { clearStoredSession, createSession, readStoredSession, saveStoredSession } from './session';
 
 interface ApiEnvelope<T> {
   code: number;
@@ -25,6 +26,9 @@ interface ApiBinaryUploadRequestInit {
 }
 
 const API_BASE_URL = (import.meta.env?.VITE_API_BASE_URL || '/api').replace(/\/$/, '');
+const AUTH_REFRESH_PATH = '/auth/refresh';
+
+let refreshRequestPromise: Promise<boolean> | null = null;
 
 export class ApiError extends Error {
   code?: number;
@@ -93,6 +97,20 @@ function resolveUrl(path: string) {
   return `${API_BASE_URL}${normalizedPath}`;
 }
 
+function normalizePath(path: string) {
+  return path.startsWith('/') ? path : `/${path}`;
+}
+
+function shouldAttemptTokenRefresh(path: string) {
+  const normalizedPath = normalizePath(path);
+  return ![
+    '/auth/login',
+    '/auth/register',
+    '/auth/dev-login',
+    AUTH_REFRESH_PATH,
+  ].includes(normalizedPath);
+}
+
 function buildRequestBody(body: ApiRequestInit['body']) {
   if (body == null) {
     return undefined;
@@ -109,6 +127,58 @@ function buildRequestBody(body: ApiRequestInit['body']) {
   }
 
   return JSON.stringify(body);
+}
+
+async function refreshAccessToken() {
+  const currentSession = readStoredSession();
+  if (!currentSession?.refreshToken) {
+    clearStoredSession();
+    return false;
+  }
+
+  if (refreshRequestPromise) {
+    return refreshRequestPromise;
+  }
+
+  refreshRequestPromise = (async () => {
+    try {
+      const response = await fetch(resolveUrl(AUTH_REFRESH_PATH), {
+        method: 'POST',
+        headers: {
+          Accept: 'application/json',
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          refreshToken: currentSession.refreshToken,
+        }),
+      });
+      const contentType = response.headers.get('content-type') || '';
+      if (!response.ok || !contentType.includes('application/json')) {
+        clearStoredSession();
+        return false;
+      }
+
+      const payload = (await response.json()) as ApiEnvelope<AuthResponse>;
+      if (payload.code !== 0 || !payload.data) {
+        clearStoredSession();
+        return false;
+      }
+
+      saveStoredSession({
+        ...currentSession,
+        ...createSession(payload.data),
+        user: payload.data.user ?? currentSession.user,
+      });
+      return true;
+    } catch {
+      clearStoredSession();
+      return false;
+    } finally {
+      refreshRequestPromise = null;
+    }
+  })();
+
+  return refreshRequestPromise;
 }
 
 async function parseApiError(response: Response) {
@@ -140,7 +210,7 @@ export function shouldRetryRequest(
   return attempt <= getMaxRetryAttempts(path, init);
 }
 
-async function performRequest(path: string, init: ApiRequestInit = {}) {
+async function performRequest(path: string, init: ApiRequestInit = {}, allowRefresh = true): Promise<Response> {
   const session = readStoredSession();
   const headers = new Headers(init.headers);
   const requestBody = buildRequestBody(init.body);
@@ -180,7 +250,14 @@ async function performRequest(path: string, init: ApiRequestInit = {}) {
     throw toNetworkApiError(lastError);
   }
 
-  if (response.status === 401 || response.status === 403) {
+  if (response.status === 401 && allowRefresh && shouldAttemptTokenRefresh(path)) {
+    const refreshed = await refreshAccessToken();
+    if (refreshed) {
+      return performRequest(path, init, false);
+    }
+  }
+
+  if (response.status === 401) {
     clearStoredSession();
   }
 
@@ -200,16 +277,13 @@ export async function apiRequest<T>(path: string, init?: ApiRequestInit) {
 
   const payload = (await response.json()) as ApiEnvelope<T>;
   if (!response.ok || payload.code !== 0) {
-    if (response.status === 401 || payload.code === 401) {
-      clearStoredSession();
-    }
     throw new ApiError(payload.msg || `请求失败 (${response.status})`, response.status, payload.code);
   }
 
   return payload.data;
 }
 
-export function apiUploadRequest<T>(path: string, init: ApiUploadRequestInit) {
+function apiUploadRequestInternal<T>(path: string, init: ApiUploadRequestInit, allowRefresh: boolean): Promise<T> {
   const session = readStoredSession();
   const headers = new Headers(init.headers);
 
@@ -248,8 +322,21 @@ export function apiUploadRequest<T>(path: string, init: ApiUploadRequestInit) {
     xhr.onload = () => {
       const contentType = xhr.getResponseHeader('content-type') || '';
 
-      if (xhr.status === 401 || xhr.status === 403) {
-        clearStoredSession();
+      if (xhr.status === 401 && allowRefresh && shouldAttemptTokenRefresh(path)) {
+        refreshAccessToken()
+          .then((refreshed) => {
+            if (refreshed) {
+              resolve(apiUploadRequestInternal<T>(path, init, false));
+              return;
+            }
+            clearStoredSession();
+            reject(new ApiError('登录状态已失效，请重新登录', 401));
+          })
+          .catch((error) => {
+            clearStoredSession();
+            reject(error instanceof ApiError ? error : toNetworkApiError(error));
+          });
+        return;
       }
 
       if (!contentType.includes('application/json')) {
@@ -264,7 +351,7 @@ export function apiUploadRequest<T>(path: string, init: ApiUploadRequestInit) {
 
       const payload = JSON.parse(xhr.responseText) as ApiEnvelope<T>;
       if (xhr.status < 200 || xhr.status >= 300 || payload.code !== 0) {
-        if (xhr.status === 401 || payload.code === 401) {
+        if (xhr.status === 401) {
           clearStoredSession();
         }
         reject(new ApiError(payload.msg || `请求失败 (${xhr.status})`, xhr.status, payload.code));
@@ -276,6 +363,10 @@ export function apiUploadRequest<T>(path: string, init: ApiUploadRequestInit) {
 
     xhr.send(init.body);
   });
+}
+
+export function apiUploadRequest<T>(path: string, init: ApiUploadRequestInit): Promise<T> {
+  return apiUploadRequestInternal<T>(path, init, true);
 }
 
 export function apiBinaryUploadRequest(path: string, init: ApiBinaryUploadRequestInit) {

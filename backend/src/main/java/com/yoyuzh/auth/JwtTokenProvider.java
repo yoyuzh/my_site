@@ -15,6 +15,8 @@ import java.util.Date;
 @Component
 public class JwtTokenProvider {
 
+    private static final String DEFAULT_SECRET = "change-me-change-me-change-me-change-me";
+
     private final JwtProperties jwtProperties;
     private SecretKey secretKey;
 
@@ -24,16 +26,26 @@ public class JwtTokenProvider {
 
     @PostConstruct
     public void init() {
-        secretKey = Keys.hmacShaKeyFor(jwtProperties.getSecret().getBytes(StandardCharsets.UTF_8));
+        String secret = jwtProperties.getSecret() == null ? "" : jwtProperties.getSecret().trim();
+        if (secret.isEmpty()) {
+            throw new IllegalStateException("app.jwt.secret 未配置，请设置强密钥后再启动");
+        }
+        if (DEFAULT_SECRET.equals(secret)) {
+            throw new IllegalStateException("检测到默认 JWT 密钥，请替换 app.jwt.secret 后再启动");
+        }
+        if (secret.getBytes(StandardCharsets.UTF_8).length < 32) {
+            throw new IllegalStateException("JWT 密钥长度过短，至少需要 32 字节");
+        }
+        secretKey = Keys.hmacShaKeyFor(secret.getBytes(StandardCharsets.UTF_8));
     }
 
-    public String generateToken(Long userId, String username) {
+    public String generateAccessToken(Long userId, String username) {
         Instant now = Instant.now();
         return Jwts.builder()
                 .subject(username)
                 .claim("uid", userId)
                 .issuedAt(Date.from(now))
-                .expiration(Date.from(now.plusSeconds(jwtProperties.getExpirationSeconds())))
+                .expiration(Date.from(now.plusSeconds(jwtProperties.getAccessExpirationSeconds())))
                 .signWith(secretKey)
                 .compact();
     }

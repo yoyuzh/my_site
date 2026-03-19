@@ -18,12 +18,14 @@
 默认配置：
 
 ```bash
+APP_JWT_SECRET=<至少32字节的随机密钥> \
 mvn spring-boot:run
 ```
 
 本地联调建议使用 `dev` 环境：
 
 ```bash
+APP_JWT_SECRET=<至少32字节的随机密钥> \
 mvn spring-boot:run -Dspring-boot.run.profiles=dev
 ```
 
@@ -32,6 +34,13 @@ mvn spring-boot:run -Dspring-boot.run.profiles=dev
 - 数据库使用 H2 文件库
 - CQU 接口返回 mock 数据
 - 方便和 `vue/` 前端直接联调
+
+JWT 启动要求：
+
+- `app.jwt.secret` 不能为空
+- 不允许使用默认占位值
+- 至少需要 32 字节强密钥
+- 仓库内的 `application.yml` / `application-dev.yml` 只从环境变量 `APP_JWT_SECRET` 读取，不再内置可直接启动的默认 secret
 
 ## 访问地址
 
@@ -84,6 +93,7 @@ CREATE INDEX IF NOT EXISTS idx_grade_user_semester ON portal_grade (user_id, sem
 
 - `POST /api/auth/register`
 - `POST /api/auth/login`
+- `POST /api/auth/refresh`
 - `GET /api/user/profile`
 - `POST /api/files/upload`
 - `POST /api/files/upload/initiate`

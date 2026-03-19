@@ -3,6 +3,7 @@ import React, { createContext, useContext, useEffect, useState } from 'react';
 import { apiRequest } from '@/src/lib/api';
 import {
   clearStoredSession,
+  createSession,
   readStoredSession,
   saveStoredSession,
   SESSION_EVENT_NAME,
@@ -27,10 +28,7 @@ interface AuthContextValue {
 const AuthContext = createContext<AuthContextValue | null>(null);
 
 function buildSession(auth: AuthResponse): AuthSession {
-  return {
-    token: auth.token,
-    user: auth.user,
-  };
+  return createSession(auth);
 }
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {

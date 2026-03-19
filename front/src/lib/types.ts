@@ -7,11 +7,14 @@ export interface UserProfile {
 
 export interface AuthSession {
   token: string;
+  refreshToken?: string | null;
   user: UserProfile;
 }
 
 export interface AuthResponse {
   token: string;
+  accessToken?: string;
+  refreshToken?: string | null;
   user: UserProfile;
 }
 

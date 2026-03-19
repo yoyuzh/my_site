@@ -13,5 +13,7 @@ spring:
       path: /h2-console
 
 app:
+  jwt:
+    secret: ${APP_JWT_SECRET:}
   cqu:
     mock-enabled: true

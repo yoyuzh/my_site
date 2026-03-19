@@ -23,8 +23,9 @@ spring:
 
 app:
   jwt:
-    secret: change-me-change-me-change-me-change-me
-    expiration-seconds: 86400
+    secret: ${APP_JWT_SECRET:}
+    access-expiration-seconds: 900
+    refresh-expiration-seconds: 1209600
   storage:
     root-dir: ./storage
     max-file-size: 524288000

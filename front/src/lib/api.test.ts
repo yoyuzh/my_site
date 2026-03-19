@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { afterEach, beforeEach, test } from 'node:test';
 
 import { apiBinaryUploadRequest, apiRequest, apiUploadRequest, shouldRetryRequest, toNetworkApiError } from './api';
-import { clearStoredSession, saveStoredSession } from './session';
+import { clearStoredSession, readStoredSession, saveStoredSession } from './session';
 
 class MemoryStorage implements Storage {
   private store = new Map<string, string>();
@@ -135,6 +135,7 @@ test('apiRequest attaches bearer token and unwraps response payload', async () =
   let request: Request | URL | string | undefined;
   saveStoredSession({
     token: 'token-123',
+    refreshToken: 'refresh-123',
     user: {
       id: 1,
       username: 'tester',
@@ -230,6 +231,7 @@ test('network fetch failures are converted to readable api errors', () => {
 test('apiUploadRequest attaches auth header and forwards upload progress', async () => {
   saveStoredSession({
     token: 'token-456',
+    refreshToken: 'refresh-456',
     user: {
       id: 2,
       username: 'uploader',
@@ -308,4 +310,159 @@ test('apiBinaryUploadRequest sends raw file body to signed upload url', async ()
     {loaded: 64, total: 128},
     {loaded: 128, total: 128},
   ]);
+});
+
+test('apiRequest refreshes expired access token once and retries the original request', async () => {
+  const calls: Array<{url: string; authorization: string | null; body: string | null}> = [];
+  saveStoredSession({
+    token: 'expired-token',
+    refreshToken: 'refresh-1',
+    user: {
+      id: 3,
+      username: 'alice',
+      email: 'alice@example.com',
+      createdAt: '2026-03-18T10:00:00',
+    },
+  });
+
+  globalThis.fetch = async (input, init) => {
+    const url = String(input);
+    const headers = new Headers(init?.headers);
+    calls.push({
+      url,
+      authorization: headers.get('Authorization'),
+      body: typeof init?.body === 'string' ? init.body : null,
+    });
+
+    if (url.endsWith('/user/profile') && calls.length === 1) {
+      return new Response(
+        JSON.stringify({
+          code: 1001,
+          msg: '用户未登录',
+          data: null,
+        }),
+        {
+          status: 401,
+          headers: {
+            'Content-Type': 'application/json',
+          },
+        },
+      );
+    }
+
+    if (url.endsWith('/auth/refresh')) {
+      return new Response(
+        JSON.stringify({
+          code: 0,
+          msg: 'success',
+          data: {
+            token: 'new-access-token',
+            accessToken: 'new-access-token',
+            refreshToken: 'refresh-2',
+            user: {
+              id: 3,
+              username: 'alice',
+              email: 'alice@example.com',
+              createdAt: '2026-03-18T10:00:00',
+            },
+          },
+        }),
+        {
+          headers: {
+            'Content-Type': 'application/json',
+          },
+        },
+      );
+    }
+
+    return new Response(
+      JSON.stringify({
+        code: 0,
+        msg: 'success',
+        data: {
+          id: 3,
+          username: 'alice',
+          email: 'alice@example.com',
+          createdAt: '2026-03-18T10:00:00',
+        },
+      }),
+      {
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      },
+    );
+  };
+
+  const profile = await apiRequest<{id: number; username: string}>('/user/profile');
+
+  assert.equal(profile.username, 'alice');
+  assert.equal(calls.length, 3);
+  assert.equal(calls[0]?.authorization, 'Bearer expired-token');
+  assert.equal(calls[1]?.url, '/api/auth/refresh');
+  assert.equal(calls[2]?.authorization, 'Bearer new-access-token');
+  assert.deepEqual(JSON.parse(calls[1]?.body || '{}'), {refreshToken: 'refresh-1'});
+  assert.deepEqual(readStoredSession(), {
+    token: 'new-access-token',
+    refreshToken: 'refresh-2',
+    user: {
+      id: 3,
+      username: 'alice',
+      email: 'alice@example.com',
+      createdAt: '2026-03-18T10:00:00',
+    },
+  });
+});
+
+test('apiRequest clears session when refresh fails after a 401 response', async () => {
+  let callCount = 0;
+  saveStoredSession({
+    token: 'expired-token',
+    refreshToken: 'refresh-1',
+    user: {
+      id: 5,
+      username: 'bob',
+      email: 'bob@example.com',
+      createdAt: '2026-03-18T10:00:00',
+    },
+  });
+
+  globalThis.fetch = async (input) => {
+    callCount += 1;
+    const url = String(input);
+
+    if (url.endsWith('/auth/refresh')) {
+      return new Response(
+        JSON.stringify({
+          code: 1001,
+          msg: '刷新令牌已过期',
+          data: null,
+        }),
+        {
+          status: 401,
+          headers: {
+            'Content-Type': 'application/json',
+          },
+        },
+      );
+    }
+
+    return new Response(
+      JSON.stringify({
+        code: 1001,
+        msg: '用户未登录',
+        data: null,
+      }),
+      {
+        status: 401,
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      },
+    );
+  };
+
+  await assert.rejects(() => apiRequest('/user/profile'), /用户未登录/);
+  assert.equal(callCount, 2);
+  assert.equal(readStoredSession(), null);
 });

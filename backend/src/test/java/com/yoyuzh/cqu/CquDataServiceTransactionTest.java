@@ -22,6 +22,7 @@ import static org.mockito.Mockito.when;
                 "spring.datasource.username=sa",
                 "spring.datasource.password=",
                 "spring.jpa.hibernate.ddl-auto=create-drop",
+                "app.jwt.secret=0123456789abcdef0123456789abcdef",
                 "app.cqu.require-login=true",
                 "app.cqu.mock-enabled=false"
         }

@@ -2,6 +2,7 @@ package com.yoyuzh.auth;
 
 import com.yoyuzh.auth.dto.AuthResponse;
 import com.yoyuzh.auth.dto.LoginRequest;
+import com.yoyuzh.auth.dto.RefreshTokenRequest;
 import com.yoyuzh.auth.dto.RegisterRequest;
 import com.yoyuzh.common.ApiResponse;
 import io.swagger.v3.oas.annotations.Operation;
@@ -29,5 +30,11 @@ public class AuthController {
     @PostMapping("/login")
     public ApiResponse<AuthResponse> login(@Valid @RequestBody LoginRequest request) {
         return ApiResponse.success(authService.login(request));
+    }
+
+    @Operation(summary = "刷新访问令牌")
+    @PostMapping("/refresh")
+    public ApiResponse<AuthResponse> refresh(@Valid @RequestBody RefreshTokenRequest request) {
+        return ApiResponse.success(authService.refresh(request.refreshToken()));
     }
 }

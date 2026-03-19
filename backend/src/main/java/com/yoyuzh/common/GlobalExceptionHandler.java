@@ -1,14 +1,18 @@
 package com.yoyuzh.common;
 
+import jakarta.validation.ConstraintViolation;
 import jakarta.validation.ConstraintViolationException;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.authentication.BadCredentialsException;
+import org.springframework.validation.ObjectError;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+
+import java.util.Objects;
 
 @Slf4j
 @RestControllerAdvice
@@ -27,7 +31,27 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler({MethodArgumentNotValidException.class, ConstraintViolationException.class})
     public ResponseEntity<ApiResponse<Void>> handleValidationException(Exception ex) {
-        return ResponseEntity.badRequest().body(ApiResponse.error(ErrorCode.UNKNOWN, ex.getMessage()));
+        if (ex instanceof MethodArgumentNotValidException validationException) {
+            String message = validationException.getBindingResult().getAllErrors().stream()
+                    .map(ObjectError::getDefaultMessage)
+                    .filter(Objects::nonNull)
+                    .map(String::trim)
+                    .filter(msg -> !msg.isEmpty())
+                    .findFirst()
+                    .orElse("请求参数不合法");
+            return ResponseEntity.badRequest().body(ApiResponse.error(ErrorCode.UNKNOWN, message));
+        }
+        if (ex instanceof ConstraintViolationException validationException) {
+            String message = validationException.getConstraintViolations().stream()
+                    .map(ConstraintViolation::getMessage)
+                    .filter(Objects::nonNull)
+                    .map(String::trim)
+                    .filter(msg -> !msg.isEmpty())
+                    .findFirst()
+                    .orElse("请求参数不合法");
+            return ResponseEntity.badRequest().body(ApiResponse.error(ErrorCode.UNKNOWN, message));
+        }
+        return ResponseEntity.badRequest().body(ApiResponse.error(ErrorCode.UNKNOWN, "请求参数不合法"));
     }
 
     @ExceptionHandler(AccessDeniedException.class)

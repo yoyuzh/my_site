@@ -23,6 +23,7 @@ public class AuthService {
     private final PasswordEncoder passwordEncoder;
     private final AuthenticationManager authenticationManager;
     private final JwtTokenProvider jwtTokenProvider;
+    private final RefreshTokenService refreshTokenService;
     private final FileService fileService;
 
     @Transactional
@@ -40,7 +41,7 @@ public class AuthService {
         user.setPasswordHash(passwordEncoder.encode(request.password()));
         User saved = userRepository.save(user);
         fileService.ensureDefaultDirectories(saved);
-        return new AuthResponse(jwtTokenProvider.generateToken(saved.getId(), saved.getUsername()), toProfile(saved));
+        return issueTokens(saved);
     }
 
     public AuthResponse login(LoginRequest request) {
@@ -54,7 +55,7 @@ public class AuthService {
         User user = userRepository.findByUsername(request.username())
                 .orElseThrow(() -> new BusinessException(ErrorCode.NOT_LOGGED_IN, "用户不存在"));
         fileService.ensureDefaultDirectories(user);
-        return new AuthResponse(jwtTokenProvider.generateToken(user.getId(), user.getUsername()), toProfile(user));
+        return issueTokens(user);
     }
 
     @Transactional
@@ -73,7 +74,13 @@ public class AuthService {
             return userRepository.save(created);
         });
         fileService.ensureDefaultDirectories(user);
-        return new AuthResponse(jwtTokenProvider.generateToken(user.getId(), user.getUsername()), toProfile(user));
+        return issueTokens(user);
+    }
+
+    @Transactional
+    public AuthResponse refresh(String refreshToken) {
+        RefreshTokenService.RotatedRefreshToken rotated = refreshTokenService.rotateRefreshToken(refreshToken);
+        return issueTokens(rotated.user(), rotated.refreshToken());
     }
 
     public UserProfileResponse getProfile(String username) {
@@ -84,5 +91,14 @@ public class AuthService {
 
     private UserProfileResponse toProfile(User user) {
         return new UserProfileResponse(user.getId(), user.getUsername(), user.getEmail(), user.getCreatedAt());
+    }
+
+    private AuthResponse issueTokens(User user) {
+        return issueTokens(user, refreshTokenService.issueRefreshToken(user));
+    }
+
+    private AuthResponse issueTokens(User user, String refreshToken) {
+        String accessToken = jwtTokenProvider.generateAccessToken(user.getId(), user.getUsername());
+        return AuthResponse.issued(accessToken, refreshToken, toProfile(user));
     }
 }
