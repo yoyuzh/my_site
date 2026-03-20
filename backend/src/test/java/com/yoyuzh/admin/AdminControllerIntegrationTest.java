@@ -63,6 +63,7 @@ class AdminControllerIntegrationTest {
         portalUser = new User();
         portalUser.setUsername("alice");
         portalUser.setEmail("alice@example.com");
+        portalUser.setPhoneNumber("13800138000");
         portalUser.setPasswordHash("encoded-password");
         portalUser.setCreatedAt(LocalDateTime.now());
         portalUser.setLastSchoolStudentId("20230001");
@@ -72,6 +73,7 @@ class AdminControllerIntegrationTest {
         secondaryUser = new User();
         secondaryUser.setUsername("bob");
         secondaryUser.setEmail("bob@example.com");
+        secondaryUser.setPhoneNumber("13900139000");
         secondaryUser.setPasswordHash("encoded-password");
         secondaryUser.setCreatedAt(LocalDateTime.now().minusDays(1));
         secondaryUser = userRepository.save(secondaryUser);
@@ -106,6 +108,7 @@ class AdminControllerIntegrationTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value(0))
                 .andExpect(jsonPath("$.data.items[0].username").value("alice"))
+                .andExpect(jsonPath("$.data.items[0].phoneNumber").value("13800138000"))
                 .andExpect(jsonPath("$.data.items[0].lastSchoolStudentId").value("20230001"))
                 .andExpect(jsonPath("$.data.items[0].role").value("USER"))
                 .andExpect(jsonPath("$.data.items[0].banned").value(false));
@@ -124,6 +127,12 @@ class AdminControllerIntegrationTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.total").value(1))
                 .andExpect(jsonPath("$.data.items[0].username").value("alice"));
+
+        mockMvc.perform(get("/api/admin/users?page=0&size=10&query=13900139000"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.total").value(1))
+                .andExpect(jsonPath("$.data.items[0].username").value("bob"))
+                .andExpect(jsonPath("$.data.items[0].phoneNumber").value("13900139000"));
 
         mockMvc.perform(patch("/api/admin/users/{userId}/role", portalUser.getId())
                         .contentType("application/json")

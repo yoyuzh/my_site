@@ -124,6 +124,7 @@ public class AdminService {
                 user.getId(),
                 user.getUsername(),
                 user.getEmail(),
+                user.getPhoneNumber(),
                 user.getCreatedAt(),
                 user.getLastSchoolStudentId(),
                 user.getLastSchoolSemester(),

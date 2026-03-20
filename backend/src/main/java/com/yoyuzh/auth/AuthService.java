@@ -55,11 +55,15 @@ public class AuthService {
         if (userRepository.existsByEmail(request.email())) {
             throw new BusinessException(ErrorCode.UNKNOWN, "邮箱已存在");
         }
+        if (userRepository.existsByPhoneNumber(request.phoneNumber())) {
+            throw new BusinessException(ErrorCode.UNKNOWN, "手机号已存在");
+        }
 
         User user = new User();
         user.setUsername(request.username());
         user.setDisplayName(request.username());
         user.setEmail(request.email());
+        user.setPhoneNumber(request.phoneNumber());
         user.setPasswordHash(passwordEncoder.encode(request.password()));
         user.setRole(UserRole.USER);
         user.setPreferredLanguage("zh-CN");
@@ -127,9 +131,14 @@ public class AuthService {
         if (!user.getEmail().equalsIgnoreCase(nextEmail) && userRepository.existsByEmail(nextEmail)) {
             throw new BusinessException(ErrorCode.UNKNOWN, "邮箱已存在");
         }
+        String nextPhoneNumber = request.phoneNumber().trim();
+        if (!nextPhoneNumber.equals(user.getPhoneNumber()) && userRepository.existsByPhoneNumber(nextPhoneNumber)) {
+            throw new BusinessException(ErrorCode.UNKNOWN, "手机号已存在");
+        }
 
         user.setDisplayName(request.displayName().trim());
         user.setEmail(nextEmail);
+        user.setPhoneNumber(nextPhoneNumber);
         user.setBio(normalizeOptionalText(request.bio()));
         user.setPreferredLanguage(normalizePreferredLanguage(request.preferredLanguage()));
         return toProfile(userRepository.save(user));
@@ -245,6 +254,7 @@ public class AuthService {
                 user.getUsername(),
                 user.getDisplayName(),
                 user.getEmail(),
+                user.getPhoneNumber(),
                 user.getBio(),
                 user.getPreferredLanguage(),
                 buildAvatarUrl(user),

@@ -20,6 +20,7 @@ test('buildAccountDraft prefers display name and fills fallback values', () => {
   assert.deepEqual(buildAccountDraft(profile), {
     displayName: 'Alice',
     email: 'alice@example.com',
+    phoneNumber: '',
     bio: '',
     preferredLanguage: 'zh-CN',
   });

@@ -138,6 +138,7 @@ export function Layout() {
   }, [user]);
 
   const email = user?.email || '暂无邮箱';
+  const phoneNumber = user?.phoneNumber || '未设置手机号';
   const roleLabel = getRoleLabel(user?.role);
   const avatarFallback = (displayName || 'Y').charAt(0).toUpperCase();
   const displayedAvatarUrl = avatarPreviewUrl || avatarSourceUrl;
@@ -256,6 +257,7 @@ export function Layout() {
         body: {
           displayName: profileDraft.displayName.trim(),
           email: profileDraft.email.trim(),
+          phoneNumber: profileDraft.phoneNumber.trim(),
           bio: profileDraft.bio,
           preferredLanguage: profileDraft.preferredLanguage,
         },
@@ -497,11 +499,15 @@ export function Layout() {
                       </div>
                       <div>
                         <p className="text-sm font-medium text-white">手机绑定</p>
-                        <p className="text-xs text-slate-400 mt-0.5">当前项目暂未实现短信绑定流程</p>
+                        <p className="text-xs text-slate-400 mt-0.5">当前手机号：{phoneNumber}</p>
                       </div>
                     </div>
-                    <Button variant="outline" disabled className="border-white/10 text-slate-500">
-                      暂未开放
+                    <Button
+                      variant="outline"
+                      className="border-white/10 hover:bg-white/10 text-slate-300"
+                      onClick={() => setActiveModal('settings')}
+                    >
+                      更改
                     </Button>
                   </div>
 
@@ -582,6 +588,16 @@ export function Layout() {
                       type="email"
                       value={profileDraft.email}
                       onChange={(event) => handleProfileDraftChange('email', event.target.value)}
+                      className="bg-black/20 border-white/10 text-white focus-visible:ring-[#336EFF]"
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium text-slate-300">手机号</label>
+                    <Input
+                      type="tel"
+                      value={profileDraft.phoneNumber}
+                      onChange={(event) => handleProfileDraftChange('phoneNumber', event.target.value)}
                       className="bg-black/20 border-white/10 text-white focus-visible:ring-[#336EFF]"
                     />
                   </div>

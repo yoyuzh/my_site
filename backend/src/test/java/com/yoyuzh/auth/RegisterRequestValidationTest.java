@@ -13,7 +13,7 @@ class RegisterRequestValidationTest {
 
     @Test
     void shouldRejectWeakPassword() {
-        RegisterRequest request = new RegisterRequest("alice", "alice@example.com", "weakpass");
+        RegisterRequest request = new RegisterRequest("alice", "alice@example.com", "13800138000", "weakpass");
 
         var violations = validator.validate(request);
 
@@ -24,10 +24,21 @@ class RegisterRequestValidationTest {
 
     @Test
     void shouldAcceptStrongPassword() {
-        RegisterRequest request = new RegisterRequest("alice", "alice@example.com", "StrongPass1!");
+        RegisterRequest request = new RegisterRequest("alice", "alice@example.com", "13800138000", "StrongPass1!");
 
         var violations = validator.validate(request);
 
         assertThat(violations).isEmpty();
+    }
+
+    @Test
+    void shouldRejectInvalidPhoneNumber() {
+        RegisterRequest request = new RegisterRequest("alice", "alice@example.com", "12345", "StrongPass1!");
+
+        var violations = validator.validate(request);
+
+        assertThat(violations)
+                .extracting(violation -> violation.getMessage())
+                .contains("请输入有效的11位手机号");
     }
 }

@@ -82,6 +82,23 @@ Important:
 6. Use `reviewer` before final delivery, especially for cross-layer changes or auth/files/storage flows.
 7. Use `deployer` only after code is committed or otherwise ready to ship.
 
+## Project-level hard rules
+
+### First-principles thinking
+
+- Start from the original requirement and problem, not from assumptions about the user's preferred implementation path.
+- Do not assume the user already knows exactly what they want or how to get there.
+- Stay cautious about motive, goal, and scope. If the underlying objective or business target is materially unclear, pause and discuss it with the user before implementation.
+
+
+### Solution and refactor rule
+
+- Do not propose compatibility-style or patch-style solutions.
+- Do not over-design. Use the shortest correct implementation path.
+- Do not add fallback, downgrade, or extra solution branches that the user did not ask for.
+- Do not propose any solution beyond the user's stated requirement if it could shift business logic.
+- Every proposed modification or refactor plan must be logically correct and validated across the full request path before it is presented.
+
 ## Repo-specific guardrails
 
 - Do not run `npm` commands at the repository root. This repo has a root `package-lock.json` but no root `package.json`.

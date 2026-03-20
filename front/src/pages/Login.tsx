@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'motion/react';
-import { LogIn, User, Lock, UserPlus, Mail, ArrowLeft } from 'lucide-react';
+import { LogIn, User, Lock, UserPlus, Mail, ArrowLeft, Phone } from 'lucide-react';
 
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/src/components/ui/card';
 import { Button } from '@/src/components/ui/button';
@@ -22,6 +22,7 @@ export default function Login() {
   const [password, setPassword] = useState('');
   const [registerUsername, setRegisterUsername] = useState('');
   const [registerEmail, setRegisterEmail] = useState('');
+  const [registerPhoneNumber, setRegisterPhoneNumber] = useState('');
   const [registerPassword, setRegisterPassword] = useState('');
 
   function switchMode(nextIsLogin: boolean) {
@@ -80,6 +81,7 @@ export default function Login() {
         body: {
           username: registerUsername.trim(),
           email: registerEmail.trim(),
+          phoneNumber: registerPhoneNumber.trim(),
           password: registerPassword,
         },
       });
@@ -280,6 +282,20 @@ export default function Login() {
                               className="pl-10 bg-black/20 border-white/10 focus-visible:ring-[#336EFF]"
                               value={registerEmail}
                               onChange={(event) => setRegisterEmail(event.target.value)}
+                              required
+                            />
+                          </div>
+                        </div>
+                        <div className="space-y-2">
+                          <label className="text-sm font-medium text-slate-300 ml-1">手机号</label>
+                          <div className="relative">
+                            <Phone className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-500" />
+                            <Input
+                              type="tel"
+                              placeholder="请输入11位手机号"
+                              className="pl-10 bg-black/20 border-white/10 focus-visible:ring-[#336EFF]"
+                              value={registerPhoneNumber}
+                              onChange={(event) => setRegisterPhoneNumber(event.target.value)}
                               required
                             />
                           </div>

@@ -13,6 +13,8 @@ public interface UserRepository extends JpaRepository<User, Long> {
 
     boolean existsByEmail(String email);
 
+    boolean existsByPhoneNumber(String phoneNumber);
+
     Optional<User> findByUsername(String username);
 
     long countByLastSchoolStudentIdIsNotNull();
@@ -23,7 +25,8 @@ public interface UserRepository extends JpaRepository<User, Long> {
             select u from User u
             where (:query is null or :query = ''
                 or lower(u.username) like lower(concat('%', :query, '%'))
-                or lower(u.email) like lower(concat('%', :query, '%')))
+                or lower(u.email) like lower(concat('%', :query, '%'))
+                or u.phoneNumber like concat('%', :query, '%'))
             """)
     Page<User> searchByUsernameOrEmail(@Param("query") String query, Pageable pageable);
 }

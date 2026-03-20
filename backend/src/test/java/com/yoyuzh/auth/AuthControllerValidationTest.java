@@ -45,12 +45,30 @@ class AuthControllerValidationTest {
                                 {
                                   "username": "alice",
                                   "email": "alice@example.com",
+                                  "phoneNumber": "13800138000",
                                   "password": "weakpass"
                                 }
                                 """))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.code").value(1000))
                 .andExpect(jsonPath("$.msg").value("密码至少10位，且必须包含大写字母、小写字母、数字和特殊字符"));
+    }
+
+    @Test
+    void shouldReturnReadablePhoneValidationMessage() throws Exception {
+        mockMvc.perform(post("/api/auth/register")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "username": "alice",
+                                  "email": "alice@example.com",
+                                  "phoneNumber": "12345",
+                                  "password": "StrongPass1!"
+                                }
+                                """))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value(1000))
+                .andExpect(jsonPath("$.msg").value("请输入有效的11位手机号"));
     }
 
     @Test

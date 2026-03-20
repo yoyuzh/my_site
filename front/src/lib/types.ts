@@ -3,6 +3,7 @@ export interface UserProfile {
   username: string;
   displayName?: string | null;
   email: string;
+  phoneNumber?: string | null;
   bio?: string | null;
   preferredLanguage?: string | null;
   avatarUrl?: string | null;
@@ -22,6 +23,7 @@ export interface AdminUser {
   id: number;
   username: string;
   email: string;
+  phoneNumber: string | null;
   createdAt: string;
   lastSchoolStudentId: string | null;
   lastSchoolSemester: string | null;

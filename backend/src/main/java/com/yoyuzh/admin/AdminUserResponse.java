@@ -8,6 +8,7 @@ public record AdminUserResponse(
         Long id,
         String username,
         String email,
+        String phoneNumber,
         LocalDateTime createdAt,
         String lastSchoolStudentId,
         String lastSchoolSemester,

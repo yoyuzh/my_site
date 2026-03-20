@@ -9,6 +9,7 @@ public record UserProfileResponse(
         String username,
         String displayName,
         String email,
+        String phoneNumber,
         String bio,
         String preferredLanguage,
         String avatarUrl,
@@ -16,6 +17,6 @@ public record UserProfileResponse(
         LocalDateTime createdAt
 ) {
     public UserProfileResponse(Long id, String username, String email, LocalDateTime createdAt) {
-        this(id, username, username, email, null, "zh-CN", null, UserRole.USER, createdAt);
+        this(id, username, username, email, null, null, "zh-CN", null, UserRole.USER, createdAt);
     }
 }

@@ -3,6 +3,7 @@ import type { AdminUserRole, UserProfile } from '@/src/lib/types';
 export interface AccountDraft {
   displayName: string;
   email: string;
+  phoneNumber: string;
   bio: string;
   preferredLanguage: string;
 }
@@ -11,6 +12,7 @@ export function buildAccountDraft(profile: UserProfile): AccountDraft {
   return {
     displayName: profile.displayName || profile.username,
     email: profile.email,
+    phoneNumber: profile.phoneNumber || '',
     bio: profile.bio || '',
     preferredLanguage: profile.preferredLanguage || 'zh-CN',
   };

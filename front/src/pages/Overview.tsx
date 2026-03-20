@@ -16,8 +16,9 @@ import {
 
 import { Button } from '@/src/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/src/components/ui/card';
-import { apiRequest } from '@/src/lib/api';
+import { apiDownload, apiRequest } from '@/src/lib/api';
 import { readCachedValue, writeCachedValue } from '@/src/lib/cache';
+import { shouldLoadAvatarWithAuth } from '@/src/components/layout/account-utils';
 import { getOverviewCacheKey, getSchoolResultsCacheKey, readStoredSchoolQuery, writeStoredSchoolQuery } from '@/src/lib/page-cache';
 import { cacheLatestSchoolData, fetchLatestSchoolData } from '@/src/lib/school';
 import { clearPostLoginPending, hasPostLoginPending, readStoredSession } from '@/src/lib/session';
@@ -74,6 +75,7 @@ export default function Overview() {
   const [grades, setGrades] = useState<GradeResponse[]>(cachedOverview?.grades ?? cachedSchoolResults?.grades ?? []);
   const [loadingError, setLoadingError] = useState('');
   const [retryToken, setRetryToken] = useState(0);
+  const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
 
   const currentHour = new Date().getHours();
   let greeting = '晚上好';
@@ -219,8 +221,53 @@ export default function Overview() {
     };
   }, [retryToken]);
 
+  useEffect(() => {
+    let active = true;
+    let objectUrl: string | null = null;
+
+    async function loadAvatar() {
+      if (!profile?.avatarUrl) {
+        if (active) {
+          setAvatarUrl(null);
+        }
+        return;
+      }
+
+      if (!shouldLoadAvatarWithAuth(profile.avatarUrl)) {
+        if (active) {
+          setAvatarUrl(profile.avatarUrl);
+        }
+        return;
+      }
+
+      try {
+        const response = await apiDownload(profile.avatarUrl);
+        const blob = await response.blob();
+        objectUrl = URL.createObjectURL(blob);
+        if (active) {
+          setAvatarUrl(objectUrl);
+        }
+      } catch {
+        if (active) {
+          setAvatarUrl(null);
+        }
+      }
+    }
+
+    void loadAvatar();
+
+    return () => {
+      active = false;
+      if (objectUrl) {
+        URL.revokeObjectURL(objectUrl);
+      }
+    };
+  }, [profile?.avatarUrl]);
+
   const latestSemester = grades[0]?.semester ?? '--';
   const previewCourses = schedule.slice(0, 3);
+  const profileDisplayName = profile?.displayName || profile?.username || '未登录';
+  const profileAvatarFallback = profileDisplayName.charAt(0).toUpperCase();
 
   return (
     <div className="space-y-6">
@@ -396,11 +443,15 @@ export default function Overview() {
             </CardHeader>
             <CardContent>
               <div className="flex items-center gap-4 p-4 rounded-xl bg-white/[0.02] border border-white/5">
-                <div className="w-12 h-12 rounded-full bg-gradient-to-br from-indigo-500 to-purple-500 flex items-center justify-center text-white font-bold text-xl shadow-lg">
-                  {(profile?.username?.[0] ?? 'T').toUpperCase()}
+                <div className="w-12 h-12 rounded-full bg-gradient-to-br from-indigo-500 to-purple-500 flex items-center justify-center text-white font-bold text-xl shadow-lg overflow-hidden">
+                  {avatarUrl ? (
+                    <img src={avatarUrl} alt="Avatar" className="w-full h-full object-cover" />
+                  ) : (
+                    profileAvatarFallback
+                  )}
                 </div>
                 <div className="flex-1 min-w-0">
-                  <p className="text-sm font-semibold text-white truncate">{profile?.username ?? '未登录'}</p>
+                  <p className="text-sm font-semibold text-white truncate">{profileDisplayName}</p>
                   <p className="text-xs text-slate-400 truncate mt-0.5">{profile?.email ?? '暂无邮箱'}</p>
                 </div>
               </div>

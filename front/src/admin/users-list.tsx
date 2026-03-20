@@ -151,7 +151,7 @@ export function PortalAdminUsersList() {
   return (
     <List
       actions={<UsersListActions />}
-      filters={[<SearchInput key="query" source="query" alwaysOn placeholder="搜索用户名或邮箱" />]}
+      filters={[<SearchInput key="query" source="query" alwaysOn placeholder="搜索用户名、邮箱或手机号" />]}
       perPage={25}
       resource="users"
       title="用户管理"
@@ -161,6 +161,7 @@ export function PortalAdminUsersList() {
         <TextField source="id" label="ID" />
         <TextField source="username" label="用户名" />
         <TextField source="email" label="邮箱" />
+        <TextField source="phoneNumber" label="手机号" emptyText="-" />
         <FunctionField<AdminUser>
           label="角色"
           render={(record) => <Chip label={record.role} size="small" color={record.role === 'ADMIN' ? 'primary' : 'default'} />}

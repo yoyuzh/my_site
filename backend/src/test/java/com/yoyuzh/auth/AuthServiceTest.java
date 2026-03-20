@@ -62,9 +62,10 @@ class AuthServiceTest {
 
     @Test
     void shouldRegisterUserWithEncryptedPassword() {
-        RegisterRequest request = new RegisterRequest("alice", "alice@example.com", "StrongPass1!");
+        RegisterRequest request = new RegisterRequest("alice", "alice@example.com", "13800138000", "StrongPass1!");
         when(userRepository.existsByUsername("alice")).thenReturn(false);
         when(userRepository.existsByEmail("alice@example.com")).thenReturn(false);
+        when(userRepository.existsByPhoneNumber("13800138000")).thenReturn(false);
         when(passwordEncoder.encode("StrongPass1!")).thenReturn("encoded-password");
         when(userRepository.save(any(User.class))).thenAnswer(invocation -> {
             User user = invocation.getArgument(0);
@@ -81,18 +82,31 @@ class AuthServiceTest {
         assertThat(response.accessToken()).isEqualTo("access-token");
         assertThat(response.refreshToken()).isEqualTo("refresh-token");
         assertThat(response.user().username()).isEqualTo("alice");
+        assertThat(response.user().phoneNumber()).isEqualTo("13800138000");
         verify(passwordEncoder).encode("StrongPass1!");
         verify(fileService).ensureDefaultDirectories(any(User.class));
     }
 
     @Test
     void shouldRejectDuplicateUsernameOnRegister() {
-        RegisterRequest request = new RegisterRequest("alice", "alice@example.com", "StrongPass1!");
+        RegisterRequest request = new RegisterRequest("alice", "alice@example.com", "13800138000", "StrongPass1!");
         when(userRepository.existsByUsername("alice")).thenReturn(true);
 
         assertThatThrownBy(() -> authService.register(request))
                 .isInstanceOf(BusinessException.class)
                 .hasMessageContaining("用户名已存在");
+    }
+
+    @Test
+    void shouldRejectDuplicatePhoneNumberOnRegister() {
+        RegisterRequest request = new RegisterRequest("alice", "alice@example.com", "13800138000", "StrongPass1!");
+        when(userRepository.existsByUsername("alice")).thenReturn(false);
+        when(userRepository.existsByEmail("alice@example.com")).thenReturn(false);
+        when(userRepository.existsByPhoneNumber("13800138000")).thenReturn(true);
+
+        assertThatThrownBy(() -> authService.register(request))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("手机号已存在");
     }
 
     @Test
@@ -188,6 +202,7 @@ class AuthServiceTest {
         user.setUsername("alice");
         user.setDisplayName("Alice");
         user.setEmail("alice@example.com");
+        user.setPhoneNumber("13800138000");
         user.setBio("old bio");
         user.setPreferredLanguage("zh-CN");
         user.setRole(UserRole.USER);
@@ -196,18 +211,21 @@ class AuthServiceTest {
         UpdateUserProfileRequest request = new UpdateUserProfileRequest(
                 "Alicia",
                 "newalice@example.com",
+                "13900139000",
                 "new bio",
                 "en-US"
         );
 
         when(userRepository.findByUsername("alice")).thenReturn(Optional.of(user));
         when(userRepository.existsByEmail("newalice@example.com")).thenReturn(false);
+        when(userRepository.existsByPhoneNumber("13900139000")).thenReturn(false);
         when(userRepository.save(user)).thenReturn(user);
 
         var response = authService.updateProfile("alice", request);
 
         assertThat(response.displayName()).isEqualTo("Alicia");
         assertThat(response.email()).isEqualTo("newalice@example.com");
+        assertThat(response.phoneNumber()).isEqualTo("13900139000");
         assertThat(response.bio()).isEqualTo("new bio");
         assertThat(response.preferredLanguage()).isEqualTo("en-US");
     }
