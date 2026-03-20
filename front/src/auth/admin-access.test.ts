@@ -9,6 +9,7 @@ test('fetchAdminAccessStatus returns true when the admin summary request succeed
   const request = async () => ({
     totalUsers: 1,
     totalFiles: 2,
+    inviteCode: 'invite-code',
   });
 
   await assert.doesNotReject(async () => {

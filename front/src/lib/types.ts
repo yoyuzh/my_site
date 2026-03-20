@@ -16,6 +16,7 @@ export type AdminUserRole = 'USER' | 'MODERATOR' | 'ADMIN';
 export interface AdminSummary {
   totalUsers: number;
   totalFiles: number;
+  inviteCode: string;
 }
 
 export interface AdminUser {

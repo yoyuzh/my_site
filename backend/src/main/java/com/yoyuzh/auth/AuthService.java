@@ -46,6 +46,7 @@ public class AuthService {
     private final RefreshTokenService refreshTokenService;
     private final FileService fileService;
     private final FileContentStorage fileContentStorage;
+    private final RegistrationInviteService registrationInviteService;
 
     @Transactional
     public AuthResponse register(RegisterRequest request) {
@@ -59,6 +60,8 @@ public class AuthService {
             throw new BusinessException(ErrorCode.UNKNOWN, "手机号已存在");
         }
 
+        registrationInviteService.consumeInviteCode(request.inviteCode());
+
         User user = new User();
         user.setUsername(request.username());
         user.setDisplayName(request.username());
@@ -69,9 +72,10 @@ public class AuthService {
         user.setPreferredLanguage("zh-CN");
         User saved = userRepository.save(user);
         fileService.ensureDefaultDirectories(saved);
-        return issueTokens(saved);
+        return issueFreshTokens(saved);
     }
 
+    @Transactional
     public AuthResponse login(LoginRequest request) {
         try {
             authenticationManager.authenticate(
@@ -85,7 +89,7 @@ public class AuthService {
         User user = userRepository.findByUsername(request.username())
                 .orElseThrow(() -> new BusinessException(ErrorCode.NOT_LOGGED_IN, "用户不存在"));
         fileService.ensureDefaultDirectories(user);
-        return issueTokens(user);
+        return issueFreshTokens(user);
     }
 
     @Transactional
@@ -107,7 +111,7 @@ public class AuthService {
             return userRepository.save(created);
         });
         fileService.ensureDefaultDirectories(user);
-        return issueTokens(user);
+        return issueFreshTokens(user);
     }
 
     @Transactional
@@ -154,9 +158,7 @@ public class AuthService {
         }
 
         user.setPasswordHash(passwordEncoder.encode(request.newPassword()));
-        userRepository.save(user);
-        refreshTokenService.revokeAllForUser(user.getId());
-        return issueTokens(user);
+        return issueFreshTokens(user);
     }
 
     public InitiateUploadResponse initiateAvatarUpload(String username, UpdateUserAvatarRequest request) {
@@ -263,13 +265,24 @@ public class AuthService {
         );
     }
 
-    private AuthResponse issueTokens(User user) {
+    private AuthResponse issueFreshTokens(User user) {
+        refreshTokenService.revokeAllForUser(user.getId());
         return issueTokens(user, refreshTokenService.issueRefreshToken(user));
     }
 
     private AuthResponse issueTokens(User user, String refreshToken) {
-        String accessToken = jwtTokenProvider.generateAccessToken(user.getId(), user.getUsername());
-        return AuthResponse.issued(accessToken, refreshToken, toProfile(user));
+        User sessionUser = rotateActiveSession(user);
+        String accessToken = jwtTokenProvider.generateAccessToken(
+                sessionUser.getId(),
+                sessionUser.getUsername(),
+                sessionUser.getActiveSessionId()
+        );
+        return AuthResponse.issued(accessToken, refreshToken, toProfile(sessionUser));
+    }
+
+    private User rotateActiveSession(User user) {
+        user.setActiveSessionId(UUID.randomUUID().toString());
+        return userRepository.save(user);
     }
 
     private String normalizeOptionalText(String value) {

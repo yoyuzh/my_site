@@ -1,0 +1,136 @@
+# Cline Rules — yoyuzh/my_site
+
+本项目包含 Java 后端、Vite/React 前端、`docs/` 文档区和工具脚本。以下规则适用于所有在此仓库中的操作。
+
+---
+
+## 项目结构
+
+- `backend/`：Spring Boot 3.3.8，Java 17，Maven，领域包位于 `com.yoyuzh.{auth,cqu,files,config,common,admin,transfer}`。
+- `front/`：Vite 6，React 19，TypeScript，Tailwind CSS v4，路由/页面代码在 `src/pages`，可复用 UI 在 `src/components`，共享逻辑在 `src/lib`。
+- `docs/`：实现计划存放于 `docs/superpowers/plans/`。
+- `scripts/`：部署、迁移、冒烟测试和本地启动辅助脚本。
+
+---
+
+## 命令来源（只使用已存在的命令）
+
+不得发明未在 `front/package.json`、`backend/pom.xml`、`backend/README.md`、`front/README.md` 或已签入脚本文件中存在的命令。
+
+### 前端命令（在 `front/` 目录下执行）
+
+```
+npm run dev
+npm run build
+npm run preview
+npm run clean
+npm run lint
+npm run test
+```
+
+**重要：**
+- `npm run lint` 运行 `tsc --noEmit`，这是当前的 TypeScript 类型检查方式。
+- 不存在独立的 ESLint 命令，也不存在独立的 `typecheck` 脚本。
+- **禁止在仓库根目录运行 `npm` 命令**，根目录有 `package-lock.json` 但没有 `package.json`。
+
+### 后端命令（在 `backend/` 目录下执行）
+
+```
+mvn spring-boot:run
+mvn spring-boot:run -Dspring-boot.run.profiles=dev
+mvn test
+mvn package
+```
+
+**重要：** 后端没有定义专用的 lint 或 typecheck 命令。如果任务要求 lint/typecheck，请明确说明后端当前未定义这些命令。
+
+### 脚本文件（使用已存在的脚本，不创建新的包装命令）
+
+- `scripts/deploy-front-oss.mjs`
+- `scripts/migrate-file-storage-to-oss.mjs`
+- `scripts/oss-deploy-lib.mjs`
+- `scripts/oss-deploy-lib.test.mjs`
+- `scripts/local-smoke.ps1`
+- `scripts/start-backend-dev.ps1`
+- `scripts/start-frontend-dev.ps1`
+
+### 发布和部署命令
+
+- 前端 OSS 发布（从仓库根目录）：`node scripts/deploy-front-oss.mjs`
+- 前端 OSS 试运行：`node scripts/deploy-front-oss.mjs --dry-run`
+- 前端 OSS 发布（跳过构建）：`node scripts/deploy-front-oss.mjs --skip-build`
+- 后端打包（从 `backend/`）：`mvn package`
+
+**重要：**
+- `scripts/deploy-front-oss.mjs` 从环境变量或 `.env.oss.local` 读取 OSS 凭证。
+- 仓库中不存在后端部署脚本。后端交付是两步流程：在 `backend/` 打包生成 `backend/target/yoyuzh-portal-backend-0.0.1-SNAPSHOT.jar`，然后通过 `ssh`/`scp` 上传并重启。
+- **禁止发明**远程目录、服务名、进程管理器或重启命令。从服务器发现，或在无法安全发现时询问用户。
+
+---
+
+## 工作流程
+
+1. **分析阶段**：如果任务涉及多个文件、多个层次或同时跨越前后端，先制定计划再动手。
+2. **探索阶段**：如果现有行为或所属模块不明显，先调查代码路径、现有行为和相关配置/测试，再实现。
+3. **实现阶段**：进行实际代码修改。拥有 `backend/`、`front/`、`scripts/` 或 docs 中的编辑权，实现时可同步更新附近的测试。
+4. **验证阶段**：运行已有的仓库支持命令，报告确切的失败或缺失命令。不要重写源文件来"修复"测试失败。
+5. **部署阶段**：代码提交或准备好发布后，使用现有命令构建前后端，通过已签入的 OSS 部署脚本发布前端，通过 SSH 处理后端 jar 上传/重启。
+
+---
+
+## 核心规则
+
+### 第一性原理思考
+
+- 从原始需求和问题出发，不要从用户偏好的实现路径假设出发。
+- 不要假设用户已经确切知道他们想要什么或如何实现。
+- 对动机、目标和范围保持谨慎。如果底层目标或业务目标不清晰，先与用户讨论再实现。
+
+### 解决方案和重构规则
+
+- **不要**提出兼容性补丁式或临时修复式方案。
+- **不要**过度设计。使用最短的正确实现路径。
+- **不要**添加用户未要求的回退、降级或额外解决方案分支。
+- **不要**提出超出用户明确需求且可能改变业务逻辑的任何方案。
+- 每个修改或重构方案在呈现前，必须在完整请求路径中进行逻辑验证。
+
+---
+
+## 仓库专项规范
+
+### 前端专项规范（适用于 `front/` 目录操作）
+
+- 路由行为保留在 `src/pages`，共享非 UI 逻辑保留在 `src/lib`。
+- 测试文件紧邻其验证的状态/辅助模块，遵循已有的 `*.test.ts` 模式。
+- 保留当前的 Vite 别名用法：`@/*` 从 `front/` 目录根解析。
+- 如果修改依赖后端 API 行为，修改前先验证 `vite.config.ts` 中的代理配置，不要硬编码 URL。
+- 前端 API 代理定义在 `front/vite.config.ts`，`VITE_BACKEND_URL` 默认值为 `http://localhost:8080`。
+- 前端发布使用 `node scripts/deploy-front-oss.mjs`，不要手动上传对象。
+- 前端测试已存在于 `front/src/**/*.test.ts`，新测试紧邻其验证的状态或库模块。
+
+### 后端专项规范（适用于 `backend/` 目录操作）
+
+- 包布局：
+  - `auth`：认证、JWT、登录/注册/个人资料 DTO 和服务
+  - `files`：文件 API 和存储流，包括 `files/storage`
+  - `cqu`：CQU 课程表/成绩聚合
+  - `config`：Spring 和安全配置
+  - `common`：共享异常和通用工具
+  - `admin`：管理员功能
+  - `transfer`：文件传输功能
+- 保持 controller、service、DTO、config 和 storage 职责按当前包边界分离。
+- 修改 `auth`、`files` 或 `cqu` 时，先检查现有测试包是否已覆盖该区域，再在其他地方添加新文件。
+- 遵守 `application-dev.yml` 中的 `dev` profile；不要硬编码绕过 H2 或模拟 CQU 行为的假设。
+- 后端本地开发行为分布在 `backend/src/main/resources/application.yml` 和 `application-dev.yml` 中；`dev` profile 使用 H2 和模拟 CQU 数据。
+- 如果修改影响文件存储行为，注意仓库当前支持本地存储和 OSS 相关迁移/部署脚本。
+- 优先使用 Maven 命令进行验证，而不是临时 shell 管道。
+- 后端测试已存在于 `backend/src/test/java/com/yoyuzh/...`；优先在匹配的包中添加或更新测试。
+- 不要将 `backend/target/` 产物提交到 git，除非用户明确要求。
+
+### 文档专项规范（适用于 `docs/` 目录操作）
+
+- 文档应是具体的、与仓库相关的。
+- 优先记录 `front/package.json`、`backend/pom.xml`、`backend/README.md`、`front/README.md` 或已签入脚本文件中已存在的命令。
+- 不要引入占位符命令，如虚构的根目录 `npm test`、后端 lint 脚本或独立的前端 typecheck 脚本。
+- 文档验证时，明确说明差距：后端 lint/typecheck 命令未定义，前端类型检查通过 `npm run lint` 进行。
+- 计划或交接文档应绑定到实际仓库路径，如 `backend/...`、`front/...`、`scripts/...` 和 `docs/...`。

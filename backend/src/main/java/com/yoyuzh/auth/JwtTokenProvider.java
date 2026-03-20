@@ -11,6 +11,7 @@ import javax.crypto.SecretKey;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.Date;
+import org.springframework.util.StringUtils;
 
 @Component
 public class JwtTokenProvider {
@@ -39,15 +40,20 @@ public class JwtTokenProvider {
         secretKey = Keys.hmacShaKeyFor(secret.getBytes(StandardCharsets.UTF_8));
     }
 
-    public String generateAccessToken(Long userId, String username) {
+    public String generateAccessToken(Long userId, String username, String sessionId) {
         Instant now = Instant.now();
-        return Jwts.builder()
+        var builder = Jwts.builder()
                 .subject(username)
                 .claim("uid", userId)
                 .issuedAt(Date.from(now))
                 .expiration(Date.from(now.plusSeconds(jwtProperties.getAccessExpirationSeconds())))
-                .signWith(secretKey)
-                .compact();
+                .signWith(secretKey);
+
+        if (StringUtils.hasText(sessionId)) {
+            builder.claim("sid", sessionId);
+        }
+
+        return builder.compact();
     }
 
     public boolean validateToken(String token) {
@@ -66,6 +72,21 @@ public class JwtTokenProvider {
     public Long getUserId(String token) {
         Object uid = parseClaims(token).get("uid");
         return uid == null ? null : Long.parseLong(uid.toString());
+    }
+
+    public String getSessionId(String token) {
+        Object sessionId = parseClaims(token).get("sid");
+        return sessionId == null ? null : sessionId.toString();
+    }
+
+    public boolean hasMatchingSession(String token, String activeSessionId) {
+        String tokenSessionId = getSessionId(token);
+
+        if (!StringUtils.hasText(activeSessionId)) {
+            return !StringUtils.hasText(tokenSessionId);
+        }
+
+        return activeSessionId.equals(tokenSessionId);
     }
 
     private Claims parseClaims(String token) {

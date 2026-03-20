@@ -1,9 +1,13 @@
 import { useEffect, useState } from 'react';
-import { Alert, Card, CardContent, Chip, CircularProgress, Grid, Stack, Typography } from '@mui/material';
+import ContentCopyIcon from '@mui/icons-material/ContentCopy';
+import RefreshIcon from '@mui/icons-material/Refresh';
+import { Alert, Button, Card, CardContent, Chip, CircularProgress, Grid, Stack, Typography } from '@mui/material';
+import { useNavigate } from 'react-router-dom';
 
 import { apiRequest } from '@/src/lib/api';
 import { readStoredSession } from '@/src/lib/session';
 import type { AdminSummary } from '@/src/lib/types';
+import { getInviteCodePanelState } from './dashboard-state';
 
 interface DashboardState {
   summary: AdminSummary | null;
@@ -33,12 +37,31 @@ export function PortalAdminDashboard() {
   });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [copyMessage, setCopyMessage] = useState('');
+  const navigate = useNavigate();
   const session = readStoredSession();
+
+  async function loadDashboardData() {
+    setLoading(true);
+    setError('');
+
+    try {
+      const summary = await apiRequest<AdminSummary>('/admin/summary');
+
+      setState({
+        summary,
+      });
+    } catch (requestError) {
+      setError(requestError instanceof Error ? requestError.message : '后台首页数据加载失败');
+    } finally {
+      setLoading(false);
+    }
+  }
 
   useEffect(() => {
     let active = true;
 
-    async function loadDashboardData() {
+    void (async () => {
       setLoading(true);
       setError('');
 
@@ -63,24 +86,52 @@ export function PortalAdminDashboard() {
           setLoading(false);
         }
       }
-    }
-
-    loadDashboardData();
+    })();
 
     return () => {
       active = false;
     };
   }, []);
 
+  const inviteCodePanel = getInviteCodePanelState(state.summary);
+
+  async function handleRefreshInviteCode() {
+    setCopyMessage('');
+    await loadDashboardData();
+  }
+
+  async function handleCopyInviteCode() {
+    if (!inviteCodePanel.canCopy) {
+      return;
+    }
+
+    if (!navigator.clipboard?.writeText) {
+      setError('当前浏览器不支持复制邀请码');
+      return;
+    }
+
+    try {
+      await navigator.clipboard.writeText(inviteCodePanel.inviteCode);
+      setCopyMessage('邀请码已复制到剪贴板');
+    } catch (requestError) {
+      setError(requestError instanceof Error ? requestError.message : '复制邀请码失败');
+    }
+  }
+
   return (
     <Stack spacing={3} sx={{ p: 2 }}>
-      <Stack spacing={1}>
-        <Typography variant="h4" fontWeight={700}>
-          YOYUZH Admin
-        </Typography>
-        <Typography color="text.secondary">
-          这是嵌入现有门户应用的 react-admin 管理入口，当前通过 `/api/admin/**` 提供后台数据。
-        </Typography>
+      <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2} justifyContent="space-between" alignItems={{ xs: 'flex-start', sm: 'center' }}>
+        <Stack spacing={1}>
+          <Typography variant="h4" fontWeight={700}>
+            YOYUZH Admin
+          </Typography>
+          <Typography color="text.secondary">
+            这是嵌入现有门户应用的 react-admin 管理入口，当前通过 `/api/admin/**` 提供后台数据。
+          </Typography>
+        </Stack>
+        <Button variant="outlined" onClick={() => navigate('/overview')}>
+          返回总览
+        </Button>
       </Stack>
 
       {loading && (
@@ -113,7 +164,7 @@ export function PortalAdminDashboard() {
       </Grid>
 
       <Grid container spacing={2}>
-        <Grid size={{ xs: 12, md: 6 }}>
+        <Grid size={{ xs: 12, md: 4 }}>
           <Card variant="outlined">
             <CardContent>
               <Stack spacing={1}>
@@ -134,7 +185,7 @@ export function PortalAdminDashboard() {
           </Card>
         </Grid>
 
-        <Grid size={{ xs: 12, md: 6 }}>
+        <Grid size={{ xs: 12, md: 4 }}>
           <Card variant="outlined">
             <CardContent>
               <Stack spacing={1}>
@@ -147,6 +198,57 @@ export function PortalAdminDashboard() {
                 <Typography color="text.secondary">
                   文件总数：{state.summary?.totalFiles ?? 0}
                 </Typography>
+              </Stack>
+            </CardContent>
+          </Card>
+        </Grid>
+
+        <Grid size={{ xs: 12, md: 4 }}>
+          <Card variant="outlined">
+            <CardContent>
+              <Stack spacing={1.5}>
+                <Typography variant="h6" fontWeight={600}>
+                  当前邀请码
+                </Typography>
+                <Typography color="text.secondary">
+                  注册成功一次后会自动刷新，后台展示的始终是下一次可用的邀请码。
+                </Typography>
+                <Typography
+                  component="code"
+                  sx={{
+                    display: 'inline-block',
+                    width: 'fit-content',
+                    px: 1.5,
+                    py: 1,
+                    borderRadius: 1,
+                    backgroundColor: 'action.hover',
+                    fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
+                    fontSize: '0.95rem',
+                  }}
+                >
+                  {inviteCodePanel.inviteCode}
+                </Typography>
+                <Stack direction="row" spacing={1}>
+                  <Button
+                    variant="contained"
+                    size="small"
+                    startIcon={<ContentCopyIcon />}
+                    onClick={() => void handleCopyInviteCode()}
+                    disabled={!inviteCodePanel.canCopy}
+                  >
+                    复制
+                  </Button>
+                  <Button
+                    variant="outlined"
+                    size="small"
+                    startIcon={<RefreshIcon />}
+                    onClick={() => void handleRefreshInviteCode()}
+                    disabled={loading}
+                  >
+                    刷新
+                  </Button>
+                </Stack>
+                {copyMessage && <Alert severity="success">{copyMessage}</Alert>}
               </Stack>
             </CardContent>
           </Card>

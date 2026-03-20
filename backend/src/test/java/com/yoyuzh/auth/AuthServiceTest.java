@@ -29,6 +29,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -57,12 +58,22 @@ class AuthServiceTest {
     @Mock
     private FileContentStorage fileContentStorage;
 
+    @Mock
+    private RegistrationInviteService registrationInviteService;
+
     @InjectMocks
     private AuthService authService;
 
     @Test
     void shouldRegisterUserWithEncryptedPassword() {
-        RegisterRequest request = new RegisterRequest("alice", "alice@example.com", "13800138000", "StrongPass1!");
+        RegisterRequest request = new RegisterRequest(
+                "alice",
+                "alice@example.com",
+                "13800138000",
+                "StrongPass1!",
+                "StrongPass1!",
+                "invite-code"
+        );
         when(userRepository.existsByUsername("alice")).thenReturn(false);
         when(userRepository.existsByEmail("alice@example.com")).thenReturn(false);
         when(userRepository.existsByPhoneNumber("13800138000")).thenReturn(false);
@@ -73,7 +84,7 @@ class AuthServiceTest {
             user.setCreatedAt(LocalDateTime.now());
             return user;
         });
-        when(jwtTokenProvider.generateAccessToken(1L, "alice")).thenReturn("access-token");
+        when(jwtTokenProvider.generateAccessToken(eq(1L), eq("alice"), anyString())).thenReturn("access-token");
         when(refreshTokenService.issueRefreshToken(any(User.class))).thenReturn("refresh-token");
 
         AuthResponse response = authService.register(request);
@@ -83,13 +94,21 @@ class AuthServiceTest {
         assertThat(response.refreshToken()).isEqualTo("refresh-token");
         assertThat(response.user().username()).isEqualTo("alice");
         assertThat(response.user().phoneNumber()).isEqualTo("13800138000");
+        verify(registrationInviteService).consumeInviteCode("invite-code");
         verify(passwordEncoder).encode("StrongPass1!");
         verify(fileService).ensureDefaultDirectories(any(User.class));
     }
 
     @Test
     void shouldRejectDuplicateUsernameOnRegister() {
-        RegisterRequest request = new RegisterRequest("alice", "alice@example.com", "13800138000", "StrongPass1!");
+        RegisterRequest request = new RegisterRequest(
+                "alice",
+                "alice@example.com",
+                "13800138000",
+                "StrongPass1!",
+                "StrongPass1!",
+                "invite-code"
+        );
         when(userRepository.existsByUsername("alice")).thenReturn(true);
 
         assertThatThrownBy(() -> authService.register(request))
@@ -99,7 +118,14 @@ class AuthServiceTest {
 
     @Test
     void shouldRejectDuplicatePhoneNumberOnRegister() {
-        RegisterRequest request = new RegisterRequest("alice", "alice@example.com", "13800138000", "StrongPass1!");
+        RegisterRequest request = new RegisterRequest(
+                "alice",
+                "alice@example.com",
+                "13800138000",
+                "StrongPass1!",
+                "StrongPass1!",
+                "invite-code"
+        );
         when(userRepository.existsByUsername("alice")).thenReturn(false);
         when(userRepository.existsByEmail("alice@example.com")).thenReturn(false);
         when(userRepository.existsByPhoneNumber("13800138000")).thenReturn(true);
@@ -107,6 +133,26 @@ class AuthServiceTest {
         assertThatThrownBy(() -> authService.register(request))
                 .isInstanceOf(BusinessException.class)
                 .hasMessageContaining("手机号已存在");
+    }
+
+    @Test
+    void shouldRejectInvalidInviteCodeOnRegister() {
+        RegisterRequest request = new RegisterRequest(
+                "alice",
+                "alice@example.com",
+                "13800138000",
+                "StrongPass1!",
+                "StrongPass1!",
+                "wrong-code"
+        );
+        var invalidInviteCode = new BusinessException(com.yoyuzh.common.ErrorCode.PERMISSION_DENIED, "邀请码错误");
+        org.mockito.Mockito.doThrow(invalidInviteCode)
+                .when(registrationInviteService)
+                .consumeInviteCode("wrong-code");
+
+        assertThatThrownBy(() -> authService.register(request))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("邀请码错误");
     }
 
     @Test
@@ -119,7 +165,8 @@ class AuthServiceTest {
         user.setPasswordHash("encoded-password");
         user.setCreatedAt(LocalDateTime.now());
         when(userRepository.findByUsername("alice")).thenReturn(Optional.of(user));
-        when(jwtTokenProvider.generateAccessToken(1L, "alice")).thenReturn("access-token");
+        when(userRepository.save(user)).thenReturn(user);
+        when(jwtTokenProvider.generateAccessToken(eq(1L), eq("alice"), anyString())).thenReturn("access-token");
         when(refreshTokenService.issueRefreshToken(user)).thenReturn("refresh-token");
 
         AuthResponse response = authService.login(request);
@@ -142,7 +189,8 @@ class AuthServiceTest {
         user.setCreatedAt(LocalDateTime.now());
         when(refreshTokenService.rotateRefreshToken("old-refresh"))
                 .thenReturn(new RefreshTokenService.RotatedRefreshToken(user, "new-refresh"));
-        when(jwtTokenProvider.generateAccessToken(1L, "alice")).thenReturn("new-access");
+        when(userRepository.save(user)).thenReturn(user);
+        when(jwtTokenProvider.generateAccessToken(eq(1L), eq("alice"), anyString())).thenReturn("new-access");
 
         AuthResponse response = authService.refresh("old-refresh");
 
@@ -184,7 +232,7 @@ class AuthServiceTest {
             user.setCreatedAt(LocalDateTime.now());
             return user;
         });
-        when(jwtTokenProvider.generateAccessToken(9L, "demo")).thenReturn("access-token");
+        when(jwtTokenProvider.generateAccessToken(eq(9L), eq("demo"), anyString())).thenReturn("access-token");
         when(refreshTokenService.issueRefreshToken(any(User.class))).thenReturn("refresh-token");
 
         AuthResponse response = authService.devLogin("demo");
@@ -248,7 +296,7 @@ class AuthServiceTest {
         when(passwordEncoder.matches("OldPass1!", "encoded-old")).thenReturn(true);
         when(passwordEncoder.encode("NewPass1!A")).thenReturn("encoded-new");
         when(userRepository.save(user)).thenReturn(user);
-        when(jwtTokenProvider.generateAccessToken(1L, "alice")).thenReturn("new-access");
+        when(jwtTokenProvider.generateAccessToken(eq(1L), eq("alice"), anyString())).thenReturn("new-access");
         when(refreshTokenService.issueRefreshToken(user)).thenReturn("new-refresh");
 
         AuthResponse response = authService.changePassword("alice", request);

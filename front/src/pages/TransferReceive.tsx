@@ -592,8 +592,10 @@ export default function TransferReceive({ embedded = false }: TransferReceivePro
                 <Input
                   value={receiveCode}
                   onChange={(event) => setReceiveCode(sanitizeReceiveCode(event.target.value))}
-                  placeholder="例如: 849201"
-                  className="h-16 bg-black/20 border-white/10 text-center text-3xl tracking-[0.5em] font-mono text-white"
+                  inputMode="numeric"
+                  aria-label="六位取件码"
+                  placeholder="请输入 6 位取件码"
+                  className="h-14 rounded-2xl border-white/10 bg-white/[0.03] px-4 text-center text-xl font-semibold tracking-[0.28em] text-slate-100 placeholder:text-slate-500 focus-visible:ring-emerald-400/60"
                 />
               </div>
               <Button

@@ -59,7 +59,7 @@ class JwtTokenProviderTest {
         JwtTokenProvider provider = new JwtTokenProvider(properties);
         provider.init();
 
-        String token = provider.generateAccessToken(7L, "alice");
+        String token = provider.generateAccessToken(7L, "alice", "session-1");
         SecretKey secretKey = Keys.hmacShaKeyFor(properties.getSecret().getBytes(StandardCharsets.UTF_8));
         Instant expiration = Jwts.parser().verifyWith(secretKey).build()
                 .parseSignedClaims(token)
@@ -70,6 +70,9 @@ class JwtTokenProviderTest {
         assertThat(provider.validateToken(token)).isTrue();
         assertThat(provider.getUsername(token)).isEqualTo("alice");
         assertThat(provider.getUserId(token)).isEqualTo(7L);
+        assertThat(provider.getSessionId(token)).isEqualTo("session-1");
+        assertThat(provider.hasMatchingSession(token, "session-1")).isTrue();
+        assertThat(provider.hasMatchingSession(token, "session-2")).isFalse();
         assertThat(expiration).isAfter(Instant.now().plusSeconds(850));
         assertThat(expiration).isBefore(Instant.now().plusSeconds(950));
     }

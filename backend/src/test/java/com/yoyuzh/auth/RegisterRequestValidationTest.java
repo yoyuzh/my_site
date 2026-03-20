@@ -13,7 +13,14 @@ class RegisterRequestValidationTest {
 
     @Test
     void shouldRejectWeakPassword() {
-        RegisterRequest request = new RegisterRequest("alice", "alice@example.com", "13800138000", "weakpass");
+        RegisterRequest request = new RegisterRequest(
+                "alice",
+                "alice@example.com",
+                "13800138000",
+                "weakpass",
+                "weakpass",
+                "invite-code"
+        );
 
         var violations = validator.validate(request);
 
@@ -24,7 +31,14 @@ class RegisterRequestValidationTest {
 
     @Test
     void shouldAcceptStrongPassword() {
-        RegisterRequest request = new RegisterRequest("alice", "alice@example.com", "13800138000", "StrongPass1!");
+        RegisterRequest request = new RegisterRequest(
+                "alice",
+                "alice@example.com",
+                "13800138000",
+                "StrongPass1!",
+                "StrongPass1!",
+                "invite-code"
+        );
 
         var violations = validator.validate(request);
 
@@ -33,12 +47,55 @@ class RegisterRequestValidationTest {
 
     @Test
     void shouldRejectInvalidPhoneNumber() {
-        RegisterRequest request = new RegisterRequest("alice", "alice@example.com", "12345", "StrongPass1!");
+        RegisterRequest request = new RegisterRequest(
+                "alice",
+                "alice@example.com",
+                "12345",
+                "StrongPass1!",
+                "StrongPass1!",
+                "invite-code"
+        );
 
         var violations = validator.validate(request);
 
         assertThat(violations)
                 .extracting(violation -> violation.getMessage())
                 .contains("请输入有效的11位手机号");
+    }
+
+    @Test
+    void shouldRejectMismatchedPasswordConfirmation() {
+        RegisterRequest request = new RegisterRequest(
+                "alice",
+                "alice@example.com",
+                "13800138000",
+                "StrongPass1!",
+                "StrongPass2!",
+                "invite-code"
+        );
+
+        var violations = validator.validate(request);
+
+        assertThat(violations)
+                .extracting(violation -> violation.getMessage())
+                .contains("两次输入的密码不一致");
+    }
+
+    @Test
+    void shouldRejectBlankInviteCode() {
+        RegisterRequest request = new RegisterRequest(
+                "alice",
+                "alice@example.com",
+                "13800138000",
+                "StrongPass1!",
+                "StrongPass1!",
+                ""
+        );
+
+        var violations = validator.validate(request);
+
+        assertThat(violations)
+                .extracting(violation -> violation.getMessage())
+                .contains("请输入邀请码");
     }
 }

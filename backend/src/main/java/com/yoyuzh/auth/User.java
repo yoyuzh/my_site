@@ -58,6 +58,9 @@ public class User {
     @Column(name = "avatar_updated_at")
     private LocalDateTime avatarUpdatedAt;
 
+    @Column(name = "active_session_id", length = 64)
+    private String activeSessionId;
+
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 32)
     private UserRole role;
@@ -175,6 +178,14 @@ public class User {
 
     public void setAvatarUpdatedAt(LocalDateTime avatarUpdatedAt) {
         this.avatarUpdatedAt = avatarUpdatedAt;
+    }
+
+    public String getActiveSessionId() {
+        return activeSessionId;
+    }
+
+    public void setActiveSessionId(String activeSessionId) {
+        this.activeSessionId = activeSessionId;
     }
 
     public UserRole getRole() {

@@ -2,6 +2,8 @@ package com.yoyuzh.config;
 
 import com.yoyuzh.auth.CustomUserDetailsService;
 import com.yoyuzh.auth.JwtTokenProvider;
+import com.yoyuzh.auth.User;
+import com.yoyuzh.common.BusinessException;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
@@ -33,6 +35,17 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             if (jwtTokenProvider.validateToken(token)
                     && SecurityContextHolder.getContext().getAuthentication() == null) {
                 String username = jwtTokenProvider.getUsername(token);
+                User domainUser;
+                try {
+                    domainUser = userDetailsService.loadDomainUser(username);
+                } catch (BusinessException ex) {
+                    filterChain.doFilter(request, response);
+                    return;
+                }
+                if (!jwtTokenProvider.hasMatchingSession(token, domainUser.getActiveSessionId())) {
+                    filterChain.doFilter(request, response);
+                    return;
+                }
                 UserDetails userDetails = userDetailsService.loadUserByUsername(username);
                 if (!userDetails.isEnabled()) {
                     filterChain.doFilter(request, response);

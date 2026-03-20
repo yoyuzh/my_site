@@ -11,6 +11,7 @@ import { getPostLoginRedirectPath } from '@/src/lib/file-share';
 import { cn } from '@/src/lib/utils';
 import { createSession, markPostLoginPending, saveStoredSession } from '@/src/lib/session';
 import type { AuthResponse } from '@/src/lib/types';
+import { buildRegisterPayload, validateRegisterForm } from './login-state';
 
 const DEV_LOGIN_ENABLED = import.meta.env.DEV || import.meta.env.VITE_ENABLE_DEV_LOGIN === 'true';
 
@@ -26,6 +27,8 @@ export default function Login() {
   const [registerEmail, setRegisterEmail] = useState('');
   const [registerPhoneNumber, setRegisterPhoneNumber] = useState('');
   const [registerPassword, setRegisterPassword] = useState('');
+  const [registerConfirmPassword, setRegisterConfirmPassword] = useState('');
+  const [registerInviteCode, setRegisterInviteCode] = useState('');
 
   function switchMode(nextIsLogin: boolean) {
     setIsLogin(nextIsLogin);
@@ -74,18 +77,33 @@ export default function Login() {
 
   async function handleRegisterSubmit(e: React.FormEvent) {
     e.preventDefault();
+    const validationMessage = validateRegisterForm({
+      username: registerUsername,
+      email: registerEmail,
+      phoneNumber: registerPhoneNumber,
+      password: registerPassword,
+      confirmPassword: registerConfirmPassword,
+      inviteCode: registerInviteCode,
+    });
+    if (validationMessage) {
+      setError(validationMessage);
+      return;
+    }
+
     setLoading(true);
     setError('');
 
     try {
       const auth = await apiRequest<AuthResponse>('/auth/register', {
         method: 'POST',
-        body: {
-          username: registerUsername.trim(),
-          email: registerEmail.trim(),
-          phoneNumber: registerPhoneNumber.trim(),
+        body: buildRegisterPayload({
+          username: registerUsername,
+          email: registerEmail,
+          phoneNumber: registerPhoneNumber,
           password: registerPassword,
-        },
+          confirmPassword: registerConfirmPassword,
+          inviteCode: registerInviteCode,
+        }),
       });
 
       saveStoredSession(createSession(auth));
@@ -320,6 +338,36 @@ export default function Login() {
                           <p className="text-xs text-slate-500 ml-1">
                             至少 10 位，并包含大写字母、小写字母、数字和特殊字符。
                           </p>
+                        </div>
+                        <div className="space-y-2">
+                          <label className="text-sm font-medium text-slate-300 ml-1">确认密码</label>
+                          <div className="relative">
+                            <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-500" />
+                            <Input
+                              type="password"
+                              placeholder="请再次输入密码"
+                              className="pl-10 bg-black/20 border-white/10 focus-visible:ring-[#336EFF]"
+                              value={registerConfirmPassword}
+                              onChange={(event) => setRegisterConfirmPassword(event.target.value)}
+                              required
+                              minLength={10}
+                              maxLength={64}
+                            />
+                          </div>
+                        </div>
+                        <div className="space-y-2">
+                          <label className="text-sm font-medium text-slate-300 ml-1">邀请码</label>
+                          <div className="relative">
+                            <UserPlus className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-500" />
+                            <Input
+                              type="text"
+                              placeholder="请输入邀请码"
+                              className="pl-10 bg-black/20 border-white/10 focus-visible:ring-[#336EFF]"
+                              value={registerInviteCode}
+                              onChange={(event) => setRegisterInviteCode(event.target.value)}
+                              required
+                            />
+                          </div>
                         </div>
                       </div>
 

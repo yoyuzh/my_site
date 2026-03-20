@@ -1,6 +1,7 @@
 package com.yoyuzh.admin;
 
 import com.yoyuzh.auth.PasswordPolicy;
+import com.yoyuzh.auth.RegistrationInviteService;
 import com.yoyuzh.auth.User;
 import com.yoyuzh.auth.UserRole;
 import com.yoyuzh.auth.UserRepository;
@@ -21,6 +22,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.security.SecureRandom;
 import java.util.List;
+import java.util.UUID;
 
 @Service
 @RequiredArgsConstructor
@@ -31,12 +33,14 @@ public class AdminService {
     private final FileService fileService;
     private final PasswordEncoder passwordEncoder;
     private final RefreshTokenService refreshTokenService;
+    private final RegistrationInviteService registrationInviteService;
     private final SecureRandom secureRandom = new SecureRandom();
 
     public AdminSummaryResponse getSummary() {
         return new AdminSummaryResponse(
                 userRepository.count(),
-                storedFileRepository.count()
+                storedFileRepository.count(),
+                registrationInviteService.getCurrentInviteCode()
         );
     }
 
@@ -82,6 +86,7 @@ public class AdminService {
     public AdminUserResponse updateUserBanned(Long userId, boolean banned) {
         User user = getRequiredUser(userId);
         user.setBanned(banned);
+        user.setActiveSessionId(UUID.randomUUID().toString());
         refreshTokenService.revokeAllForUser(user.getId());
         return toUserResponse(userRepository.save(user));
     }
@@ -93,6 +98,7 @@ public class AdminService {
         }
         User user = getRequiredUser(userId);
         user.setPasswordHash(passwordEncoder.encode(newPassword));
+        user.setActiveSessionId(UUID.randomUUID().toString());
         refreshTokenService.revokeAllForUser(user.getId());
         return toUserResponse(userRepository.save(user));
     }

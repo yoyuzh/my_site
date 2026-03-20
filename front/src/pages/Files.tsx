@@ -7,7 +7,6 @@ import {
   FileText,
   Image as ImageIcon,
   Download,
-  Monitor,
   ChevronRight,
   ChevronUp,
   FileUp,
@@ -61,19 +60,15 @@ import {
   replaceUiFile,
   syncSelectedFile,
 } from './files-state';
-
-const QUICK_ACCESS = [
-  { name: '桌面', icon: Monitor, path: [] as string[] },
-  { name: '下载', icon: Download, path: ['下载'] },
-  { name: '文档', icon: FileText, path: ['文档'] },
-  { name: '图片', icon: ImageIcon, path: ['图片'] },
-];
-
-const DIRECTORIES = [
-  { name: '下载', icon: Folder },
-  { name: '文档', icon: Folder },
-  { name: '图片', icon: Folder },
-];
+import {
+  buildDirectoryTree,
+  createExpandedDirectorySet,
+  getMissingDirectoryListingPaths,
+  mergeDirectoryChildren,
+  toDirectoryPath,
+  type DirectoryChildrenMap,
+  type DirectoryTreeNode,
+} from './files-tree';
 
 function sleep(ms: number) {
   return new Promise((resolve) => {
@@ -82,7 +77,52 @@ function sleep(ms: number) {
 }
 
 function toBackendPath(pathParts: string[]) {
-  return pathParts.length === 0 ? '/' : `/${pathParts.join('/')}`;
+  return toDirectoryPath(pathParts);
+}
+
+function DirectoryTreeItem({
+  node,
+  onSelect,
+  onToggle,
+}: {
+  node: DirectoryTreeNode;
+  onSelect: (path: string[]) => void;
+  onToggle: (path: string[]) => void;
+}) {
+  return (
+    <div>
+      <div
+        className={cn(
+          'group flex items-center gap-1 rounded-xl px-2 py-1.5 transition-colors',
+          node.active ? 'bg-[#336EFF]/15' : 'hover:bg-white/5',
+        )}
+        style={{ paddingLeft: `${node.depth * 14 + 8}px` }}
+      >
+        <button
+          type="button"
+          className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-slate-500 transition-colors hover:bg-white/5 hover:text-white"
+          onClick={() => onToggle(node.path)}
+          aria-label={`${node.expanded ? '收起' : '展开'} ${node.name}`}
+        >
+          {node.expanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+        </button>
+        <button
+          type="button"
+          className={cn(
+            'flex min-w-0 flex-1 items-center gap-2 rounded-lg px-2 py-1 text-left text-sm transition-colors',
+            node.active ? 'text-[#336EFF]' : 'text-slate-300 hover:text-white',
+          )}
+          onClick={() => onSelect(node.path)}
+        >
+          <Folder className={cn('h-4 w-4 shrink-0', node.active ? 'text-[#336EFF]' : 'text-slate-500')} />
+          <span className="truncate">{node.name}</span>
+        </button>
+      </div>
+      {node.expanded ? node.children.map((child) => (
+        <DirectoryTreeItem key={child.id} node={child} onSelect={onSelect} onToggle={onToggle} />
+      )) : null}
+    </div>
+  );
 }
 
 function formatFileSize(size: number) {
@@ -138,6 +178,21 @@ export default function Files() {
   const uploadMeasurementsRef = useRef(new Map<string, UploadMeasurement>());
   const [currentPath, setCurrentPath] = useState<string[]>(initialPath);
   const currentPathRef = useRef(currentPath);
+  const [directoryChildren, setDirectoryChildren] = useState<DirectoryChildrenMap>(() => {
+    if (initialCachedFiles.length === 0) {
+      return {};
+    }
+
+    return mergeDirectoryChildren(
+      {},
+      toBackendPath(initialPath),
+      initialCachedFiles.filter((file) => file.directory).map((file) => file.filename),
+    );
+  });
+  const [loadedDirectoryPaths, setLoadedDirectoryPaths] = useState<Set<string>>(
+    () => new Set(initialCachedFiles.length === 0 ? [] : [toBackendPath(initialPath)]),
+  );
+  const [expandedDirectories, setExpandedDirectories] = useState(() => createExpandedDirectorySet(initialPath));
   const [selectedFile, setSelectedFile] = useState<UiFile | null>(null);
   const [currentFiles, setCurrentFiles] = useState<UiFile[]>(initialCachedFiles.map(toUiFile));
   const [uploads, setUploads] = useState<UploadTask[]>([]);
@@ -155,21 +210,64 @@ export default function Files() {
   const [isRenaming, setIsRenaming] = useState(false);
   const [shareStatus, setShareStatus] = useState('');
 
+  const recordDirectoryChildren = (pathParts: string[], items: FileMetadata[]) => {
+    setDirectoryChildren((previous) => {
+      let next = mergeDirectoryChildren(
+        previous,
+        toBackendPath(pathParts),
+        items.filter((file) => file.directory).map((file) => file.filename),
+      );
+
+      for (let index = 0; index < pathParts.length; index += 1) {
+        next = mergeDirectoryChildren(
+          next,
+          toBackendPath(pathParts.slice(0, index)),
+          [pathParts[index]],
+        );
+      }
+
+      return next;
+    });
+  };
+
+  const markDirectoryLoaded = (pathParts: string[]) => {
+    const path = toBackendPath(pathParts);
+    setLoadedDirectoryPaths((previous) => {
+      if (previous.has(path)) {
+        return previous;
+      }
+
+      const next = new Set(previous);
+      next.add(path);
+      return next;
+    });
+  };
+
   const loadCurrentPath = async (pathParts: string[]) => {
     const response = await apiRequest<PageResponse<FileMetadata>>(
       `/files/list?path=${encodeURIComponent(toBackendPath(pathParts))}&page=0&size=100`
     );
     writeCachedValue(getFilesListCacheKey(toBackendPath(pathParts)), response.items);
     writeCachedValue(getFilesLastPathCacheKey(), pathParts);
+    recordDirectoryChildren(pathParts, response.items);
+    markDirectoryLoaded(pathParts);
     setCurrentFiles(response.items.map(toUiFile));
   };
 
   useEffect(() => {
     currentPathRef.current = currentPath;
+    setExpandedDirectories((previous) => {
+      const next = new Set(previous);
+      for (const path of createExpandedDirectorySet(currentPath)) {
+        next.add(path);
+      }
+      return next;
+    });
     const cachedFiles = readCachedValue<FileMetadata[]>(getFilesListCacheKey(toBackendPath(currentPath)));
     writeCachedValue(getFilesLastPathCacheKey(), currentPath);
 
     if (cachedFiles) {
+      recordDirectoryChildren(currentPath, cachedFiles);
       setCurrentFiles(cachedFiles.map(toUiFile));
     }
 
@@ -179,6 +277,44 @@ export default function Files() {
       }
     });
   }, [currentPath]);
+
+  useEffect(() => {
+    const missingAncestors = getMissingDirectoryListingPaths(currentPath, loadedDirectoryPaths);
+
+    if (missingAncestors.length === 0) {
+      return;
+    }
+
+    let cancelled = false;
+
+    Promise.all(
+      missingAncestors.map(async (pathParts) => {
+        const path = toBackendPath(pathParts);
+        const response = await apiRequest<PageResponse<FileMetadata>>(
+          `/files/list?path=${encodeURIComponent(path)}&page=0&size=100`
+        );
+        writeCachedValue(getFilesListCacheKey(path), response.items);
+        return { pathParts, items: response.items };
+      }),
+    )
+      .then((responses) => {
+        if (cancelled) {
+          return;
+        }
+
+        for (const response of responses) {
+          recordDirectoryChildren(response.pathParts, response.items);
+          markDirectoryLoaded(response.pathParts);
+        }
+      })
+      .catch(() => {
+        // The main content area already loaded the current directory; keep the tree best-effort.
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [currentPath, loadedDirectoryPaths]);
 
   useEffect(() => {
     if (!directoryInputRef.current) {
@@ -193,6 +329,38 @@ export default function Files() {
     setCurrentPath(pathParts);
     setSelectedFile(null);
     setActiveDropdown(null);
+  };
+
+  const handleDirectoryToggle = async (pathParts: string[]) => {
+    const path = toBackendPath(pathParts);
+    let shouldLoadChildren = false;
+
+    setExpandedDirectories((previous) => {
+      const next = new Set(previous);
+      if (next.has(path)) {
+        next.delete(path);
+        return next;
+      }
+
+      next.add(path);
+      shouldLoadChildren = !(path in directoryChildren);
+      return next;
+    });
+
+    if (!shouldLoadChildren) {
+      return;
+    }
+
+    try {
+      const response = await apiRequest<PageResponse<FileMetadata>>(
+        `/files/list?path=${encodeURIComponent(path)}&page=0&size=100`
+      );
+      writeCachedValue(getFilesListCacheKey(path), response.items);
+      recordDirectoryChildren(pathParts, response.items);
+      markDirectoryLoaded(pathParts);
+    } catch {
+      // Keep the branch expanded even if lazy loading fails; the main content area remains the source of truth.
+    }
   };
 
   const handleFolderDoubleClick = (file: UiFile) => {
@@ -574,47 +742,38 @@ export default function Files() {
     }
   };
 
+  const directoryTree = buildDirectoryTree(directoryChildren, currentPath, expandedDirectories);
+
   return (
     <div className="flex flex-col lg:flex-row gap-6 h-[calc(100vh-8rem)]">
       {/* Left Sidebar */}
       <Card className="w-full lg:w-64 shrink-0 flex flex-col h-full overflow-y-auto">
-        <CardContent className="p-4 space-y-6">
-          <div className="space-y-1">
-            <p className="px-3 text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">快速访问</p>
-            {QUICK_ACCESS.map((item) => (
+        <CardContent className="p-4">
+          <div className="space-y-2">
+            <p className="px-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">网盘目录</p>
+            <div className="rounded-2xl border border-white/5 bg-black/20 p-2">
               <button
-                key={item.name}
-                onClick={() => handleSidebarClick(item.path)}
+                type="button"
+                onClick={() => handleSidebarClick([])}
                 className={cn(
-                  'w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors',
-                  currentPath.join('/') === item.path.join('/')
-                    ? 'bg-[#336EFF]/20 text-[#336EFF]'
-                    : 'text-slate-300 hover:text-white hover:bg-white/5'
+                  'flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-sm font-medium transition-colors',
+                  currentPath.length === 0 ? 'bg-[#336EFF]/15 text-[#336EFF]' : 'text-slate-200 hover:bg-white/5 hover:text-white',
                 )}
               >
-                <item.icon className={cn('w-4 h-4', currentPath.join('/') === item.path.join('/') ? 'text-[#336EFF]' : 'text-slate-400')} />
-                {item.name}
+                <Folder className={cn('h-4 w-4', currentPath.length === 0 ? 'text-[#336EFF]' : 'text-slate-500')} />
+                <span className="truncate">网盘</span>
               </button>
-            ))}
-          </div>
-
-          <div className="space-y-1">
-            <p className="px-3 text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">网盘目录</p>
-            {DIRECTORIES.map((item) => (
-              <button
-                key={item.name}
-                onClick={() => handleSidebarClick([item.name])}
-                className={cn(
-                  'w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors',
-                  currentPath.length === 1 && currentPath[0] === item.name
-                    ? 'bg-[#336EFF]/20 text-[#336EFF]'
-                    : 'text-slate-300 hover:text-white hover:bg-white/5'
-                )}
-              >
-                <item.icon className={cn('w-4 h-4', currentPath.length === 1 && currentPath[0] === item.name ? 'text-[#336EFF]' : 'text-slate-400')} />
-                {item.name}
-              </button>
-            ))}
+              <div className="mt-1 space-y-0.5">
+                {directoryTree.map((node) => (
+                  <DirectoryTreeItem
+                    key={node.id}
+                    node={node}
+                    onSelect={handleSidebarClick}
+                    onToggle={(path) => void handleDirectoryToggle(path)}
+                  />
+                ))}
+              </div>
+            </div>
           </div>
         </CardContent>
       </Card>

@@ -55,6 +55,7 @@ public class RefreshTokenService {
 
         User user = existing.getUser();
         existing.revoke(LocalDateTime.now());
+        revokeAllForUser(user.getId());
 
         String nextRefreshToken = issueRefreshToken(user);
         return new RotatedRefreshToken(user, nextRefreshToken);

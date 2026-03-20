@@ -46,7 +46,9 @@ class AuthControllerValidationTest {
                                   "username": "alice",
                                   "email": "alice@example.com",
                                   "phoneNumber": "13800138000",
-                                  "password": "weakpass"
+                                  "password": "weakpass",
+                                  "confirmPassword": "weakpass",
+                                  "inviteCode": "invite-code"
                                 }
                                 """))
                 .andExpect(status().isBadRequest())
@@ -63,12 +65,52 @@ class AuthControllerValidationTest {
                                   "username": "alice",
                                   "email": "alice@example.com",
                                   "phoneNumber": "12345",
-                                  "password": "StrongPass1!"
+                                  "password": "StrongPass1!",
+                                  "confirmPassword": "StrongPass1!",
+                                  "inviteCode": "invite-code"
                                 }
                                 """))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.code").value(1000))
                 .andExpect(jsonPath("$.msg").value("请输入有效的11位手机号"));
+    }
+
+    @Test
+    void shouldReturnReadablePasswordConfirmationMessage() throws Exception {
+        mockMvc.perform(post("/api/auth/register")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "username": "alice",
+                                  "email": "alice@example.com",
+                                  "phoneNumber": "13800138000",
+                                  "password": "StrongPass1!",
+                                  "confirmPassword": "StrongPass2!",
+                                  "inviteCode": "invite-code"
+                                }
+                                """))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value(1000))
+                .andExpect(jsonPath("$.msg").value("两次输入的密码不一致"));
+    }
+
+    @Test
+    void shouldReturnReadableInviteCodeMessage() throws Exception {
+        mockMvc.perform(post("/api/auth/register")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "username": "alice",
+                                  "email": "alice@example.com",
+                                  "phoneNumber": "13800138000",
+                                  "password": "StrongPass1!",
+                                  "confirmPassword": "StrongPass1!",
+                                  "inviteCode": ""
+                                }
+                                """))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value(1000))
+                .andExpect(jsonPath("$.msg").value("请输入邀请码"));
     }
 
     @Test

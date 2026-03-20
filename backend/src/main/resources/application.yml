@@ -29,6 +29,8 @@ app:
     refresh-expiration-seconds: 1209600
   admin:
     usernames: ${APP_ADMIN_USERNAMES:}
+  registration:
+    invite-code: ${APP_AUTH_REGISTRATION_INVITE_CODE:}
   storage:
     root-dir: ./storage
     max-file-size: 524288000

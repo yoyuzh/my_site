@@ -17,3 +17,5 @@ app:
     secret: ${APP_JWT_SECRET:}
   admin:
     usernames: ${APP_ADMIN_USERNAMES:}
+  registration:
+    invite-code: ${APP_AUTH_REGISTRATION_INVITE_CODE:dev-invite-code}

@@ -111,7 +111,8 @@ class AdminControllerIntegrationTest {
         mockMvc.perform(get("/api/admin/summary"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.totalUsers").value(2))
-                .andExpect(jsonPath("$.data.totalFiles").value(2));
+                .andExpect(jsonPath("$.data.totalFiles").value(2))
+                .andExpect(jsonPath("$.data.inviteCode").isNotEmpty());
     }
 
     @Test
