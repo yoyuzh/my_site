@@ -3,21 +3,19 @@ import type { DataProvider, GetListParams, GetListResult, Identifier } from 'rea
 import { apiRequest } from '@/src/lib/api';
 import type {
   AdminFile,
-  AdminSchoolSnapshot,
   AdminUser,
   PageResponse,
 } from '@/src/lib/types';
 
 const FILES_RESOURCE = 'files';
 const USERS_RESOURCE = 'users';
-const SCHOOL_SNAPSHOTS_RESOURCE = 'schoolSnapshots';
 
 function createUnsupportedError(resource: string, action: string) {
   return new Error(`当前管理台暂未为资源 "${resource}" 实现 ${action} 操作`);
 }
 
 function ensureSupportedResource(resource: string, action: string) {
-  if (![FILES_RESOURCE, USERS_RESOURCE, SCHOOL_SNAPSHOTS_RESOURCE].includes(resource)) {
+  if (![FILES_RESOURCE, USERS_RESOURCE].includes(resource)) {
     throw createUnsupportedError(resource, action);
   }
 }
@@ -33,10 +31,6 @@ export function buildAdminListPath(resource: string, params: Pick<GetListParams,
 
   if (resource === USERS_RESOURCE) {
     return `/admin/users?page=${page}&size=${size}${query ? `&query=${encodeURIComponent(query)}` : ''}`;
-  }
-
-  if (resource === SCHOOL_SNAPSHOTS_RESOURCE) {
-    return `/admin/school-snapshots?page=${page}&size=${size}`;
   }
 
   throw createUnsupportedError(resource, 'list');
@@ -92,11 +86,7 @@ export const portalAdminDataProvider: DataProvider = {
       } as GetListResult;
     }
 
-    const payload = await apiRequest<PageResponse<AdminSchoolSnapshot>>(buildAdminListPath(resource, params));
-    return {
-      data: payload.items,
-      total: payload.total,
-    } as GetListResult;
+    throw createUnsupportedError(resource, 'list');
   },
   getOne: async (resource) => {
     ensureSupportedResource(resource, 'getOne');

@@ -1,13 +1,13 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { ReactNode, useEffect, useMemo, useRef, useState } from 'react';
 import { NavLink, Outlet, useNavigate } from 'react-router-dom';
 import {
   Gamepad2,
   FolderOpen,
-  GraduationCap,
   Key,
   LayoutDashboard,
   LogOut,
   Mail,
+  Send,
   Settings,
   Shield,
   Smartphone,
@@ -28,7 +28,7 @@ import { buildAccountDraft, getRoleLabel, shouldLoadAvatarWithAuth } from './acc
 const NAV_ITEMS = [
   { name: '总览', path: '/overview', icon: LayoutDashboard },
   { name: '网盘', path: '/files', icon: FolderOpen },
-  { name: '教务', path: '/school', icon: GraduationCap },
+  { name: '快传', path: '/transfer', icon: Send },
   { name: '游戏', path: '/games', icon: Gamepad2 },
   { name: '后台', path: '/admin', icon: Shield },
 ] as const;
@@ -39,7 +39,11 @@ export function getVisibleNavItems(isAdmin: boolean) {
   return NAV_ITEMS.filter((item) => isAdmin || item.path !== '/admin');
 }
 
-export function Layout() {
+interface LayoutProps {
+  children?: ReactNode;
+}
+
+export function Layout({ children }: LayoutProps = {}) {
   const navigate = useNavigate();
   const { isAdmin, logout, refreshProfile, user } = useAuth();
   const navItems = getVisibleNavItems(isAdmin);
@@ -328,7 +332,7 @@ export function Layout() {
         <div className="absolute bottom-[-20%] left-[20%] w-[60%] h-[60%] rounded-full bg-indigo-600 opacity-20 mix-blend-screen blur-[120px] animate-blob animation-delay-4000" />
       </div>
 
-      <header className="sticky top-0 z-50 w-full glass-panel border-b border-white/10 bg-[#07101D]/60 backdrop-blur-xl">
+      <header className="fixed top-0 left-0 right-0 z-50 w-full glass-panel border-b border-white/10 bg-[#07101D]/60 backdrop-blur-xl">
         <div className="container mx-auto px-4 h-16 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-[#336EFF] to-blue-400 flex items-center justify-center shadow-lg shadow-[#336EFF]/20">
@@ -427,8 +431,8 @@ export function Layout() {
         </div>
       </header>
 
-      <main className="flex-1 container mx-auto px-4 py-8 relative z-10">
-        <Outlet />
+      <main className="flex-1 container mx-auto px-4 pt-24 pb-8 relative z-10">
+        {children ?? <Outlet />}
       </main>
 
       <AnimatePresence>

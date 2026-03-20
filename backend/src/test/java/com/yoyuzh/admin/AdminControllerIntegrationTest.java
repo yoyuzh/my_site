@@ -33,9 +33,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
                 "spring.jpa.hibernate.ddl-auto=create-drop",
                 "app.jwt.secret=0123456789abcdef0123456789abcdef",
                 "app.admin.usernames=admin",
-                "app.storage.root-dir=./target/test-storage-admin",
-                "app.cqu.require-login=true",
-                "app.cqu.mock-enabled=false"
+                "app.storage.root-dir=./target/test-storage-admin"
         }
 )
 @AutoConfigureMockMvc
@@ -66,8 +64,6 @@ class AdminControllerIntegrationTest {
         portalUser.setPhoneNumber("13800138000");
         portalUser.setPasswordHash("encoded-password");
         portalUser.setCreatedAt(LocalDateTime.now());
-        portalUser.setLastSchoolStudentId("20230001");
-        portalUser.setLastSchoolSemester("2025-2026-1");
         portalUser = userRepository.save(portalUser);
 
         secondaryUser = new User();
@@ -109,15 +105,13 @@ class AdminControllerIntegrationTest {
                 .andExpect(jsonPath("$.code").value(0))
                 .andExpect(jsonPath("$.data.items[0].username").value("alice"))
                 .andExpect(jsonPath("$.data.items[0].phoneNumber").value("13800138000"))
-                .andExpect(jsonPath("$.data.items[0].lastSchoolStudentId").value("20230001"))
                 .andExpect(jsonPath("$.data.items[0].role").value("USER"))
                 .andExpect(jsonPath("$.data.items[0].banned").value(false));
 
         mockMvc.perform(get("/api/admin/summary"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.totalUsers").value(2))
-                .andExpect(jsonPath("$.data.totalFiles").value(2))
-                .andExpect(jsonPath("$.data.usersWithSchoolCache").value(1));
+                .andExpect(jsonPath("$.data.totalFiles").value(2));
     }
 
     @Test

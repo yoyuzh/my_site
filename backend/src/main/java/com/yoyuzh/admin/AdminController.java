@@ -50,13 +50,6 @@ public class AdminController {
         return ApiResponse.success();
     }
 
-    @GetMapping("/school-snapshots")
-    public ApiResponse<PageResponse<AdminSchoolSnapshotResponse>> schoolSnapshots(
-            @RequestParam(defaultValue = "0") int page,
-            @RequestParam(defaultValue = "10") int size) {
-        return ApiResponse.success(adminService.listSchoolSnapshots(page, size));
-    }
-
     @PatchMapping("/users/{userId}/role")
     public ApiResponse<AdminUserResponse> updateUserRole(@PathVariable Long userId,
                                                          @Valid @RequestBody AdminUserRoleUpdateRequest request) {

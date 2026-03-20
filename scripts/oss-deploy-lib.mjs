@@ -18,15 +18,15 @@ const CONTENT_TYPES = new Map([
 ]);
 
 const FRONTEND_SPA_ALIASES = [
+  't',
   'overview',
   'files',
-  'school',
+  'transfer',
   'games',
   'login',
   'admin',
   'admin/users',
   'admin/files',
-  'admin/schoolSnapshots',
 ];
 
 export function normalizeEndpoint(endpoint) {

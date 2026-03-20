@@ -32,10 +32,6 @@ app:
   storage:
     root-dir: ./storage
     max-file-size: 524288000
-  cqu:
-    base-url: https://example-cqu-api.local
-    require-login: true
-    mock-enabled: false
   cors:
     allowed-origins:
       - http://localhost:3000

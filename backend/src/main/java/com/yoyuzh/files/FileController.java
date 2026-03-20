@@ -108,6 +108,53 @@ public class FileController {
                 fileService.rename(userDetailsService.loadDomainUser(userDetails.getUsername()), fileId, request.filename()));
     }
 
+    @Operation(summary = "移动文件")
+    @PatchMapping("/{fileId}/move")
+    public ApiResponse<FileMetadataResponse> move(@AuthenticationPrincipal UserDetails userDetails,
+                                                  @PathVariable Long fileId,
+                                                  @Valid @RequestBody MoveFileRequest request) {
+        return ApiResponse.success(
+                fileService.move(userDetailsService.loadDomainUser(userDetails.getUsername()), fileId, request.path()));
+    }
+
+    @Operation(summary = "复制文件")
+    @PostMapping("/{fileId}/copy")
+    public ApiResponse<FileMetadataResponse> copy(@AuthenticationPrincipal UserDetails userDetails,
+                                                  @PathVariable Long fileId,
+                                                  @Valid @RequestBody CopyFileRequest request) {
+        return ApiResponse.success(
+                fileService.copy(userDetailsService.loadDomainUser(userDetails.getUsername()), fileId, request.path()));
+    }
+
+    @Operation(summary = "创建分享链接")
+    @PostMapping("/{fileId}/share-links")
+    public ApiResponse<CreateFileShareLinkResponse> createShareLink(@AuthenticationPrincipal UserDetails userDetails,
+                                                                    @PathVariable Long fileId) {
+        return ApiResponse.success(
+                fileService.createShareLink(userDetailsService.loadDomainUser(userDetails.getUsername()), fileId)
+        );
+    }
+
+    @Operation(summary = "查看分享详情")
+    @GetMapping("/share-links/{token}")
+    public ApiResponse<FileShareDetailsResponse> getShareDetails(@PathVariable String token) {
+        return ApiResponse.success(fileService.getShareDetails(token));
+    }
+
+    @Operation(summary = "导入共享文件")
+    @PostMapping("/share-links/{token}/import")
+    public ApiResponse<FileMetadataResponse> importSharedFile(@AuthenticationPrincipal UserDetails userDetails,
+                                                              @PathVariable String token,
+                                                              @Valid @RequestBody ImportSharedFileRequest request) {
+        return ApiResponse.success(
+                fileService.importSharedFile(
+                        userDetailsService.loadDomainUser(userDetails.getUsername()),
+                        token,
+                        request.path()
+                )
+        );
+    }
+
     @Operation(summary = "删除文件")
     @DeleteMapping("/{fileId}")
     public ApiResponse<Void> delete(@AuthenticationPrincipal UserDetails userDetails,

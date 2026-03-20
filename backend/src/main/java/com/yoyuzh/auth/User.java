@@ -40,12 +40,6 @@ public class User {
     @Column(name = "created_at", nullable = false)
     private LocalDateTime createdAt;
 
-    @Column(name = "last_school_student_id", length = 64)
-    private String lastSchoolStudentId;
-
-    @Column(name = "last_school_semester", length = 64)
-    private String lastSchoolSemester;
-
     @Column(name = "display_name", nullable = false, length = 64)
     private String displayName;
 
@@ -133,22 +127,6 @@ public class User {
 
     public void setCreatedAt(LocalDateTime createdAt) {
         this.createdAt = createdAt;
-    }
-
-    public String getLastSchoolStudentId() {
-        return lastSchoolStudentId;
-    }
-
-    public void setLastSchoolStudentId(String lastSchoolStudentId) {
-        this.lastSchoolStudentId = lastSchoolStudentId;
-    }
-
-    public String getLastSchoolSemester() {
-        return lastSchoolSemester;
-    }
-
-    public void setLastSchoolSemester(String lastSchoolSemester) {
-        this.lastSchoolSemester = lastSchoolSemester;
     }
 
     public String getDisplayName() {

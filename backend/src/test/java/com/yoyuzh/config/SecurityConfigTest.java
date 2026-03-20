@@ -28,4 +28,5 @@ class SecurityConfigTest {
         assertThat(configuration).isNotNull();
         assertThat(configuration.getAllowedMethods()).contains("PATCH");
     }
+
 }

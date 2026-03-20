@@ -36,9 +36,10 @@ test('getContentType resolves common frontend asset types', () => {
 test('frontend spa aliases are uploaded as html entry points', () => {
   const aliases = getFrontendSpaAliasKeys();
 
+  assert.ok(aliases.includes('t/index.html'));
   assert.ok(aliases.includes('overview'));
+  assert.ok(aliases.includes('transfer/index.html'));
   assert.ok(aliases.includes('admin/users'));
-  assert.ok(aliases.includes('admin/schoolSnapshots/index.html'));
   assert.equal(getFrontendSpaAliasContentType(), 'text/html; charset=utf-8');
 });
 

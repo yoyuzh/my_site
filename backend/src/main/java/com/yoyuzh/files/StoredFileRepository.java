@@ -8,6 +8,7 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 import java.util.List;
+import java.util.Optional;
 
 public interface StoredFileRepository extends JpaRepository<StoredFile, Long> {
 
@@ -37,6 +38,14 @@ public interface StoredFileRepository extends JpaRepository<StoredFile, Long> {
     boolean existsByUserIdAndPathAndFilename(@Param("userId") Long userId,
                                              @Param("path") String path,
                                              @Param("filename") String filename);
+
+    @Query("""
+            select f from StoredFile f
+            where f.user.id = :userId and f.path = :path and f.filename = :filename
+            """)
+    Optional<StoredFile> findByUserIdAndPathAndFilename(@Param("userId") Long userId,
+                                                        @Param("path") String path,
+                                                        @Param("filename") String filename);
 
     @Query("""
             select f from StoredFile f

@@ -8,6 +8,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.MediaType;
+import org.springframework.http.HttpMethod;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.AuthenticationProvider;
 import org.springframework.security.authentication.dao.DaoAuthenticationProvider;
@@ -47,9 +48,13 @@ public class SecurityConfig {
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers("/api/auth/**", "/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html")
                         .permitAll()
+                        .requestMatchers("/api/transfer/**")
+                        .permitAll()
+                        .requestMatchers(HttpMethod.GET, "/api/files/share-links/*")
+                        .permitAll()
                         .requestMatchers("/api/admin/**")
                         .authenticated()
-                        .requestMatchers("/api/files/**", "/api/user/**", "/api/cqu/**")
+                        .requestMatchers("/api/files/**", "/api/user/**")
                         .authenticated()
                         .anyRequest()
                         .permitAll())

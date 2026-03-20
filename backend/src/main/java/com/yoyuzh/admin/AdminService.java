@@ -8,8 +8,6 @@ import com.yoyuzh.auth.RefreshTokenService;
 import com.yoyuzh.common.BusinessException;
 import com.yoyuzh.common.ErrorCode;
 import com.yoyuzh.common.PageResponse;
-import com.yoyuzh.cqu.CourseRepository;
-import com.yoyuzh.cqu.GradeRepository;
 import com.yoyuzh.files.FileService;
 import com.yoyuzh.files.StoredFile;
 import com.yoyuzh.files.StoredFileRepository;
@@ -31,8 +29,6 @@ public class AdminService {
     private final UserRepository userRepository;
     private final StoredFileRepository storedFileRepository;
     private final FileService fileService;
-    private final CourseRepository courseRepository;
-    private final GradeRepository gradeRepository;
     private final PasswordEncoder passwordEncoder;
     private final RefreshTokenService refreshTokenService;
     private final SecureRandom secureRandom = new SecureRandom();
@@ -40,8 +36,7 @@ public class AdminService {
     public AdminSummaryResponse getSummary() {
         return new AdminSummaryResponse(
                 userRepository.count(),
-                storedFileRepository.count(),
-                userRepository.countByLastSchoolStudentIdIsNotNull()
+                storedFileRepository.count()
         );
     }
 
@@ -65,16 +60,6 @@ public class AdminService {
         );
         List<AdminFileResponse> items = result.getContent().stream()
                 .map(this::toFileResponse)
-                .toList();
-        return new PageResponse<>(items, result.getTotalElements(), page, size);
-    }
-
-    public PageResponse<AdminSchoolSnapshotResponse> listSchoolSnapshots(int page, int size) {
-        Page<User> result = userRepository.findByLastSchoolStudentIdIsNotNull(
-                PageRequest.of(page, size, Sort.by(Sort.Direction.DESC, "createdAt"))
-        );
-        List<AdminSchoolSnapshotResponse> items = result.getContent().stream()
-                .map(this::toSchoolSnapshotResponse)
                 .toList();
         return new PageResponse<>(items, result.getTotalElements(), page, size);
     }
@@ -126,8 +111,6 @@ public class AdminService {
                 user.getEmail(),
                 user.getPhoneNumber(),
                 user.getCreatedAt(),
-                user.getLastSchoolStudentId(),
-                user.getLastSchoolSemester(),
                 user.getRole(),
                 user.isBanned()
         );
@@ -146,28 +129,6 @@ public class AdminService {
                 owner.getId(),
                 owner.getUsername(),
                 owner.getEmail()
-        );
-    }
-
-    private AdminSchoolSnapshotResponse toSchoolSnapshotResponse(User user) {
-        String studentId = user.getLastSchoolStudentId();
-        String semester = user.getLastSchoolSemester();
-        long scheduleCount = studentId == null || semester == null
-                ? 0
-                : courseRepository.countByUserIdAndStudentIdAndSemester(user.getId(), studentId, semester);
-        long gradeCount = studentId == null || semester == null
-                ? 0
-                : gradeRepository.countByUserIdAndStudentIdAndSemester(user.getId(), studentId, semester);
-
-        return new AdminSchoolSnapshotResponse(
-                user.getId(),
-                user.getId(),
-                user.getUsername(),
-                user.getEmail(),
-                studentId,
-                semester,
-                scheduleCount,
-                gradeCount
         );
     }
 

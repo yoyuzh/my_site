@@ -28,9 +28,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
                 "spring.datasource.password=",
                 "spring.jpa.hibernate.ddl-auto=create-drop",
                 "app.jwt.secret=0123456789abcdef0123456789abcdef",
-                "app.storage.root-dir=./target/test-storage-refresh",
-                "app.cqu.require-login=true",
-                "app.cqu.mock-enabled=false"
+                "app.storage.root-dir=./target/test-storage-refresh"
         }
 )
 class RefreshTokenServiceIntegrationTest {

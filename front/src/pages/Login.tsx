@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { motion, AnimatePresence } from 'motion/react';
 import { LogIn, User, Lock, UserPlus, Mail, ArrowLeft, Phone } from 'lucide-react';
 
@@ -7,6 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/src
 import { Button } from '@/src/components/ui/button';
 import { Input } from '@/src/components/ui/input';
 import { apiRequest, ApiError } from '@/src/lib/api';
+import { getPostLoginRedirectPath } from '@/src/lib/file-share';
 import { cn } from '@/src/lib/utils';
 import { createSession, markPostLoginPending, saveStoredSession } from '@/src/lib/session';
 import type { AuthResponse } from '@/src/lib/types';
@@ -15,6 +16,7 @@ const DEV_LOGIN_ENABLED = import.meta.env.DEV || import.meta.env.VITE_ENABLE_DEV
 
 export default function Login() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const [isLogin, setIsLogin] = useState(true);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -63,7 +65,7 @@ export default function Login() {
       saveStoredSession(createSession(auth));
       markPostLoginPending();
       setLoading(false);
-      navigate('/overview');
+      navigate(getPostLoginRedirectPath(searchParams.get('next')));
     } catch (requestError) {
       setLoading(false);
       setError(requestError instanceof Error ? requestError.message : '登录失败，请稍后重试');
@@ -89,7 +91,7 @@ export default function Login() {
       saveStoredSession(createSession(auth));
       markPostLoginPending();
       setLoading(false);
-      navigate('/overview');
+      navigate(getPostLoginRedirectPath(searchParams.get('next')));
     } catch (requestError) {
       setLoading(false);
       setError(requestError instanceof Error ? requestError.message : '注册失败，请稍后重试');
@@ -127,7 +129,7 @@ export default function Login() {
               </div>
 
               <p className="text-lg text-slate-400 leading-relaxed">
-                欢迎来到 YOYUZH 的个人门户。在这里，你可以集中管理个人网盘文件、查询教务成绩课表，以及体验轻量级小游戏。
+                欢迎来到 YOYUZH 的个人门户。在这里，你可以集中管理个人网盘文件、使用跨设备快传能力，以及体验轻量级小游戏。
               </p>
             </motion.div>
           )}

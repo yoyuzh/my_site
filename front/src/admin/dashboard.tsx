@@ -17,12 +17,12 @@ const DASHBOARD_ITEMS = [
   },
   {
     title: '用户管理',
-    description: '已接入 /api/admin/users，可查看用户、邮箱与最近教务缓存标记。',
+    description: '已接入 /api/admin/users，可查看账号、邮箱、手机号与权限状态。',
     status: 'connected',
   },
   {
-    title: '教务快照',
-    description: '已接入 /api/admin/school-snapshots，可查看最近学号、学期和缓存条数。',
+    title: '门户运营',
+    description: '当前后台专注于统一账号和文件资源，保持管理视图聚焦在核心门户能力上。',
     status: 'connected',
   },
 ];
@@ -146,9 +146,6 @@ export function PortalAdminDashboard() {
                 </Typography>
                 <Typography color="text.secondary">
                   文件总数：{state.summary?.totalFiles ?? 0}
-                </Typography>
-                <Typography color="text.secondary">
-                  有教务缓存的用户：{state.summary?.usersWithSchoolCache ?? 0}
                 </Typography>
               </Stack>
             </CardContent>

@@ -10,8 +10,6 @@ public record AdminUserResponse(
         String email,
         String phoneNumber,
         LocalDateTime createdAt,
-        String lastSchoolStudentId,
-        String lastSchoolSemester,
         UserRole role,
         boolean banned
 ) {

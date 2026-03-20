@@ -22,10 +22,12 @@ import java.io.IOException;
 import java.net.URI;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.UUID;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
 
@@ -35,13 +37,16 @@ public class FileService {
 
     private final StoredFileRepository storedFileRepository;
     private final FileContentStorage fileContentStorage;
+    private final FileShareLinkRepository fileShareLinkRepository;
     private final long maxFileSize;
 
     public FileService(StoredFileRepository storedFileRepository,
                        FileContentStorage fileContentStorage,
+                       FileShareLinkRepository fileShareLinkRepository,
                        FileStorageProperties properties) {
         this.storedFileRepository = storedFileRepository;
         this.fileContentStorage = fileContentStorage;
+        this.fileShareLinkRepository = fileShareLinkRepository;
         this.maxFileSize = properties.getMaxFileSize();
     }
 
@@ -207,6 +212,105 @@ public class FileService {
         return toResponse(storedFileRepository.save(storedFile));
     }
 
+    @Transactional
+    public FileMetadataResponse move(User user, Long fileId, String nextPath) {
+        StoredFile storedFile = getOwnedFile(user, fileId, "移动");
+        String normalizedTargetPath = normalizeDirectoryPath(nextPath);
+        if (normalizedTargetPath.equals(storedFile.getPath())) {
+            return toResponse(storedFile);
+        }
+
+        ensureExistingDirectoryPath(user.getId(), normalizedTargetPath);
+        if (storedFileRepository.existsByUserIdAndPathAndFilename(user.getId(), normalizedTargetPath, storedFile.getFilename())) {
+            throw new BusinessException(ErrorCode.UNKNOWN, "目标目录已存在同名文件");
+        }
+
+        if (storedFile.isDirectory()) {
+            String oldLogicalPath = buildLogicalPath(storedFile);
+            String newLogicalPath = "/".equals(normalizedTargetPath)
+                    ? "/" + storedFile.getFilename()
+                    : normalizedTargetPath + "/" + storedFile.getFilename();
+            if (newLogicalPath.equals(oldLogicalPath) || newLogicalPath.startsWith(oldLogicalPath + "/")) {
+                throw new BusinessException(ErrorCode.UNKNOWN, "不能移动到当前目录或其子目录");
+            }
+
+            List<StoredFile> descendants = storedFileRepository.findByUserIdAndPathEqualsOrDescendant(user.getId(), oldLogicalPath);
+            fileContentStorage.renameDirectory(user.getId(), oldLogicalPath, newLogicalPath, descendants);
+            for (StoredFile descendant : descendants) {
+                if (descendant.getPath().equals(oldLogicalPath)) {
+                    descendant.setPath(newLogicalPath);
+                    continue;
+                }
+
+                descendant.setPath(newLogicalPath + descendant.getPath().substring(oldLogicalPath.length()));
+            }
+            if (!descendants.isEmpty()) {
+                storedFileRepository.saveAll(descendants);
+            }
+        } else {
+            fileContentStorage.moveFile(user.getId(), storedFile.getPath(), normalizedTargetPath, storedFile.getStorageName());
+        }
+
+        storedFile.setPath(normalizedTargetPath);
+        return toResponse(storedFileRepository.save(storedFile));
+    }
+
+    @Transactional
+    public FileMetadataResponse copy(User user, Long fileId, String nextPath) {
+        StoredFile storedFile = getOwnedFile(user, fileId, "复制");
+        String normalizedTargetPath = normalizeDirectoryPath(nextPath);
+        ensureExistingDirectoryPath(user.getId(), normalizedTargetPath);
+        if (storedFileRepository.existsByUserIdAndPathAndFilename(user.getId(), normalizedTargetPath, storedFile.getFilename())) {
+            throw new BusinessException(ErrorCode.UNKNOWN, "目标目录已存在同名文件");
+        }
+
+        if (!storedFile.isDirectory()) {
+            fileContentStorage.copyFile(user.getId(), storedFile.getPath(), normalizedTargetPath, storedFile.getStorageName());
+            return toResponse(storedFileRepository.save(copyStoredFile(storedFile, normalizedTargetPath)));
+        }
+
+        String oldLogicalPath = buildLogicalPath(storedFile);
+        String newLogicalPath = buildTargetLogicalPath(normalizedTargetPath, storedFile.getFilename());
+        if (newLogicalPath.equals(oldLogicalPath) || newLogicalPath.startsWith(oldLogicalPath + "/")) {
+            throw new BusinessException(ErrorCode.UNKNOWN, "不能复制到当前目录或其子目录");
+        }
+
+        List<StoredFile> descendants = storedFileRepository.findByUserIdAndPathEqualsOrDescendant(user.getId(), oldLogicalPath);
+        List<StoredFile> copiedEntries = new ArrayList<>();
+
+        fileContentStorage.ensureDirectory(user.getId(), newLogicalPath);
+        StoredFile copiedRoot = copyStoredFile(storedFile, normalizedTargetPath);
+        copiedEntries.add(copiedRoot);
+
+        descendants.stream()
+                .sorted(Comparator
+                        .comparingInt((StoredFile descendant) -> descendant.getPath().length())
+                        .thenComparing(descendant -> descendant.isDirectory() ? 0 : 1)
+                        .thenComparing(StoredFile::getFilename))
+                .forEach(descendant -> {
+                    String copiedPath = remapCopiedPath(descendant.getPath(), oldLogicalPath, newLogicalPath);
+                    if (storedFileRepository.existsByUserIdAndPathAndFilename(user.getId(), copiedPath, descendant.getFilename())) {
+                        throw new BusinessException(ErrorCode.UNKNOWN, "目标目录已存在同名文件");
+                    }
+
+                    if (descendant.isDirectory()) {
+                        fileContentStorage.ensureDirectory(user.getId(), buildTargetLogicalPath(copiedPath, descendant.getFilename()));
+                    } else {
+                        fileContentStorage.copyFile(user.getId(), descendant.getPath(), copiedPath, descendant.getStorageName());
+                    }
+                    copiedEntries.add(copyStoredFile(descendant, copiedPath));
+                });
+
+        StoredFile savedRoot = null;
+        for (StoredFile copiedEntry : copiedEntries) {
+            StoredFile savedEntry = storedFileRepository.save(copiedEntry);
+            if (savedRoot == null) {
+                savedRoot = savedEntry;
+            }
+        }
+        return toResponse(savedRoot == null ? copiedRoot : savedRoot);
+    }
+
     public ResponseEntity<?> download(User user, Long fileId) {
         StoredFile storedFile = getOwnedFile(user, fileId, "下载");
         if (storedFile.isDirectory()) {
@@ -247,6 +351,78 @@ public class FileService {
         }
 
         return new DownloadUrlResponse("/api/files/download/" + storedFile.getId());
+    }
+
+    @Transactional
+    public CreateFileShareLinkResponse createShareLink(User user, Long fileId) {
+        StoredFile storedFile = getOwnedFile(user, fileId, "分享");
+        if (storedFile.isDirectory()) {
+            throw new BusinessException(ErrorCode.UNKNOWN, "目录暂不支持分享链接");
+        }
+
+        FileShareLink shareLink = new FileShareLink();
+        shareLink.setOwner(user);
+        shareLink.setFile(storedFile);
+        shareLink.setToken(UUID.randomUUID().toString().replace("-", ""));
+        FileShareLink saved = fileShareLinkRepository.save(shareLink);
+
+        return new CreateFileShareLinkResponse(
+                saved.getToken(),
+                storedFile.getFilename(),
+                storedFile.getSize(),
+                storedFile.getContentType(),
+                saved.getCreatedAt()
+        );
+    }
+
+    public FileShareDetailsResponse getShareDetails(String token) {
+        FileShareLink shareLink = getShareLink(token);
+        StoredFile storedFile = shareLink.getFile();
+        return new FileShareDetailsResponse(
+                shareLink.getToken(),
+                shareLink.getOwner().getUsername(),
+                storedFile.getFilename(),
+                storedFile.getSize(),
+                storedFile.getContentType(),
+                storedFile.isDirectory(),
+                shareLink.getCreatedAt()
+        );
+    }
+
+    @Transactional
+    public FileMetadataResponse importSharedFile(User recipient, String token, String path) {
+        FileShareLink shareLink = getShareLink(token);
+        StoredFile sourceFile = shareLink.getFile();
+        if (sourceFile.isDirectory()) {
+            throw new BusinessException(ErrorCode.UNKNOWN, "目录暂不支持导入");
+        }
+
+        String normalizedPath = normalizeDirectoryPath(path);
+        String filename = normalizeLeafName(sourceFile.getFilename());
+        validateUpload(recipient.getId(), normalizedPath, filename, sourceFile.getSize());
+        ensureDirectoryHierarchy(recipient, normalizedPath);
+
+        byte[] content = fileContentStorage.readFile(
+                sourceFile.getUser().getId(),
+                sourceFile.getPath(),
+                sourceFile.getStorageName()
+        );
+        fileContentStorage.storeImportedFile(
+                recipient.getId(),
+                normalizedPath,
+                filename,
+                sourceFile.getContentType(),
+                content
+        );
+
+        return saveFileMetadata(
+                recipient,
+                normalizedPath,
+                filename,
+                filename,
+                sourceFile.getContentType(),
+                sourceFile.getSize()
+        );
     }
 
     private ResponseEntity<byte[]> downloadDirectory(User user, StoredFile directory) {
@@ -304,6 +480,11 @@ public class FileService {
         return toResponse(storedFileRepository.save(storedFile));
     }
 
+    private FileShareLink getShareLink(String token) {
+        return fileShareLinkRepository.findByToken(token)
+                .orElseThrow(() -> new BusinessException(ErrorCode.FILE_NOT_FOUND, "分享链接不存在"));
+    }
+
     private StoredFile getOwnedFile(User user, Long fileId, String action) {
         StoredFile storedFile = storedFileRepository.findById(fileId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.FILE_NOT_FOUND, "文件不存在"));
@@ -350,6 +531,23 @@ public class FileService {
             storedFileRepository.save(storedFile);
 
             currentPath = logicalPath;
+        }
+    }
+
+    private void ensureExistingDirectoryPath(Long userId, String normalizedPath) {
+        if ("/".equals(normalizedPath)) {
+            return;
+        }
+
+        String[] segments = normalizedPath.substring(1).split("/");
+        String currentPath = "/";
+        for (String segment : segments) {
+            StoredFile directory = storedFileRepository.findByUserIdAndPathAndFilename(userId, currentPath, segment)
+                    .orElseThrow(() -> new BusinessException(ErrorCode.FILE_NOT_FOUND, "目标目录不存在"));
+            if (!directory.isDirectory()) {
+                throw new BusinessException(ErrorCode.UNKNOWN, "目标路径不是目录");
+            }
+            currentPath = "/".equals(currentPath) ? "/" + segment : currentPath + "/" + segment;
         }
     }
 
@@ -404,6 +602,31 @@ public class FileService {
         return "/".equals(storedFile.getPath())
                 ? "/" + storedFile.getFilename()
                 : storedFile.getPath() + "/" + storedFile.getFilename();
+    }
+
+    private String buildTargetLogicalPath(String normalizedTargetPath, String filename) {
+        return "/".equals(normalizedTargetPath)
+                ? "/" + filename
+                : normalizedTargetPath + "/" + filename;
+    }
+
+    private String remapCopiedPath(String currentPath, String oldLogicalPath, String newLogicalPath) {
+        if (currentPath.equals(oldLogicalPath)) {
+            return newLogicalPath;
+        }
+        return newLogicalPath + currentPath.substring(oldLogicalPath.length());
+    }
+
+    private StoredFile copyStoredFile(StoredFile source, String nextPath) {
+        StoredFile copiedFile = new StoredFile();
+        copiedFile.setUser(source.getUser());
+        copiedFile.setFilename(source.getFilename());
+        copiedFile.setPath(nextPath);
+        copiedFile.setStorageName(source.getStorageName());
+        copiedFile.setContentType(source.getContentType());
+        copiedFile.setSize(source.getSize());
+        copiedFile.setDirectory(source.isDirectory());
+        return copiedFile;
     }
 
     private String buildZipEntryName(String rootDirectoryName, String rootLogicalPath, StoredFile storedFile) {

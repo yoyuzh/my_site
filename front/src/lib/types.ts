@@ -16,7 +16,6 @@ export type AdminUserRole = 'USER' | 'MODERATOR' | 'ADMIN';
 export interface AdminSummary {
   totalUsers: number;
   totalFiles: number;
-  usersWithSchoolCache: number;
 }
 
 export interface AdminUser {
@@ -25,8 +24,6 @@ export interface AdminUser {
   email: string;
   phoneNumber: string | null;
   createdAt: string;
-  lastSchoolStudentId: string | null;
-  lastSchoolSemester: string | null;
   role: AdminUserRole;
   banned: boolean;
 }
@@ -42,17 +39,6 @@ export interface AdminFile {
   ownerId: number;
   ownerUsername: string;
   ownerEmail: string;
-}
-
-export interface AdminSchoolSnapshot {
-  id: number;
-  userId: number;
-  username: string;
-  email: string;
-  studentId: string | null;
-  semester: string | null;
-  scheduleCount: number;
-  gradeCount: number;
 }
 
 export interface AdminPasswordResetResponse {
@@ -101,24 +87,50 @@ export interface DownloadUrlResponse {
   url: string;
 }
 
-export interface CourseResponse {
-  courseName: string;
-  teacher: string | null;
-  classroom: string | null;
-  dayOfWeek: number | null;
-  startTime: number | null;
-  endTime: number | null;
+export interface CreateFileShareLinkResponse {
+  token: string;
+  filename: string;
+  size: number;
+  contentType: string | null;
+  createdAt: string;
 }
 
-export interface GradeResponse {
-  courseName: string;
-  grade: number | null;
-  semester: string | null;
+export interface FileShareDetailsResponse {
+  token: string;
+  ownerUsername: string;
+  filename: string;
+  size: number;
+  contentType: string | null;
+  directory: boolean;
+  createdAt: string;
 }
 
-export interface LatestSchoolDataResponse {
-  studentId: string;
-  semester: string;
-  schedule: CourseResponse[];
-  grades: GradeResponse[];
+export interface TransferFileItem {
+  name: string;
+  size: number;
+  contentType: string;
+}
+
+export interface TransferSessionResponse {
+  sessionId: string;
+  pickupCode: string;
+  expiresAt: string;
+  files: TransferFileItem[];
+}
+
+export interface LookupTransferSessionResponse {
+  sessionId: string;
+  pickupCode: string;
+  expiresAt: string;
+}
+
+export interface TransferSignalEnvelope {
+  cursor: number;
+  type: string;
+  payload: string;
+}
+
+export interface PollTransferSignalsResponse {
+  items: TransferSignalEnvelope[];
+  nextCursor: number;
 }

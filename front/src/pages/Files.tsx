@@ -18,17 +18,23 @@ import {
   LayoutGrid,
   List,
   MoreVertical,
+  Copy,
+  Share2,
   TriangleAlert,
   X,
   Edit2,
   Trash2,
 } from 'lucide-react';
 
+import { NetdiskPathPickerModal } from '@/src/components/ui/NetdiskPathPickerModal';
 import { Button } from '@/src/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/src/components/ui/card';
 import { Input } from '@/src/components/ui/input';
 import { ApiError, apiBinaryUploadRequest, apiDownload, apiRequest, apiUploadRequest } from '@/src/lib/api';
+import { copyFileToNetdiskPath } from '@/src/lib/file-copy';
+import { moveFileToNetdiskPath } from '@/src/lib/file-move';
 import { readCachedValue, writeCachedValue } from '@/src/lib/cache';
+import { createFileShareLink, getCurrentFileShareUrl } from '@/src/lib/file-share';
 import { getFilesLastPathCacheKey, getFilesListCacheKey } from '@/src/lib/page-cache';
 import type { DownloadUrlResponse, FileMetadata, InitiateUploadResponse, PageResponse } from '@/src/lib/types';
 import { cn } from '@/src/lib/utils';
@@ -122,6 +128,7 @@ function toUiFile(file: FileMetadata) {
 }
 
 type UiFile = ReturnType<typeof toUiFile>;
+type NetdiskTargetAction = 'move' | 'copy';
 
 export default function Files() {
   const initialPath = readCachedValue<string[]>(getFilesLastPathCacheKey()) ?? [];
@@ -139,11 +146,14 @@ export default function Files() {
   const [deleteModalOpen, setDeleteModalOpen] = useState(false);
   const [fileToRename, setFileToRename] = useState<UiFile | null>(null);
   const [fileToDelete, setFileToDelete] = useState<UiFile | null>(null);
+  const [targetActionFile, setTargetActionFile] = useState<UiFile | null>(null);
+  const [targetAction, setTargetAction] = useState<NetdiskTargetAction | null>(null);
   const [newFileName, setNewFileName] = useState('');
   const [activeDropdown, setActiveDropdown] = useState<number | null>(null);
   const [viewMode, setViewMode] = useState<'list' | 'grid'>('list');
   const [renameError, setRenameError] = useState('');
   const [isRenaming, setIsRenaming] = useState(false);
+  const [shareStatus, setShareStatus] = useState('');
 
   const loadCurrentPath = async (pathParts: string[]) => {
     const response = await apiRequest<PageResponse<FileMetadata>>(
@@ -208,6 +218,12 @@ export default function Files() {
   const openDeleteModal = (file: UiFile) => {
     setFileToDelete(file);
     setDeleteModalOpen(true);
+  };
+
+  const openTargetActionModal = (file: UiFile, action: NetdiskTargetAction) => {
+    setTargetAction(action);
+    setTargetActionFile(file);
+    setActiveDropdown(null);
   };
 
   const handleUploadClick = () => {
@@ -478,6 +494,23 @@ export default function Files() {
     await loadCurrentPath(currentPath).catch(() => undefined);
   };
 
+  const handleMoveToPath = async (path: string) => {
+    if (!targetActionFile || !targetAction) {
+      return;
+    }
+
+    if (targetAction === 'move') {
+      await moveFileToNetdiskPath(targetActionFile.id, path);
+      setSelectedFile((previous) => clearSelectionIfDeleted(previous, targetActionFile.id));
+    } else {
+      await copyFileToNetdiskPath(targetActionFile.id, path);
+    }
+
+    setTargetAction(null);
+    setTargetActionFile(null);
+    await loadCurrentPath(currentPath).catch(() => undefined);
+  };
+
   const handleDownload = async (targetFile: UiFile | null = selectedFile) => {
     if (!targetFile) {
       return;
@@ -524,6 +557,21 @@ export default function Files() {
   const handleClearUploads = () => {
     uploadMeasurementsRef.current.clear();
     setUploads([]);
+  };
+
+  const handleShare = async (targetFile: UiFile) => {
+    try {
+      const response = await createFileShareLink(targetFile.id);
+      const shareUrl = getCurrentFileShareUrl(response.token);
+      try {
+        await navigator.clipboard.writeText(shareUrl);
+        setShareStatus('分享链接已复制到剪贴板');
+      } catch {
+        setShareStatus(`分享链接：${shareUrl}`);
+      }
+    } catch (error) {
+      setShareStatus(error instanceof Error ? error.message : '创建分享链接失败');
+    }
   };
 
   return (
@@ -591,6 +639,9 @@ export default function Files() {
               </React.Fragment>
             ))}
           </div>
+          {shareStatus ? (
+            <div className="hidden max-w-xs truncate text-xs text-emerald-300 md:block">{shareStatus}</div>
+          ) : null}
           <div className="flex items-center gap-2 bg-black/20 p-1 rounded-lg">
             <button
               onClick={() => setViewMode('list')}
@@ -665,6 +716,9 @@ export default function Files() {
                         activeDropdown={activeDropdown}
                         onToggle={(fileId) => setActiveDropdown((previous) => (previous === fileId ? null : fileId))}
                         onDownload={handleDownload}
+                        onShare={handleShare}
+                        onMove={(targetFile) => openTargetActionModal(targetFile, 'move')}
+                        onCopy={(targetFile) => openTargetActionModal(targetFile, 'copy')}
                         onRename={openRenameModal}
                         onDelete={openDeleteModal}
                         onClose={() => setActiveDropdown(null)}
@@ -694,6 +748,9 @@ export default function Files() {
                       activeDropdown={activeDropdown}
                       onToggle={(fileId) => setActiveDropdown((previous) => (previous === fileId ? null : fileId))}
                       onDownload={handleDownload}
+                      onShare={handleShare}
+                      onMove={(file) => openTargetActionModal(file, 'move')}
+                      onCopy={(file) => openTargetActionModal(file, 'copy')}
                       onRename={openRenameModal}
                       onDelete={openDeleteModal}
                       onClose={() => setActiveDropdown(null)}
@@ -772,8 +829,19 @@ export default function Files() {
 
               <div className="pt-4 space-y-3 border-t border-white/10">
                 <div className="grid grid-cols-2 gap-3">
+                  {selectedFile.type !== 'folder' ? (
+                    <Button variant="outline" className="w-full gap-2 bg-white/5 border-white/10 hover:bg-white/10" onClick={() => void handleShare(selectedFile)}>
+                      <Share2 className="w-4 h-4" /> 分享链接
+                    </Button>
+                  ) : null}
                   <Button variant="outline" className="w-full gap-2 bg-white/5 border-white/10 hover:bg-white/10" onClick={() => openRenameModal(selectedFile)}>
                     <Edit2 className="w-4 h-4" /> 重命名
+                  </Button>
+                  <Button variant="outline" className="w-full gap-2 bg-white/5 border-white/10 hover:bg-white/10" onClick={() => openTargetActionModal(selectedFile, 'move')}>
+                    <Folder className="w-4 h-4" /> 移动
+                  </Button>
+                  <Button variant="outline" className="w-full gap-2 bg-white/5 border-white/10 hover:bg-white/10" onClick={() => openTargetActionModal(selectedFile, 'copy')}>
+                    <Copy className="w-4 h-4" /> 复制到
                   </Button>
                   <Button
                     variant="outline"
@@ -798,6 +866,11 @@ export default function Files() {
                     <Download className="w-4 h-4" /> 下载文件
                   </Button>
                 )}
+                {shareStatus && selectedFile.type !== 'folder' ? (
+                  <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/10 px-3 py-2 text-xs text-emerald-200">
+                    {shareStatus}
+                  </div>
+                ) : null}
               </div>
             </CardContent>
           </Card>
@@ -1024,6 +1097,23 @@ export default function Files() {
           </div>
         )}
       </AnimatePresence>
+
+      <NetdiskPathPickerModal
+        isOpen={Boolean(targetActionFile && targetAction)}
+        title={targetAction === 'copy' ? '选择复制目标' : '选择移动目标'}
+        description={
+          targetAction === 'copy'
+            ? '选择要把当前文件或文件夹复制到哪个目录。'
+            : '选择要把当前文件或文件夹移动到哪个目录。'
+        }
+        initialPath={toBackendPath(currentPath)}
+        confirmLabel={targetAction === 'copy' ? '复制到这里' : '移动到这里'}
+        onClose={() => {
+          setTargetAction(null);
+          setTargetActionFile(null);
+        }}
+        onConfirm={handleMoveToPath}
+      />
     </div>
   );
 }
@@ -1042,6 +1132,9 @@ function FileActionMenu({
   activeDropdown,
   onToggle,
   onDownload,
+  onShare,
+  onMove,
+  onCopy,
   onRename,
   onDelete,
   onClose,
@@ -1050,6 +1143,9 @@ function FileActionMenu({
   activeDropdown: number | null;
   onToggle: (fileId: number) => void;
   onDownload: (file: UiFile) => Promise<void>;
+  onShare: (file: UiFile) => Promise<void>;
+  onMove: (file: UiFile) => void;
+  onCopy: (file: UiFile) => void;
   onRename: (file: UiFile) => void;
   onDelete: (file: UiFile) => void;
   onClose: () => void;
@@ -1092,6 +1188,38 @@ function FileActionMenu({
               className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-slate-300 transition-colors hover:bg-white/10 hover:text-white"
             >
               <Download className="w-4 h-4" /> {file.type === 'folder' ? '下载文件夹' : '下载文件'}
+            </button>
+            {file.type !== 'folder' ? (
+              <button
+                onClick={(event) => {
+                  event.stopPropagation();
+                  void onShare(file);
+                  onClose();
+                }}
+                className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-slate-300 transition-colors hover:bg-white/10 hover:text-white"
+              >
+                <Share2 className="w-4 h-4" /> 分享链接
+              </button>
+            ) : null}
+            <button
+              onClick={(event) => {
+                event.stopPropagation();
+                onMove(file);
+                onClose();
+              }}
+              className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-slate-300 transition-colors hover:bg-white/10 hover:text-white"
+            >
+              <Folder className="w-4 h-4" /> 移动
+            </button>
+            <button
+              onClick={(event) => {
+                event.stopPropagation();
+                onCopy(file);
+                onClose();
+              }}
+              className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-slate-300 transition-colors hover:bg-white/10 hover:text-white"
+            >
+              <Copy className="w-4 h-4" /> 复制到
             </button>
             <button
               onClick={(event) => {

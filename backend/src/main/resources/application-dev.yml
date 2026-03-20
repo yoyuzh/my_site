@@ -17,5 +17,3 @@ app:
     secret: ${APP_JWT_SECRET:}
   admin:
     usernames: ${APP_ADMIN_USERNAMES:}
-  cqu:
-    mock-enabled: true

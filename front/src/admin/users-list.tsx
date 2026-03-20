@@ -177,8 +177,6 @@ export function PortalAdminUsersList() {
             />
           )}
         />
-        <TextField source="lastSchoolStudentId" label="最近学号" emptyText="-" />
-        <TextField source="lastSchoolSemester" label="最近学期" emptyText="-" />
         <DateField source="createdAt" label="创建时间" showTime />
         <FunctionField<AdminUser> label="操作" render={(record) => <AdminUserActions record={record} />} />
       </Datagrid>

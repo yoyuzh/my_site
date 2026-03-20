@@ -17,10 +17,6 @@ public interface UserRepository extends JpaRepository<User, Long> {
 
     Optional<User> findByUsername(String username);
 
-    long countByLastSchoolStudentIdIsNotNull();
-
-    Page<User> findByLastSchoolStudentIdIsNotNull(Pageable pageable);
-
     @Query("""
             select u from User u
             where (:query is null or :query = ''

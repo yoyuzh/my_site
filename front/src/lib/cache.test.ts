@@ -60,7 +60,7 @@ test('scoped cache key includes current user identity', () => {
     },
   });
 
-  assert.equal(buildScopedCacheKey('school', '2023123456', '2025-spring'), 'portal-cache:user:7:school:2023123456:2025-spring');
+  assert.equal(buildScopedCacheKey('transfer', 'pickup-code', '849201'), 'portal-cache:user:7:transfer:pickup-code:849201');
 });
 
 test('cached values are isolated between users', () => {
@@ -73,9 +73,9 @@ test('cached values are isolated between users', () => {
       createdAt: '2026-03-14T12:00:00',
     },
   });
-  writeCachedValue(buildScopedCacheKey('school', '2023123456', '2025-spring'), {
+  writeCachedValue(buildScopedCacheKey('transfer', 'pickup-code', '849201'), {
     queried: true,
-    grades: [95],
+    sharedFiles: [2],
   });
 
   saveStoredSession({
@@ -88,12 +88,12 @@ test('cached values are isolated between users', () => {
     },
   });
 
-  assert.equal(readCachedValue(buildScopedCacheKey('school', '2023123456', '2025-spring')), null);
+  assert.equal(readCachedValue(buildScopedCacheKey('transfer', 'pickup-code', '849201')), null);
 });
 
 test('invalid cached json is ignored safely', () => {
-  localStorage.setItem('portal-cache:user:7:school:2023123456:2025-spring', '{broken-json');
+  localStorage.setItem('portal-cache:user:7:transfer:pickup-code:849201', '{broken-json');
 
-  assert.equal(readCachedValue('portal-cache:user:7:school:2023123456:2025-spring'), null);
-  assert.equal(localStorage.getItem('portal-cache:user:7:school:2023123456:2025-spring'), null);
+  assert.equal(readCachedValue('portal-cache:user:7:transfer:pickup-code:849201'), null);
+  assert.equal(localStorage.getItem('portal-cache:user:7:transfer:pickup-code:849201'), null);
 });

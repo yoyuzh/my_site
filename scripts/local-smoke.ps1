@@ -79,11 +79,6 @@ try {
         throw '文件列表为空'
     }
 
-    $schedule = Invoke-RestMethod -Uri 'http://127.0.0.1:8080/api/cqu/schedule?semester=2025-2026-1&studentId=20230001' -Headers $headers -Method Get
-    if ($schedule.data.Count -lt 1) {
-        throw '课表接口为空'
-    }
-
     $frontend = Start-Process `
         -FilePath 'cmd.exe' `
         -ArgumentList '/c', 'npm run dev -- --host 127.0.0.1 --port 4173' `
@@ -113,7 +108,6 @@ try {
 
         Write-Output "BACKEND_OK username=$username"
         Write-Output "FILES_OK count=$($files.data.items.Count)"
-        Write-Output "SCHEDULE_OK count=$($schedule.data.Count)"
         Write-Output 'FRONTEND_OK url=http://127.0.0.1:4173'
     }
     finally {

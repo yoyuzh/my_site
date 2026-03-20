@@ -27,6 +27,7 @@ import java.util.zip.ZipInputStream;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.AdditionalMatchers.aryEq;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
@@ -43,13 +44,16 @@ class FileServiceTest {
     @Mock
     private FileContentStorage fileContentStorage;
 
+    @Mock
+    private FileShareLinkRepository fileShareLinkRepository;
+
     private FileService fileService;
 
     @BeforeEach
     void setUp() {
         FileStorageProperties properties = new FileStorageProperties();
         properties.setMaxFileSize(500L * 1024 * 1024);
-        fileService = new FileService(storedFileRepository, fileContentStorage, properties);
+        fileService = new FileService(storedFileRepository, fileContentStorage, fileShareLinkRepository, properties);
     }
 
     @Test
@@ -165,6 +169,140 @@ class FileServiceTest {
         assertThat(response.filename()).isEqualTo("renamed-archive");
         assertThat(childFile.getPath()).isEqualTo("/docs/renamed-archive");
         verify(fileContentStorage).renameDirectory(7L, "/docs/archive", "/docs/renamed-archive", List.of(childFile));
+    }
+
+    @Test
+    void shouldMoveFileToAnotherDirectory() {
+        User user = createUser(7L);
+        StoredFile file = createFile(10L, user, "/docs", "notes.txt");
+        StoredFile targetDirectory = createDirectory(11L, user, "/", "下载");
+        when(storedFileRepository.findById(10L)).thenReturn(Optional.of(file));
+        when(storedFileRepository.findByUserIdAndPathAndFilename(7L, "/", "下载")).thenReturn(Optional.of(targetDirectory));
+        when(storedFileRepository.existsByUserIdAndPathAndFilename(7L, "/下载", "notes.txt")).thenReturn(false);
+        when(storedFileRepository.save(any(StoredFile.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        FileMetadataResponse response = fileService.move(user, 10L, "/下载");
+
+        assertThat(response.path()).isEqualTo("/下载");
+        assertThat(file.getPath()).isEqualTo("/下载");
+        verify(fileContentStorage).moveFile(7L, "/docs", "/下载", "notes.txt");
+    }
+
+    @Test
+    void shouldMoveDirectoryAndUpdateDescendantPaths() {
+        User user = createUser(7L);
+        StoredFile directory = createDirectory(10L, user, "/docs", "archive");
+        StoredFile targetDirectory = createDirectory(11L, user, "/", "图片");
+        StoredFile childFile = createFile(12L, user, "/docs/archive", "nested.txt");
+        when(storedFileRepository.findById(10L)).thenReturn(Optional.of(directory));
+        when(storedFileRepository.findByUserIdAndPathAndFilename(7L, "/", "图片")).thenReturn(Optional.of(targetDirectory));
+        when(storedFileRepository.existsByUserIdAndPathAndFilename(7L, "/图片", "archive")).thenReturn(false);
+        when(storedFileRepository.findByUserIdAndPathEqualsOrDescendant(7L, "/docs/archive")).thenReturn(List.of(childFile));
+        when(storedFileRepository.save(any(StoredFile.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(storedFileRepository.saveAll(List.of(childFile))).thenReturn(List.of(childFile));
+
+        FileMetadataResponse response = fileService.move(user, 10L, "/图片");
+
+        assertThat(response.path()).isEqualTo("/图片/archive");
+        assertThat(directory.getPath()).isEqualTo("/图片");
+        assertThat(childFile.getPath()).isEqualTo("/图片/archive");
+        verify(fileContentStorage).renameDirectory(7L, "/docs/archive", "/图片/archive", List.of(childFile));
+    }
+
+    @Test
+    void shouldRejectMovingDirectoryIntoItsOwnDescendant() {
+        User user = createUser(7L);
+        StoredFile directory = createDirectory(10L, user, "/docs", "archive");
+        StoredFile docsDirectory = createDirectory(11L, user, "/", "docs");
+        StoredFile archiveDirectory = createDirectory(12L, user, "/docs", "archive");
+        StoredFile descendantDirectory = createDirectory(13L, user, "/docs/archive", "nested");
+        when(storedFileRepository.findById(10L)).thenReturn(Optional.of(directory));
+        when(storedFileRepository.findByUserIdAndPathAndFilename(7L, "/", "docs"))
+                .thenReturn(Optional.of(docsDirectory));
+        when(storedFileRepository.findByUserIdAndPathAndFilename(7L, "/docs", "archive"))
+                .thenReturn(Optional.of(archiveDirectory));
+        when(storedFileRepository.findByUserIdAndPathAndFilename(7L, "/docs/archive", "nested"))
+                .thenReturn(Optional.of(descendantDirectory));
+
+        assertThatThrownBy(() -> fileService.move(user, 10L, "/docs/archive/nested"))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("不能移动到当前目录或其子目录");
+    }
+
+    @Test
+    void shouldCopyFileToAnotherDirectory() {
+        User user = createUser(7L);
+        StoredFile file = createFile(10L, user, "/docs", "notes.txt");
+        StoredFile targetDirectory = createDirectory(11L, user, "/", "下载");
+        when(storedFileRepository.findById(10L)).thenReturn(Optional.of(file));
+        when(storedFileRepository.findByUserIdAndPathAndFilename(7L, "/", "下载")).thenReturn(Optional.of(targetDirectory));
+        when(storedFileRepository.existsByUserIdAndPathAndFilename(7L, "/下载", "notes.txt")).thenReturn(false);
+        when(storedFileRepository.save(any(StoredFile.class))).thenAnswer(invocation -> {
+            StoredFile storedFile = invocation.getArgument(0);
+            if (storedFile.getId() == null) {
+                storedFile.setId(20L);
+            }
+            return storedFile;
+        });
+
+        FileMetadataResponse response = fileService.copy(user, 10L, "/下载");
+
+        assertThat(response.id()).isEqualTo(20L);
+        assertThat(response.path()).isEqualTo("/下载");
+        verify(fileContentStorage).copyFile(7L, "/docs", "/下载", "notes.txt");
+    }
+
+    @Test
+    void shouldCopyDirectoryAndDescendants() {
+        User user = createUser(7L);
+        StoredFile directory = createDirectory(10L, user, "/docs", "archive");
+        StoredFile targetDirectory = createDirectory(11L, user, "/", "图片");
+        StoredFile childDirectory = createDirectory(12L, user, "/docs/archive", "nested");
+        StoredFile childFile = createFile(13L, user, "/docs/archive", "notes.txt");
+        StoredFile nestedFile = createFile(14L, user, "/docs/archive/nested", "todo.txt");
+        when(storedFileRepository.findById(10L)).thenReturn(Optional.of(directory));
+        when(storedFileRepository.findByUserIdAndPathAndFilename(7L, "/", "图片")).thenReturn(Optional.of(targetDirectory));
+        when(storedFileRepository.existsByUserIdAndPathAndFilename(7L, "/图片", "archive")).thenReturn(false);
+        when(storedFileRepository.findByUserIdAndPathEqualsOrDescendant(7L, "/docs/archive"))
+                .thenReturn(List.of(childDirectory, childFile, nestedFile));
+        when(storedFileRepository.existsByUserIdAndPathAndFilename(7L, "/图片/archive", "nested")).thenReturn(false);
+        when(storedFileRepository.existsByUserIdAndPathAndFilename(7L, "/图片/archive", "notes.txt")).thenReturn(false);
+        when(storedFileRepository.existsByUserIdAndPathAndFilename(7L, "/图片/archive/nested", "todo.txt")).thenReturn(false);
+        when(storedFileRepository.save(any(StoredFile.class))).thenAnswer(invocation -> {
+            StoredFile storedFile = invocation.getArgument(0);
+            if (storedFile.getId() == null) {
+                storedFile.setId(100L + storedFile.getFilename().length());
+            }
+            return storedFile;
+        });
+
+        FileMetadataResponse response = fileService.copy(user, 10L, "/图片");
+
+        assertThat(response.path()).isEqualTo("/图片/archive");
+        verify(fileContentStorage).ensureDirectory(7L, "/图片/archive");
+        verify(fileContentStorage).ensureDirectory(7L, "/图片/archive/nested");
+        verify(fileContentStorage).copyFile(7L, "/docs/archive", "/图片/archive", "notes.txt");
+        verify(fileContentStorage).copyFile(7L, "/docs/archive/nested", "/图片/archive/nested", "todo.txt");
+    }
+
+    @Test
+    void shouldRejectCopyingDirectoryIntoItsOwnDescendant() {
+        User user = createUser(7L);
+        StoredFile directory = createDirectory(10L, user, "/docs", "archive");
+        StoredFile docsDirectory = createDirectory(11L, user, "/", "docs");
+        StoredFile archiveDirectory = createDirectory(12L, user, "/docs", "archive");
+        StoredFile descendantDirectory = createDirectory(13L, user, "/docs/archive", "nested");
+        when(storedFileRepository.findById(10L)).thenReturn(Optional.of(directory));
+        when(storedFileRepository.findByUserIdAndPathAndFilename(7L, "/", "docs"))
+                .thenReturn(Optional.of(docsDirectory));
+        when(storedFileRepository.findByUserIdAndPathAndFilename(7L, "/docs", "archive"))
+                .thenReturn(Optional.of(archiveDirectory));
+        when(storedFileRepository.findByUserIdAndPathAndFilename(7L, "/docs/archive", "nested"))
+                .thenReturn(Optional.of(descendantDirectory));
+
+        assertThatThrownBy(() -> fileService.copy(user, 10L, "/docs/archive/nested"))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("不能复制到当前目录或其子目录");
     }
 
     @Test
@@ -291,6 +429,60 @@ class FileServiceTest {
         assertThat(entries).containsEntry("archive/nested/todo.txt", "world");
         verify(fileContentStorage).readFile(7L, "/docs/archive", "notes.txt");
         verify(fileContentStorage).readFile(7L, "/docs/archive/nested", "todo.txt");
+    }
+
+    @Test
+    void shouldCreateShareLinkForOwnedFile() {
+        User user = createUser(7L);
+        StoredFile file = createFile(22L, user, "/docs", "notes.txt");
+        when(storedFileRepository.findById(22L)).thenReturn(Optional.of(file));
+        when(fileShareLinkRepository.save(any(FileShareLink.class))).thenAnswer(invocation -> {
+            FileShareLink shareLink = invocation.getArgument(0);
+            shareLink.setId(100L);
+            shareLink.setToken("share-token-1");
+            return shareLink;
+        });
+
+        CreateFileShareLinkResponse response = fileService.createShareLink(user, 22L);
+
+        assertThat(response.token()).isEqualTo("share-token-1");
+        assertThat(response.filename()).isEqualTo("notes.txt");
+        verify(fileShareLinkRepository).save(any(FileShareLink.class));
+    }
+
+    @Test
+    void shouldImportSharedFileIntoRecipientWorkspace() {
+        User owner = createUser(7L);
+        User recipient = createUser(8L);
+        StoredFile sourceFile = createFile(22L, owner, "/docs", "notes.txt");
+        FileShareLink shareLink = new FileShareLink();
+        shareLink.setId(100L);
+        shareLink.setToken("share-token-1");
+        shareLink.setOwner(owner);
+        shareLink.setFile(sourceFile);
+        shareLink.setCreatedAt(LocalDateTime.now());
+        when(fileShareLinkRepository.findByToken("share-token-1")).thenReturn(Optional.of(shareLink));
+        when(storedFileRepository.existsByUserIdAndPathAndFilename(8L, "/下载", "notes.txt")).thenReturn(false);
+        when(storedFileRepository.save(any(StoredFile.class))).thenAnswer(invocation -> {
+            StoredFile file = invocation.getArgument(0);
+            file.setId(200L);
+            return file;
+        });
+        when(fileContentStorage.readFile(7L, "/docs", "notes.txt"))
+                .thenReturn("hello".getBytes(StandardCharsets.UTF_8));
+
+        FileMetadataResponse response = fileService.importSharedFile(recipient, "share-token-1", "/下载");
+
+        assertThat(response.id()).isEqualTo(200L);
+        assertThat(response.path()).isEqualTo("/下载");
+        assertThat(response.filename()).isEqualTo("notes.txt");
+        verify(fileContentStorage).storeImportedFile(
+                eq(8L),
+                eq("/下载"),
+                eq("notes.txt"),
+                eq(sourceFile.getContentType()),
+                aryEq("hello".getBytes(StandardCharsets.UTF_8))
+        );
     }
 
     private User createUser(Long id) {

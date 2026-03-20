@@ -76,17 +76,6 @@ test('buildAdminListPath maps generic admin resources to backend paging queries'
     }),
     '/admin/users?page=1&size=20',
   );
-
-  assert.equal(
-    buildAdminListPath('schoolSnapshots', {
-      pagination: {
-        page: 1,
-        perPage: 50,
-      },
-      filter: {},
-    }),
-    '/admin/school-snapshots?page=0&size=50',
-  );
 });
 
 test('buildAdminListPath includes the user search query when present', () => {
@@ -101,5 +90,19 @@ test('buildAdminListPath includes the user search query when present', () => {
       },
     }),
     '/admin/users?page=0&size=25&query=alice',
+  );
+});
+
+test('buildAdminListPath rejects the removed school snapshots resource', () => {
+  assert.throws(
+    () =>
+      buildAdminListPath('schoolSnapshots', {
+        pagination: {
+          page: 1,
+          perPage: 50,
+        },
+        filter: {},
+      }),
+    /schoolSnapshots/,
   );
 });
