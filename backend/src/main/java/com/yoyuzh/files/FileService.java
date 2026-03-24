@@ -54,7 +54,7 @@ public class FileService {
     public FileMetadataResponse upload(User user, String path, MultipartFile multipartFile) {
         String normalizedPath = normalizeDirectoryPath(path);
         String filename = normalizeUploadFilename(multipartFile.getOriginalFilename());
-        validateUpload(user.getId(), normalizedPath, filename, multipartFile.getSize());
+        validateUpload(user, normalizedPath, filename, multipartFile.getSize());
         ensureDirectoryHierarchy(user, normalizedPath);
 
         fileContentStorage.upload(user.getId(), normalizedPath, filename, multipartFile);
@@ -64,7 +64,7 @@ public class FileService {
     public InitiateUploadResponse initiateUpload(User user, InitiateUploadRequest request) {
         String normalizedPath = normalizeDirectoryPath(request.path());
         String filename = normalizeLeafName(request.filename());
-        validateUpload(user.getId(), normalizedPath, filename, request.size());
+        validateUpload(user, normalizedPath, filename, request.size());
 
         PreparedUpload preparedUpload = fileContentStorage.prepareUpload(
                 user.getId(),
@@ -88,7 +88,7 @@ public class FileService {
         String normalizedPath = normalizeDirectoryPath(request.path());
         String filename = normalizeLeafName(request.filename());
         String storageName = normalizeLeafName(request.storageName());
-        validateUpload(user.getId(), normalizedPath, filename, request.size());
+        validateUpload(user, normalizedPath, filename, request.size());
         ensureDirectoryHierarchy(user, normalizedPath);
 
         fileContentStorage.completeUpload(user.getId(), normalizedPath, storageName, request.contentType(), request.size());
@@ -265,6 +265,7 @@ public class FileService {
         }
 
         if (!storedFile.isDirectory()) {
+            ensureWithinStorageQuota(user, storedFile.getSize());
             fileContentStorage.copyFile(user.getId(), storedFile.getPath(), normalizedTargetPath, storedFile.getStorageName());
             return toResponse(storedFileRepository.save(copyStoredFile(storedFile, normalizedTargetPath)));
         }
@@ -276,6 +277,11 @@ public class FileService {
         }
 
         List<StoredFile> descendants = storedFileRepository.findByUserIdAndPathEqualsOrDescendant(user.getId(), oldLogicalPath);
+        long additionalBytes = descendants.stream()
+                .filter(descendant -> !descendant.isDirectory())
+                .mapToLong(StoredFile::getSize)
+                .sum();
+        ensureWithinStorageQuota(user, additionalBytes);
         List<StoredFile> copiedEntries = new ArrayList<>();
 
         fileContentStorage.ensureDirectory(user.getId(), newLogicalPath);
@@ -421,7 +427,7 @@ public class FileService {
                                                    byte[] content) {
         String normalizedPath = normalizeDirectoryPath(path);
         String normalizedFilename = normalizeLeafName(filename);
-        validateUpload(recipient.getId(), normalizedPath, normalizedFilename, size);
+        validateUpload(recipient, normalizedPath, normalizedFilename, size);
         ensureDirectoryHierarchy(recipient, normalizedPath);
         fileContentStorage.storeImportedFile(
                 recipient.getId(),
@@ -510,12 +516,26 @@ public class FileService {
         return storedFile;
     }
 
-    private void validateUpload(Long userId, String normalizedPath, String filename, long size) {
-        if (size > maxFileSize) {
+    private void validateUpload(User user, String normalizedPath, String filename, long size) {
+        long effectiveMaxUploadSize = Math.min(maxFileSize, user.getMaxUploadSizeBytes());
+        if (size > effectiveMaxUploadSize) {
             throw new BusinessException(ErrorCode.UNKNOWN, "文件大小超出限制");
         }
-        if (storedFileRepository.existsByUserIdAndPathAndFilename(userId, normalizedPath, filename)) {
+        if (storedFileRepository.existsByUserIdAndPathAndFilename(user.getId(), normalizedPath, filename)) {
             throw new BusinessException(ErrorCode.UNKNOWN, "同目录下文件已存在");
+        }
+        ensureWithinStorageQuota(user, size);
+    }
+
+    private void ensureWithinStorageQuota(User user, long additionalBytes) {
+        if (additionalBytes <= 0) {
+            return;
+        }
+
+        long usedBytes = storedFileRepository.sumFileSizeByUserId(user.getId());
+        long quotaBytes = user.getStorageQuotaBytes();
+        if (usedBytes > Long.MAX_VALUE - additionalBytes || usedBytes + additionalBytes > quotaBytes) {
+            throw new BusinessException(ErrorCode.UNKNOWN, "存储空间不足");
         }
     }
 

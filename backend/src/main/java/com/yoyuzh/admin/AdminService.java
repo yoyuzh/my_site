@@ -104,6 +104,20 @@ public class AdminService {
     }
 
     @Transactional
+    public AdminUserResponse updateUserStorageQuota(Long userId, long storageQuotaBytes) {
+        User user = getRequiredUser(userId);
+        user.setStorageQuotaBytes(storageQuotaBytes);
+        return toUserResponse(userRepository.save(user));
+    }
+
+    @Transactional
+    public AdminUserResponse updateUserMaxUploadSize(Long userId, long maxUploadSizeBytes) {
+        User user = getRequiredUser(userId);
+        user.setMaxUploadSizeBytes(maxUploadSizeBytes);
+        return toUserResponse(userRepository.save(user));
+    }
+
+    @Transactional
     public AdminPasswordResetResponse resetUserPassword(Long userId) {
         String temporaryPassword = generateTemporaryPassword();
         updateUserPassword(userId, temporaryPassword);
@@ -118,7 +132,9 @@ public class AdminService {
                 user.getPhoneNumber(),
                 user.getCreatedAt(),
                 user.getRole(),
-                user.isBanned()
+                user.isBanned(),
+                user.getStorageQuotaBytes(),
+                user.getMaxUploadSizeBytes()
         );
     }
 

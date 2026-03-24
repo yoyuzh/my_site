@@ -11,6 +11,8 @@ public record AdminUserResponse(
         String phoneNumber,
         LocalDateTime createdAt,
         UserRole role,
-        boolean banned
+        boolean banned,
+        long storageQuotaBytes,
+        long maxUploadSizeBytes
 ) {
 }

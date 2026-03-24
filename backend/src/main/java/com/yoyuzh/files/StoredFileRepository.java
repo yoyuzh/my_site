@@ -64,5 +64,12 @@ public interface StoredFileRepository extends JpaRepository<StoredFile, Long> {
     List<StoredFile> findByUserIdAndPathEqualsOrDescendant(@Param("userId") Long userId,
                                                            @Param("path") String path);
 
+    @Query("""
+            select coalesce(sum(f.size), 0)
+            from StoredFile f
+            where f.user.id = :userId and f.directory = false
+            """)
+    long sumFileSizeByUserId(@Param("userId") Long userId);
+
     List<StoredFile> findTop12ByUserIdAndDirectoryFalseOrderByCreatedAtDesc(Long userId);
 }

@@ -81,8 +81,11 @@ export default function Overview() {
     () => rootFiles.filter((file) => !file.directory).reduce((sum, file) => sum + file.size, 0),
     [rootFiles],
   );
+  const storageQuotaBytes = profile?.storageQuotaBytes && profile.storageQuotaBytes > 0
+    ? profile.storageQuotaBytes
+    : 50 * 1024 * 1024 * 1024;
   const usedGb = usedBytes / 1024 / 1024 / 1024;
-  const storagePercent = Math.min((usedGb / 50) * 100, 100);
+  const storagePercent = Math.min((usedBytes / storageQuotaBytes) * 100, 100);
   const latestFile = recentFiles[0] ?? null;
   const profileDisplayName = profile?.displayName || profile?.username || '未登录';
   const profileAvatarFallback = profileDisplayName.charAt(0).toUpperCase();
@@ -233,7 +236,7 @@ export default function Overview() {
         <MetricCard
           title="存储占用"
           value={`${storagePercent.toFixed(1)}%`}
-          desc={`${usedGb.toFixed(2)} GB / 50 GB`}
+          desc={`${formatFileSize(usedBytes)} / ${formatFileSize(storageQuotaBytes)}`}
           icon={Database}
           delay={0.4}
         />

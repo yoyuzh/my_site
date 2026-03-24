@@ -1,6 +1,7 @@
 package com.yoyuzh.auth.dto;
 
 import com.yoyuzh.auth.UserRole;
+import com.yoyuzh.auth.User;
 
 import java.time.LocalDateTime;
 
@@ -14,9 +15,24 @@ public record UserProfileResponse(
         String preferredLanguage,
         String avatarUrl,
         UserRole role,
-        LocalDateTime createdAt
+        LocalDateTime createdAt,
+        long storageQuotaBytes,
+        long maxUploadSizeBytes
 ) {
     public UserProfileResponse(Long id, String username, String email, LocalDateTime createdAt) {
-        this(id, username, username, email, null, null, "zh-CN", null, UserRole.USER, createdAt);
+        this(
+                id,
+                username,
+                username,
+                email,
+                null,
+                null,
+                "zh-CN",
+                null,
+                UserRole.USER,
+                createdAt,
+                User.DEFAULT_STORAGE_QUOTA_BYTES,
+                User.DEFAULT_MAX_UPLOAD_SIZE_BYTES
+        );
     }
 }

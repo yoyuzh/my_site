@@ -18,6 +18,39 @@ import type { AdminPasswordResetResponse, AdminUser, AdminUserRole } from '@/src
 
 const USER_ROLE_OPTIONS: AdminUserRole[] = ['USER', 'MODERATOR', 'ADMIN'];
 
+function formatLimitSize(bytes: number) {
+  if (bytes <= 0) {
+    return '0 B';
+  }
+  const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+  const index = Math.min(Math.floor(Math.log(bytes) / Math.log(1024)), units.length - 1);
+  const value = bytes / 1024 ** index;
+  return `${value >= 10 || index === 0 ? value.toFixed(0) : value.toFixed(1)} ${units[index]}`;
+}
+
+function parseLimitInput(value: string): number | null {
+  const normalized = value.trim().toLowerCase();
+  const matched = normalized.match(/^(\d+(?:\.\d+)?)\s*(b|kb|mb|gb|tb)?$/);
+  if (!matched) {
+    return null;
+  }
+  const amount = Number.parseFloat(matched[1] ?? '0');
+  if (!Number.isFinite(amount) || amount <= 0) {
+    return null;
+  }
+  const unit = matched[2] ?? 'b';
+  const multiplier = unit === 'tb'
+    ? 1024 ** 4
+    : unit === 'gb'
+      ? 1024 ** 3
+      : unit === 'mb'
+        ? 1024 ** 2
+        : unit === 'kb'
+          ? 1024
+          : 1;
+  return Math.floor(amount * multiplier);
+}
+
 function UsersListActions() {
   return (
     <TopToolbar>
@@ -103,6 +136,64 @@ function AdminUserActions({ record }: { record: AdminUser }) {
     }
   }
 
+  async function handleSetStorageQuota() {
+    const input = window.prompt(
+      `请输入新的存储上限（支持 B/KB/MB/GB/TB，当前 ${formatLimitSize(record.storageQuotaBytes)}）`,
+      `${Math.floor(record.storageQuotaBytes / 1024 / 1024 / 1024)}GB`,
+    );
+    if (!input) {
+      return;
+    }
+    const storageQuotaBytes = parseLimitInput(input);
+    if (!storageQuotaBytes) {
+      notify('输入格式不正确，请输入例如 20GB 或 21474836480', { type: 'warning' });
+      return;
+    }
+
+    setBusy(true);
+    try {
+      await apiRequest(`/admin/users/${record.id}/storage-quota`, {
+        method: 'PATCH',
+        body: { storageQuotaBytes },
+      });
+      notify(`存储上限已更新为 ${formatLimitSize(storageQuotaBytes)}`, { type: 'success' });
+      refresh();
+    } catch (error) {
+      notify(error instanceof Error ? error.message : '存储上限更新失败', { type: 'error' });
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleSetMaxUploadSize() {
+    const input = window.prompt(
+      `请输入单文件最大上传大小（支持 B/KB/MB/GB/TB，当前 ${formatLimitSize(record.maxUploadSizeBytes)}）`,
+      `${Math.max(1, Math.floor(record.maxUploadSizeBytes / 1024 / 1024))}MB`,
+    );
+    if (!input) {
+      return;
+    }
+    const maxUploadSizeBytes = parseLimitInput(input);
+    if (!maxUploadSizeBytes) {
+      notify('输入格式不正确，请输入例如 500MB 或 524288000', { type: 'warning' });
+      return;
+    }
+
+    setBusy(true);
+    try {
+      await apiRequest(`/admin/users/${record.id}/max-upload-size`, {
+        method: 'PATCH',
+        body: { maxUploadSizeBytes },
+      });
+      notify(`单文件上限已更新为 ${formatLimitSize(maxUploadSizeBytes)}`, { type: 'success' });
+      refresh();
+    } catch (error) {
+      notify(error instanceof Error ? error.message : '单文件上限更新失败', { type: 'error' });
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function handleResetPassword() {
     const confirmed = window.confirm(`确认重置 ${record.username} 的密码吗？`);
     if (!confirmed) {
@@ -134,6 +225,12 @@ function AdminUserActions({ record }: { record: AdminUser }) {
       <Button size="small" variant="outlined" disabled={busy} onClick={() => void handleResetPassword()}>
         重置密码
       </Button>
+      <Button size="small" variant="outlined" disabled={busy} onClick={() => void handleSetStorageQuota()}>
+        存储上限
+      </Button>
+      <Button size="small" variant="outlined" disabled={busy} onClick={() => void handleSetMaxUploadSize()}>
+        单文件上限
+      </Button>
       <Button
         size="small"
         variant={record.banned ? 'contained' : 'outlined'}
@@ -162,6 +259,14 @@ export function PortalAdminUsersList() {
         <TextField source="username" label="用户名" />
         <TextField source="email" label="邮箱" />
         <TextField source="phoneNumber" label="手机号" emptyText="-" />
+        <FunctionField<AdminUser>
+          label="存储上限"
+          render={(record) => formatLimitSize(record.storageQuotaBytes)}
+        />
+        <FunctionField<AdminUser>
+          label="单文件上限"
+          render={(record) => formatLimitSize(record.maxUploadSizeBytes)}
+        />
         <FunctionField<AdminUser>
           label="角色"
           render={(record) => <Chip label={record.role} size="small" color={record.role === 'ADMIN' ? 'primary' : 'default'} />}

@@ -1,9 +1,10 @@
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
 import { motion } from 'motion/react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/src/components/ui/card';
 import { Button } from '@/src/components/ui/button';
-import { Gamepad2, Rocket, Cat, Car, Play } from 'lucide-react';
+import { Gamepad2, Cat, Car, Play } from 'lucide-react';
 import { cn } from '@/src/lib/utils';
+import { calculateCardTilt } from './games-card-tilt';
 
 const GAMES = [
   {
@@ -23,6 +24,100 @@ const GAMES = [
     category: 'featured'
   }
 ];
+
+function applyCardTilt(card: HTMLDivElement, rotateX: number, rotateY: number, glareX: number, glareY: number, scale: number) {
+  card.style.setProperty('--card-rotate-x', `${rotateX}deg`);
+  card.style.setProperty('--card-rotate-y', `${rotateY}deg`);
+  card.style.setProperty('--card-glare-x', `${glareX}%`);
+  card.style.setProperty('--card-glare-y', `${glareY}%`);
+  card.style.setProperty('--card-scale', String(scale));
+}
+
+function GameCard({ game, index }: { game: (typeof GAMES)[number]; index: number }) {
+  const cardRef = useRef<HTMLDivElement | null>(null);
+
+  const handleMouseMove = (event: React.MouseEvent<HTMLDivElement>) => {
+    const card = cardRef.current;
+    if (!card) {
+      return;
+    }
+
+    const rect = card.getBoundingClientRect();
+    const tilt = calculateCardTilt(
+      {
+        clientX: event.clientX,
+        clientY: event.clientY,
+      },
+      rect,
+    );
+
+    applyCardTilt(card, tilt.rotateX, tilt.rotateY, tilt.glareX, tilt.glareY, tilt.scale);
+  };
+
+  const handleMouseLeave = (event: React.MouseEvent<HTMLDivElement>) => {
+    const card = cardRef.current;
+    if (!card) {
+      return;
+    }
+
+    const rect = card.getBoundingClientRect();
+    const edgeTilt = calculateCardTilt(
+      {
+        clientX: event.clientX,
+        clientY: event.clientY,
+      },
+      rect,
+    );
+
+    // Keep the highlight near the edge where the pointer exits and only flatten the card.
+    applyCardTilt(card, 0, 0, edgeTilt.glareX, edgeTilt.glareY, 1);
+  };
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, scale: 0.95 }}
+      animate={{ opacity: 1, scale: 1 }}
+      transition={{ delay: index * 0.1 }}
+      className="h-full [perspective:1400px]"
+    >
+      <Card
+        ref={cardRef}
+        onMouseMove={handleMouseMove}
+        onMouseLeave={handleMouseLeave}
+        className="group relative flex h-full flex-col overflow-hidden border-white/10 bg-white/[0.03] transition-[background-color,border-color,box-shadow,transform] duration-200 ease-out will-change-transform [transform:rotateX(var(--card-rotate-x,0deg))_rotateY(var(--card-rotate-y,0deg))_scale(var(--card-scale,1))] hover:border-white/20 hover:bg-white/[0.06] hover:shadow-[0_28px_80px_rgba(15,23,42,0.45)]"
+      >
+        <div
+          className="pointer-events-none absolute inset-0 opacity-0 transition-opacity duration-200 group-hover:opacity-100"
+          style={{
+            background:
+              'radial-gradient(circle at var(--card-glare-x,50%) var(--card-glare-y,50%), rgba(255,255,255,0.24), rgba(255,255,255,0.08) 18%, rgba(255,255,255,0) 52%)',
+          }}
+        />
+        <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(135deg,rgba(255,255,255,0.12),rgba(255,255,255,0)_38%,rgba(51,110,255,0.18)_100%)] opacity-70" />
+        <div className={cn("absolute top-0 left-0 h-1 w-full bg-gradient-to-r", game.color)} />
+        <CardHeader className="relative z-10 pb-4">
+          <div className="flex items-start justify-between">
+            <div className={cn("flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br shadow-lg", game.color)}>
+              <game.icon className="h-6 w-6 text-white" />
+            </div>
+            <span className="rounded-md bg-white/5 px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-slate-500">
+              {game.category}
+            </span>
+          </div>
+          <CardTitle className="mt-4 text-xl">{game.name}</CardTitle>
+          <CardDescription className="mt-2 line-clamp-2">
+            {game.description}
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="relative z-10 mt-auto pt-4">
+          <Button className="w-full gap-2 transition-all group-hover:bg-white group-hover:text-black">
+            <Play className="h-4 w-4" fill="currentColor" /> Launch
+          </Button>
+        </CardContent>
+      </Card>
+    </motion.div>
+  );
+}
 
 export default function Games() {
   const [activeTab, setActiveTab] = useState<'featured' | 'all'>('featured');
@@ -73,35 +168,7 @@ export default function Games() {
       {/* Game Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         {GAMES.map((game, index) => (
-          <motion.div
-            key={game.id}
-            initial={{ opacity: 0, scale: 0.95 }}
-            animate={{ opacity: 1, scale: 1 }}
-            transition={{ delay: index * 0.1 }}
-          >
-            <Card className="h-full flex flex-col hover:bg-white/[0.04] transition-colors group overflow-hidden relative">
-              <div className={cn("absolute top-0 left-0 w-full h-1 bg-gradient-to-r", game.color)} />
-              <CardHeader className="pb-4">
-                <div className="flex items-start justify-between">
-                  <div className={cn("w-12 h-12 rounded-2xl flex items-center justify-center bg-gradient-to-br shadow-lg", game.color)}>
-                    <game.icon className="w-6 h-6 text-white" />
-                  </div>
-                  <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500 bg-white/5 px-2 py-1 rounded-md">
-                    {game.category}
-                  </span>
-                </div>
-                <CardTitle className="text-xl mt-4">{game.name}</CardTitle>
-                <CardDescription className="line-clamp-2 mt-2">
-                  {game.description}
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="mt-auto pt-4">
-                <Button className="w-full gap-2 group-hover:bg-white group-hover:text-black transition-all">
-                  <Play className="w-4 h-4" fill="currentColor" /> Launch
-                </Button>
-              </CardContent>
-            </Card>
-          </motion.div>
+          <GameCard key={game.id} game={game} index={index} />
         ))}
       </div>
     </div>

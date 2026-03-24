@@ -106,7 +106,9 @@ class AdminControllerIntegrationTest {
                 .andExpect(jsonPath("$.data.items[0].username").value("alice"))
                 .andExpect(jsonPath("$.data.items[0].phoneNumber").value("13800138000"))
                 .andExpect(jsonPath("$.data.items[0].role").value("USER"))
-                .andExpect(jsonPath("$.data.items[0].banned").value(false));
+                .andExpect(jsonPath("$.data.items[0].banned").value(false))
+                .andExpect(jsonPath("$.data.items[0].storageQuotaBytes").isNumber())
+                .andExpect(jsonPath("$.data.items[0].maxUploadSizeBytes").isNumber());
 
         mockMvc.perform(get("/api/admin/summary"))
                 .andExpect(status().isOk())
@@ -152,6 +154,24 @@ class AdminControllerIntegrationTest {
                                 """))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.id").value(portalUser.getId()));
+
+        mockMvc.perform(patch("/api/admin/users/{userId}/storage-quota", portalUser.getId())
+                        .contentType("application/json")
+                        .content("""
+                                {"storageQuotaBytes":1073741824}
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.id").value(portalUser.getId()))
+                .andExpect(jsonPath("$.data.storageQuotaBytes").value(1073741824L));
+
+        mockMvc.perform(patch("/api/admin/users/{userId}/max-upload-size", portalUser.getId())
+                        .contentType("application/json")
+                        .content("""
+                                {"maxUploadSizeBytes":10485760}
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.id").value(portalUser.getId()))
+                .andExpect(jsonPath("$.data.maxUploadSizeBytes").value(10485760L));
 
         mockMvc.perform(post("/api/admin/users/{userId}/password/reset", secondaryUser.getId()))
                 .andExpect(status().isOk())

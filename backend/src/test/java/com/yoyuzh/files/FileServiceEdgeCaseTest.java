@@ -179,6 +179,29 @@ class FileServiceEdgeCaseTest {
                 .hasMessageContaining("文件大小超出限制");
     }
 
+    @Test
+    void shouldRejectUploadExceedingUserMaxUploadSizeLimit() {
+        User user = createUser(1L);
+        user.setMaxUploadSizeBytes(1024L);
+
+        assertThatThrownBy(() -> fileService.initiateUpload(user,
+                new InitiateUploadRequest("/docs", "large.bin", "application/octet-stream", 1025L)))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("文件大小超出限制");
+    }
+
+    @Test
+    void shouldRejectUploadWhenUserStorageQuotaInsufficient() {
+        User user = createUser(1L);
+        user.setStorageQuotaBytes(1024L);
+        when(storedFileRepository.sumFileSizeByUserId(1L)).thenReturn(900L);
+
+        assertThatThrownBy(() -> fileService.initiateUpload(user,
+                new InitiateUploadRequest("/docs", "quota.bin", "application/octet-stream", 200L)))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("存储空间不足");
+    }
+
     // --- rename no-op when name unchanged ---
 
     @Test

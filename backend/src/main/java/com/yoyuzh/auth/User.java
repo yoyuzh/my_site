@@ -20,6 +20,8 @@ import java.time.LocalDateTime;
         @Index(name = "idx_user_created_at", columnList = "created_at")
 })
 public class User {
+    public static final long DEFAULT_STORAGE_QUOTA_BYTES = 50L * 1024 * 1024 * 1024;
+    public static final long DEFAULT_MAX_UPLOAD_SIZE_BYTES = 500L * 1024 * 1024;
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
@@ -68,6 +70,12 @@ public class User {
     @Column(nullable = false)
     private boolean banned;
 
+    @Column(name = "storage_quota_bytes")
+    private Long storageQuotaBytes;
+
+    @Column(name = "max_upload_size_bytes")
+    private Long maxUploadSizeBytes;
+
     @PrePersist
     public void prePersist() {
         if (createdAt == null) {
@@ -81,6 +89,12 @@ public class User {
         }
         if (preferredLanguage == null || preferredLanguage.isBlank()) {
             preferredLanguage = "zh-CN";
+        }
+        if (storageQuotaBytes == null || storageQuotaBytes <= 0) {
+            storageQuotaBytes = DEFAULT_STORAGE_QUOTA_BYTES;
+        }
+        if (maxUploadSizeBytes == null || maxUploadSizeBytes <= 0) {
+            maxUploadSizeBytes = DEFAULT_MAX_UPLOAD_SIZE_BYTES;
         }
     }
 
@@ -202,5 +216,27 @@ public class User {
 
     public void setBanned(boolean banned) {
         this.banned = banned;
+    }
+
+    public long getStorageQuotaBytes() {
+        if (storageQuotaBytes == null || storageQuotaBytes <= 0) {
+            return DEFAULT_STORAGE_QUOTA_BYTES;
+        }
+        return storageQuotaBytes;
+    }
+
+    public void setStorageQuotaBytes(Long storageQuotaBytes) {
+        this.storageQuotaBytes = storageQuotaBytes;
+    }
+
+    public long getMaxUploadSizeBytes() {
+        if (maxUploadSizeBytes == null || maxUploadSizeBytes <= 0) {
+            return DEFAULT_MAX_UPLOAD_SIZE_BYTES;
+        }
+        return maxUploadSizeBytes;
+    }
+
+    public void setMaxUploadSizeBytes(Long maxUploadSizeBytes) {
+        this.maxUploadSizeBytes = maxUploadSizeBytes;
     }
 }

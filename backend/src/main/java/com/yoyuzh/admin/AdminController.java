@@ -68,6 +68,18 @@ public class AdminController {
         return ApiResponse.success(adminService.updateUserPassword(userId, request.newPassword()));
     }
 
+    @PatchMapping("/users/{userId}/storage-quota")
+    public ApiResponse<AdminUserResponse> updateUserStorageQuota(@PathVariable Long userId,
+                                                                 @Valid @RequestBody AdminUserStorageQuotaUpdateRequest request) {
+        return ApiResponse.success(adminService.updateUserStorageQuota(userId, request.storageQuotaBytes()));
+    }
+
+    @PatchMapping("/users/{userId}/max-upload-size")
+    public ApiResponse<AdminUserResponse> updateUserMaxUploadSize(@PathVariable Long userId,
+                                                                  @Valid @RequestBody AdminUserMaxUploadSizeUpdateRequest request) {
+        return ApiResponse.success(adminService.updateUserMaxUploadSize(userId, request.maxUploadSizeBytes()));
+    }
+
     @PostMapping("/users/{userId}/password/reset")
     public ApiResponse<AdminPasswordResetResponse> resetUserPassword(@PathVariable Long userId) {
         return ApiResponse.success(adminService.resetUserPassword(userId));

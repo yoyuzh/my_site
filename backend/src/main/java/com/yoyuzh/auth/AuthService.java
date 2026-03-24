@@ -261,7 +261,9 @@ public class AuthService {
                 user.getPreferredLanguage(),
                 buildAvatarUrl(user),
                 user.getRole(),
-                user.getCreatedAt()
+                user.getCreatedAt(),
+                user.getStorageQuotaBytes(),
+                user.getMaxUploadSizeBytes()
         );
     }
 

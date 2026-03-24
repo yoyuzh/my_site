@@ -9,6 +9,8 @@ export interface UserProfile {
   avatarUrl?: string | null;
   role?: AdminUserRole;
   createdAt: string;
+  storageQuotaBytes?: number;
+  maxUploadSizeBytes?: number;
 }
 
 export type AdminUserRole = 'USER' | 'MODERATOR' | 'ADMIN';
@@ -27,6 +29,8 @@ export interface AdminUser {
   createdAt: string;
   role: AdminUserRole;
   banned: boolean;
+  storageQuotaBytes: number;
+  maxUploadSizeBytes: number;
 }
 
 export interface AdminFile {
