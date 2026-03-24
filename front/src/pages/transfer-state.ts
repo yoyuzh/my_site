@@ -1,3 +1,4 @@
+import type { TransferMode } from '../lib/types';
 import type { TransferFileDescriptor } from '../lib/transfer-protocol';
 
 export type TransferTab = 'send' | 'receive';
@@ -34,6 +35,20 @@ export function buildQrImageUrl(shareUrl: string) {
 
 export function canSendTransferFiles(isAuthenticated: boolean) {
   return isAuthenticated;
+}
+
+export function getTransferModeSummary(mode: TransferMode) {
+  if (mode === 'OFFLINE') {
+    return {
+      title: '发离线',
+      description: '文件先上传到站点存储，保留 7 天，到期自动销毁，可被多次接收。',
+    };
+  }
+
+  return {
+    title: '发在线',
+    description: '文件通过浏览器 P2P 直连发送，只能被接收一次，适合双方都在线时快速传输。',
+  };
 }
 
 export function resolveInitialTransferTab(

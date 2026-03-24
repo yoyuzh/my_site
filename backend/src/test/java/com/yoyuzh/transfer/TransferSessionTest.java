@@ -5,12 +5,13 @@ import org.junit.jupiter.api.Test;
 import java.time.Instant;
 import java.util.List;
 
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.Assertions.assertThat;
 
 class TransferSessionTest {
 
     @Test
-    void shouldEmitPeerJoinedOnlyOnceWhenReceiverJoinsRepeatedly() {
+    void shouldEmitPeerJoinedOnFirstReceiverJoin() {
         TransferSession session = new TransferSession(
                 "session-1",
                 "849201",
@@ -19,7 +20,6 @@ class TransferSessionTest {
         );
 
         session.markReceiverJoined();
-        session.markReceiverJoined();
 
         PollTransferSignalsResponse senderSignals = session.poll(TransferRole.SENDER, 0);
 
@@ -27,6 +27,21 @@ class TransferSessionTest {
                 .extracting(TransferSignalEnvelope::type)
                 .containsExactly("peer-joined");
         assertThat(senderSignals.nextCursor()).isEqualTo(1);
+    }
+
+    @Test
+    void shouldRejectRepeatedReceiverJoinForOnlineTransfer() {
+        TransferSession session = new TransferSession(
+                "session-1",
+                "849201",
+                Instant.parse("2026-03-20T12:00:00Z"),
+                List.of(new TransferFileItem("report.pdf", 2048, "application/pdf"))
+        );
+
+        session.markReceiverJoined();
+
+        assertThatThrownBy(session::markReceiverJoined)
+                .hasMessageContaining("在线快传");
     }
 
     @Test

@@ -26,7 +26,15 @@ import {
   type TransferFileDescriptor,
 } from '@/src/lib/transfer-protocol';
 import { flushPendingRemoteIceCandidates, handleRemoteIceCandidate } from '@/src/lib/transfer-signaling';
-import { DEFAULT_TRANSFER_ICE_SERVERS, joinTransferSession, lookupTransferSession, pollTransferSignals, postTransferSignal } from '@/src/lib/transfer';
+import {
+  buildOfflineTransferDownloadUrl,
+  DEFAULT_TRANSFER_ICE_SERVERS,
+  importOfflineTransferFile,
+  joinTransferSession,
+  lookupTransferSession,
+  pollTransferSignals,
+  postTransferSignal,
+} from '@/src/lib/transfer';
 import type { TransferSessionResponse } from '@/src/lib/types';
 
 import { canArchiveTransferSelection, formatTransferSize, sanitizeReceiveCode } from './transfer-state';
@@ -164,7 +172,7 @@ export default function TransferReceive({ embedded = false }: TransferReceivePro
     setArchiveName(buildTransferArchiveFileName('快传文件'));
     setArchiveUrl(null);
     setSavingFileId(null);
-    setSaveMessage('');
+      setSaveMessage('');
 
     try {
       const joinedSession = await joinTransferSession(sessionId);
@@ -174,6 +182,27 @@ export default function TransferReceive({ embedded = false }: TransferReceivePro
 
       setTransferSession(joinedSession);
       setArchiveName(buildTransferArchiveFileName(`快传-${joinedSession.pickupCode}`));
+
+      if (joinedSession.mode === 'OFFLINE') {
+        const offlineFiles = joinedSession.files.map((file) => ({
+          id: file.id ?? file.relativePath,
+          name: file.name,
+          size: file.size,
+          contentType: file.contentType,
+          relativePath: file.relativePath,
+          progress: file.uploaded ? 100 : 0,
+          selected: true,
+          requested: true,
+          downloadUrl: file.id ? buildOfflineTransferDownloadUrl(joinedSession.sessionId, file.id) : undefined,
+          savedToNetdisk: false,
+        }));
+
+        setFiles(offlineFiles);
+        setRequestSubmitted(true);
+        setOverallProgress(offlineFiles.length > 0 ? 100 : 0);
+        setPhase('completed');
+        return;
+      }
 
       const connection = new RTCPeerConnection({
         iceServers: DEFAULT_TRANSFER_ICE_SERVERS,
@@ -567,6 +596,7 @@ export default function TransferReceive({ embedded = false }: TransferReceivePro
   const canZipAllFiles = canArchiveTransferSelection(files);
   const hasSelectableFiles = selectedFiles.length > 0;
   const canSubmitSelection = Boolean(dataChannelRef.current && dataChannelRef.current.readyState === 'open' && hasSelectableFiles);
+  const isOfflineSession = transferSession?.mode === 'OFFLINE';
 
   const panelContent = (
     <>
@@ -576,7 +606,7 @@ export default function TransferReceive({ embedded = false }: TransferReceivePro
             <DownloadCloud className="h-8 w-8 text-white" />
           </div>
           <h1 className="text-3xl font-bold mb-3">网页接收页</h1>
-          <p className="text-slate-400">你现在打开的是公开接收链接，先选文件，再通过浏览器 P2P 通道接收并下载。</p>
+          <p className="text-slate-400">你现在打开的是公开接收链接。在线快传会走浏览器 P2P，离线快传会直接显示 7 天内可重复接收的文件。</p>
         </div>
       ) : null}
 
@@ -650,11 +680,17 @@ export default function TransferReceive({ embedded = false }: TransferReceivePro
                             : '文件清单已同步，请勾选要接收的文件。')}
                         {phase === 'connecting' && 'P2P 通道协商中...'}
                         {phase === 'receiving' && '文件正在接收...'}
-                        {phase === 'completed' && (archiveUrl ? '接收完成，ZIP 已准备好下载' : '接收完成，下面可以下载文件')}
+                        {phase === 'completed' && (isOfflineSession
+                          ? '离线文件已就绪，7 天内可以重复下载或存入网盘'
+                          : archiveUrl
+                            ? '接收完成，ZIP 已准备好下载'
+                            : '接收完成，下面可以下载文件')}
                         {phase === 'error' && '接收失败'}
                       </p>
                       <p className="text-xs text-slate-400 mt-1">
-                        {errorMessage || `总进度 ${overallProgress}%`}
+                        {errorMessage || (isOfflineSession && transferSession
+                          ? `离线有效期至 ${new Date(transferSession.expiresAt).toLocaleString('zh-CN', {month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit'})}`
+                          : `总进度 ${overallProgress}%`)}
                       </p>
                     </div>
                   </div>
@@ -696,7 +732,9 @@ export default function TransferReceive({ embedded = false }: TransferReceivePro
                   <div>
                     <h3 className="text-lg font-medium">可接收文件</h3>
                     <p className="mt-1 text-xs text-slate-500">
-                      {requestSubmitted
+                      {isOfflineSession
+                        ? `离线模式 · ${files.length} 项`
+                        : requestSubmitted
                         ? `已请求 ${requestedFiles.length} 项`
                         : `已选择 ${selectedFiles.length} 项 · ${formatTransferSize(selectedSize)}`}
                     </p>
@@ -749,7 +787,7 @@ export default function TransferReceive({ embedded = false }: TransferReceivePro
                 <div className="space-y-3">
                   {files.length === 0 ? (
                     <div className="rounded-xl border border-dashed border-white/10 bg-white/[0.02] px-4 py-5 text-sm text-slate-500">
-                      连接建立后会先同步文件清单，你可以在这里先勾选想接收的内容。
+                      {isOfflineSession ? '离线文件上传完成后，会直接在这里显示可下载清单。' : '连接建立后会先同步文件清单，你可以在这里先勾选想接收的内容。'}
                     </div>
                   ) : (
                     files.map((file) => (
@@ -831,15 +869,15 @@ export default function TransferReceive({ embedded = false }: TransferReceivePro
             <div className="mb-3 flex h-10 w-10 items-center justify-center rounded-full bg-emerald-500/10">
               <Shield className="h-5 w-5 text-emerald-400" />
             </div>
-            <h4 className="text-sm font-medium text-slate-100 mb-1">后端只做信令</h4>
-            <p className="text-xs leading-6 text-slate-500">当前页面通过后端交换 offer、answer 和 ICE candidate，但文件字节不走服务器中转。</p>
+            <h4 className="text-sm font-medium text-slate-100 mb-1">在线走 P2P，离线走存储</h4>
+            <p className="text-xs leading-6 text-slate-500">在线快传继续通过信令交换建立浏览器直连；离线快传会直接从站点存储里下载。</p>
           </div>
           <div className="rounded-2xl border border-white/5 bg-white/[0.02] p-5">
             <div className="mb-3 flex h-10 w-10 items-center justify-center rounded-full bg-cyan-500/10">
               <Archive className="h-5 w-5 text-cyan-400" />
             </div>
-            <h4 className="text-sm font-medium text-slate-100 mb-1">先选文件，再接收下载</h4>
-            <p className="text-xs leading-6 text-slate-500">文件清单会先同步到页面，多文件可以勾选接收，整包接收时会在浏览器内直接生成 ZIP。</p>
+            <h4 className="text-sm font-medium text-slate-100 mb-1">离线文件保留 7 天</h4>
+            <p className="text-xs leading-6 text-slate-500">离线快传接收之后文件也不会立刻消失，在有效期内还能再次打开链接重复接收。</p>
           </div>
         </div>
       ) : null}
@@ -851,7 +889,11 @@ export default function TransferReceive({ embedded = false }: TransferReceivePro
         initialPath={saveRootPath}
         confirmLabel="存入这里"
         confirmPathPreview={(path) => {
+          const offlineFile = savePathPickerFileId ? files.find((file) => file.id === savePathPickerFileId) : null;
           const completedFile = savePathPickerFileId ? completedFilesRef.current.get(savePathPickerFileId) : null;
+          if (offlineFile) {
+            return resolveNetdiskSaveDirectory(offlineFile.relativePath, path);
+          }
           return completedFile ? resolveNetdiskSaveDirectory(completedFile.relativePath, path) : path;
         }}
         onClose={() => setSavePathPickerFileId(null)}
@@ -860,7 +902,22 @@ export default function TransferReceive({ embedded = false }: TransferReceivePro
             return;
           }
           setSaveRootPath(path);
-          await saveCompletedFile(savePathPickerFileId, path);
+          if (isOfflineSession && transferSession) {
+            const savedFile = await importOfflineTransferFile(transferSession.sessionId, savePathPickerFileId, path);
+            setFiles((current) =>
+              current.map((file) =>
+                file.id === savePathPickerFileId
+                  ? {
+                      ...file,
+                      savedToNetdisk: true,
+                    }
+                  : file,
+              ),
+            );
+            setSaveMessage(`${savedFile.filename} 已存入网盘 ${savedFile.path}`);
+          } else {
+            await saveCompletedFile(savePathPickerFileId, path);
+          }
           setSavePathPickerFileId(null);
         }}
       />

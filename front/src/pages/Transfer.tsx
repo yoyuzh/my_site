@@ -36,19 +36,26 @@ import {
 } from '@/src/lib/transfer-protocol';
 import { waitForTransferChannelDrain } from '@/src/lib/transfer-runtime';
 import { flushPendingRemoteIceCandidates, handleRemoteIceCandidate } from '@/src/lib/transfer-signaling';
-import { DEFAULT_TRANSFER_ICE_SERVERS, createTransferSession, pollTransferSignals, postTransferSignal } from '@/src/lib/transfer';
-import type { TransferSessionResponse } from '@/src/lib/types';
+import {
+  DEFAULT_TRANSFER_ICE_SERVERS,
+  createTransferSession,
+  pollTransferSignals,
+  postTransferSignal,
+  uploadOfflineTransferFile,
+} from '@/src/lib/transfer';
+import type { TransferMode, TransferSessionResponse } from '@/src/lib/types';
 import { cn } from '@/src/lib/utils';
 
 import {
   buildQrImageUrl,
   canSendTransferFiles,
   formatTransferSize,
+  getTransferModeSummary,
   resolveInitialTransferTab,
 } from './transfer-state';
 import TransferReceive from './TransferReceive';
 
-type SendPhase = 'idle' | 'creating' | 'waiting' | 'connecting' | 'transferring' | 'completed' | 'error';
+type SendPhase = 'idle' | 'creating' | 'waiting' | 'connecting' | 'uploading' | 'transferring' | 'completed' | 'error';
 
 function parseJsonPayload<T>(payload: string): T | null {
   try {
@@ -58,7 +65,22 @@ function parseJsonPayload<T>(payload: string): T | null {
   }
 }
 
-function getPhaseMessage(phase: SendPhase, errorMessage: string) {
+function getPhaseMessage(mode: TransferMode, phase: SendPhase, errorMessage: string) {
+  if (mode === 'OFFLINE') {
+    switch (phase) {
+      case 'creating':
+        return '正在创建离线快传会话并生成取件链接...';
+      case 'uploading':
+        return '文件正在上传到站点存储，上传完成后 7 天内都可以反复接收。';
+      case 'completed':
+        return '离线文件已上传完成，接收方现在可以多次下载或存入网盘。';
+      case 'error':
+        return errorMessage || '离线快传初始化失败，请重试。';
+      default:
+        return '拖拽文件后会生成离线取件码，并把文件上传到站点存储保留 7 天。';
+    }
+  }
+
   switch (phase) {
     case 'creating':
       return '正在创建快传会话并准备 P2P 连接...';
@@ -85,6 +107,7 @@ export default function Transfer() {
   const [activeTab, setActiveTab] = useState(() => resolveInitialTransferTab(allowSend, sessionId));
 
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
+  const [transferMode, setTransferMode] = useState<TransferMode>('ONLINE');
   const [session, setSession] = useState<TransferSessionResponse | null>(null);
   const [sendPhase, setSendPhase] = useState<SendPhase>('idle');
   const [sendProgress, setSendProgress] = useState(0);
@@ -129,11 +152,20 @@ export default function Transfer() {
     }
   }, [allowSend, sessionId]);
 
+  useEffect(() => {
+    if (selectedFiles.length === 0) {
+      return;
+    }
+
+    void bootstrapTransfer(selectedFiles);
+  }, [transferMode]);
+
   const totalSize = selectedFiles.reduce((sum, file) => sum + file.size, 0);
   const shareLink = session
     ? buildTransferShareUrl(window.location.origin, session.sessionId, getTransferRouterMode())
     : '';
   const qrImageUrl = shareLink ? buildQrImageUrl(shareLink) : '';
+  const transferModeSummary = getTransferModeSummary(transferMode);
 
   function cleanupCurrentTransfer() {
     if (pollTimerRef.current) {
@@ -229,12 +261,17 @@ export default function Transfer() {
     sentBytesRef.current = 0;
 
     try {
-      const createdSession = await createTransferSession(files);
+      const createdSession = await createTransferSession(files, transferMode);
       if (bootstrapIdRef.current !== bootstrapId) {
         return;
       }
 
       setSession(createdSession);
+      if (createdSession.mode === 'OFFLINE') {
+        await uploadOfflineFiles(createdSession, files, bootstrapId);
+        return;
+      }
+
       setSendPhase('waiting');
       await setupSenderPeer(createdSession, files, bootstrapId);
     } catch (error) {
@@ -244,6 +281,42 @@ export default function Transfer() {
       setSendPhase('error');
       setSendError(error instanceof Error ? error.message : '快传会话创建失败');
     }
+  }
+
+  async function uploadOfflineFiles(createdSession: TransferSessionResponse, files: File[], bootstrapId: number) {
+    setSendPhase('uploading');
+    totalBytesRef.current = files.reduce((sum, file) => sum + file.size, 0);
+    sentBytesRef.current = 0;
+    setSendProgress(0);
+
+    for (const [index, file] of files.entries()) {
+      if (bootstrapIdRef.current !== bootstrapId) {
+        return;
+      }
+
+      const sessionFile = createdSession.files[index];
+      if (!sessionFile?.id) {
+        throw new Error('离线快传文件清单不完整，请重新开始本次发送。');
+      }
+
+      let lastLoaded = 0;
+      await uploadOfflineTransferFile(createdSession.sessionId, sessionFile.id, file, ({ loaded, total }) => {
+        const delta = loaded - lastLoaded;
+        lastLoaded = loaded;
+        sentBytesRef.current += delta;
+
+        if (loaded >= total) {
+          sentBytesRef.current = Math.min(totalBytesRef.current, sentBytesRef.current);
+        }
+
+        if (totalBytesRef.current > 0) {
+          setSendProgress(Math.min(99, Math.round((sentBytesRef.current / totalBytesRef.current) * 100)));
+        }
+      });
+    }
+
+    setSendProgress(100);
+    setSendPhase('completed');
   }
 
   async function setupSenderPeer(createdSession: TransferSessionResponse, files: File[], bootstrapId: number) {
@@ -439,8 +512,8 @@ export default function Transfer() {
           <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-gradient-to-br from-[#336EFF] via-blue-500 to-cyan-400 shadow-lg shadow-[#336EFF]/20 mb-6">
             <Send className="w-8 h-8 text-white" />
           </div>
-          <h1 className="text-3xl font-bold text-white mb-3">P2P 快传</h1>
-          <p className="text-slate-400">二维码负责把对方带到网页，真正的文件内容在两个浏览器之间通过 P2P 直连传输。</p>
+          <h1 className="text-3xl font-bold text-white mb-3">快传</h1>
+          <p className="text-slate-400">在线快传走浏览器 P2P 一次性传输，离线快传会把文件存到站点存储里保留 7 天，可被反复接收。</p>
         </div>
 
         <div className="glass-panel border border-white/10 rounded-3xl overflow-hidden bg-[#0f172a]/80 backdrop-blur-xl shadow-2xl">
@@ -490,6 +563,38 @@ export default function Transfer() {
                   transition={{ duration: 0.2 }}
                   className="flex-1 flex flex-col h-full min-w-0"
                 >
+                  <div className="mb-6 grid gap-3 md:grid-cols-2">
+                    {(['ONLINE', 'OFFLINE'] as TransferMode[]).map((mode) => {
+                      const summary = getTransferModeSummary(mode);
+                      const active = transferMode === mode;
+
+                      return (
+                        <button
+                          key={mode}
+                          type="button"
+                          onClick={() => setTransferMode(mode)}
+                          className={cn(
+                            'rounded-2xl border p-4 text-left transition-colors',
+                            active
+                              ? 'border-blue-400/40 bg-blue-500/10'
+                              : 'border-white/10 bg-white/[0.03] hover:bg-white/[0.05]',
+                          )}
+                        >
+                          <div className="flex items-center justify-between gap-3">
+                            <p className="text-sm font-semibold text-white">{summary.title}</p>
+                            <span className={cn(
+                              'rounded-full px-2.5 py-1 text-[11px] font-medium',
+                              active ? 'bg-blue-400/15 text-blue-100' : 'bg-white/10 text-slate-300',
+                            )}>
+                              {mode === 'ONLINE' ? '一次接收' : '7 天多次'}
+                            </span>
+                          </div>
+                          <p className="mt-2 text-sm leading-6 text-slate-400">{summary.description}</p>
+                        </button>
+                      );
+                    })}
+                  </div>
+
                   {selectedFiles.length === 0 ? (
                     <div
                       className="flex-1 border-2 border-dashed border-white/10 rounded-2xl flex flex-col items-center justify-center p-10 transition-colors hover:border-[#336EFF]/50 hover:bg-[#336EFF]/5"
@@ -501,7 +606,7 @@ export default function Transfer() {
                       </div>
                       <h3 className="text-xl font-medium text-white mb-2">拖拽文件或文件夹到此处</h3>
                       <p className="text-slate-400 mb-8 text-center max-w-md">
-                        选中文件后会自动创建一条公开接收链接，扫码打开网页就能在浏览器之间发起 P2P 下载。
+                        {transferModeSummary.description}
                       </p>
                       <div className="flex flex-col sm:flex-row items-center gap-4">
                         <Button onClick={() => fileInputRef.current?.click()} className="bg-[#336EFF] hover:bg-blue-600 text-white px-8">
@@ -626,10 +731,10 @@ export default function Transfer() {
                                   ? 'text-emerald-300'
                                   : 'text-blue-300',
                             )}>
-                              {getPhaseMessage(sendPhase, sendError)}
+                              {getPhaseMessage(transferMode, sendPhase, sendError)}
                             </p>
                             <p className="text-xs text-slate-400 mt-1">
-                              发送进度 {sendProgress}%{session ? ` · 会话有效期至 ${new Date(session.expiresAt).toLocaleTimeString('zh-CN', {hour: '2-digit', minute: '2-digit'})}` : ''}
+                              发送进度 {sendProgress}%{session ? ` · 会话有效期至 ${new Date(session.expiresAt).toLocaleString('zh-CN', {month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit'})}` : ''}
                             </p>
                           </div>
                         </div>
@@ -680,8 +785,8 @@ export default function Transfer() {
               <Monitor className="w-5 h-5 text-cyan-400" />
             </div>
             <div>
-              <h4 className="text-sm font-medium text-slate-200 mb-1">面向一次性分享</h4>
-              <p className="text-xs text-slate-500 leading-relaxed">更适合把压缩包、截图和临时资料从当前浏览器快速交给另一台设备。</p>
+              <h4 className="text-sm font-medium text-slate-200 mb-1">在线一次性，离线可重复</h4>
+              <p className="text-xs text-slate-500 leading-relaxed">在线模式适合临时快传，离线模式会保留 7 天，接收后文件也不会立刻消失。</p>
             </div>
           </div>
         </div>

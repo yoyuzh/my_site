@@ -397,31 +397,47 @@ public class FileService {
             throw new BusinessException(ErrorCode.UNKNOWN, "目录暂不支持导入");
         }
 
-        String normalizedPath = normalizeDirectoryPath(path);
-        String filename = normalizeLeafName(sourceFile.getFilename());
-        validateUpload(recipient.getId(), normalizedPath, filename, sourceFile.getSize());
-        ensureDirectoryHierarchy(recipient, normalizedPath);
-
         byte[] content = fileContentStorage.readFile(
                 sourceFile.getUser().getId(),
                 sourceFile.getPath(),
                 sourceFile.getStorageName()
         );
+        return importExternalFile(
+                recipient,
+                path,
+                sourceFile.getFilename(),
+                sourceFile.getContentType(),
+                sourceFile.getSize(),
+                content
+        );
+    }
+
+    @Transactional
+    public FileMetadataResponse importExternalFile(User recipient,
+                                                   String path,
+                                                   String filename,
+                                                   String contentType,
+                                                   long size,
+                                                   byte[] content) {
+        String normalizedPath = normalizeDirectoryPath(path);
+        String normalizedFilename = normalizeLeafName(filename);
+        validateUpload(recipient.getId(), normalizedPath, normalizedFilename, size);
+        ensureDirectoryHierarchy(recipient, normalizedPath);
         fileContentStorage.storeImportedFile(
                 recipient.getId(),
                 normalizedPath,
-                filename,
-                sourceFile.getContentType(),
+                normalizedFilename,
+                contentType,
                 content
         );
 
         return saveFileMetadata(
                 recipient,
                 normalizedPath,
-                filename,
-                filename,
-                sourceFile.getContentType(),
-                sourceFile.getSize()
+                normalizedFilename,
+                normalizedFilename,
+                contentType,
+                size
         );
     }
 

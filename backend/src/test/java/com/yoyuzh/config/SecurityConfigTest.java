@@ -10,6 +10,14 @@ import static org.assertj.core.api.Assertions.assertThat;
 class SecurityConfigTest {
 
     @Test
+    void corsPropertiesShouldAllowProductionSiteOriginsByDefault() {
+        CorsProperties corsProperties = new CorsProperties();
+
+        assertThat(corsProperties.getAllowedOrigins())
+                .contains("https://yoyuzh.xyz", "https://www.yoyuzh.xyz");
+    }
+
+    @Test
     void corsConfigurationShouldAllowPatchRequests() {
         CorsProperties corsProperties = new CorsProperties();
         corsProperties.setAllowedOrigins(java.util.List.of("https://yoyuzh.xyz"));

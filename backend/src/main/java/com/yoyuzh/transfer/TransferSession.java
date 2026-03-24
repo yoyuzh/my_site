@@ -24,16 +24,16 @@ final class TransferSession {
     }
 
     synchronized TransferSessionResponse toSessionResponse() {
-        return new TransferSessionResponse(sessionId, pickupCode, expiresAt, files);
+        return new TransferSessionResponse(sessionId, pickupCode, TransferMode.ONLINE, expiresAt, files);
     }
 
     synchronized LookupTransferSessionResponse toLookupResponse() {
-        return new LookupTransferSessionResponse(sessionId, pickupCode, expiresAt);
+        return new LookupTransferSessionResponse(sessionId, pickupCode, TransferMode.ONLINE, expiresAt);
     }
 
     synchronized void markReceiverJoined() {
         if (receiverJoined) {
-            return;
+            throw new IllegalStateException("在线快传仅支持一次接收");
         }
 
         receiverJoined = true;

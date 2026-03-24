@@ -2,6 +2,13 @@
 
 This repository is split across a Java backend, a Vite/React frontend, a small `docs/` area, and utility scripts. Use the project-level agents defined in `.codex/agents/` instead of improvising overlapping roles.
 
+## Session startup
+
+- Every new window / new session that starts work in this repository must read `memory.md`, `docs/architecture.md`, and `docs/api-reference.md` first before planning, coding, reviewing, or deploying.
+- Treat `memory.md` as the current project memory and continuity handoff unless the user explicitly overrides it.
+- Treat `docs/architecture.md` as the system-level source of truth for module boundaries and runtime structure.
+- Treat `docs/api-reference.md` as the quick reference for backend endpoints and auth/public access boundaries.
+
 ## Real project structure
 
 - `backend/`: Spring Boot 3.3.8, Java 17, Maven, domain packages under `com.yoyuzh.{auth,cqu,files,config,common}`.

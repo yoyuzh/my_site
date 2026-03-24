@@ -8,6 +8,7 @@ import {
   canSendTransferFiles,
   createMockTransferCode,
   formatTransferSize,
+  getTransferModeSummary,
   resolveInitialTransferTab,
   sanitizeReceiveCode,
 } from './transfer-state';
@@ -58,6 +59,13 @@ test('resolveInitialTransferTab prefers receive mode for public visitors and sha
 test('canSendTransferFiles requires an authenticated session', () => {
   assert.equal(canSendTransferFiles(true), true);
   assert.equal(canSendTransferFiles(false), false);
+});
+
+test('getTransferModeSummary describes the offline seven-day retention rule', () => {
+  assert.deepEqual(getTransferModeSummary('OFFLINE'), {
+    title: '发离线',
+    description: '文件先上传到站点存储，保留 7 天，到期自动销毁，可被多次接收。',
+  });
 });
 
 test('canArchiveTransferSelection is enabled for multi-file or folder downloads', () => {

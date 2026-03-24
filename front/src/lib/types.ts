@@ -106,15 +106,21 @@ export interface FileShareDetailsResponse {
   createdAt: string;
 }
 
+export type TransferMode = 'ONLINE' | 'OFFLINE';
+
 export interface TransferFileItem {
+  id?: string | null;
   name: string;
+  relativePath: string;
   size: number;
   contentType: string;
+  uploaded?: boolean | null;
 }
 
 export interface TransferSessionResponse {
   sessionId: string;
   pickupCode: string;
+  mode: TransferMode;
   expiresAt: string;
   files: TransferFileItem[];
 }
@@ -122,6 +128,7 @@ export interface TransferSessionResponse {
 export interface LookupTransferSessionResponse {
   sessionId: string;
   pickupCode: string;
+  mode: TransferMode;
   expiresAt: string;
 }
 
