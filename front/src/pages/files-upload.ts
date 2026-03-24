@@ -1,4 +1,5 @@
 import { getNextAvailableName } from './files-state';
+import { resolveFileType, type FileTypeKind } from '@/src/lib/file-type';
 
 export type UploadTaskStatus = 'uploading' | 'completed' | 'error';
 
@@ -9,7 +10,8 @@ export interface UploadTask {
   speed: string;
   destination: string;
   status: UploadTaskStatus;
-  type: string;
+  type: FileTypeKind;
+  typeLabel: string;
   errorMessage?: string;
   noticeMessage?: string;
 }
@@ -28,22 +30,10 @@ export interface PendingUploadEntry {
 }
 
 function getUploadType(file: File) {
-  const extension = file.name.includes('.') ? file.name.split('.').pop()?.toLowerCase() : '';
-
-  if (file.type.startsWith('image/')) {
-    return 'image';
-  }
-  if (file.type.includes('pdf') || extension === 'pdf') {
-    return 'pdf';
-  }
-  if (extension === 'doc' || extension === 'docx') {
-    return 'word';
-  }
-  if (extension === 'xls' || extension === 'xlsx' || extension === 'csv') {
-    return 'excel';
-  }
-
-  return extension || 'document';
+  return resolveFileType({
+    fileName: file.name,
+    contentType: file.type,
+  });
 }
 
 function createTaskId() {
@@ -174,6 +164,8 @@ export function createUploadTask(
   taskId: string = createTaskId(),
   noticeMessage?: string,
 ): UploadTask {
+  const fileType = getUploadType(file);
+
   return {
     id: taskId,
     fileName: file.name,
@@ -181,7 +173,8 @@ export function createUploadTask(
     speed: '等待上传...',
     destination: getUploadDestination(pathParts),
     status: 'uploading',
-    type: getUploadType(file),
+    type: fileType.kind,
+    typeLabel: fileType.label,
     noticeMessage,
   };
 }

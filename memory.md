@@ -9,6 +9,7 @@
   - 注册改成邀请码机制，邀请码单次使用后自动刷新，并在管理台展示与复制
   - 同账号仅允许一台设备同时登录，旧设备会在下一次访问受保护接口时失效
   - 后端已补生产 CORS，默认放行 `https://yoyuzh.xyz` 与 `https://www.yoyuzh.xyz`，并已重新发布
+  - 线上后端文件存储已从旧东京 OSS 桶切换到成都新桶 `yoyuzh-files2`，并已完成对象级存在性验证
   - 根目录 README 已重写为中文公开版 GitHub 风格
   - VS Code 工作区已补 `.vscode/settings.json`、`.vscode/extensions.json`、`lombok.config`，并在 `backend/pom.xml` 显式声明了 Lombok annotation processor
 - 进行中:
@@ -30,6 +31,7 @@
 | 前端发布继续使用 `node scripts/deploy-front-oss.mjs` | 仓库已有正式 OSS 发布脚本，流程稳定 | 手动上传 OSS: 容易出错，也不利于复用 |
 | 后端发布继续采用“本地打包 + SSH/ SCP 上传 jar + systemd 重启” | 当前线上就按这个方式运行 | 自创部署脚本: 仓库里没有现成正式脚本，容易和现网偏离 |
 | 主站 CORS 默认放行 `https://yoyuzh.xyz` 与 `https://www.yoyuzh.xyz` | 前端生产环境托管在 OSS 域名下，必须允许主站跨域调用后端 API | 仅保留 localhost: 会导致生产站调用 API 时被浏览器拦截 |
+| 线上网盘文件桶切到成都 `yoyuzh-files2` | 现有普通文件下载主链路是浏览器直连 OSS，主要性能瓶颈在对象存储地域与公网链路 | 继续使用东京桶: 中国内地用户下载链路更长，难以直接改善速度 |
 
 ## 待解决问题
 - [ ] VS Code 若仍报 `final 字段未在构造器初始化` 之类错误，优先判断为 Lombok / Java Language Server 误报，而不是源码真实错误
@@ -47,8 +49,12 @@
 - 已知线上后端服务名是 `my-site-api.service`
 - 已知线上后端运行包路径是 `/opt/yoyuzh/yoyuzh-portal-backend.jar`
 - 已知新服务器公网 IP 是 `1.14.49.201`
+- 已知线上后端额外配置文件是 `/opt/yoyuzh/application-prod.yml`，环境变量文件是 `/opt/yoyuzh/app.env`
+- 2026-03-24 已将线上 OSS 文件存储切换到 `https://oss-cn-chengdu.aliyuncs.com` + `yoyuzh-files2`
+- 2026-03-24 已为线上配置文件创建备份：`/opt/yoyuzh/app.env.bak-before-chengdu`、`/opt/yoyuzh/application-prod.yml.bak-before-chengdu`
 - 2026-03-23 排障确认：`api.yoyuzh.xyz` 在部分网络下存在 TLS/SNI 握手异常，但后端服务与 nginx 正常，且 IP 直连加 `Host: api.yoyuzh.xyz` 时可正常返回
 - 2026-03-23 实时日志确认：Mac 端 `202.202.9.243` 登录链路 `OPTIONS /api/auth/login -> POST /api/auth/login -> 后续 /api/*` 全部返回 200；手机失败时并不总能在服务端日志中看到对应登录请求
+- 2026-03-24 线上 smoke 验证：`https://api.yoyuzh.xyz/swagger-ui.html` 返回 302，`my-site-api.service` 重启后为 active；抽样对象 `users/6/第四组  脑机接口与脑启发计算.pptx` 在新桶 HEAD 返回 200
 - 服务器登录信息保存在本地 `账号密码.txt`，不要把内容写进文档或对外输出
 
 ## 参考资料

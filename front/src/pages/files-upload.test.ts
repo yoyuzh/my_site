@@ -24,6 +24,70 @@ test('createUploadTask uses current path as upload destination', () => {
   assert.equal(task.speed, '等待上传...');
 });
 
+test('createUploadTask classifies common file families beyond images and office basics', () => {
+  const spreadsheetTask = createUploadTask(
+    new File(['sheet'], '预算.xlsx', {type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'}),
+    [],
+    'task-sheet',
+  );
+  const presentationTask = createUploadTask(
+    new File(['slides'], '发布会.pptx', {type: 'application/vnd.openxmlformats-officedocument.presentationml.presentation'}),
+    [],
+    'task-slides',
+  );
+  const archiveTask = createUploadTask(
+    new File(['archive'], '素材包.zip', {type: 'application/zip'}),
+    [],
+    'task-archive',
+  );
+  const videoTask = createUploadTask(
+    new File(['video'], '演示.mp4', {type: 'video/mp4'}),
+    [],
+    'task-video',
+  );
+  const audioTask = createUploadTask(
+    new File(['audio'], '片头.mp3', {type: 'audio/mpeg'}),
+    [],
+    'task-audio',
+  );
+  const designTask = createUploadTask(
+    new File(['design'], '首页.fig', {type: 'application/octet-stream'}),
+    [],
+    'task-design',
+  );
+  const fontTask = createUploadTask(
+    new File(['font'], 'Brand.woff2', {type: 'font/woff2'}),
+    [],
+    'task-font',
+  );
+  const appTask = createUploadTask(
+    new File(['binary'], 'installer.exe', {type: 'application/vnd.microsoft.portable-executable'}),
+    [],
+    'task-app',
+  );
+  const ebookTask = createUploadTask(
+    new File(['ebook'], '小说.epub', {type: 'application/epub+zip'}),
+    [],
+    'task-ebook',
+  );
+  const codeTask = createUploadTask(
+    new File(['json'], 'manifest.json', {type: 'application/json'}),
+    [],
+    'task-code',
+  );
+
+  assert.equal(spreadsheetTask.type, 'spreadsheet');
+  assert.equal(presentationTask.type, 'presentation');
+  assert.equal(archiveTask.type, 'archive');
+  assert.equal(videoTask.type, 'video');
+  assert.equal(audioTask.type, 'audio');
+  assert.equal(designTask.type, 'design');
+  assert.equal(fontTask.type, 'font');
+  assert.equal(appTask.type, 'application');
+  assert.equal(ebookTask.type, 'ebook');
+  assert.equal(codeTask.type, 'code');
+});
+
 test('formatTransferSpeed chooses a readable unit', () => {
   assert.equal(formatTransferSpeed(800), '800 B/s');
   assert.equal(formatTransferSpeed(2048), '2.0 KB/s');

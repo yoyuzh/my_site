@@ -17,8 +17,10 @@ import {
 import { shouldLoadAvatarWithAuth } from '@/src/components/layout/account-utils';
 import { Button } from '@/src/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/src/components/ui/card';
+import { FileTypeIcon, getFileTypeTheme } from '@/src/components/ui/FileTypeIcon';
 import { apiDownload, apiRequest } from '@/src/lib/api';
 import { readCachedValue, writeCachedValue } from '@/src/lib/cache';
+import { resolveStoredFileType } from '@/src/lib/file-type';
 import { getOverviewCacheKey } from '@/src/lib/page-cache';
 import { clearPostLoginPending, hasPostLoginPending, readStoredSession } from '@/src/lib/session';
 import type { FileMetadata, PageResponse, UserProfile } from '@/src/lib/types';
@@ -249,22 +251,39 @@ export default function Overview() {
             <CardContent>
               <div className="space-y-2">
                 {recentFiles.slice(0, 3).map((file, index) => (
-                  <div
-                    key={`${file.id}-${index}`}
-                    className="flex items-center justify-between p-3 rounded-xl hover:bg-white/5 transition-colors cursor-pointer group"
-                    onClick={() => navigate('/files')}
-                  >
-                    <div className="flex items-center gap-4 overflow-hidden">
-                      <div className="w-10 h-10 rounded-xl bg-[#336EFF]/10 flex items-center justify-center shrink-0 group-hover:bg-[#336EFF]/20 transition-colors">
-                        <FileText className="w-5 h-5 text-[#336EFF]" />
+                  (() => {
+                    const fileType = resolveStoredFileType({
+                      filename: file.filename,
+                      contentType: file.contentType,
+                      directory: file.directory,
+                    });
+
+                    return (
+                      <div
+                        key={`${file.id}-${index}`}
+                        className="flex items-center justify-between rounded-xl p-3 transition-colors cursor-pointer group hover:bg-white/5"
+                        onClick={() => navigate('/files')}
+                      >
+                        <div className="flex items-center gap-4 overflow-hidden">
+                          <FileTypeIcon type={fileType.kind} size="sm" className="group-hover:scale-[1.03] transition-transform duration-200" />
+                          <div className="min-w-0 truncate">
+                            <p className="truncate text-sm font-medium text-white">{file.filename}</p>
+                            <div className="mt-1 flex flex-wrap items-center gap-2">
+                              <span
+                                className={`inline-flex rounded-full px-2 py-1 text-[11px] font-medium ${getFileTypeTheme(fileType.kind).badgeClassName}`}
+                              >
+                                {fileType.label}
+                              </span>
+                              <p className="text-xs text-slate-400">{formatRecentTime(file.createdAt)}</p>
+                            </div>
+                          </div>
+                        </div>
+                        <span className="ml-4 shrink-0 text-xs font-mono text-slate-500">
+                          {file.directory ? '文件夹' : formatFileSize(file.size)}
+                        </span>
                       </div>
-                      <div className="truncate">
-                        <p className="text-sm font-medium text-white truncate">{file.filename}</p>
-                        <p className="text-xs text-slate-400 mt-0.5">{formatRecentTime(file.createdAt)}</p>
-                      </div>
-                    </div>
-                    <span className="text-xs text-slate-500 font-mono shrink-0 ml-4">{formatFileSize(file.size)}</span>
-                  </div>
+                    );
+                  })()
                 ))}
                 {recentFiles.length === 0 ? (
                   <div className="p-3 rounded-xl border border-dashed border-white/10 text-sm text-slate-500">

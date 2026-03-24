@@ -130,6 +130,7 @@
 - 文件元数据在数据库
 - 文件内容走存储层抽象
 - 支持本地磁盘和 OSS
+- 当前线上网盘文件存储已切到阿里云 OSS 成都地域桶 `yoyuzh-files2`
 - 前端会缓存目录列表和最后访问路径
 
 ### 3.3 快传模块
@@ -296,6 +297,13 @@
 - 让文件元数据逻辑与底层存储解耦
 - 上传、下载、复制、移动都通过统一抽象收口
 
+当前线上状态：
+
+- 生产环境文件桶已从东京地域迁到成都地域 `yoyuzh-files2`
+- 生产后端当前使用 `https://oss-cn-chengdu.aliyuncs.com` 作为 OSS endpoint
+- 普通文件下载仍采用“后端鉴权后返回签名 URL，浏览器直连 OSS 下载”的主链路
+- 2026-03-24 已对抽样对象 `users/6/第四组  脑机接口与脑启发计算.pptx` 在新桶执行 HEAD 校验并返回 200
+
 ## 8. 部署架构
 
 ### 8.1 前端
@@ -314,6 +322,9 @@
 
 - 服务名：`my-site-api.service`
 - 运行包路径：`/opt/yoyuzh/yoyuzh-portal-backend.jar`
+- 额外配置文件：`/opt/yoyuzh/application-prod.yml`
+- 环境变量文件：`/opt/yoyuzh/app.env`
+- 2026-03-24 已把生产后端 OSS 配置切换到成都新桶 `yoyuzh-files2`
 
 ## 9. 开发注意事项
 

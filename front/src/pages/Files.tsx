@@ -4,8 +4,6 @@ import {
   CheckCircle2,
   ChevronDown,
   Folder,
-  FileText,
-  Image as ImageIcon,
   Download,
   ChevronRight,
   ChevronUp,
@@ -28,10 +26,12 @@ import {
 import { NetdiskPathPickerModal } from '@/src/components/ui/NetdiskPathPickerModal';
 import { Button } from '@/src/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/src/components/ui/card';
+import { FileTypeIcon, getFileTypeTheme } from '@/src/components/ui/FileTypeIcon';
 import { Input } from '@/src/components/ui/input';
 import { ApiError, apiBinaryUploadRequest, apiDownload, apiRequest, apiUploadRequest } from '@/src/lib/api';
 import { copyFileToNetdiskPath } from '@/src/lib/file-copy';
 import { moveFileToNetdiskPath } from '@/src/lib/file-move';
+import { resolveStoredFileType, type FileTypeKind } from '@/src/lib/file-type';
 import { readCachedValue, writeCachedValue } from '@/src/lib/cache';
 import { createFileShareLink, getCurrentFileShareUrl } from '@/src/lib/file-share';
 import { getFilesLastPathCacheKey, getFilesListCacheKey } from '@/src/lib/page-cache';
@@ -147,27 +147,31 @@ function formatDateTime(value: string) {
 }
 
 function toUiFile(file: FileMetadata) {
-  const extension = file.filename.includes('.') ? file.filename.split('.').pop()?.toLowerCase() : '';
-  let type = extension || 'document';
-
-  if (file.directory) {
-    type = 'folder';
-  } else if (file.contentType?.startsWith('image/')) {
-    type = 'image';
-  } else if (file.contentType?.includes('pdf')) {
-    type = 'pdf';
-  }
+  const resolvedType = resolveStoredFileType({
+    filename: file.filename,
+    contentType: file.contentType,
+    directory: file.directory,
+  });
 
   return {
     id: file.id,
     name: file.filename,
-    type,
+    type: resolvedType.kind,
+    typeLabel: resolvedType.label,
     size: file.directory ? '—' : formatFileSize(file.size),
     modified: formatDateTime(file.createdAt),
   };
 }
 
-type UiFile = ReturnType<typeof toUiFile>;
+interface UiFile {
+  id: FileMetadata['id'];
+  modified: string;
+  name: string;
+  size: string;
+  type: FileTypeKind;
+  typeLabel: string;
+}
+
 type NetdiskTargetAction = 'move' | 'copy';
 
 export default function Files() {
@@ -854,20 +858,23 @@ export default function Files() {
                   >
                     <td className="py-3 pl-4">
                       <div className="flex items-center gap-3">
-                        {file.type === 'folder' ? (
-                          <Folder className="w-5 h-5 text-[#336EFF]" />
-                        ) : file.type === 'image' ? (
-                          <ImageIcon className="w-5 h-5 text-purple-400" />
-                        ) : (
-                          <FileText className="w-5 h-5 text-blue-400" />
-                        )}
+                        <FileTypeIcon type={file.type} size="sm" />
                         <span className={cn('text-sm font-medium', selectedFile?.id === file.id ? 'text-[#336EFF]' : 'text-slate-200')}>
                           {file.name}
                         </span>
                       </div>
                     </td>
                     <td className="py-3 text-sm text-slate-400 hidden md:table-cell">{file.modified}</td>
-                    <td className="py-3 text-sm text-slate-400 hidden lg:table-cell uppercase">{file.type}</td>
+                    <td className="py-3 text-sm text-slate-400 hidden lg:table-cell">
+                      <span
+                        className={cn(
+                          'inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-medium tracking-wide',
+                          getFileTypeTheme(file.type).badgeClassName,
+                        )}
+                      >
+                        {file.typeLabel}
+                      </span>
+                    </td>
                     <td className="py-3 text-sm text-slate-400 font-mono">{file.size}</td>
                     <td className="py-3 pr-4 text-right">
                       <FileActionMenu
@@ -916,20 +923,15 @@ export default function Files() {
                     />
                   </div>
 
-                  <div className="mb-3 flex h-16 w-16 items-center justify-center rounded-2xl bg-white/5 transition-colors group-hover:bg-white/10">
-                    {file.type === 'folder' ? (
-                      <Folder className="w-8 h-8 text-[#336EFF]" />
-                    ) : file.type === 'image' ? (
-                      <ImageIcon className="w-8 h-8 text-purple-400" />
-                    ) : (
-                      <FileText className="w-8 h-8 text-blue-400" />
-                    )}
-                  </div>
+                  <FileTypeIcon type={file.type} size="lg" className="mb-3 transition-transform duration-200 group-hover:scale-[1.03]" />
 
                   <span className={cn('w-full truncate px-2 text-center text-sm font-medium', selectedFile?.id === file.id ? 'text-[#336EFF]' : 'text-slate-200')}>
                     {file.name}
                   </span>
-                  <span className="mt-1 text-xs text-slate-500">
+                  <span className={cn('mt-1 inline-flex rounded-full px-2 py-1 text-[11px] font-medium', getFileTypeTheme(file.type).badgeClassName)}>
+                    {file.typeLabel}
+                  </span>
+                  <span className="mt-2 text-xs text-slate-500">
                     {file.type === 'folder' ? file.modified : file.size}
                   </span>
                 </div>
@@ -967,15 +969,7 @@ export default function Files() {
             </CardHeader>
             <CardContent className="p-6 space-y-6">
               <div className="flex flex-col items-center text-center space-y-3">
-                <div className="w-16 h-16 rounded-2xl bg-[#336EFF]/10 flex items-center justify-center">
-                  {selectedFile.type === 'folder' ? (
-                    <Folder className="w-8 h-8 text-[#336EFF]" />
-                  ) : selectedFile.type === 'image' ? (
-                    <ImageIcon className="w-8 h-8 text-purple-400" />
-                  ) : (
-                    <FileText className="w-8 h-8 text-blue-400" />
-                  )}
-                </div>
+                <FileTypeIcon type={selectedFile.type} size="lg" />
                 <h3 className="text-sm font-medium text-white break-all">{selectedFile.name}</h3>
               </div>
 
@@ -983,7 +977,7 @@ export default function Files() {
                 <DetailItem label="位置" value={`网盘 > ${currentPath.length === 0 ? '根目录' : currentPath.join(' > ')}`} />
                 <DetailItem label="大小" value={selectedFile.size} />
                 <DetailItem label="修改时间" value={selectedFile.modified} />
-                <DetailItem label="类型" value={selectedFile.type.toUpperCase()} />
+                <DetailItem label="类型" value={selectedFile.typeLabel} />
               </div>
 
               <div className="pt-4 space-y-3 border-t border-white/10">
@@ -1090,18 +1084,26 @@ export default function Files() {
                         )}
 
                         <div className="relative z-10 flex items-start gap-3">
-                          <div className="mt-0.5">
-                            {task.status === 'completed' ? (
-                              <CheckCircle2 className="h-5 w-5 text-emerald-500" />
-                            ) : task.status === 'error' ? (
-                              <TriangleAlert className="h-5 w-5 text-rose-400" />
-                            ) : (
-                              <FileUp className="h-5 w-5 animate-pulse text-[#336EFF]" />
-                            )}
-                          </div>
+                          <FileTypeIcon type={task.type} size="sm" className="mt-0.5" />
                           <div className="min-w-0 flex-1">
-                            <p className="truncate text-sm font-medium text-slate-200">{task.fileName}</p>
-                            <p className="mt-0.5 truncate text-xs text-slate-500">上传至: {task.destination}</p>
+                            <div className="flex items-center justify-between gap-3">
+                              <p className="truncate text-sm font-medium text-slate-200">{task.fileName}</p>
+                              <div className="shrink-0">
+                                {task.status === 'completed' ? (
+                                  <CheckCircle2 className="h-[18px] w-[18px] text-emerald-400" />
+                                ) : task.status === 'error' ? (
+                                  <TriangleAlert className="h-[18px] w-[18px] text-rose-400" />
+                                ) : (
+                                  <FileUp className="h-[18px] w-[18px] animate-pulse text-[#78A1FF]" />
+                                )}
+                              </div>
+                            </div>
+                            <div className="mt-1 flex flex-wrap items-center gap-2 text-xs">
+                              <span className={cn('rounded-full px-2 py-1 font-medium', getFileTypeTheme(task.type).badgeClassName)}>
+                                {task.typeLabel}
+                              </span>
+                              <span className="truncate text-slate-500">上传至: {task.destination}</span>
+                            </div>
                             {task.noticeMessage && (
                               <p className="mt-2 truncate text-xs text-amber-300">{task.noticeMessage}</p>
                             )}
