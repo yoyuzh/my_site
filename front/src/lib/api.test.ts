@@ -48,6 +48,8 @@ class FakeXMLHttpRequest {
   responseHeaders = new Map<string, string>();
   onload: null | (() => void) = null;
   onerror: null | (() => void) = null;
+  onabort: null | (() => void) = null;
+  aborted = false;
 
   upload = {
     addEventListener: (type: string, listener: EventListenerOrEventListenerObject) => {
@@ -80,6 +82,11 @@ class FakeXMLHttpRequest {
 
   send(body: Document | XMLHttpRequestBodyInit | null) {
     this.requestBody = body;
+  }
+
+  abort() {
+    this.aborted = true;
+    this.onabort?.();
   }
 
   triggerProgress(loaded: number, total: number) {
@@ -310,6 +317,25 @@ test('apiBinaryUploadRequest sends raw file body to signed upload url', async ()
     {loaded: 64, total: 128},
     {loaded: 128, total: 128},
   ]);
+});
+
+test('apiUploadRequest supports aborting a single upload task', async () => {
+  const controller = new AbortController();
+  const formData = new FormData();
+  formData.append('file', new Blob(['hello']), 'hello.txt');
+
+  const uploadPromise = apiUploadRequest<{id: number}>('/files/upload?path=%2F', {
+    body: formData,
+    signal: controller.signal,
+  });
+
+  const request = FakeXMLHttpRequest.latest;
+  assert.ok(request);
+
+  controller.abort();
+
+  await assert.rejects(uploadPromise, /上传已取消/);
+  assert.equal(request.aborted, true);
 });
 
 test('apiRequest refreshes expired access token once and retries the original request', async () => {

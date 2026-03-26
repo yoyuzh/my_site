@@ -24,6 +24,7 @@ import { Button } from '@/src/components/ui/button';
 import { Input } from '@/src/components/ui/input';
 
 import { buildAccountDraft, getRoleLabel, shouldLoadAvatarWithAuth } from './account-utils';
+import { UploadProgressPanel } from './UploadProgressPanel';
 
 const NAV_ITEMS = [
   { name: '总览', path: '/overview', icon: LayoutDashboard },
@@ -434,6 +435,8 @@ export function Layout({ children }: LayoutProps = {}) {
       <main className="flex-1 container mx-auto px-4 pt-24 pb-8 relative z-10">
         {children ?? <Outlet />}
       </main>
+
+      <UploadProgressPanel />
 
       <AnimatePresence>
         {activeModal === 'security' && (

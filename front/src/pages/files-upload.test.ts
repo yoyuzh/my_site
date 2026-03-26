@@ -3,6 +3,7 @@ import test from 'node:test';
 
 import {
   buildUploadProgressSnapshot,
+  cancelUploadTask,
   completeUploadTask,
   createUploadTasks,
   createUploadTask,
@@ -133,6 +134,16 @@ test('completeUploadTask marks upload as completed', () => {
   assert.equal(nextTask.destination, '/');
   assert.equal(nextTask.progress, 100);
   assert.equal(nextTask.status, 'completed');
+  assert.equal(nextTask.speed, '');
+});
+
+test('cancelUploadTask marks upload as cancelled', () => {
+  const task = createUploadTask(new File(['hello'], 'photo.png', {type: 'image/png'}), [], 'task-cancel');
+
+  const nextTask = cancelUploadTask(task);
+
+  assert.equal(nextTask.destination, '/');
+  assert.equal(nextTask.status, 'cancelled');
   assert.equal(nextTask.speed, '');
 });
 

@@ -1,7 +1,7 @@
 import { getNextAvailableName } from './files-state';
 import { resolveFileType, type FileTypeKind } from '@/src/lib/file-type';
 
-export type UploadTaskStatus = 'uploading' | 'completed' | 'error';
+export type UploadTaskStatus = 'uploading' | 'completed' | 'error' | 'cancelled';
 
 export interface UploadTask {
   id: string;
@@ -278,5 +278,14 @@ export function failUploadTask(task: UploadTask, errorMessage: string): UploadTa
     speed: '',
     status: 'error',
     errorMessage,
+  };
+}
+
+export function cancelUploadTask(task: UploadTask): UploadTask {
+  return {
+    ...task,
+    speed: '',
+    status: 'cancelled',
+    errorMessage: undefined,
   };
 }

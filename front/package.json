@@ -26,6 +26,7 @@
     "express": "^4.21.2",
     "lucide-react": "^0.546.0",
     "motion": "^12.23.24",
+    "ogl": "^1.0.11",
     "react": "^19.0.0",
     "react-admin": "^5.14.4",
     "react-dom": "^19.0.0",

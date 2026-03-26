@@ -16,6 +16,7 @@ interface ApiUploadRequestInit {
   headers?: HeadersInit;
   method?: 'POST' | 'PUT' | 'PATCH';
   onProgress?: (progress: {loaded: number; total: number}) => void;
+  signal?: AbortSignal;
 }
 
 interface ApiBinaryUploadRequestInit {
@@ -23,6 +24,7 @@ interface ApiBinaryUploadRequestInit {
   headers?: HeadersInit;
   method?: 'PUT' | 'POST';
   onProgress?: (progress: {loaded: number; total: number}) => void;
+  signal?: AbortSignal;
 }
 
 const API_BASE_URL = (import.meta.env?.VITE_API_BASE_URL || '/api').replace(/\/$/, '');
@@ -197,6 +199,10 @@ export function toNetworkApiError(error: unknown) {
   return new ApiError(message === 'Failed to fetch' ? fallbackMessage : message, 0);
 }
 
+function toUploadAbortApiError() {
+  return new ApiError('上传已取消', 0);
+}
+
 export function shouldRetryRequest(
   path: string,
   init: ApiRequestInit = {},
@@ -296,6 +302,46 @@ function apiUploadRequestInternal<T>(path: string, init: ApiUploadRequestInit, a
 
   return new Promise<T>((resolve, reject) => {
     const xhr = new XMLHttpRequest();
+    let settled = false;
+
+    const detachAbortSignal = () => {
+      init.signal?.removeEventListener('abort', handleAbortSignal);
+    };
+
+    const resolveOnce = (value: T | PromiseLike<T>) => {
+      if (settled) {
+        return;
+      }
+
+      settled = true;
+      detachAbortSignal();
+      resolve(value);
+    };
+
+    const rejectOnce = (error: unknown) => {
+      if (settled) {
+        return;
+      }
+
+      settled = true;
+      detachAbortSignal();
+      reject(error);
+    };
+
+    const handleAbortSignal = () => {
+      if (settled) {
+        return;
+      }
+
+      xhr.abort();
+      rejectOnce(toUploadAbortApiError());
+    };
+
+    if (init.signal?.aborted) {
+      rejectOnce(toUploadAbortApiError());
+      return;
+    }
+
     xhr.open(init.method || 'POST', resolveUrl(path));
 
     headers.forEach((value, key) => {
@@ -316,7 +362,16 @@ function apiUploadRequestInternal<T>(path: string, init: ApiUploadRequestInit, a
     }
 
     xhr.onerror = () => {
-      reject(toNetworkApiError(new TypeError('Failed to fetch')));
+      if (init.signal?.aborted) {
+        rejectOnce(toUploadAbortApiError());
+        return;
+      }
+
+      rejectOnce(toNetworkApiError(new TypeError('Failed to fetch')));
+    };
+
+    xhr.onabort = () => {
+      rejectOnce(toUploadAbortApiError());
     };
 
     xhr.onload = () => {
@@ -326,26 +381,26 @@ function apiUploadRequestInternal<T>(path: string, init: ApiUploadRequestInit, a
         refreshAccessToken()
           .then((refreshed) => {
             if (refreshed) {
-              resolve(apiUploadRequestInternal<T>(path, init, false));
+              resolveOnce(apiUploadRequestInternal<T>(path, init, false));
               return;
             }
             clearStoredSession();
-            reject(new ApiError('登录状态已失效，请重新登录', 401));
+            rejectOnce(new ApiError('登录状态已失效，请重新登录', 401));
           })
           .catch((error) => {
             clearStoredSession();
-            reject(error instanceof ApiError ? error : toNetworkApiError(error));
+            rejectOnce(error instanceof ApiError ? error : toNetworkApiError(error));
           });
         return;
       }
 
       if (!contentType.includes('application/json')) {
         if (xhr.status >= 200 && xhr.status < 300) {
-          resolve(undefined as T);
+          resolveOnce(undefined as T);
           return;
         }
 
-        reject(new ApiError(`请求失败 (${xhr.status})`, xhr.status));
+        rejectOnce(new ApiError(`请求失败 (${xhr.status})`, xhr.status));
         return;
       }
 
@@ -354,12 +409,16 @@ function apiUploadRequestInternal<T>(path: string, init: ApiUploadRequestInit, a
         if (xhr.status === 401) {
           clearStoredSession();
         }
-        reject(new ApiError(payload.msg || `请求失败 (${xhr.status})`, xhr.status, payload.code));
+        rejectOnce(new ApiError(payload.msg || `请求失败 (${xhr.status})`, xhr.status, payload.code));
         return;
       }
 
-      resolve(payload.data);
+      resolveOnce(payload.data);
     };
+
+    if (init.signal) {
+      init.signal.addEventListener('abort', handleAbortSignal, {once: true});
+    }
 
     xhr.send(init.body);
   });
@@ -374,6 +433,46 @@ export function apiBinaryUploadRequest(path: string, init: ApiBinaryUploadReques
 
   return new Promise<void>((resolve, reject) => {
     const xhr = new XMLHttpRequest();
+    let settled = false;
+
+    const detachAbortSignal = () => {
+      init.signal?.removeEventListener('abort', handleAbortSignal);
+    };
+
+    const resolveOnce = () => {
+      if (settled) {
+        return;
+      }
+
+      settled = true;
+      detachAbortSignal();
+      resolve();
+    };
+
+    const rejectOnce = (error: unknown) => {
+      if (settled) {
+        return;
+      }
+
+      settled = true;
+      detachAbortSignal();
+      reject(error);
+    };
+
+    const handleAbortSignal = () => {
+      if (settled) {
+        return;
+      }
+
+      xhr.abort();
+      rejectOnce(toUploadAbortApiError());
+    };
+
+    if (init.signal?.aborted) {
+      rejectOnce(toUploadAbortApiError());
+      return;
+    }
+
     xhr.open(init.method || 'PUT', resolveUrl(path));
 
     headers.forEach((value, key) => {
@@ -394,17 +493,30 @@ export function apiBinaryUploadRequest(path: string, init: ApiBinaryUploadReques
     }
 
     xhr.onerror = () => {
-      reject(toNetworkApiError(new TypeError('Failed to fetch')));
+      if (init.signal?.aborted) {
+        rejectOnce(toUploadAbortApiError());
+        return;
+      }
+
+      rejectOnce(toNetworkApiError(new TypeError('Failed to fetch')));
+    };
+
+    xhr.onabort = () => {
+      rejectOnce(toUploadAbortApiError());
     };
 
     xhr.onload = () => {
       if (xhr.status >= 200 && xhr.status < 300) {
-        resolve();
+        resolveOnce();
         return;
       }
 
-      reject(new ApiError(`请求失败 (${xhr.status})`, xhr.status));
+      rejectOnce(new ApiError(`请求失败 (${xhr.status})`, xhr.status));
     };
+
+    if (init.signal) {
+      init.signal.addEventListener('abort', handleAbortSignal, {once: true});
+    }
 
     xhr.send(init.body);
   });

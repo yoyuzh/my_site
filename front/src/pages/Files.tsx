@@ -1,23 +1,18 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import {
-  CheckCircle2,
   ChevronDown,
   Folder,
   Download,
   ChevronRight,
-  ChevronUp,
-  FileUp,
   FolderUp,
   Upload,
-  UploadCloud,
   Plus,
   LayoutGrid,
   List,
   MoreVertical,
   Copy,
   Share2,
-  TriangleAlert,
   X,
   Edit2,
   Trash2,
@@ -34,12 +29,14 @@ import { moveFileToNetdiskPath } from '@/src/lib/file-move';
 import { resolveStoredFileType, type FileTypeKind } from '@/src/lib/file-type';
 import { readCachedValue, writeCachedValue } from '@/src/lib/cache';
 import { createFileShareLink, getCurrentFileShareUrl } from '@/src/lib/file-share';
+import { ellipsizeFileName } from '@/src/lib/file-name';
 import { getFilesLastPathCacheKey, getFilesListCacheKey } from '@/src/lib/page-cache';
 import type { DownloadUrlResponse, FileMetadata, InitiateUploadResponse, PageResponse } from '@/src/lib/types';
 import { cn } from '@/src/lib/utils';
 
 import {
   buildUploadProgressSnapshot,
+  cancelUploadTask,
   createUploadMeasurement,
   createUploadTasks,
   completeUploadTask,
@@ -52,6 +49,13 @@ import {
   type UploadMeasurement,
   type UploadTask,
 } from './files-upload';
+import {
+  registerFilesUploadTaskCanceler,
+  replaceFilesUploads,
+  setFilesUploadPanelOpen,
+  unregisterFilesUploadTaskCanceler,
+  updateFilesUploadTask,
+} from './files-upload-store';
 import {
   clearSelectionIfDeleted,
   getNextAvailableName,
@@ -199,8 +203,6 @@ export default function Files() {
   const [expandedDirectories, setExpandedDirectories] = useState(() => createExpandedDirectorySet(initialPath));
   const [selectedFile, setSelectedFile] = useState<UiFile | null>(null);
   const [currentFiles, setCurrentFiles] = useState<UiFile[]>(initialCachedFiles.map(toUiFile));
-  const [uploads, setUploads] = useState<UploadTask[]>([]);
-  const [isUploadPanelOpen, setIsUploadPanelOpen] = useState(true);
   const [renameModalOpen, setRenameModalOpen] = useState(false);
   const [deleteModalOpen, setDeleteModalOpen] = useState(false);
   const [fileToRename, setFileToRename] = useState<UiFile | null>(null);
@@ -411,11 +413,11 @@ export default function Files() {
       return;
     }
 
-    setIsUploadPanelOpen(true);
+    setFilesUploadPanelOpen(true);
     uploadMeasurementsRef.current.clear();
 
     const batchTasks = createUploadTasks(entries);
-    setUploads(batchTasks);
+    replaceFilesUploads(batchTasks);
 
     const runSingleUpload = async (
       {file: uploadFile, pathParts: uploadPathParts}: PendingUploadEntry,
@@ -423,6 +425,10 @@ export default function Files() {
     ) => {
       const uploadPath = toBackendPath(uploadPathParts);
       const startedAt = Date.now();
+      const uploadAbortController = new AbortController();
+      registerFilesUploadTaskCanceler(uploadTask.id, () => {
+        uploadAbortController.abort();
+      });
       uploadMeasurementsRef.current.set(uploadTask.id, createUploadMeasurement(startedAt));
 
       try {
@@ -435,17 +441,11 @@ export default function Files() {
           });
 
           uploadMeasurementsRef.current.set(uploadTask.id, snapshot.measurement);
-          setUploads((previous) =>
-            previous.map((task) =>
-              task.id === uploadTask.id
-                ? {
-                    ...task,
-                    progress: snapshot.progress,
-                    speed: snapshot.speed,
-                  }
-                : task,
-            ),
-          );
+          updateFilesUploadTask(uploadTask.id, (task) => ({
+            ...task,
+            progress: snapshot.progress,
+            speed: snapshot.speed,
+          }));
         };
 
         let initiated: InitiateUploadResponse | null = null;
@@ -473,10 +473,12 @@ export default function Files() {
               headers: initiated.headers,
               body: uploadFile,
               onProgress: updateProgress,
+              signal: uploadAbortController.signal,
             });
 
             uploadedFile = await apiRequest<FileMetadata>('/files/upload/complete', {
               method: 'POST',
+              signal: uploadAbortController.signal,
               body: {
                 path: uploadPath,
                 filename: uploadFile.name,
@@ -495,6 +497,7 @@ export default function Files() {
             uploadedFile = await apiUploadRequest<FileMetadata>(`/files/upload?path=${encodeURIComponent(uploadPath)}`, {
               body: formData,
               onProgress: updateProgress,
+              signal: uploadAbortController.signal,
             });
           }
         } else if (initiated) {
@@ -505,6 +508,7 @@ export default function Files() {
             method: initiated.method,
             headers: initiated.headers,
             onProgress: updateProgress,
+            signal: uploadAbortController.signal,
           });
         } else {
           const formData = new FormData();
@@ -512,25 +516,26 @@ export default function Files() {
           uploadedFile = await apiUploadRequest<FileMetadata>(`/files/upload?path=${encodeURIComponent(uploadPath)}`, {
             body: formData,
             onProgress: updateProgress,
+            signal: uploadAbortController.signal,
           });
         }
 
-        uploadMeasurementsRef.current.delete(uploadTask.id);
-        setUploads((previous) =>
-          previous.map((task) => (task.id === uploadTask.id ? prepareUploadTaskForCompletion(task) : task)),
-        );
+        updateFilesUploadTask(uploadTask.id, (task) => prepareUploadTaskForCompletion(task));
         await sleep(120);
-        setUploads((previous) =>
-          previous.map((task) => (task.id === uploadTask.id ? completeUploadTask(task) : task)),
-        );
+        updateFilesUploadTask(uploadTask.id, (task) => completeUploadTask(task));
         return uploadedFile;
       } catch (error) {
-        uploadMeasurementsRef.current.delete(uploadTask.id);
+        if (uploadAbortController.signal.aborted) {
+          updateFilesUploadTask(uploadTask.id, (task) => cancelUploadTask(task));
+          return null;
+        }
+
         const message = error instanceof Error && error.message ? error.message : '上传失败，请稍后重试';
-        setUploads((previous) =>
-          previous.map((task) => (task.id === uploadTask.id ? failUploadTask(task, message) : task)),
-        );
+        updateFilesUploadTask(uploadTask.id, (task) => failUploadTask(task, message));
         return null;
+      } finally {
+        uploadMeasurementsRef.current.delete(uploadTask.id);
+        unregisterFilesUploadTaskCanceler(uploadTask.id);
       }
     };
 
@@ -726,11 +731,6 @@ export default function Files() {
     window.URL.revokeObjectURL(url);
   };
 
-  const handleClearUploads = () => {
-    uploadMeasurementsRef.current.clear();
-    setUploads([]);
-  };
-
   const handleShare = async (targetFile: UiFile) => {
     try {
       const response = await createFileShareLink(targetFile.id);
@@ -835,14 +835,14 @@ export default function Files() {
               <p className="text-sm">此文件夹为空</p>
             </div>
           ) : viewMode === 'list' ? (
-            <table className="w-full text-left border-collapse">
+            <table className="w-full table-fixed text-left border-collapse">
               <thead>
                 <tr className="text-xs font-semibold text-slate-500 uppercase tracking-wider border-b border-white/5">
-                  <th className="pb-3 pl-4 font-medium">名称</th>
-                  <th className="pb-3 font-medium hidden md:table-cell">修改日期</th>
-                  <th className="pb-3 font-medium hidden lg:table-cell">类型</th>
-                  <th className="pb-3 font-medium">大小</th>
-                  <th className="pb-3"></th>
+                  <th className="pb-3 pl-4 font-medium w-[44%]">名称</th>
+                  <th className="pb-3 font-medium hidden md:table-cell w-[22%]">修改日期</th>
+                  <th className="pb-3 font-medium hidden lg:table-cell w-[14%]">类型</th>
+                  <th className="pb-3 font-medium w-[10%]">大小</th>
+                  <th className="pb-3 w-[10%]"></th>
                 </tr>
               </thead>
               <tbody>
@@ -856,11 +856,14 @@ export default function Files() {
                       selectedFile?.id === file.id ? 'bg-[#336EFF]/10' : 'hover:bg-white/[0.02]',
                     )}
                   >
-                    <td className="py-3 pl-4">
-                      <div className="flex items-center gap-3">
+                    <td className="py-3 pl-4 max-w-0">
+                      <div className="flex min-w-0 items-center gap-3">
                         <FileTypeIcon type={file.type} size="sm" />
-                        <span className={cn('text-sm font-medium', selectedFile?.id === file.id ? 'text-[#336EFF]' : 'text-slate-200')}>
-                          {file.name}
+                        <span
+                          className={cn('block truncate text-sm font-medium', selectedFile?.id === file.id ? 'text-[#336EFF]' : 'text-slate-200')}
+                          title={file.name}
+                        >
+                          {ellipsizeFileName(file.name, 48)}
                         </span>
                       </div>
                     </td>
@@ -926,7 +929,7 @@ export default function Files() {
                   <FileTypeIcon type={file.type} size="lg" className="mb-3 transition-transform duration-200 group-hover:scale-[1.03]" />
 
                   <span className={cn('w-full truncate px-2 text-center text-sm font-medium', selectedFile?.id === file.id ? 'text-[#336EFF]' : 'text-slate-200')}>
-                    {file.name}
+                    {ellipsizeFileName(file.name, 24)}
                   </span>
                   <span className={cn('mt-1 inline-flex rounded-full px-2 py-1 text-[11px] font-medium', getFileTypeTheme(file.type).badgeClassName)}>
                     {file.typeLabel}
@@ -968,9 +971,11 @@ export default function Files() {
               <CardTitle className="text-base">详细信息</CardTitle>
             </CardHeader>
             <CardContent className="p-6 space-y-6">
-              <div className="flex flex-col items-center text-center space-y-3">
+              <div className="flex w-full flex-col items-center text-center space-y-3">
                 <FileTypeIcon type={selectedFile.type} size="lg" />
-                <h3 className="text-sm font-medium text-white break-all">{selectedFile.name}</h3>
+                <h3 className="w-full truncate text-sm font-medium text-white" title={selectedFile.name}>
+                  {selectedFile.name}
+                </h3>
               </div>
 
               <div className="space-y-4">
@@ -1029,108 +1034,6 @@ export default function Files() {
           </Card>
         </motion.div>
       )}
-
-      <AnimatePresence>
-        {uploads.length > 0 && (
-          <motion.div
-            initial={{ opacity: 0, y: 50, scale: 0.95 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: 50, scale: 0.95 }}
-            className="fixed bottom-6 right-6 z-50 flex w-[min(24rem,calc(100vw-2rem))] flex-col overflow-hidden rounded-xl border border-white/10 bg-[#0f172a]/95 shadow-2xl backdrop-blur-xl"
-          >
-            <div
-              className="flex cursor-pointer items-center justify-between border-b border-white/10 bg-white/5 px-4 py-3 transition-colors hover:bg-white/10"
-              onClick={() => setIsUploadPanelOpen((previous) => !previous)}
-            >
-              <div className="flex items-center gap-2">
-                <UploadCloud className="h-4 w-4 text-[#336EFF]" />
-                <span className="text-sm font-medium text-white">
-                  上传进度 ({uploads.filter((task) => task.status === 'completed').length}/{uploads.length})
-                </span>
-              </div>
-              <div className="flex items-center gap-1">
-                <button className="rounded p-1 text-slate-400 transition-colors hover:bg-white/10 hover:text-white">
-                  {isUploadPanelOpen ? <ChevronDown className="h-4 w-4" /> : <ChevronUp className="h-4 w-4" />}
-                </button>
-                <button
-                  className="rounded p-1 text-slate-400 transition-colors hover:bg-white/10 hover:text-white"
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    handleClearUploads();
-                  }}
-                >
-                  <X className="h-4 w-4" />
-                </button>
-              </div>
-            </div>
-
-            <AnimatePresence initial={false}>
-              {isUploadPanelOpen && (
-                <motion.div initial={{ height: 0 }} animate={{ height: 'auto' }} exit={{ height: 0 }} className="max-h-80 overflow-y-auto">
-                  <div className="space-y-1 p-2">
-                    {uploads.map((task) => (
-                      <div
-                        key={task.id}
-                        className={cn(
-                          'group relative overflow-hidden rounded-lg p-3 transition-colors hover:bg-white/5',
-                          task.status === 'error' && 'bg-rose-500/5',
-                        )}
-                      >
-                        {task.status === 'uploading' && (
-                          <div
-                            className="absolute inset-y-0 left-0 bg-[#336EFF]/10 transition-all duration-300 ease-out"
-                            style={{ width: `${task.progress}%` }}
-                          />
-                        )}
-
-                        <div className="relative z-10 flex items-start gap-3">
-                          <FileTypeIcon type={task.type} size="sm" className="mt-0.5" />
-                          <div className="min-w-0 flex-1">
-                            <div className="flex items-center justify-between gap-3">
-                              <p className="truncate text-sm font-medium text-slate-200">{task.fileName}</p>
-                              <div className="shrink-0">
-                                {task.status === 'completed' ? (
-                                  <CheckCircle2 className="h-[18px] w-[18px] text-emerald-400" />
-                                ) : task.status === 'error' ? (
-                                  <TriangleAlert className="h-[18px] w-[18px] text-rose-400" />
-                                ) : (
-                                  <FileUp className="h-[18px] w-[18px] animate-pulse text-[#78A1FF]" />
-                                )}
-                              </div>
-                            </div>
-                            <div className="mt-1 flex flex-wrap items-center gap-2 text-xs">
-                              <span className={cn('rounded-full px-2 py-1 font-medium', getFileTypeTheme(task.type).badgeClassName)}>
-                                {task.typeLabel}
-                              </span>
-                              <span className="truncate text-slate-500">上传至: {task.destination}</span>
-                            </div>
-                            {task.noticeMessage && (
-                              <p className="mt-2 truncate text-xs text-amber-300">{task.noticeMessage}</p>
-                            )}
-
-                            {task.status === 'uploading' && (
-                              <div className="mt-2 flex items-center justify-between text-xs">
-                                <span className="font-medium text-[#336EFF]">{Math.round(task.progress)}%</span>
-                                <span className="font-mono text-slate-400">{task.speed}</span>
-                              </div>
-                            )}
-                            {task.status === 'completed' && (
-                              <p className="mt-2 text-xs text-emerald-400">上传完成</p>
-                            )}
-                            {task.status === 'error' && (
-                              <p className="mt-2 truncate text-xs text-rose-400">{task.errorMessage ?? '上传失败，请稍后重试'}</p>
-                            )}
-                          </div>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </motion.div>
-              )}
-            </AnimatePresence>
-          </motion.div>
-        )}
-      </AnimatePresence>
 
       <AnimatePresence>
         {renameModalOpen && (
