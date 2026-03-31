@@ -1,9 +1,13 @@
 backend/target/
 data/
 storage/
+node_modules/
+output/
+tmp/
 front/node_modules/
 front/dist/
 front/.vite/
+front/test-results/
 
 backend-dev.out.log
 backend-dev.err.log
