@@ -37,6 +37,8 @@
 关键入口：
 
 - `front/src/App.tsx`
+- `front/src/MobileApp.tsx`
+- `front/src/main.tsx`
 - `front/src/lib/api.ts`
 - `front/src/components/layout/Layout.tsx`
 
@@ -48,6 +50,7 @@
 - `front/src/pages/Transfer.tsx`
 - `front/src/pages/TransferReceive.tsx`
 - `front/src/pages/FileShare.tsx`
+- `front/src/mobile-pages/*`
 
 ### 2.2 后端
 
@@ -190,6 +193,11 @@
 - 管理员修改用户密码后，旧密码应立即失效，新密码可直接重新登录
 
 ## 4. 关键业务流程
+
+补充说明：
+
+- 前端主入口会在 `main.tsx` 按屏幕宽度选择桌面壳或移动壳
+- 当前规则为：宽度小于 `768px` 时渲染 `MobileApp`，否则渲染桌面 `App`
 
 ### 4.1 登录流程
 

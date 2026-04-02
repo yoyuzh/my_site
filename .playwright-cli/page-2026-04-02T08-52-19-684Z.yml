@@ -1,0 +1,25 @@
+- generic [ref=e3]:
+  - generic [ref=e6]:
+    - generic [ref=e8]: "Y"
+    - heading "优立云盘" [level=1] [ref=e9]
+    - paragraph [ref=e10]: 集中管理网盘文件，跨设备快传，随时体验轻游戏。
+  - generic [ref=e13]:
+    - generic [ref=e14]:
+      - heading "登录" [level=3] [ref=e15]:
+        - img [ref=e16]
+        - text: 登录
+      - paragraph [ref=e19]: 登入您的账号以继续
+    - generic [ref=e21]:
+      - generic [ref=e22]:
+        - generic [ref=e23]:
+          - img [ref=e24]
+          - textbox "账号 / 用户名 / 学号" [ref=e27]
+        - generic [ref=e28]:
+          - img [ref=e29]
+          - textbox "••••••••" [ref=e32]
+      - generic [ref=e33]:
+        - button "进入系统" [ref=e34]
+        - button "直接进入快传" [ref=e35]:
+          - img [ref=e36]
+          - text: 直接进入快传
+        - button "还没有账号？立即注册" [ref=e40]

@@ -16,6 +16,7 @@
   - 2026-04-02 已统一密码策略为“至少 8 位且包含大写字母”，并补测试确认管理员改密后旧密码失效、新密码生效
   - 2026-04-02 已放开未登录直达快传：登录页可直接进入快传，匿名用户可发在线快传和接收在线快传，但离线快传仍要求登录
   - 2026-04-02 快传发送页已新增“我的离线快传”区域：登录用户可查看自己未过期的离线快传记录，并点开弹层重新查看取件码、二维码和分享链接
+  - 2026-04-02 前端主入口已按屏幕宽度自动切换桌面壳与移动壳，宽度小于 768px 时渲染 `MobileApp`
   - 根目录 README 已重写为中文公开版 GitHub 风格
   - VS Code 工作区已补 `.vscode/settings.json`、`.vscode/extensions.json`、`lombok.config`，并在 `backend/pom.xml` 显式声明了 Lombok annotation processor
 - 进行中:
@@ -40,6 +41,7 @@
 | 密码策略放宽到“至少 8 位且包含大写字母” | 降低注册和管理员改密阻力，同时保留最基础的复杂度门槛 | 继续要求大小写 + 数字 + 特殊字符: 对当前站点用户而言过重，且已导致后台改密体验不一致 |
 | 匿名用户仅开放在线快传，不开放离线快传 | 允许登录页直接进入快传，同时避免匿名用户占用站点持久存储 | 匿名也开放离线快传: 会增加滥用风险和存储成本 |
 | 已登录用户可以在快传页回看自己的离线快传记录 | 离线快传有效期长达 7 天，用户需要在不重新上传的情况下再次查看取件码和分享链接 | 只在刚创建成功时展示一次取件信息: 用户丢失取件码后无法自助找回 |
+| 前端主入口按宽度自动切换到移动壳 | 不需要单独维护 `/m` 路由，用户在小屏设备上直接进入移动端布局 | 独立 `/m` 路由: 需要额外记忆入口且与主站状态分叉 |
 
 ## 待解决问题
 - [ ] VS Code 若仍报 `final 字段未在构造器初始化` 之类错误，优先判断为 Lombok / Java Language Server 误报，而不是源码真实错误
@@ -79,5 +81,6 @@
   - 快传接收页: `front/src/pages/TransferReceive.tsx`
   - 未登录快传权限: `backend/src/main/java/com/yoyuzh/transfer/TransferController.java`、`backend/src/main/java/com/yoyuzh/transfer/TransferService.java`
   - 离线快传历史与详情弹层: `front/src/pages/Transfer.tsx`、`front/src/pages/transfer-state.ts`
+  - 移动端入口切换: `front/src/main.tsx`、`front/src/MobileApp.tsx`、`front/src/lib/app-shell.ts`
   - 管理员改密接口: `backend/src/main/java/com/yoyuzh/admin/AdminService.java`
   - 前端生产 API 基址: `front/.env.production`
