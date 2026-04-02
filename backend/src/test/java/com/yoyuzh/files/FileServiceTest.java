@@ -1,5 +1,6 @@
 package com.yoyuzh.files;
 
+import com.yoyuzh.admin.AdminMetricsService;
 import com.yoyuzh.auth.User;
 import com.yoyuzh.common.BusinessException;
 import com.yoyuzh.config.FileStorageProperties;
@@ -46,6 +47,8 @@ class FileServiceTest {
 
     @Mock
     private FileShareLinkRepository fileShareLinkRepository;
+    @Mock
+    private AdminMetricsService adminMetricsService;
 
     private FileService fileService;
 
@@ -53,7 +56,7 @@ class FileServiceTest {
     void setUp() {
         FileStorageProperties properties = new FileStorageProperties();
         properties.setMaxFileSize(500L * 1024 * 1024);
-        fileService = new FileService(storedFileRepository, fileContentStorage, fileShareLinkRepository, properties);
+        fileService = new FileService(storedFileRepository, fileContentStorage, fileShareLinkRepository, adminMetricsService, properties);
     }
 
     @Test

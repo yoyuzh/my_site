@@ -8,13 +8,16 @@
   - 网盘已支持上传、下载、重命名、删除、移动、复制、公开分享、接收快传后存入
   - 注册改成邀请码机制，邀请码单次使用后自动刷新，并在管理台展示与复制
   - 同账号仅允许一台设备同时登录，旧设备会在下一次访问受保护接口时失效
-  - 后端已补生产 CORS，默认放行 `https://yoyuzh.xyz` 与 `https://www.yoyuzh.xyz`，并已重新发布
-  - 线上后端文件存储已从旧东京 OSS 桶切换到成都新桶 `yoyuzh-files2`，并已完成对象级存在性验证
+  - 后端已补生产 CORS，默认放行 `https://yoyuzh.xyz` 与 `https://www.yoyuzh.xyz`
+  - 线上文件存储与前端静态托管已迁到多吉云对象存储，后端通过临时密钥 API 获取短期 S3 会话访问底层 COS 兼容桶
+  - 管理台 dashboard 已显示总存储量、下载流量、今日请求次数、快传使用量、离线快传占用和请求折线图，并支持调整离线快传总上限
+  - 管理台用户列表已显示每个用户的已用空间 / 配额，表格也已收紧
+  - 游戏页已接入 `/race/`、`/t_race/`，带站内播放器、退出按钮和友情链接
+  - 2026-04-02 已统一密码策略为“至少 8 位且包含大写字母”，并补测试确认管理员改密后旧密码失效、新密码生效
   - 根目录 README 已重写为中文公开版 GitHub 风格
   - VS Code 工作区已补 `.vscode/settings.json`、`.vscode/extensions.json`、`lombok.config`，并在 `backend/pom.xml` 显式声明了 Lombok annotation processor
 - 进行中:
   - 继续观察 VS Code Java/Lombok 误报是否完全消失
-  - 继续排查 `api.yoyuzh.xyz` 在不同网络/设备下的 TLS/SNI 链路稳定性
   - 后续如果再做 README/开源化展示，可以继续补 banner、截图和架构图
 - 待开始:
   - 如果用户继续提需求，优先沿当前网站主线迭代，不再回到旧教务方向
@@ -28,16 +31,16 @@
 | 网盘侧边栏改成单一树状目录结构 | 更像真实网盘，层级关系清晰 | 保留“快速访问 + 目录”双区块: 结构割裂 |
 | 注册邀请码改成单次使用后自动刷新 | 更适合私域邀请式注册，管理台也能直接查看当前邀请码 | 固定邀请码: 容易扩散且不可控 |
 | 单设备登录通过“用户当前会话 ID + JWT sid claim”实现 | 新登录能立即顶掉旧 access token，而不仅仅是旧 refresh token | 只撤销 refresh token: 旧 access token 仍会继续有效一段时间 |
-| 前端发布继续使用 `node scripts/deploy-front-oss.mjs` | 仓库已有正式 OSS 发布脚本，流程稳定 | 手动上传 OSS: 容易出错，也不利于复用 |
+| 前端发布继续使用 `node scripts/deploy-front-oss.mjs` | 仓库已有正式静态站发布脚本，现已切到多吉云临时密钥 + S3 兼容上传流程 | 手动上传对象存储: 容易出错，也不利于复用 |
 | 后端发布继续采用“本地打包 + SSH/ SCP 上传 jar + systemd 重启” | 当前线上就按这个方式运行 | 自创部署脚本: 仓库里没有现成正式脚本，容易和现网偏离 |
-| 主站 CORS 默认放行 `https://yoyuzh.xyz` 与 `https://www.yoyuzh.xyz` | 前端生产环境托管在 OSS 域名下，必须允许主站跨域调用后端 API | 仅保留 localhost: 会导致生产站调用 API 时被浏览器拦截 |
-| 线上网盘文件桶切到成都 `yoyuzh-files2` | 现有普通文件下载主链路是浏览器直连 OSS，主要性能瓶颈在对象存储地域与公网链路 | 继续使用东京桶: 中国内地用户下载链路更长，难以直接改善速度 |
+| 主站 CORS 默认放行 `https://yoyuzh.xyz` 与 `https://www.yoyuzh.xyz` | 前端生产环境托管在独立静态站域名下，必须允许主站跨域调用后端 API | 仅保留 localhost: 会导致生产站调用 API 时被浏览器拦截 |
+| 文件存储切到多吉云对象存储并使用临时密钥 | 后端、前端发布和迁移脚本都可统一走 S3 兼容协议，同时减少长期静态密钥暴露 | 继续使用阿里云 OSS 固定密钥: 已不符合当前多吉云接入方式 |
+| 密码策略放宽到“至少 8 位且包含大写字母” | 降低注册和管理员改密阻力，同时保留最基础的复杂度门槛 | 继续要求大小写 + 数字 + 特殊字符: 对当前站点用户而言过重，且已导致后台改密体验不一致 |
 
 ## 待解决问题
 - [ ] VS Code 若仍报 `final 字段未在构造器初始化` 之类错误，优先判断为 Lombok / Java Language Server 误报，而不是源码真实错误
 - [ ] `front/README.md` 仍是旧模板风格说明，当前真实入口说明以根目录 `README.md` 为准，后续可继续整理
 - [ ] 前端构建仍有 chunk size warning，目前不阻塞发布，但后续可以考虑做更细的拆包
-- [ ] `api.yoyuzh.xyz` 仍存在“同机房 IP 直连可用，但带域名 TLS/SNI 有时失败”的链路问题；这不是后端业务代码错误
 - [ ] 线上前端 bundle 当前仍内嵌 `https://api.yoyuzh.xyz/api`，API 子域名异常时会直接表现为“网络异常/登录失败”
 
 ## 关键约束
@@ -50,11 +53,9 @@
 - 已知线上后端运行包路径是 `/opt/yoyuzh/yoyuzh-portal-backend.jar`
 - 已知新服务器公网 IP 是 `1.14.49.201`
 - 已知线上后端额外配置文件是 `/opt/yoyuzh/application-prod.yml`，环境变量文件是 `/opt/yoyuzh/app.env`
-- 2026-03-24 已将线上 OSS 文件存储切换到 `https://oss-cn-chengdu.aliyuncs.com` + `yoyuzh-files2`
-- 2026-03-24 已为线上配置文件创建备份：`/opt/yoyuzh/app.env.bak-before-chengdu`、`/opt/yoyuzh/application-prod.yml.bak-before-chengdu`
-- 2026-03-23 排障确认：`api.yoyuzh.xyz` 在部分网络下存在 TLS/SNI 握手异常，但后端服务与 nginx 正常，且 IP 直连加 `Host: api.yoyuzh.xyz` 时可正常返回
-- 2026-03-23 实时日志确认：Mac 端 `202.202.9.243` 登录链路 `OPTIONS /api/auth/login -> POST /api/auth/login -> 后续 /api/*` 全部返回 200；手机失败时并不总能在服务端日志中看到对应登录请求
-- 2026-03-24 线上 smoke 验证：`https://api.yoyuzh.xyz/swagger-ui.html` 返回 302，`my-site-api.service` 重启后为 active；抽样对象 `users/6/第四组  脑机接口与脑启发计算.pptx` 在新桶 HEAD 返回 200
+- 2026-04-01 已将线上文件桶与前端桶切到多吉云对象存储，后端配置走多吉云临时密钥 API
+- 2026-04-02 部署验证：`http://yoyuzh.xyz/` 返回 200，`https://yoyuzh.xyz/` 返回 200，`https://api.yoyuzh.xyz/swagger-ui.html` 最终返回 200，前端资源 `https://yoyuzh.xyz/assets/AdminApp-C9j3tmPO.js` 返回 200
+- 2026-04-02 后端服务重启后为 active，启动时间为 `2026-04-02 12:14:25 CST`
 - 服务器登录信息保存在本地 `账号密码.txt`，不要把内容写进文档或对外输出
 
 ## 参考资料
@@ -69,6 +70,8 @@
   - JWT 会话校验: `backend/src/main/java/com/yoyuzh/auth/JwtTokenProvider.java`
   - JWT 过滤器: `backend/src/main/java/com/yoyuzh/config/JwtAuthenticationFilter.java`
   - CORS 配置: `backend/src/main/java/com/yoyuzh/config/CorsProperties.java`、`backend/src/main/resources/application.yml`
+  - 密码策略: `backend/src/main/java/com/yoyuzh/auth/PasswordPolicy.java`
   - 网盘树状目录: `front/src/pages/Files.tsx`、`front/src/pages/files-tree.ts`
   - 快传接收页: `front/src/pages/TransferReceive.tsx`
+  - 管理员改密接口: `backend/src/main/java/com/yoyuzh/admin/AdminService.java`
   - 前端生产 API 基址: `front/.env.production`

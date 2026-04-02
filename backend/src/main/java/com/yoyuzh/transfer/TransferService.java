@@ -1,5 +1,6 @@
 package com.yoyuzh.transfer;
 
+import com.yoyuzh.admin.AdminMetricsService;
 import com.yoyuzh.auth.User;
 import com.yoyuzh.common.BusinessException;
 import com.yoyuzh.common.ErrorCode;
@@ -36,23 +37,27 @@ public class TransferService {
     private final OfflineTransferSessionRepository offlineTransferSessionRepository;
     private final FileContentStorage fileContentStorage;
     private final FileService fileService;
+    private final AdminMetricsService adminMetricsService;
     private final long maxFileSize;
 
     public TransferService(TransferSessionStore sessionStore,
                            OfflineTransferSessionRepository offlineTransferSessionRepository,
                            FileContentStorage fileContentStorage,
                            FileService fileService,
+                           AdminMetricsService adminMetricsService,
                            FileStorageProperties properties) {
         this.sessionStore = sessionStore;
         this.offlineTransferSessionRepository = offlineTransferSessionRepository;
         this.fileContentStorage = fileContentStorage;
         this.fileService = fileService;
+        this.adminMetricsService = adminMetricsService;
         this.maxFileSize = properties.getMaxFileSize();
     }
 
     @Transactional
     public TransferSessionResponse createSession(User sender, CreateTransferSessionRequest request) {
         pruneExpiredSessions();
+        adminMetricsService.recordTransferUsage(request.files().stream().mapToLong(TransferFileItem::size).sum());
         if (request.mode() == TransferMode.OFFLINE) {
             return createOfflineSession(sender, request);
         }
@@ -104,6 +109,11 @@ public class TransferService {
         if (multipartFile.getSize() != targetFile.getSize()) {
             throw new BusinessException(ErrorCode.UNKNOWN, "离线文件大小与会话清单不一致");
         }
+        long currentOfflineStorageBytes = offlineTransferSessionRepository.sumUploadedFileSizeByExpiresAtAfter(Instant.now());
+        long additionalBytes = targetFile.isUploaded() ? 0L : targetFile.getSize();
+        if (currentOfflineStorageBytes + additionalBytes > adminMetricsService.getOfflineTransferStorageLimitBytes()) {
+            throw new BusinessException(ErrorCode.UNKNOWN, "离线快传存储空间不足，请联系管理员调整上限");
+        }
 
         try {
             fileContentStorage.storeTransferFile(
@@ -150,6 +160,7 @@ public class TransferService {
         OfflineTransferSession session = getRequiredOfflineReadySession(sessionId);
         OfflineTransferFile file = getRequiredOfflineFile(session, fileId);
         ensureOfflineFileUploaded(file);
+        adminMetricsService.recordDownloadTraffic(file.getSize());
 
         if (fileContentStorage.supportsDirectDownload()) {
             String downloadUrl = fileContentStorage.createTransferDownloadUrl(sessionId, file.getStorageName(), file.getFilename());

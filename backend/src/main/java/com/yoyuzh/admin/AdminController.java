@@ -29,6 +29,14 @@ public class AdminController {
         return ApiResponse.success(adminService.getSummary());
     }
 
+    @PatchMapping("/settings/offline-transfer-storage-limit")
+    public ApiResponse<AdminOfflineTransferStorageLimitResponse> updateOfflineTransferStorageLimit(
+            @Valid @RequestBody AdminOfflineTransferStorageLimitUpdateRequest request) {
+        return ApiResponse.success(adminService.updateOfflineTransferStorageLimit(
+                request.offlineTransferStorageLimitBytes()
+        ));
+    }
+
     @GetMapping("/users")
     public ApiResponse<PageResponse<AdminUserResponse>> users(@RequestParam(defaultValue = "0") int page,
                                                               @RequestParam(defaultValue = "10") int size,

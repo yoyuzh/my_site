@@ -8,6 +8,7 @@ import Files from './pages/Files';
 import Transfer from './pages/Transfer';
 import FileShare from './pages/FileShare';
 import Games from './pages/Games';
+import GamePlayer from './pages/GamePlayer';
 import { FILE_SHARE_ROUTE_PREFIX } from './lib/file-share';
 import {
   getTransferRouterMode,
@@ -58,6 +59,7 @@ function AppRoutes() {
         <Route path="overview" element={<Overview />} />
         <Route path="files" element={<Files />} />
         <Route path="games" element={<Games />} />
+        <Route path="games/:gameId" element={<GamePlayer />} />
       </Route>
       <Route
         path="/admin/*"

@@ -53,7 +53,7 @@ class AuthControllerValidationTest {
                                 """))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.code").value(1000))
-                .andExpect(jsonPath("$.msg").value("密码至少10位，且必须包含大写字母、小写字母、数字和特殊字符"));
+                .andExpect(jsonPath("$.msg").value("密码至少8位，且必须包含大写字母"));
     }
 
     @Test

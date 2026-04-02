@@ -11,6 +11,7 @@ import com.yoyuzh.common.PageResponse;
 import com.yoyuzh.files.FileService;
 import com.yoyuzh.files.StoredFile;
 import com.yoyuzh.files.StoredFileRepository;
+import com.yoyuzh.transfer.OfflineTransferSessionRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -48,6 +49,10 @@ class AdminServiceTest {
     private RefreshTokenService refreshTokenService;
     @Mock
     private RegistrationInviteService registrationInviteService;
+    @Mock
+    private OfflineTransferSessionRepository offlineTransferSessionRepository;
+    @Mock
+    private AdminMetricsService adminMetricsService;
 
     private AdminService adminService;
 
@@ -55,7 +60,8 @@ class AdminServiceTest {
     void setUp() {
         adminService = new AdminService(
                 userRepository, storedFileRepository, fileService,
-                passwordEncoder, refreshTokenService, registrationInviteService);
+                passwordEncoder, refreshTokenService, registrationInviteService,
+                offlineTransferSessionRepository, adminMetricsService);
     }
 
     // --- getSummary ---
@@ -64,12 +70,34 @@ class AdminServiceTest {
     void shouldReturnSummaryWithCountsAndInviteCode() {
         when(userRepository.count()).thenReturn(5L);
         when(storedFileRepository.count()).thenReturn(42L);
+        when(storedFileRepository.sumAllFileSize()).thenReturn(8192L);
+        when(adminMetricsService.getSnapshot()).thenReturn(new AdminMetricsSnapshot(
+                0L,
+                0L,
+                0L,
+                20L * 1024 * 1024 * 1024,
+                List.of(
+                        new AdminRequestTimelinePoint(0, "00:00", 0L),
+                        new AdminRequestTimelinePoint(1, "01:00", 3L)
+                )
+        ));
+        when(offlineTransferSessionRepository.sumUploadedFileSizeByExpiresAtAfter(any())).thenReturn(0L);
         when(registrationInviteService.getCurrentInviteCode()).thenReturn("INV-001");
 
         AdminSummaryResponse summary = adminService.getSummary();
 
         assertThat(summary.totalUsers()).isEqualTo(5L);
         assertThat(summary.totalFiles()).isEqualTo(42L);
+        assertThat(summary.totalStorageBytes()).isEqualTo(8192L);
+        assertThat(summary.downloadTrafficBytes()).isZero();
+        assertThat(summary.requestCount()).isZero();
+        assertThat(summary.transferUsageBytes()).isZero();
+        assertThat(summary.offlineTransferStorageBytes()).isZero();
+        assertThat(summary.offlineTransferStorageLimitBytes()).isGreaterThan(0L);
+        assertThat(summary.requestTimeline()).containsExactly(
+                new AdminRequestTimelinePoint(0, "00:00", 0L),
+                new AdminRequestTimelinePoint(1, "01:00", 3L)
+        );
         assertThat(summary.inviteCode()).isEqualTo("INV-001");
     }
 
@@ -80,11 +108,13 @@ class AdminServiceTest {
         User user = createUser(1L, "alice", "alice@example.com");
         when(userRepository.searchByUsernameOrEmail(anyString(), any()))
                 .thenReturn(new PageImpl<>(List.of(user)));
+        when(storedFileRepository.sumFileSizeByUserId(1L)).thenReturn(2048L);
 
         PageResponse<AdminUserResponse> response = adminService.listUsers(0, 10, "alice");
 
         assertThat(response.items()).hasSize(1);
         assertThat(response.items().get(0).username()).isEqualTo("alice");
+        assertThat(response.items().get(0).usedStorageBytes()).isEqualTo(2048L);
     }
 
     @Test
@@ -205,7 +235,7 @@ class AdminServiceTest {
     void shouldRejectWeakPasswordWhenUpdating() {
         assertThatThrownBy(() -> adminService.updateUserPassword(1L, "weakpass"))
                 .isInstanceOf(BusinessException.class)
-                .hasMessageContaining("密码至少10位");
+                .hasMessageContaining("密码至少8位");
         verify(userRepository, never()).findById(any());
     }
 

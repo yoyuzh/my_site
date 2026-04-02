@@ -32,8 +32,17 @@ app:
   registration:
     invite-code: ${APP_AUTH_REGISTRATION_INVITE_CODE:}
   storage:
-    root-dir: ./storage
-    max-file-size: 524288000
+    provider: ${YOYUZH_STORAGE_PROVIDER:local}
+    max-file-size: ${YOYUZH_STORAGE_MAX_FILE_SIZE:524288000}
+    local:
+      root-dir: ${YOYUZH_STORAGE_LOCAL_ROOT_DIR:./storage}
+    s3:
+      api-base-url: ${YOYUZH_DOGECLOUD_API_BASE_URL:https://api.dogecloud.com}
+      api-access-key: ${YOYUZH_DOGECLOUD_API_ACCESS_KEY:}
+      api-secret-key: ${YOYUZH_DOGECLOUD_API_SECRET_KEY:}
+      scope: ${YOYUZH_DOGECLOUD_STORAGE_SCOPE:}
+      ttl-seconds: ${YOYUZH_DOGECLOUD_STORAGE_TTL_SECONDS:3600}
+      region: ${YOYUZH_DOGECLOUD_S3_REGION:automatic}
   cors:
     allowed-origins:
       - http://localhost:3000

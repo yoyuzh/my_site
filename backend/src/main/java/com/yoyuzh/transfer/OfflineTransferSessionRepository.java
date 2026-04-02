@@ -35,4 +35,12 @@ public interface OfflineTransferSessionRepository extends JpaRepository<OfflineT
             where session.expiresAt < :now
             """)
     List<OfflineTransferSession> findAllExpiredWithFiles(@Param("now") Instant now);
+
+    @Query("""
+            select coalesce(sum(file.size), 0)
+            from OfflineTransferFile file
+            join file.session session
+            where file.uploaded = true and session.expiresAt >= :now
+            """)
+    long sumUploadedFileSizeByExpiresAtAfter(@Param("now") Instant now);
 }

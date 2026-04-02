@@ -12,6 +12,7 @@ import com.yoyuzh.common.PageResponse;
 import com.yoyuzh.files.FileService;
 import com.yoyuzh.files.StoredFile;
 import com.yoyuzh.files.StoredFileRepository;
+import com.yoyuzh.transfer.OfflineTransferSessionRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
@@ -21,6 +22,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.security.SecureRandom;
+import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
 
@@ -34,12 +36,22 @@ public class AdminService {
     private final PasswordEncoder passwordEncoder;
     private final RefreshTokenService refreshTokenService;
     private final RegistrationInviteService registrationInviteService;
+    private final OfflineTransferSessionRepository offlineTransferSessionRepository;
+    private final AdminMetricsService adminMetricsService;
     private final SecureRandom secureRandom = new SecureRandom();
 
     public AdminSummaryResponse getSummary() {
+        AdminMetricsSnapshot metrics = adminMetricsService.getSnapshot();
         return new AdminSummaryResponse(
                 userRepository.count(),
                 storedFileRepository.count(),
+                storedFileRepository.sumAllFileSize(),
+                metrics.downloadTrafficBytes(),
+                metrics.requestCount(),
+                metrics.transferUsageBytes(),
+                offlineTransferSessionRepository.sumUploadedFileSizeByExpiresAtAfter(Instant.now()),
+                metrics.offlineTransferStorageLimitBytes(),
+                metrics.requestTimeline(),
                 registrationInviteService.getCurrentInviteCode()
         );
     }
@@ -94,7 +106,7 @@ public class AdminService {
     @Transactional
     public AdminUserResponse updateUserPassword(Long userId, String newPassword) {
         if (!PasswordPolicy.isStrong(newPassword)) {
-            throw new BusinessException(ErrorCode.UNKNOWN, "密码至少10位，且必须包含大写字母、小写字母、数字和特殊字符");
+            throw new BusinessException(ErrorCode.UNKNOWN, PasswordPolicy.VALIDATION_MESSAGE);
         }
         User user = getRequiredUser(userId);
         user.setPasswordHash(passwordEncoder.encode(newPassword));
@@ -124,7 +136,13 @@ public class AdminService {
         return new AdminPasswordResetResponse(temporaryPassword);
     }
 
+    @Transactional
+    public AdminOfflineTransferStorageLimitResponse updateOfflineTransferStorageLimit(long offlineTransferStorageLimitBytes) {
+        return adminMetricsService.updateOfflineTransferStorageLimit(offlineTransferStorageLimitBytes);
+    }
+
     private AdminUserResponse toUserResponse(User user) {
+        long usedStorageBytes = storedFileRepository.sumFileSizeByUserId(user.getId());
         return new AdminUserResponse(
                 user.getId(),
                 user.getUsername(),
@@ -133,6 +151,7 @@ public class AdminService {
                 user.getCreatedAt(),
                 user.getRole(),
                 user.isBanned(),
+                usedStorageBytes,
                 user.getStorageQuotaBytes(),
                 user.getMaxUploadSizeBytes()
         );

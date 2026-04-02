@@ -9,6 +9,13 @@ test('fetchAdminAccessStatus returns true when the admin summary request succeed
   const request = async () => ({
     totalUsers: 1,
     totalFiles: 2,
+    totalStorageBytes: 0,
+    downloadTrafficBytes: 0,
+    requestCount: 0,
+    transferUsageBytes: 0,
+    offlineTransferStorageBytes: 0,
+    offlineTransferStorageLimitBytes: 0,
+    requestTimeline: [],
     inviteCode: 'invite-code',
   });
 

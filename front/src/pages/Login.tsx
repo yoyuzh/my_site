@@ -331,12 +331,12 @@ export default function Login() {
                               value={registerPassword}
                               onChange={(event) => setRegisterPassword(event.target.value)}
                               required
-                              minLength={10}
+                              minLength={8}
                               maxLength={64}
                             />
                           </div>
                           <p className="text-xs text-slate-500 ml-1">
-                            至少 10 位，并包含大写字母、小写字母、数字和特殊字符。
+                            至少 8 位，并包含大写字母。
                           </p>
                         </div>
                         <div className="space-y-2">
@@ -350,7 +350,7 @@ export default function Login() {
                               value={registerConfirmPassword}
                               onChange={(event) => setRegisterConfirmPassword(event.target.value)}
                               required
-                              minLength={10}
+                              minLength={8}
                               maxLength={64}
                             />
                           </div>

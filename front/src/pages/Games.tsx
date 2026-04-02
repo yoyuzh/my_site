@@ -1,12 +1,21 @@
 import React, { useRef, useState } from 'react';
 import { motion } from 'motion/react';
+import { useNavigate } from 'react-router-dom';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/src/components/ui/card';
 import { Button } from '@/src/components/ui/button';
-import { Gamepad2, Cat, Car, Play } from 'lucide-react';
+import { Gamepad2, Cat, Car, ExternalLink, Play } from 'lucide-react';
 import { cn } from '@/src/lib/utils';
 import { calculateCardTilt } from './games-card-tilt';
+import { MORE_GAMES_LABEL, MORE_GAMES_URL, resolveGamePlayerPath, type GameId } from './games-links';
 
-const GAMES = [
+const GAMES: Array<{
+  id: GameId;
+  name: string;
+  description: string;
+  icon: typeof Cat;
+  color: string;
+  category: 'featured';
+}> = [
   {
     id: 'cat',
     name: 'CAT',
@@ -34,6 +43,7 @@ function applyCardTilt(card: HTMLDivElement, rotateX: number, rotateY: number, g
 }
 
 function GameCard({ game, index }: { game: (typeof GAMES)[number]; index: number }) {
+  const navigate = useNavigate();
   const cardRef = useRef<HTMLDivElement | null>(null);
 
   const handleMouseMove = (event: React.MouseEvent<HTMLDivElement>) => {
@@ -110,7 +120,11 @@ function GameCard({ game, index }: { game: (typeof GAMES)[number]; index: number
           </CardDescription>
         </CardHeader>
         <CardContent className="relative z-10 mt-auto pt-4">
-          <Button className="w-full gap-2 transition-all group-hover:bg-white group-hover:text-black">
+          <Button
+            type="button"
+            onClick={() => navigate(resolveGamePlayerPath(game.id))}
+            className="w-full gap-2 transition-all group-hover:bg-white group-hover:text-black"
+          >
             <Play className="h-4 w-4" fill="currentColor" /> Launch
           </Button>
         </CardContent>
@@ -140,6 +154,15 @@ export default function Games() {
           <p className="text-sm text-slate-400 leading-relaxed">
             保留轻量试玩与静态资源检查入口，维持与整站一致的毛玻璃语言。在这里您可以快速启动站内集成的小游戏。
           </p>
+          <a
+            href={MORE_GAMES_URL}
+            target="_blank"
+            rel="noreferrer"
+            className="inline-flex items-center gap-2 text-sm text-slate-300 transition-colors hover:text-white"
+          >
+            <ExternalLink className="h-4 w-4" />
+            {MORE_GAMES_LABEL}
+          </a>
         </div>
       </motion.div>
 

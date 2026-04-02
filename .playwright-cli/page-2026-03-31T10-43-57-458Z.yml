@@ -1,0 +1,30 @@
+- generic [ref=e6]:
+  - generic [ref=e7]:
+    - generic [ref=e10]: Access Portal
+    - generic [ref=e11]:
+      - heading "YOYUZH.XYZ" [level=2] [ref=e12]
+      - heading "个人网站 统一入口" [level=1] [ref=e13]:
+        - text: 个人网站
+        - text: 统一入口
+    - paragraph [ref=e14]: 欢迎来到 YOYUZH 的个人门户。在这里，你可以集中管理个人网盘文件、使用跨设备快传能力，以及体验轻量级小游戏。
+  - generic [ref=e17]:
+    - generic [ref=e18]:
+      - heading "登录" [level=3] [ref=e19]:
+        - img [ref=e20]
+        - text: 登录
+      - paragraph [ref=e23]: 请输入您的账号和密码以继续
+    - generic [ref=e25]:
+      - generic [ref=e26]:
+        - generic [ref=e27]:
+          - text: 用户名
+          - generic [ref=e28]:
+            - img [ref=e29]
+            - textbox "账号 / 用户名 / 学号" [ref=e32]
+        - generic [ref=e33]:
+          - text: 密码
+          - generic [ref=e34]:
+            - img [ref=e35]
+            - textbox "••••••••" [ref=e38]
+      - generic [ref=e39]:
+        - button "进入系统" [ref=e40]
+        - button "还没有账号？立即注册" [ref=e42]

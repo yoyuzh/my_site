@@ -71,5 +71,12 @@ public interface StoredFileRepository extends JpaRepository<StoredFile, Long> {
             """)
     long sumFileSizeByUserId(@Param("userId") Long userId);
 
+    @Query("""
+            select coalesce(sum(f.size), 0)
+            from StoredFile f
+            where f.directory = false
+            """)
+    long sumAllFileSize();
+
     List<StoredFile> findTop12ByUserIdAndDirectoryFalseOrderByCreatedAtDesc(Long userId);
 }

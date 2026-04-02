@@ -12,6 +12,7 @@ public record AdminUserResponse(
         LocalDateTime createdAt,
         UserRole role,
         boolean banned,
+        long usedStorageBytes,
         long storageQuotaBytes,
         long maxUploadSizeBytes
 ) {

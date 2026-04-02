@@ -106,6 +106,10 @@ Important:
 - Do not propose any solution beyond the user's stated requirement if it could shift business logic.
 - Every proposed modification or refactor plan must be logically correct and validated across the full request path before it is presented.
 
+### Project memory upkeep
+
+- Every time a task causes a major project change, update `memory.md` and `docs/architecture.md` in the same turn before handing off. Major changes include architecture shifts, storage/provider migrations, auth or security model changes, deployment topology changes, and meaningful new product capabilities.
+
 ## Repo-specific guardrails
 
 - Do not run `npm` commands at the repository root. This repo has a root `package-lock.json` but no root `package.json`.

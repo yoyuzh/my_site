@@ -1,6 +1,7 @@
 package com.yoyuzh.config;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.yoyuzh.admin.ApiRequestMetricsFilter;
 import org.junit.jupiter.api.Test;
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
@@ -23,6 +24,7 @@ class SecurityConfigTest {
         corsProperties.setAllowedOrigins(java.util.List.of("https://yoyuzh.xyz"));
 
         SecurityConfig securityConfig = new SecurityConfig(
+                null,
                 null,
                 null,
                 new ObjectMapper(),

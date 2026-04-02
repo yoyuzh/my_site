@@ -1,6 +1,7 @@
 package com.yoyuzh.config;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.yoyuzh.admin.ApiRequestMetricsFilter;
 import com.yoyuzh.auth.CustomUserDetailsService;
 import com.yoyuzh.common.ApiResponse;
 import com.yoyuzh.common.ErrorCode;
@@ -35,6 +36,7 @@ import java.util.List;
 public class SecurityConfig {
 
     private final JwtAuthenticationFilter jwtAuthenticationFilter;
+    private final ApiRequestMetricsFilter apiRequestMetricsFilter;
     private final CustomUserDetailsService userDetailsService;
     private final ObjectMapper objectMapper;
     private final CorsProperties corsProperties;
@@ -72,6 +74,7 @@ public class SecurityConfig {
                             objectMapper.writeValue(response.getWriter(),
                                     ApiResponse.error(ErrorCode.PERMISSION_DENIED, "权限不足"));
                         }))
+                .addFilterBefore(apiRequestMetricsFilter, UsernamePasswordAuthenticationFilter.class)
                 .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
         return http.build();
     }

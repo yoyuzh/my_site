@@ -1,5 +1,6 @@
 package com.yoyuzh.files;
 
+import com.yoyuzh.admin.AdminMetricsService;
 import com.yoyuzh.auth.User;
 import com.yoyuzh.common.BusinessException;
 import com.yoyuzh.common.ErrorCode;
@@ -38,15 +39,18 @@ public class FileService {
     private final StoredFileRepository storedFileRepository;
     private final FileContentStorage fileContentStorage;
     private final FileShareLinkRepository fileShareLinkRepository;
+    private final AdminMetricsService adminMetricsService;
     private final long maxFileSize;
 
     public FileService(StoredFileRepository storedFileRepository,
                        FileContentStorage fileContentStorage,
                        FileShareLinkRepository fileShareLinkRepository,
+                       AdminMetricsService adminMetricsService,
                        FileStorageProperties properties) {
         this.storedFileRepository = storedFileRepository;
         this.fileContentStorage = fileContentStorage;
         this.fileShareLinkRepository = fileShareLinkRepository;
+        this.adminMetricsService = adminMetricsService;
         this.maxFileSize = properties.getMaxFileSize();
     }
 
@@ -346,6 +350,7 @@ public class FileService {
         if (storedFile.isDirectory()) {
             throw new BusinessException(ErrorCode.UNKNOWN, "目录不支持下载");
         }
+        adminMetricsService.recordDownloadTraffic(storedFile.getSize());
 
         if (fileContentStorage.supportsDirectDownload()) {
             return new DownloadUrlResponse(fileContentStorage.createDownloadUrl(

@@ -1,33 +1,26 @@
 package com.yoyuzh.auth;
 
 public final class PasswordPolicy {
+    public static final int MIN_LENGTH = 8;
+    public static final String VALIDATION_MESSAGE = "密码至少8位，且必须包含大写字母";
 
     private PasswordPolicy() {
     }
 
     public static boolean isStrong(String password) {
-        if (password == null || password.length() < 10) {
+        if (password == null || password.length() < MIN_LENGTH) {
             return false;
         }
 
-        boolean hasLower = false;
         boolean hasUpper = false;
-        boolean hasDigit = false;
-        boolean hasSpecial = false;
 
         for (int i = 0; i < password.length(); i += 1) {
             char c = password.charAt(i);
-            if (Character.isLowerCase(c)) {
-                hasLower = true;
-            } else if (Character.isUpperCase(c)) {
+            if (Character.isUpperCase(c)) {
                 hasUpper = true;
-            } else if (Character.isDigit(c)) {
-                hasDigit = true;
-            } else {
-                hasSpecial = true;
             }
         }
 
-        return hasLower && hasUpper && hasDigit && hasSpecial;
+        return hasUpper;
     }
 }

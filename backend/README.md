@@ -89,22 +89,26 @@ DROP TABLE IF EXISTS portal_grade;
 - `POST /api/transfer/sessions/{sessionId}/signals`
 - `GET /api/transfer/sessions/{sessionId}/signals`
 
-## OSS 直传说明
+## S3 兼容直传说明
 
 生产环境如果启用：
 
 ```env
-YOYUZH_STORAGE_PROVIDER=oss
-YOYUZH_OSS_ENDPOINT=https://oss-ap-northeast-1.aliyuncs.com
-YOYUZH_OSS_BUCKET=your-bucket
-YOYUZH_OSS_ACCESS_KEY_ID=...
-YOYUZH_OSS_ACCESS_KEY_SECRET=...
+YOYUZH_STORAGE_PROVIDER=s3
+YOYUZH_DOGECLOUD_API_BASE_URL=https://api.dogecloud.com
+YOYUZH_DOGECLOUD_API_ACCESS_KEY=...
+YOYUZH_DOGECLOUD_API_SECRET_KEY=...
+YOYUZH_DOGECLOUD_STORAGE_SCOPE=yoyuzh-files
+YOYUZH_DOGECLOUD_STORAGE_TTL_SECONDS=3600
+YOYUZH_DOGECLOUD_S3_REGION=automatic
 ```
 
-前端会先调用后端拿签名上传地址，再由浏览器直接把文件内容传到 OSS。为保证浏览器可以直传，请在 OSS Bucket 上放行站点域名对应的 CORS 规则，至少允许：
+后端会先用多吉云服务端 API 换取 `OSS_FULL` 临时密钥，再生成浏览器直传和下载所需的 S3 预签名地址。`YOYUZH_DOGECLOUD_STORAGE_SCOPE` 需要填写多吉云逻辑桶名；按你当前环境，文件桶应填 `yoyuzh-files`，而不是底层 `s3Bucket`。
+
+为保证浏览器可以直传，请在对象存储 Bucket 上放行站点域名对应的 CORS 规则，至少允许：
 
 - Origin: `https://yoyuzh.xyz`
 - Methods: `PUT`, `GET`, `HEAD`
-- Headers: `Content-Type`, `x-oss-*`
+- Headers: `Content-Type`, `x-amz-*`
 
-如果生产环境里曾经存在“数据库元数据已经在 OSS 模式下运行，但本地磁盘里没有对应文件”的历史数据，需要额外做一次对象迁移或元数据修复；否则旧记录在重命名/删除时仍可能失败。
+后端运行时使用的是 AWS S3 Java SDK V2，适配多吉云文档中的 S3 兼容接入方式。如果生产环境里曾经存在“数据库元数据已经在对象存储模式下运行，但新 Bucket 里没有对应文件”的历史数据，需要额外做一次对象迁移；否则旧记录在重命名/删除时仍可能失败。

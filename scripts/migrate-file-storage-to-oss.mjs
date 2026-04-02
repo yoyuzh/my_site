@@ -3,12 +3,13 @@ import {constants as fsConstants} from 'node:fs';
 import {spawn} from 'node:child_process';
 import https from 'node:https';
 import path from 'node:path';
-import crypto from 'node:crypto';
 
 import {
+  createAwsV4Headers,
   normalizeEndpoint,
   parseSimpleEnv,
   encodeObjectKey,
+  requestDogeCloudTemporaryS3Session,
 } from './oss-deploy-lib.mjs';
 
 const DEFAULTS = {
@@ -16,7 +17,8 @@ const DEFAULTS = {
   storageRoot: '/opt/yoyuzh/storage',
   database: 'yoyuzh_portal',
   bucket: 'yoyuzh-files',
-  endpoint: 'https://oss-ap-northeast-1.aliyuncs.com',
+  endpoint: 'https://cos.ap-chengdu.myqcloud.com',
+  region: 'automatic',
 };
 
 function parseArgs(argv) {
@@ -114,37 +116,6 @@ function runCommand(command, args) {
   });
 }
 
-function createOssAuthorizationHeader({
-  method,
-  bucket,
-  objectKey,
-  contentType,
-  date,
-  accessKeyId,
-  accessKeySecret,
-  headers = {},
-}) {
-  const canonicalizedHeaders = Object.entries(headers)
-    .map(([key, value]) => [key.toLowerCase().trim(), String(value).trim()])
-    .filter(([key]) => key.startsWith('x-oss-'))
-    .sort(([left], [right]) => left.localeCompare(right))
-    .map(([key, value]) => `${key}:${value}\n`)
-    .join('');
-  const canonicalizedResource = `/${bucket}/${objectKey}`;
-  const stringToSign = [
-    method.toUpperCase(),
-    '',
-    contentType,
-    date,
-    `${canonicalizedHeaders}${canonicalizedResource}`,
-  ].join('\n');
-  const signature = crypto
-    .createHmac('sha1', accessKeySecret)
-    .update(stringToSign)
-    .digest('base64');
-  return `OSS ${accessKeyId}:${signature}`;
-}
-
 async function readAppEnv(appEnvPath) {
   const raw = await fs.readFile(appEnvPath, 'utf8');
   return parseSimpleEnv(raw);
@@ -178,20 +149,34 @@ async function queryFiles(database) {
     });
 }
 
-function ossRequest({method, endpoint, bucket, objectKey, accessKeyId, accessKeySecret, headers = {}, query = '', body}) {
+function s3Request({
+  method,
+  endpoint,
+  region,
+  bucket,
+  objectKey,
+  accessKeyId,
+  secretAccessKey,
+  sessionToken,
+  headers = {},
+  query = '',
+  body,
+}) {
   return new Promise((resolve, reject) => {
     const normalizedEndpoint = normalizeEndpoint(endpoint);
-    const date = new Date().toUTCString();
-    const contentType = headers['Content-Type'] || headers['content-type'] || '';
-    const auth = createOssAuthorizationHeader({
+    const amzDate = new Date().toISOString().replace(/[:-]|\.\d{3}/g, '');
+    const signatureHeaders = createAwsV4Headers({
       method,
+      endpoint,
+      region,
       bucket,
       objectKey,
-      contentType,
-      date,
-      accessKeyId,
-      accessKeySecret,
+      query,
       headers,
+      amzDate,
+      accessKeyId,
+      secretAccessKey,
+      sessionToken,
     });
 
     const request = https.request({
@@ -199,9 +184,7 @@ function ossRequest({method, endpoint, bucket, objectKey, accessKeyId, accessKey
       path: `/${encodeObjectKey(objectKey)}${query ? `?${query}` : ''}`,
       method,
       headers: {
-        Date: date,
-        Authorization: auth,
-        ...headers,
+        ...signatureHeaders,
       },
     }, (response) => {
       let data = '';
@@ -229,7 +212,7 @@ function ossRequest({method, endpoint, bucket, objectKey, accessKeyId, accessKey
 }
 
 async function objectExists(context, objectKey) {
-  const response = await ossRequest({
+  const response = await s3Request({
     ...context,
     method: 'HEAD',
     objectKey,
@@ -243,7 +226,7 @@ async function uploadLocalFile(context, objectKey, absolutePath, contentType = '
   const stat = await fileHandle.stat();
 
   try {
-    const response = await ossRequest({
+    const response = await s3Request({
       ...context,
       method: 'PUT',
       objectKey,
@@ -263,12 +246,12 @@ async function uploadLocalFile(context, objectKey, absolutePath, contentType = '
 }
 
 async function copyObject(context, sourceKey, targetKey) {
-  const response = await ossRequest({
+  const response = await s3Request({
     ...context,
     method: 'PUT',
     objectKey: targetKey,
     headers: {
-      'x-oss-copy-source': `/${context.bucket}/${encodeObjectKey(sourceKey)}`,
+      'x-amz-copy-source': `/${context.bucket}/${encodeObjectKey(sourceKey)}`,
     },
   });
 
@@ -278,7 +261,7 @@ async function copyObject(context, sourceKey, targetKey) {
 }
 
 async function deleteObject(context, objectKey) {
-  const response = await ossRequest({
+  const response = await s3Request({
     ...context,
     method: 'DELETE',
     objectKey,
@@ -318,7 +301,7 @@ async function listObjects(context, prefix) {
       query.set('continuation-token', continuationToken);
     }
 
-    const response = await ossRequest({
+    const response = await s3Request({
       ...context,
       method: 'GET',
       objectKey: '',
@@ -370,21 +353,38 @@ async function buildArchivedObjectMap(context, files) {
 async function main() {
   const options = parseArgs(process.argv.slice(2));
   const appEnv = await readAppEnv(options.appEnvPath);
-  const endpoint = appEnv.YOYUZH_OSS_ENDPOINT || DEFAULTS.endpoint;
-  const bucket = options.bucket;
-  const accessKeyId = appEnv.YOYUZH_OSS_ACCESS_KEY_ID;
-  const accessKeySecret = appEnv.YOYUZH_OSS_ACCESS_KEY_SECRET;
+  const apiAccessKey = appEnv.YOYUZH_DOGECLOUD_API_ACCESS_KEY;
+  const apiSecretKey = appEnv.YOYUZH_DOGECLOUD_API_SECRET_KEY;
+  const scope = appEnv.YOYUZH_DOGECLOUD_STORAGE_SCOPE || options.bucket;
+  const apiBaseUrl = appEnv.YOYUZH_DOGECLOUD_API_BASE_URL || 'https://api.dogecloud.com';
+  const region = appEnv.YOYUZH_DOGECLOUD_S3_REGION || DEFAULTS.region;
 
-  if (!accessKeyId || !accessKeySecret) {
-    throw new Error('Missing OSS credentials in app env');
+  if (!apiAccessKey || !apiSecretKey || !scope) {
+    throw new Error('Missing DogeCloud storage configuration in app env');
   }
+
+  const {
+    accessKeyId,
+    secretAccessKey,
+    sessionToken,
+    endpoint,
+    bucket,
+  } = await requestDogeCloudTemporaryS3Session({
+    apiBaseUrl,
+    accessKey: apiAccessKey,
+    secretKey: apiSecretKey,
+    scope,
+    ttlSeconds: Number(appEnv.YOYUZH_DOGECLOUD_STORAGE_TTL_SECONDS || '3600'),
+  });
 
   const files = await queryFiles(options.database);
   const context = {
     endpoint,
+    region,
     bucket,
     accessKeyId,
-    accessKeySecret,
+    secretAccessKey,
+    sessionToken,
   };
   const archivedObjectsByKey = await buildArchivedObjectMap(context, files);
 

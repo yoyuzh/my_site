@@ -15,10 +15,27 @@ export interface UserProfile {
 
 export type AdminUserRole = 'USER' | 'MODERATOR' | 'ADMIN';
 
+export interface AdminRequestTimelinePoint {
+  hour: number;
+  label: string;
+  requestCount: number;
+}
+
 export interface AdminSummary {
   totalUsers: number;
   totalFiles: number;
+  totalStorageBytes: number;
+  downloadTrafficBytes: number;
+  requestCount: number;
+  transferUsageBytes: number;
+  offlineTransferStorageBytes: number;
+  offlineTransferStorageLimitBytes: number;
+  requestTimeline: AdminRequestTimelinePoint[];
   inviteCode: string;
+}
+
+export interface AdminOfflineTransferStorageLimitResponse {
+  offlineTransferStorageLimitBytes: number;
 }
 
 export interface AdminUser {
@@ -29,6 +46,7 @@ export interface AdminUser {
   createdAt: string;
   role: AdminUserRole;
   banned: boolean;
+  usedStorageBytes: number;
   storageQuotaBytes: number;
   maxUploadSizeBytes: number;
 }

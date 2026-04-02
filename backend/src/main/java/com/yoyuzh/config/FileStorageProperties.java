@@ -7,7 +7,7 @@ public class FileStorageProperties {
 
     private String provider = "local";
     private final Local local = new Local();
-    private final Oss oss = new Oss();
+    private final S3 s3 = new S3();
     private long maxFileSize = 500L * 1024 * 1024L;
 
     public String getProvider() {
@@ -22,8 +22,8 @@ public class FileStorageProperties {
         return local;
     }
 
-    public Oss getOss() {
-        return oss;
+    public S3 getS3() {
+        return s3;
     }
 
     public long getMaxFileSize() {
@@ -55,60 +55,60 @@ public class FileStorageProperties {
         }
     }
 
-    public static class Oss {
-        private String endpoint;
-        private String bucket;
-        private String accessKeyId;
-        private String accessKeySecret;
-        private String publicBaseUrl;
-        private boolean privateBucket = true;
+    public static class S3 {
+        private String apiBaseUrl = "https://api.dogecloud.com";
+        private String apiAccessKey;
+        private String apiSecretKey;
+        private String scope;
+        private int ttlSeconds = 3600;
+        private String region = "automatic";
 
-        public String getEndpoint() {
-            return endpoint;
+        public String getApiBaseUrl() {
+            return apiBaseUrl;
         }
 
-        public void setEndpoint(String endpoint) {
-            this.endpoint = endpoint;
+        public void setApiBaseUrl(String apiBaseUrl) {
+            this.apiBaseUrl = apiBaseUrl;
         }
 
-        public String getBucket() {
-            return bucket;
+        public String getApiAccessKey() {
+            return apiAccessKey;
         }
 
-        public void setBucket(String bucket) {
-            this.bucket = bucket;
+        public void setApiAccessKey(String apiAccessKey) {
+            this.apiAccessKey = apiAccessKey;
         }
 
-        public String getAccessKeyId() {
-            return accessKeyId;
+        public String getApiSecretKey() {
+            return apiSecretKey;
         }
 
-        public void setAccessKeyId(String accessKeyId) {
-            this.accessKeyId = accessKeyId;
+        public void setApiSecretKey(String apiSecretKey) {
+            this.apiSecretKey = apiSecretKey;
         }
 
-        public String getAccessKeySecret() {
-            return accessKeySecret;
+        public String getScope() {
+            return scope;
         }
 
-        public void setAccessKeySecret(String accessKeySecret) {
-            this.accessKeySecret = accessKeySecret;
+        public void setScope(String scope) {
+            this.scope = scope;
         }
 
-        public String getPublicBaseUrl() {
-            return publicBaseUrl;
+        public int getTtlSeconds() {
+            return ttlSeconds;
         }
 
-        public void setPublicBaseUrl(String publicBaseUrl) {
-            this.publicBaseUrl = publicBaseUrl;
+        public void setTtlSeconds(int ttlSeconds) {
+            this.ttlSeconds = ttlSeconds;
         }
 
-        public boolean isPrivateBucket() {
-            return privateBucket;
+        public String getRegion() {
+            return region;
         }
 
-        public void setPrivateBucket(boolean privateBucket) {
-            this.privateBucket = privateBucket;
+        public void setRegion(String region) {
+            this.region = region;
         }
     }
 }

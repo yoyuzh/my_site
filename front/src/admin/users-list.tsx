@@ -59,6 +59,10 @@ function UsersListActions() {
   );
 }
 
+function formatStorageUsage(usedBytes: number, quotaBytes: number) {
+  return `${formatLimitSize(usedBytes)} / ${formatLimitSize(quotaBytes)}`;
+}
+
 function AdminUserActions({ record }: { record: AdminUser }) {
   const notify = useNotify();
   const refresh = useRefresh();
@@ -116,7 +120,7 @@ function AdminUserActions({ record }: { record: AdminUser }) {
 
   async function handleSetPassword() {
     const newPassword = window.prompt(
-      '请输入新密码。密码至少10位，且必须包含大写字母、小写字母、数字和特殊字符。',
+      '请输入新密码。密码至少8位，且必须包含大写字母。',
     );
     if (!newPassword) {
       return;
@@ -215,20 +219,20 @@ function AdminUserActions({ record }: { record: AdminUser }) {
   }
 
   return (
-    <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap">
-      <Button size="small" variant="outlined" disabled={busy} onClick={() => void handleRoleAssign()}>
+    <Stack direction="row" spacing={0.75} useFlexGap flexWrap="wrap">
+      <Button size="small" variant="outlined" disabled={busy} sx={{ minWidth: 'auto', px: 1 }} onClick={() => void handleRoleAssign()}>
         角色分配
       </Button>
-      <Button size="small" variant="outlined" disabled={busy} onClick={() => void handleSetPassword()}>
+      <Button size="small" variant="outlined" disabled={busy} sx={{ minWidth: 'auto', px: 1 }} onClick={() => void handleSetPassword()}>
         修改密码
       </Button>
-      <Button size="small" variant="outlined" disabled={busy} onClick={() => void handleResetPassword()}>
+      <Button size="small" variant="outlined" disabled={busy} sx={{ minWidth: 'auto', px: 1 }} onClick={() => void handleResetPassword()}>
         重置密码
       </Button>
-      <Button size="small" variant="outlined" disabled={busy} onClick={() => void handleSetStorageQuota()}>
+      <Button size="small" variant="outlined" disabled={busy} sx={{ minWidth: 'auto', px: 1 }} onClick={() => void handleSetStorageQuota()}>
         存储上限
       </Button>
-      <Button size="small" variant="outlined" disabled={busy} onClick={() => void handleSetMaxUploadSize()}>
+      <Button size="small" variant="outlined" disabled={busy} sx={{ minWidth: 'auto', px: 1 }} onClick={() => void handleSetMaxUploadSize()}>
         单文件上限
       </Button>
       <Button
@@ -236,6 +240,7 @@ function AdminUserActions({ record }: { record: AdminUser }) {
         variant={record.banned ? 'contained' : 'outlined'}
         color={record.banned ? 'success' : 'warning'}
         disabled={busy}
+        sx={{ minWidth: 'auto', px: 1 }}
         onClick={() => void handleToggleBan()}
       >
         {record.banned ? '解封' : '封禁'}
@@ -254,14 +259,24 @@ export function PortalAdminUsersList() {
       title="用户管理"
       sort={{ field: 'createdAt', order: 'DESC' }}
     >
-      <Datagrid bulkActionButtons={false} rowClick={false}>
+      <Datagrid
+        bulkActionButtons={false}
+        rowClick={false}
+        size="small"
+        sx={{
+          '& .RaDatagrid-table th, & .RaDatagrid-table td': {
+            px: 1,
+            py: 0.75,
+          },
+        }}
+      >
         <TextField source="id" label="ID" />
         <TextField source="username" label="用户名" />
         <TextField source="email" label="邮箱" />
         <TextField source="phoneNumber" label="手机号" emptyText="-" />
         <FunctionField<AdminUser>
-          label="存储上限"
-          render={(record) => formatLimitSize(record.storageQuotaBytes)}
+          label="存储使用"
+          render={(record) => formatStorageUsage(record.usedStorageBytes, record.storageQuotaBytes)}
         />
         <FunctionField<AdminUser>
           label="单文件上限"

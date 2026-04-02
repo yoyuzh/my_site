@@ -26,7 +26,7 @@ class RegisterRequestValidationTest {
 
         assertThat(violations)
                 .extracting(violation -> violation.getMessage())
-                .contains("密码至少10位，且必须包含大写字母、小写字母、数字和特殊字符");
+                .contains("密码至少8位，且必须包含大写字母");
     }
 
     @Test
@@ -35,8 +35,8 @@ class RegisterRequestValidationTest {
                 "alice",
                 "alice@example.com",
                 "13800138000",
-                "StrongPass1!",
-                "StrongPass1!",
+                "Abcdefgh",
+                "Abcdefgh",
                 "invite-code"
         );
 

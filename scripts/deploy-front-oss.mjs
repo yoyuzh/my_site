@@ -7,7 +7,7 @@ import {spawnSync} from 'node:child_process';
 
 import {
   buildObjectKey,
-  createAuthorizationHeader,
+  createAwsV4Headers,
   encodeObjectKey,
   getFrontendSpaAliasContentType,
   getFrontendSpaAliasKeys,
@@ -16,6 +16,7 @@ import {
   listFiles,
   normalizeEndpoint,
   parseSimpleEnv,
+  requestDogeCloudTemporaryS3Session,
 } from './oss-deploy-lib.mjs';
 
 const repoRoot = process.cwd();
@@ -72,34 +73,39 @@ function runBuild() {
 async function uploadFile({
   bucket,
   endpoint,
+  region,
   objectKey,
   filePath,
   contentTypeOverride,
   accessKeyId,
-  accessKeySecret,
+  secretAccessKey,
+  sessionToken,
 }) {
   const body = await fs.readFile(filePath);
   const contentType = contentTypeOverride || getContentType(objectKey);
-  const date = new Date().toUTCString();
+  const amzDate = new Date().toISOString().replace(/[:-]|\.\d{3}/g, '');
   const url = `https://${bucket}.${normalizeEndpoint(endpoint)}/${encodeObjectKey(objectKey)}`;
-  const authorization = createAuthorizationHeader({
+  const signatureHeaders = createAwsV4Headers({
     method: 'PUT',
+    endpoint,
+    region,
     bucket,
     objectKey,
-    contentType,
-    date,
+    headers: {
+      'Content-Type': contentType,
+    },
+    amzDate,
     accessKeyId,
-    accessKeySecret,
+    secretAccessKey,
+    sessionToken,
   });
 
   const response = await fetch(url, {
     method: 'PUT',
     headers: {
-      Authorization: authorization,
+      ...signatureHeaders,
       'Cache-Control': getCacheControl(objectKey),
       'Content-Length': String(body.byteLength),
-      'Content-Type': contentType,
-      Date: date,
     },
     body,
   });
@@ -113,9 +119,11 @@ async function uploadFile({
 async function uploadSpaAliases({
   bucket,
   endpoint,
+  region,
   distIndexPath,
   accessKeyId,
-  accessKeySecret,
+  secretAccessKey,
+  sessionToken,
   remotePrefix,
   dryRun,
 }) {
@@ -133,11 +141,13 @@ async function uploadSpaAliases({
     await uploadFile({
       bucket,
       endpoint,
+      region,
       objectKey,
       filePath: distIndexPath,
       contentTypeOverride: contentType,
       accessKeyId,
-      accessKeySecret,
+      secretAccessKey,
+      sessionToken,
     });
     console.log(`uploaded alias ${objectKey}`);
   }
@@ -148,11 +158,26 @@ async function main() {
 
   await loadEnvFileIfPresent();
 
-  const accessKeyId = requireEnv('YOYUZH_OSS_ACCESS_KEY_ID');
-  const accessKeySecret = requireEnv('YOYUZH_OSS_ACCESS_KEY_SECRET');
-  const endpoint = requireEnv('YOYUZH_OSS_ENDPOINT');
-  const bucket = requireEnv('YOYUZH_OSS_BUCKET');
-  const remotePrefix = process.env.YOYUZH_OSS_PREFIX || '';
+  const apiAccessKey = requireEnv('YOYUZH_DOGECLOUD_API_ACCESS_KEY');
+  const apiSecretKey = requireEnv('YOYUZH_DOGECLOUD_API_SECRET_KEY');
+  const scope = requireEnv('YOYUZH_DOGECLOUD_FRONT_SCOPE');
+  const apiBaseUrl = process.env.YOYUZH_DOGECLOUD_API_BASE_URL || 'https://api.dogecloud.com';
+  const region = process.env.YOYUZH_DOGECLOUD_S3_REGION || 'automatic';
+  const remotePrefix = process.env.YOYUZH_DOGECLOUD_FRONT_PREFIX || '';
+  const ttlSeconds = Number(process.env.YOYUZH_DOGECLOUD_FRONT_TTL_SECONDS || '3600');
+  const {
+    accessKeyId,
+    secretAccessKey,
+    sessionToken,
+    endpoint,
+    bucket,
+  } = await requestDogeCloudTemporaryS3Session({
+    apiBaseUrl,
+    accessKey: apiAccessKey,
+    secretKey: apiSecretKey,
+    scope,
+    ttlSeconds,
+  });
 
   if (!skipBuild) {
     runBuild();
@@ -175,10 +200,12 @@ async function main() {
     await uploadFile({
       bucket,
       endpoint,
+      region,
       objectKey,
       filePath,
       accessKeyId,
-      accessKeySecret,
+      secretAccessKey,
+      sessionToken,
     });
     console.log(`uploaded ${objectKey}`);
   }
@@ -186,9 +213,11 @@ async function main() {
   await uploadSpaAliases({
     bucket,
     endpoint,
+    region,
     distIndexPath: path.join(distDir, 'index.html'),
     accessKeyId,
-    accessKeySecret,
+    secretAccessKey,
+    sessionToken,
     remotePrefix,
     dryRun,
   });

@@ -61,8 +61,8 @@
 ### 存储与基础设施
 
 - MySQL 8.x
-- 本地文件系统 / 阿里云 OSS
-- OSS 静态资源发布
+- 本地文件系统 / 多吉云 S3 兼容对象存储
+- S3 兼容静态资源发布
 
 ## 仓库结构
 
@@ -157,19 +157,31 @@ APP_ADMIN_USERNAMES=admin1,admin2
 APP_AUTH_REGISTRATION_INVITE_CODE=<初始化邀请码种子>
 ```
 
-### OSS 相关
+### S3 相关
 
 ```env
-YOYUZH_STORAGE_PROVIDER=oss
-YOYUZH_OSS_ENDPOINT=...
-YOYUZH_OSS_BUCKET=...
-YOYUZH_OSS_ACCESS_KEY_ID=...
-YOYUZH_OSS_ACCESS_KEY_SECRET=...
+YOYUZH_STORAGE_PROVIDER=s3
+YOYUZH_DOGECLOUD_API_BASE_URL=https://api.dogecloud.com
+YOYUZH_DOGECLOUD_API_ACCESS_KEY=...
+YOYUZH_DOGECLOUD_API_SECRET_KEY=...
+YOYUZH_DOGECLOUD_STORAGE_SCOPE=yoyuzh-files
+YOYUZH_DOGECLOUD_STORAGE_TTL_SECONDS=3600
+YOYUZH_DOGECLOUD_S3_REGION=automatic
 ```
 
 ### 前端发布配置
 
-前端发布脚本会从环境变量或 `.env.oss.local` 中读取 OSS 配置。
+前端发布脚本会从环境变量或 `.env.oss.local` 中读取多吉云 API 凭据，再动态换取临时 S3 密钥。前端静态桶应填写逻辑桶名 `yoyuzh-front`，不要直接把底层 `s3Bucket` 写死到配置里。
+
+常用变量：
+
+```env
+YOYUZH_DOGECLOUD_API_ACCESS_KEY=...
+YOYUZH_DOGECLOUD_API_SECRET_KEY=...
+YOYUZH_DOGECLOUD_FRONT_SCOPE=yoyuzh-front
+YOYUZH_DOGECLOUD_FRONT_TTL_SECONDS=3600
+YOYUZH_DOGECLOUD_FRONT_PREFIX=
+```
 
 参考文件：
 
@@ -191,6 +203,29 @@ node scripts/deploy-front-oss.mjs
 ```bash
 node scripts/deploy-front-oss.mjs --dry-run
 node scripts/deploy-front-oss.mjs --skip-build
+```
+
+### 阿里云 OSS 到多吉云 S3 迁移
+
+静态站点桶或文件桶需要整桶迁移时，可在仓库根目录执行：
+
+```bash
+node scripts/migrate-aliyun-oss-to-s3.mjs \
+  --source-bucket=<阿里云源 Bucket> \
+  --source-access-key-id=<阿里云 AccessKeyId> \
+  --source-access-key-secret=<阿里云 AccessKeySecret> \
+  --target-scope=<多吉云逻辑桶名> \
+  --target-api-access-key=<多吉云 AccessKey> \
+  --target-api-secret-key=<多吉云 SecretKey>
+```
+
+可选参数：
+
+```bash
+node scripts/migrate-aliyun-oss-to-s3.mjs --dry-run
+node scripts/migrate-aliyun-oss-to-s3.mjs --prefix=race/
+node scripts/migrate-aliyun-oss-to-s3.mjs --overwrite
+node scripts/migrate-aliyun-oss-to-s3.mjs --target-api-base-url=https://api.dogecloud.com
 ```
 
 ### 后端发布

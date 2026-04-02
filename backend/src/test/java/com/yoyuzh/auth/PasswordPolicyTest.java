@@ -14,49 +14,34 @@ class PasswordPolicyTest {
     }
 
     @Test
-    void shouldRejectPasswordShorterThanTenCharacters() {
-        assertThat(PasswordPolicy.isStrong("Abc1!defg")).isFalse(); // 9 chars
+    void shouldRejectPasswordShorterThanEightCharacters() {
+        assertThat(PasswordPolicy.isStrong("Abcdefg")).isFalse(); // 7 chars
     }
 
     @Test
-    void shouldAcceptPasswordWithExactlyTenCharacters() {
-        assertThat(PasswordPolicy.isStrong("Abcdefg1!x")).isTrue(); // 10 chars
+    void shouldAcceptPasswordWithExactlyEightCharacters() {
+        assertThat(PasswordPolicy.isStrong("Abcdefgh")).isTrue(); // 8 chars
     }
 
     @Test
     void shouldRejectPasswordMissingUppercase() {
-        assertThat(PasswordPolicy.isStrong("abcdefg1!x")).isFalse();
+        assertThat(PasswordPolicy.isStrong("abcdefgh")).isFalse();
     }
 
     @Test
-    void shouldRejectPasswordMissingLowercase() {
-        assertThat(PasswordPolicy.isStrong("ABCDEFG1!X")).isFalse();
-    }
-
-    @Test
-    void shouldRejectPasswordMissingDigit() {
-        assertThat(PasswordPolicy.isStrong("Abcdefgh!x")).isFalse();
-    }
-
-    @Test
-    void shouldRejectPasswordMissingSpecialCharacter() {
-        assertThat(PasswordPolicy.isStrong("Abcdefg12x")).isFalse();
-    }
-
-    @Test
-    void shouldAcceptStrongPasswordWithAllRequirements() {
-        assertThat(PasswordPolicy.isStrong("MyP@ssw0rd!")).isTrue();
+    void shouldAcceptPasswordThatOnlyNeedsUppercaseAndLength() {
+        assertThat(PasswordPolicy.isStrong("ABCDEFGH")).isTrue();
     }
 
     @ParameterizedTest
-    @ValueSource(strings = {"", "short", "nouppercase1!", "NOLOWERCASE1!", "NoSpecialChar1", "NoDigit!AbcXyz"})
+    @ValueSource(strings = {"", "short", "noupper", "abcdefghi"})
     void shouldRejectWeakPasswords(String password) {
         assertThat(PasswordPolicy.isStrong(password)).isFalse();
     }
 
     @Test
-    void shouldAcceptLongPasswordWithAllRequirements() {
-        assertThat(PasswordPolicy.isStrong("MyV3ryStr0ng&SecureP@ssword2024!")).isTrue();
+    void shouldAcceptLongPasswordWithUppercase() {
+        assertThat(PasswordPolicy.isStrong("MyVerySimplePassword")).isTrue();
     }
 
     @Test
