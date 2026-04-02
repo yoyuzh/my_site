@@ -35,21 +35,31 @@ public class TransferController {
     @PostMapping("/sessions")
     public ApiResponse<TransferSessionResponse> createSession(@AuthenticationPrincipal UserDetails userDetails,
                                                               @Valid @RequestBody CreateTransferSessionRequest request) {
-        requireAuthenticatedUser(userDetails);
-        User sender = userDetailsService.loadDomainUser(userDetails.getUsername());
+        User sender = loadAuthenticatedUser(userDetails);
         return ApiResponse.success(transferService.createSession(sender, request));
     }
 
     @Operation(summary = "通过取件码查找快传会话")
     @GetMapping("/sessions/lookup")
-    public ApiResponse<LookupTransferSessionResponse> lookupSession(@RequestParam String pickupCode) {
-        return ApiResponse.success(transferService.lookupSession(pickupCode));
+    public ApiResponse<LookupTransferSessionResponse> lookupSession(@AuthenticationPrincipal UserDetails userDetails,
+                                                                    @RequestParam String pickupCode) {
+        return ApiResponse.success(transferService.lookupSession(userDetails != null, pickupCode));
     }
 
     @Operation(summary = "加入快传会话")
     @PostMapping("/sessions/{sessionId}/join")
-    public ApiResponse<TransferSessionResponse> joinSession(@PathVariable String sessionId) {
-        return ApiResponse.success(transferService.joinSession(sessionId));
+    public ApiResponse<TransferSessionResponse> joinSession(@AuthenticationPrincipal UserDetails userDetails,
+                                                            @PathVariable String sessionId) {
+        return ApiResponse.success(transferService.joinSession(userDetails != null, sessionId));
+    }
+
+    @Operation(summary = "查看当前用户的离线快传列表")
+    @GetMapping("/sessions/offline/mine")
+    public ApiResponse<java.util.List<TransferSessionResponse>> listOfflineSessions(@AuthenticationPrincipal UserDetails userDetails) {
+        requireAuthenticatedUser(userDetails);
+        return ApiResponse.success(transferService.listOfflineSessions(
+                userDetailsService.loadDomainUser(userDetails.getUsername())
+        ));
     }
 
     @Operation(summary = "上传离线快传文件")
@@ -70,9 +80,10 @@ public class TransferController {
 
     @Operation(summary = "下载离线快传文件")
     @GetMapping("/sessions/{sessionId}/files/{fileId}/download")
-    public ResponseEntity<?> downloadOfflineFile(@PathVariable String sessionId,
+    public ResponseEntity<?> downloadOfflineFile(@AuthenticationPrincipal UserDetails userDetails,
+                                                 @PathVariable String sessionId,
                                                  @PathVariable String fileId) {
-        return transferService.downloadOfflineFile(sessionId, fileId);
+        return transferService.downloadOfflineFile(userDetails != null, sessionId, fileId);
     }
 
     @Operation(summary = "把离线快传文件存入网盘")
@@ -111,5 +122,12 @@ public class TransferController {
         if (userDetails == null) {
             throw new BusinessException(ErrorCode.NOT_LOGGED_IN, "用户未登录");
         }
+    }
+
+    private User loadAuthenticatedUser(UserDetails userDetails) {
+        if (userDetails == null) {
+            return null;
+        }
+        return userDetailsService.loadDomainUser(userDetails.getUsername());
     }
 }

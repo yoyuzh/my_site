@@ -44,6 +44,10 @@ export function joinTransferSession(sessionId: string) {
   });
 }
 
+export function listMyOfflineTransferSessions() {
+  return apiRequest<TransferSessionResponse[]>('/transfer/sessions/offline/mine');
+}
+
 export function uploadOfflineTransferFile(
   sessionId: string,
   fileId: string,

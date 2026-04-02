@@ -21,6 +21,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.anonymous;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -120,16 +121,68 @@ class TransferControllerIntegrationTest {
     }
 
     @Test
-    void shouldRejectAnonymousSessionCreationButAllowPublicJoinEndpoints() throws Exception {
+    void shouldAllowAnonymousOnlineSessionCreationButKeepOfflineRestricted() throws Exception {
         mockMvc.perform(post("/api/transfer/sessions")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {"mode":"ONLINE","files":[{"name":"demo.txt","relativePath":"demo.txt","size":12,"contentType":"text/plain"}]}
                                 """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.mode").value("ONLINE"))
+                .andExpect(jsonPath("$.data.sessionId").isNotEmpty());
+
+        mockMvc.perform(post("/api/transfer/sessions")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"mode":"OFFLINE","files":[{"name":"demo.txt","relativePath":"demo.txt","size":12,"contentType":"text/plain"}]}
+                                """))
                 .andExpect(status().isUnauthorized());
 
         mockMvc.perform(post("/api/transfer/sessions/{sessionId}/join", "missing-session"))
                 .andExpect(status().isNotFound());
+    }
+
+    @Test
+    @WithMockUser(username = "alice")
+    void shouldRejectAnonymousOfflineLookupJoinAndDownload() throws Exception {
+        String response = mockMvc.perform(post("/api/transfer/sessions")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "mode": "OFFLINE",
+                                  "files": [
+                                    {"name": "offline.txt", "relativePath": "资料/offline.txt", "size": 13, "contentType": "text/plain"}
+                                  ]
+                                }
+                                """))
+                .andExpect(status().isOk())
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+
+        String sessionId = com.jayway.jsonpath.JsonPath.read(response, "$.data.sessionId");
+        String pickupCode = com.jayway.jsonpath.JsonPath.read(response, "$.data.pickupCode");
+        String fileId = com.jayway.jsonpath.JsonPath.read(response, "$.data.files[0].id");
+
+        MockMultipartFile offlineFile = new MockMultipartFile(
+                "file",
+                "offline.txt",
+                MediaType.TEXT_PLAIN_VALUE,
+                "hello offline".getBytes(StandardCharsets.UTF_8)
+        );
+
+        mockMvc.perform(multipart("/api/transfer/sessions/{sessionId}/files/{fileId}/content", sessionId, fileId)
+                        .file(offlineFile))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(get("/api/transfer/sessions/lookup").with(anonymous()).param("pickupCode", pickupCode))
+                .andExpect(status().isUnauthorized());
+
+        mockMvc.perform(post("/api/transfer/sessions/{sessionId}/join", sessionId).with(anonymous()))
+                .andExpect(status().isUnauthorized());
+
+        mockMvc.perform(get("/api/transfer/sessions/{sessionId}/files/{fileId}/download", sessionId, fileId).with(anonymous()))
+                .andExpect(status().isUnauthorized());
     }
 
     @Test
@@ -190,5 +243,38 @@ class TransferControllerIntegrationTest {
         mockMvc.perform(get("/api/transfer/sessions/{sessionId}/files/{fileId}/download", sessionId, fileId))
                 .andExpect(status().isOk())
                 .andExpect(content().bytes("hello offline".getBytes(StandardCharsets.UTF_8)));
+    }
+
+    @Test
+    @WithMockUser(username = "alice")
+    void shouldListCurrentUsersOfflineTransferSessions() throws Exception {
+        User otherUser = new User();
+        otherUser.setUsername("bob");
+        otherUser.setEmail("bob@example.com");
+        otherUser.setPhoneNumber("13900139000");
+        otherUser.setPasswordHash("encoded-password");
+        otherUser.setCreatedAt(LocalDateTime.now());
+        userRepository.save(otherUser);
+
+        mockMvc.perform(post("/api/transfer/sessions")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "mode": "OFFLINE",
+                                  "files": [
+                                    {"name": "cover.png", "relativePath": "活动图/cover.png", "size": 2048, "contentType": "image/png"}
+                                  ]
+                                }
+                                """))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(get("/api/transfer/sessions/offline/mine"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.length()").value(1))
+                .andExpect(jsonPath("$.data[0].mode").value("OFFLINE"))
+                .andExpect(jsonPath("$.data[0].pickupCode").isString())
+                .andExpect(jsonPath("$.data[0].files[0].name").value("cover.png"))
+                .andExpect(jsonPath("$.data[0].files[0].relativePath").value("活动图/cover.png"))
+                .andExpect(jsonPath("$.data[0].files[0].uploaded").value(false));
     }
 }

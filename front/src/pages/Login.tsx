@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { motion, AnimatePresence } from 'motion/react';
-import { LogIn, User, Lock, UserPlus, Mail, ArrowLeft, Phone } from 'lucide-react';
+import { LogIn, User, Lock, UserPlus, Mail, ArrowLeft, Phone, Send } from 'lucide-react';
 
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/src/components/ui/card';
 import { Button } from '@/src/components/ui/button';
@@ -14,6 +14,28 @@ import type { AuthResponse } from '@/src/lib/types';
 import { buildRegisterPayload, validateRegisterForm } from './login-state';
 
 const DEV_LOGIN_ENABLED = import.meta.env.DEV || import.meta.env.VITE_ENABLE_DEV_LOGIN === 'true';
+
+function BlurRevealTitle({ text }: { text: string }) {
+  return (
+    <span className="inline-flex flex-wrap">
+      {Array.from(text).map((char, index) => (
+        <motion.span
+          key={`${char}-${index}`}
+          initial={{ opacity: 0, y: 18, filter: 'blur(18px)' }}
+          animate={{ opacity: 1, y: 0, filter: 'blur(0px)' }}
+          transition={{
+            duration: 0.7,
+            ease: 'easeOut',
+            delay: 0.08 + index * 0.06,
+          }}
+          className="inline-block will-change-transform"
+        >
+          {char === ' ' ? '\u00A0' : char}
+        </motion.span>
+      ))}
+    </span>
+  );
+}
 
 export default function Login() {
   const navigate = useNavigate();
@@ -134,20 +156,27 @@ export default function Login() {
             >
               <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full glass-panel border-white/10 w-fit">
                 <span className="w-2 h-2 rounded-full bg-[#336EFF] animate-pulse" />
-                <span className="text-sm text-slate-300 font-medium tracking-wide uppercase">Access Portal</span>
+                <span className="text-sm text-slate-300 font-medium tracking-wide">优立云盘</span>
               </div>
 
               <div className="space-y-2">
-                <h2 className="text-xl text-[#336EFF] font-bold tracking-widest uppercase">YOYUZH.XYZ</h2>
-                <h1 className="text-5xl md:text-6xl font-bold text-white leading-tight">
-                  个人网站
-                  <br />
-                  统一入口
-                </h1>
+                <h2 className="text-xl text-[#336EFF] font-bold tracking-[0.3em]">YOULI CLOUD</h2>
+                <motion.div
+                  initial={{ opacity: 0, y: 18, scale: 0.985 }}
+                  animate={{ opacity: 1, y: 0, scale: 1 }}
+                  transition={{ duration: 0.65, ease: 'easeOut', delay: 0.05 }}
+                  className="relative inline-flex w-fit max-w-fit self-start overflow-hidden rounded-[2rem] border border-white/15 bg-white/8 px-7 py-5 shadow-[0_20px_70px_rgba(9,18,36,0.38)] backdrop-blur-3xl"
+                >
+                  <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(135deg,rgba(255,255,255,0.22),rgba(255,255,255,0.04)_45%,rgba(51,110,255,0.12))]" />
+                  <div className="pointer-events-none absolute inset-x-6 top-0 h-px bg-white/45" />
+                  <h1 className="relative text-center text-5xl font-bold text-white leading-none md:text-6xl">
+                    <BlurRevealTitle text="优立云盘" />
+                  </h1>
+                </motion.div>
               </div>
 
               <p className="text-lg text-slate-400 leading-relaxed">
-                欢迎来到 YOYUZH 的个人门户。在这里，你可以集中管理个人网盘文件、使用跨设备快传能力，以及体验轻量级小游戏。
+                欢迎来到优立云盘。在这里，你可以集中管理个人网盘文件、使用跨设备快传能力，以及体验轻量级小游戏。
               </p>
             </motion.div>
           )}
@@ -234,6 +263,18 @@ export default function Login() {
                             '进入系统'
                           )}
                         </Button>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          className="w-full h-12 border-white/10 bg-white/[0.03] text-slate-200 hover:bg-white/10"
+                          onClick={() => navigate('/transfer')}
+                        >
+                          <Send className="mr-2 h-4 w-4" />
+                          直接进入快传
+                        </Button>
+                        <p className="text-center text-xs text-slate-500">
+                          无需登录，仅支持在线发送和在线接收
+                        </p>
                         <div className="text-center">
                           <button
                             type="button"

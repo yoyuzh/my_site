@@ -37,6 +37,16 @@ public interface OfflineTransferSessionRepository extends JpaRepository<OfflineT
     List<OfflineTransferSession> findAllExpiredWithFiles(@Param("now") Instant now);
 
     @Query("""
+            select distinct session
+            from OfflineTransferSession session
+            left join fetch session.files
+            where session.senderUserId = :senderUserId and session.expiresAt >= :now
+            order by session.expiresAt desc
+            """)
+    List<OfflineTransferSession> findActiveWithFilesBySenderUserId(@Param("senderUserId") Long senderUserId,
+                                                                   @Param("now") Instant now);
+
+    @Query("""
             select coalesce(sum(file.size), 0)
             from OfflineTransferFile file
             join file.session session

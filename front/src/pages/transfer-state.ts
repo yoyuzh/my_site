@@ -1,4 +1,4 @@
-import type { TransferMode } from '../lib/types';
+import type { TransferMode, TransferSessionResponse } from '../lib/types';
 import type { TransferFileDescriptor } from '../lib/transfer-protocol';
 
 export type TransferTab = 'send' | 'receive';
@@ -34,7 +34,14 @@ export function buildQrImageUrl(shareUrl: string) {
 }
 
 export function canSendTransferFiles(isAuthenticated: boolean) {
-  return isAuthenticated;
+  return true;
+}
+
+export function getAvailableTransferModes(isAuthenticated: boolean): TransferMode[] {
+  if (isAuthenticated) {
+    return ['ONLINE', 'OFFLINE'];
+  }
+  return ['ONLINE'];
 }
 
 export function getTransferModeSummary(mode: TransferMode) {
@@ -51,11 +58,26 @@ export function getTransferModeSummary(mode: TransferMode) {
   };
 }
 
+export function getOfflineTransferSessionLabel(session: Pick<TransferSessionResponse, 'files'>) {
+  const firstFile = session.files[0];
+  if (!firstFile) {
+    return '未命名离线快传';
+  }
+  if (session.files.length === 1) {
+    return firstFile.name;
+  }
+  return `${firstFile.name} 等 ${session.files.length} 项`;
+}
+
+export function getOfflineTransferSessionSize(session: Pick<TransferSessionResponse, 'files'>) {
+  return formatTransferSize(session.files.reduce((sum, file) => sum + file.size, 0));
+}
+
 export function resolveInitialTransferTab(
   isAuthenticated: boolean,
   sessionId: string | null,
 ): TransferTab {
-  if (!canSendTransferFiles(isAuthenticated) || sessionId) {
+  if (sessionId) {
     return 'receive';
   }
 

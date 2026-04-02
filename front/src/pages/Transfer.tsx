@@ -2,6 +2,8 @@ import React, { useEffect, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import {
   CheckCircle,
+  ChevronRight,
+  Clock3,
   Copy,
   DownloadCloud,
   File as FileIcon,
@@ -17,8 +19,9 @@ import {
   Trash2,
   UploadCloud,
   X,
+  LogIn,
 } from 'lucide-react';
-import { useSearchParams } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 
 import { useAuth } from '@/src/auth/AuthProvider';
 import { Button } from '@/src/components/ui/button';
@@ -39,6 +42,7 @@ import { flushPendingRemoteIceCandidates, handleRemoteIceCandidate } from '@/src
 import {
   DEFAULT_TRANSFER_ICE_SERVERS,
   createTransferSession,
+  listMyOfflineTransferSessions,
   pollTransferSignals,
   postTransferSignal,
   uploadOfflineTransferFile,
@@ -49,7 +53,10 @@ import { cn } from '@/src/lib/utils';
 import {
   buildQrImageUrl,
   canSendTransferFiles,
+  getAvailableTransferModes,
   formatTransferSize,
+  getOfflineTransferSessionLabel,
+  getOfflineTransferSessionSize,
   getTransferModeSummary,
   resolveInitialTransferTab,
 } from './transfer-state';
@@ -100,10 +107,13 @@ function getPhaseMessage(mode: TransferMode, phase: SendPhase, errorMessage: str
 }
 
 export default function Transfer() {
+  const navigate = useNavigate();
   const { session: authSession } = useAuth();
   const [searchParams] = useSearchParams();
   const sessionId = searchParams.get('session');
-  const allowSend = canSendTransferFiles(Boolean(authSession?.token));
+  const isAuthenticated = Boolean(authSession?.token);
+  const allowSend = canSendTransferFiles(isAuthenticated);
+  const availableTransferModes = getAvailableTransferModes(isAuthenticated);
   const [activeTab, setActiveTab] = useState(() => resolveInitialTransferTab(allowSend, sessionId));
 
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
@@ -113,10 +123,16 @@ export default function Transfer() {
   const [sendProgress, setSendProgress] = useState(0);
   const [sendError, setSendError] = useState('');
   const [copied, setCopied] = useState(false);
+  const [offlineHistory, setOfflineHistory] = useState<TransferSessionResponse[]>([]);
+  const [offlineHistoryLoading, setOfflineHistoryLoading] = useState(false);
+  const [offlineHistoryError, setOfflineHistoryError] = useState('');
+  const [selectedOfflineSession, setSelectedOfflineSession] = useState<TransferSessionResponse | null>(null);
+  const [historyCopiedSessionId, setHistoryCopiedSessionId] = useState<string | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const folderInputRef = useRef<HTMLInputElement>(null);
   const copiedTimerRef = useRef<number | null>(null);
+  const historyCopiedTimerRef = useRef<number | null>(null);
   const pollTimerRef = useRef<number | null>(null);
   const peerConnectionRef = useRef<RTCPeerConnection | null>(null);
   const dataChannelRef = useRef<RTCDataChannel | null>(null);
@@ -143,6 +159,9 @@ export default function Transfer() {
       if (copiedTimerRef.current) {
         window.clearTimeout(copiedTimerRef.current);
       }
+      if (historyCopiedTimerRef.current) {
+        window.clearTimeout(historyCopiedTimerRef.current);
+      }
     };
   }, []);
 
@@ -153,6 +172,12 @@ export default function Transfer() {
   }, [allowSend, sessionId]);
 
   useEffect(() => {
+    if (!availableTransferModes.includes(transferMode)) {
+      setTransferMode('ONLINE');
+    }
+  }, [availableTransferModes, transferMode]);
+
+  useEffect(() => {
     if (selectedFiles.length === 0) {
       return;
     }
@@ -160,12 +185,66 @@ export default function Transfer() {
     void bootstrapTransfer(selectedFiles);
   }, [transferMode]);
 
+  useEffect(() => {
+    if (!isAuthenticated) {
+      setOfflineHistory([]);
+      setOfflineHistoryError('');
+      setSelectedOfflineSession(null);
+      return;
+    }
+
+    void loadOfflineHistory();
+  }, [isAuthenticated]);
+
   const totalSize = selectedFiles.reduce((sum, file) => sum + file.size, 0);
   const shareLink = session
     ? buildTransferShareUrl(window.location.origin, session.sessionId, getTransferRouterMode())
     : '';
   const qrImageUrl = shareLink ? buildQrImageUrl(shareLink) : '';
   const transferModeSummary = getTransferModeSummary(transferMode);
+  const selectedOfflineSessionShareLink = selectedOfflineSession
+    ? buildTransferShareUrl(window.location.origin, selectedOfflineSession.sessionId, getTransferRouterMode())
+    : '';
+  const selectedOfflineSessionQrImageUrl = selectedOfflineSessionShareLink
+    ? buildQrImageUrl(selectedOfflineSessionShareLink)
+    : '';
+
+  function navigateBackToLogin() {
+    const nextPath = `${window.location.pathname}${window.location.search}`;
+    navigate(`/login?next=${encodeURIComponent(nextPath)}`);
+  }
+
+  function isOfflineSessionReady(sessionToCheck: TransferSessionResponse) {
+    return sessionToCheck.files.every((file) => file.uploaded);
+  }
+
+  async function loadOfflineHistory(options?: {silent?: boolean}) {
+    if (!isAuthenticated) {
+      return;
+    }
+
+    if (!options?.silent) {
+      setOfflineHistoryLoading(true);
+    }
+    setOfflineHistoryError('');
+
+    try {
+      const sessions = await listMyOfflineTransferSessions();
+      setOfflineHistory(sessions);
+      setSelectedOfflineSession((current) => {
+        if (!current) {
+          return current;
+        }
+        return sessions.find((item) => item.sessionId === current.sessionId) ?? null;
+      });
+    } catch (error) {
+      setOfflineHistoryError(error instanceof Error ? error.message : '离线快传记录加载失败');
+    } finally {
+      if (!options?.silent) {
+        setOfflineHistoryLoading(false);
+      }
+    }
+  }
 
   function cleanupCurrentTransfer() {
     if (pollTimerRef.current) {
@@ -268,6 +347,7 @@ export default function Transfer() {
 
       setSession(createdSession);
       if (createdSession.mode === 'OFFLINE') {
+        void loadOfflineHistory({silent: true});
         await uploadOfflineFiles(createdSession, files, bootstrapId);
         return;
       }
@@ -317,6 +397,7 @@ export default function Transfer() {
 
     setSendProgress(100);
     setSendPhase('completed');
+    void loadOfflineHistory({silent: true});
   }
 
   async function setupSenderPeer(createdSession: TransferSessionResponse, files: File[], bootstrapId: number) {
@@ -505,9 +586,25 @@ export default function Transfer() {
     setSendPhase('completed');
   }
 
+  async function copyOfflineSessionLink(sessionToCopy: TransferSessionResponse) {
+    const sessionShareLink = buildTransferShareUrl(
+      window.location.origin,
+      sessionToCopy.sessionId,
+      getTransferRouterMode(),
+    );
+    await navigator.clipboard.writeText(sessionShareLink);
+    setHistoryCopiedSessionId(sessionToCopy.sessionId);
+    if (historyCopiedTimerRef.current) {
+      window.clearTimeout(historyCopiedTimerRef.current);
+    }
+    historyCopiedTimerRef.current = window.setTimeout(() => {
+      setHistoryCopiedSessionId((current) => (current === sessionToCopy.sessionId ? null : current));
+    }, 1800);
+  }
+
   return (
-    <div className="flex-1 flex flex-col items-center py-6 md:py-10">
-      <div className="w-full max-w-4xl">
+    <div className="flex-1 py-6 md:py-10">
+      <div className="mx-auto w-full max-w-4xl">
         <div className="text-center mb-10">
           <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-gradient-to-br from-[#336EFF] via-blue-500 to-cyan-400 shadow-lg shadow-[#336EFF]/20 mb-6">
             <Send className="w-8 h-8 text-white" />
@@ -553,6 +650,23 @@ export default function Transfer() {
           ) : null}
 
           <div className="p-8 min-h-[420px] flex flex-col relative min-w-0">
+            {!isAuthenticated ? (
+              <div className="mb-6 flex flex-col gap-3 rounded-2xl border border-blue-400/15 bg-blue-500/10 px-4 py-4 text-sm text-blue-100 md:flex-row md:items-center md:justify-between">
+                <p className="leading-6">
+                  当前无需登录即可使用快传，但仅支持在线发送和在线接收。离线快传仍需登录后使用。
+                </p>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={navigateBackToLogin}
+                  className="shrink-0 border border-white/10 bg-white/10 text-white hover:bg-white/15"
+                >
+                  <LogIn className="mr-2 h-4 w-4" />
+                  返回登录
+                </Button>
+              </div>
+            ) : null}
+
             <AnimatePresence mode="wait">
               {activeTab === 'send' ? (
                 <motion.div
@@ -563,37 +677,39 @@ export default function Transfer() {
                   transition={{ duration: 0.2 }}
                   className="flex-1 flex flex-col h-full min-w-0"
                 >
-                  <div className="mb-6 grid gap-3 md:grid-cols-2">
-                    {(['ONLINE', 'OFFLINE'] as TransferMode[]).map((mode) => {
-                      const summary = getTransferModeSummary(mode);
-                      const active = transferMode === mode;
+                  {availableTransferModes.length > 1 ? (
+                    <div className="mb-6 grid gap-3 md:grid-cols-2">
+                      {availableTransferModes.map((mode) => {
+                        const summary = getTransferModeSummary(mode);
+                        const active = transferMode === mode;
 
-                      return (
-                        <button
-                          key={mode}
-                          type="button"
-                          onClick={() => setTransferMode(mode)}
-                          className={cn(
-                            'rounded-2xl border p-4 text-left transition-colors',
-                            active
-                              ? 'border-blue-400/40 bg-blue-500/10'
-                              : 'border-white/10 bg-white/[0.03] hover:bg-white/[0.05]',
-                          )}
-                        >
-                          <div className="flex items-center justify-between gap-3">
-                            <p className="text-sm font-semibold text-white">{summary.title}</p>
-                            <span className={cn(
-                              'rounded-full px-2.5 py-1 text-[11px] font-medium',
-                              active ? 'bg-blue-400/15 text-blue-100' : 'bg-white/10 text-slate-300',
-                            )}>
-                              {mode === 'ONLINE' ? '一次接收' : '7 天多次'}
-                            </span>
-                          </div>
-                          <p className="mt-2 text-sm leading-6 text-slate-400">{summary.description}</p>
-                        </button>
-                      );
-                    })}
-                  </div>
+                        return (
+                          <button
+                            key={mode}
+                            type="button"
+                            onClick={() => setTransferMode(mode)}
+                            className={cn(
+                              'rounded-2xl border p-4 text-left transition-colors',
+                              active
+                                ? 'border-blue-400/40 bg-blue-500/10'
+                                : 'border-white/10 bg-white/[0.03] hover:bg-white/[0.05]',
+                            )}
+                          >
+                            <div className="flex items-center justify-between gap-3">
+                              <p className="text-sm font-semibold text-white">{summary.title}</p>
+                              <span className={cn(
+                                'rounded-full px-2.5 py-1 text-[11px] font-medium',
+                                active ? 'bg-blue-400/15 text-blue-100' : 'bg-white/10 text-slate-300',
+                              )}>
+                                {mode === 'ONLINE' ? '一次接收' : '7 天多次'}
+                              </span>
+                            </div>
+                            <p className="mt-2 text-sm leading-6 text-slate-400">{summary.description}</p>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  ) : null}
 
                   {selectedFiles.length === 0 ? (
                     <div
@@ -742,6 +858,85 @@ export default function Transfer() {
                     </div>
                   )}
 
+                  {isAuthenticated ? (
+                    <div className="mt-8 rounded-2xl border border-white/10 bg-white/[0.03] p-5">
+                      <div className="mb-4 flex items-center justify-between gap-4">
+                        <div>
+                          <h3 className="text-base font-semibold text-white">我的离线快传</h3>
+                          <p className="mt-1 text-sm text-slate-400">
+                            这里只保留未过期的离线快传记录，点击即可重新查看取件码和分享链接。
+                          </p>
+                        </div>
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          onClick={() => void loadOfflineHistory()}
+                          className="h-8 shrink-0 border-white/10 bg-transparent px-3 text-slate-300 hover:bg-white/10"
+                        >
+                          刷新
+                        </Button>
+                      </div>
+
+                      {offlineHistoryLoading && offlineHistory.length === 0 ? (
+                        <div className="rounded-2xl border border-white/5 bg-black/10 px-4 py-10 text-center text-sm text-slate-400">
+                          正在加载离线快传记录...
+                        </div>
+                      ) : offlineHistoryError ? (
+                        <div className="rounded-2xl border border-rose-500/20 bg-rose-500/10 px-4 py-4 text-sm text-rose-200">
+                          {offlineHistoryError}
+                        </div>
+                      ) : offlineHistory.length === 0 ? (
+                        <div className="rounded-2xl border border-white/5 bg-black/10 px-4 py-10 text-center text-sm text-slate-400">
+                          你还没有发过离线快传。
+                        </div>
+                      ) : (
+                        <div className="grid gap-3">
+                          {offlineHistory.map((historySession) => {
+                            const ready = isOfflineSessionReady(historySession);
+
+                            return (
+                              <button
+                                key={historySession.sessionId}
+                                type="button"
+                                onClick={() => setSelectedOfflineSession(historySession)}
+                                className="group flex w-full items-center justify-between gap-4 rounded-2xl border border-white/8 bg-black/10 px-4 py-4 text-left transition-colors hover:border-[#336EFF]/30 hover:bg-white/[0.04]"
+                              >
+                                <div className="min-w-0 flex-1">
+                                  <div className="flex items-center gap-3">
+                                    <p className="truncate text-sm font-semibold text-white">
+                                      {getOfflineTransferSessionLabel(historySession)}
+                                    </p>
+                                    <span className={cn(
+                                      'rounded-full px-2.5 py-1 text-[11px] font-medium',
+                                      ready ? 'bg-emerald-500/15 text-emerald-200' : 'bg-amber-500/15 text-amber-100',
+                                    )}>
+                                      {ready ? '可接收' : '上传中'}
+                                    </span>
+                                  </div>
+                                  <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-slate-400">
+                                    <span>取件码 {historySession.pickupCode}</span>
+                                    <span>{historySession.files.length} 个项目</span>
+                                    <span>{getOfflineTransferSessionSize(historySession)}</span>
+                                    <span>
+                                      到期于 {new Date(historySession.expiresAt).toLocaleString('zh-CN', {
+                                        month: '2-digit',
+                                        day: '2-digit',
+                                        hour: '2-digit',
+                                        minute: '2-digit',
+                                      })}
+                                    </span>
+                                  </div>
+                                </div>
+                                <ChevronRight className="h-5 w-5 shrink-0 text-slate-500 transition-colors group-hover:text-white" />
+                              </button>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  ) : null}
+
                   <input type="file" multiple className="hidden" ref={fileInputRef} onChange={handleFileSelect} />
                   <input type="file" multiple className="hidden" ref={folderInputRef} onChange={handleFileSelect} />
                 </motion.div>
@@ -791,6 +986,93 @@ export default function Transfer() {
           </div>
         </div>
       </div>
+
+      <AnimatePresence>
+        {selectedOfflineSession ? (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[70] flex items-center justify-center bg-[#020817]/75 px-4 py-6 backdrop-blur-md"
+          >
+            <motion.div
+              initial={{ opacity: 0, scale: 0.96, y: 16 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.96, y: 16 }}
+              transition={{ duration: 0.18 }}
+              className="relative w-full max-w-[34rem] overflow-hidden rounded-[2rem] border border-white/10 bg-[#0d1528]/95 p-8 shadow-[0_30px_120px_rgba(0,0,0,0.45)]"
+            >
+              <button
+                type="button"
+                onClick={() => setSelectedOfflineSession(null)}
+                className="absolute right-5 top-5 rounded-full p-2 text-slate-500 transition-colors hover:bg-white/5 hover:text-white"
+                aria-label="关闭离线快传详情"
+              >
+                <X className="h-7 w-7" />
+              </button>
+
+              <div className="text-center">
+                <p className="text-sm tracking-[0.3em] text-slate-400">取件码</p>
+                <div className="mt-5 font-mono text-[4.5rem] font-bold leading-none tracking-[0.32em] text-white">
+                  {selectedOfflineSession.pickupCode}
+                </div>
+              </div>
+
+              {selectedOfflineSessionQrImageUrl ? (
+                <div className="mx-auto mt-10 w-fit rounded-[2rem] bg-white p-5 shadow-[0_18px_60px_rgba(15,23,42,0.32)]">
+                  <img
+                    src={selectedOfflineSessionQrImageUrl}
+                    alt="离线快传二维码"
+                    className="h-64 w-64 rounded-2xl"
+                  />
+                </div>
+              ) : null}
+
+              <div className="mt-8 rounded-[1.7rem] border border-white/10 bg-[#0a1122] px-5 py-4">
+                <div className="mb-3 flex items-center gap-2 text-xs uppercase tracking-[0.24em] text-slate-500">
+                  <LinkIcon className="h-4 w-4" />
+                  分享链接
+                </div>
+                <div className="truncate text-[1.05rem] text-slate-100">
+                  {selectedOfflineSessionShareLink}
+                </div>
+              </div>
+
+              <Button
+                type="button"
+                variant="outline"
+                className="mt-5 h-16 w-full rounded-[1.35rem] border-white/10 bg-transparent text-xl text-white hover:bg-white/5"
+                onClick={() => void copyOfflineSessionLink(selectedOfflineSession)}
+              >
+                <Copy className="mr-3 h-6 w-6" />
+                {historyCopiedSessionId === selectedOfflineSession.sessionId ? '已复制链接' : '复制链接'}
+              </Button>
+
+              <div className="mt-6 flex flex-wrap items-center gap-x-4 gap-y-2 text-sm text-slate-400">
+                <span>{getOfflineTransferSessionLabel(selectedOfflineSession)}</span>
+                <span>{selectedOfflineSession.files.length} 个项目</span>
+                <span>{getOfflineTransferSessionSize(selectedOfflineSession)}</span>
+                <span className={cn(
+                  isOfflineSessionReady(selectedOfflineSession) ? 'text-emerald-300' : 'text-amber-200',
+                )}>
+                  {isOfflineSessionReady(selectedOfflineSession) ? '文件已就绪，可重复接收' : '文件仍在上传中'}
+                </span>
+              </div>
+
+              <div className="mt-3 flex items-center gap-2 text-sm text-slate-500">
+                <Clock3 className="h-4 w-4" />
+                有效期至 {new Date(selectedOfflineSession.expiresAt).toLocaleString('zh-CN', {
+                  year: 'numeric',
+                  month: '2-digit',
+                  day: '2-digit',
+                  hour: '2-digit',
+                  minute: '2-digit',
+                })}
+              </div>
+            </motion.div>
+          </motion.div>
+        ) : null}
+      </AnimatePresence>
     </div>
   );
 }
