@@ -25,8 +25,10 @@ import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import java.util.zip.ZipEntry;
@@ -37,17 +39,20 @@ public class FileService {
     private static final List<String> DEFAULT_DIRECTORIES = List.of("下载", "文档", "图片");
 
     private final StoredFileRepository storedFileRepository;
+    private final FileBlobRepository fileBlobRepository;
     private final FileContentStorage fileContentStorage;
     private final FileShareLinkRepository fileShareLinkRepository;
     private final AdminMetricsService adminMetricsService;
     private final long maxFileSize;
 
     public FileService(StoredFileRepository storedFileRepository,
+                       FileBlobRepository fileBlobRepository,
                        FileContentStorage fileContentStorage,
                        FileShareLinkRepository fileShareLinkRepository,
                        AdminMetricsService adminMetricsService,
                        FileStorageProperties properties) {
         this.storedFileRepository = storedFileRepository;
+        this.fileBlobRepository = fileBlobRepository;
         this.fileContentStorage = fileContentStorage;
         this.fileShareLinkRepository = fileShareLinkRepository;
         this.adminMetricsService = adminMetricsService;
@@ -61,8 +66,12 @@ public class FileService {
         validateUpload(user, normalizedPath, filename, multipartFile.getSize());
         ensureDirectoryHierarchy(user, normalizedPath);
 
-        fileContentStorage.upload(user.getId(), normalizedPath, filename, multipartFile);
-        return saveFileMetadata(user, normalizedPath, filename, filename, multipartFile.getContentType(), multipartFile.getSize());
+        String objectKey = createBlobObjectKey();
+        return executeAfterBlobStored(objectKey, () -> {
+            fileContentStorage.uploadBlob(objectKey, multipartFile);
+            FileBlob blob = createAndSaveBlob(objectKey, multipartFile.getContentType(), multipartFile.getSize());
+            return saveFileMetadata(user, normalizedPath, filename, multipartFile.getContentType(), multipartFile.getSize(), blob);
+        });
     }
 
     public InitiateUploadResponse initiateUpload(User user, InitiateUploadRequest request) {
@@ -70,10 +79,11 @@ public class FileService {
         String filename = normalizeLeafName(request.filename());
         validateUpload(user, normalizedPath, filename, request.size());
 
-        PreparedUpload preparedUpload = fileContentStorage.prepareUpload(
-                user.getId(),
+        String objectKey = createBlobObjectKey();
+        PreparedUpload preparedUpload = fileContentStorage.prepareBlobUpload(
                 normalizedPath,
                 filename,
+                objectKey,
                 request.contentType(),
                 request.size()
         );
@@ -91,12 +101,15 @@ public class FileService {
     public FileMetadataResponse completeUpload(User user, CompleteUploadRequest request) {
         String normalizedPath = normalizeDirectoryPath(request.path());
         String filename = normalizeLeafName(request.filename());
-        String storageName = normalizeLeafName(request.storageName());
+        String objectKey = normalizeBlobObjectKey(request.storageName());
         validateUpload(user, normalizedPath, filename, request.size());
         ensureDirectoryHierarchy(user, normalizedPath);
 
-        fileContentStorage.completeUpload(user.getId(), normalizedPath, storageName, request.contentType(), request.size());
-        return saveFileMetadata(user, normalizedPath, filename, storageName, request.contentType(), request.size());
+        return executeAfterBlobStored(objectKey, () -> {
+            fileContentStorage.completeBlobUpload(objectKey, request.contentType(), request.size());
+            FileBlob blob = createAndSaveBlob(objectKey, request.contentType(), request.size());
+            return saveFileMetadata(user, normalizedPath, filename, request.contentType(), request.size(), blob);
+        });
     }
 
     @Transactional
@@ -117,7 +130,6 @@ public class FileService {
         storedFile.setUser(user);
         storedFile.setFilename(directoryName);
         storedFile.setPath(parentPath);
-        storedFile.setStorageName(directoryName);
         storedFile.setContentType("directory");
         storedFile.setSize(0L);
         storedFile.setDirectory(true);
@@ -153,7 +165,6 @@ public class FileService {
             storedFile.setUser(user);
             storedFile.setFilename(directoryName);
             storedFile.setPath("/");
-            storedFile.setStorageName(directoryName);
             storedFile.setContentType("directory");
             storedFile.setSize(0L);
             storedFile.setDirectory(true);
@@ -164,17 +175,20 @@ public class FileService {
     @Transactional
     public void delete(User user, Long fileId) {
         StoredFile storedFile = getOwnedFile(user, fileId, "删除");
+        List<StoredFile> filesToDelete = new ArrayList<>();
         if (storedFile.isDirectory()) {
             String logicalPath = buildLogicalPath(storedFile);
             List<StoredFile> descendants = storedFileRepository.findByUserIdAndPathEqualsOrDescendant(user.getId(), logicalPath);
-            fileContentStorage.deleteDirectory(user.getId(), logicalPath, descendants);
+            filesToDelete.addAll(descendants.stream().filter(descendant -> !descendant.isDirectory()).toList());
             if (!descendants.isEmpty()) {
                 storedFileRepository.deleteAll(descendants);
             }
         } else {
-            fileContentStorage.deleteFile(user.getId(), storedFile.getPath(), storedFile.getStorageName());
+            filesToDelete.add(storedFile);
         }
+        List<FileBlob> blobsToDelete = collectBlobsToDelete(filesToDelete);
         storedFileRepository.delete(storedFile);
+        deleteBlobs(blobsToDelete);
     }
 
     @Transactional
@@ -195,7 +209,6 @@ public class FileService {
                     : storedFile.getPath() + "/" + sanitizedFilename;
 
             List<StoredFile> descendants = storedFileRepository.findByUserIdAndPathEqualsOrDescendant(user.getId(), oldLogicalPath);
-            fileContentStorage.renameDirectory(user.getId(), oldLogicalPath, newLogicalPath, descendants);
             for (StoredFile descendant : descendants) {
                 if (descendant.getPath().equals(oldLogicalPath)) {
                     descendant.setPath(newLogicalPath);
@@ -207,12 +220,9 @@ public class FileService {
             if (!descendants.isEmpty()) {
                 storedFileRepository.saveAll(descendants);
             }
-        } else {
-            fileContentStorage.renameFile(user.getId(), storedFile.getPath(), storedFile.getStorageName(), sanitizedFilename);
         }
 
         storedFile.setFilename(sanitizedFilename);
-        storedFile.setStorageName(sanitizedFilename);
         return toResponse(storedFileRepository.save(storedFile));
     }
 
@@ -239,7 +249,6 @@ public class FileService {
             }
 
             List<StoredFile> descendants = storedFileRepository.findByUserIdAndPathEqualsOrDescendant(user.getId(), oldLogicalPath);
-            fileContentStorage.renameDirectory(user.getId(), oldLogicalPath, newLogicalPath, descendants);
             for (StoredFile descendant : descendants) {
                 if (descendant.getPath().equals(oldLogicalPath)) {
                     descendant.setPath(newLogicalPath);
@@ -251,8 +260,6 @@ public class FileService {
             if (!descendants.isEmpty()) {
                 storedFileRepository.saveAll(descendants);
             }
-        } else {
-            fileContentStorage.moveFile(user.getId(), storedFile.getPath(), normalizedTargetPath, storedFile.getStorageName());
         }
 
         storedFile.setPath(normalizedTargetPath);
@@ -270,8 +277,7 @@ public class FileService {
 
         if (!storedFile.isDirectory()) {
             ensureWithinStorageQuota(user, storedFile.getSize());
-            fileContentStorage.copyFile(user.getId(), storedFile.getPath(), normalizedTargetPath, storedFile.getStorageName());
-            return toResponse(storedFileRepository.save(copyStoredFile(storedFile, normalizedTargetPath)));
+            return toResponse(storedFileRepository.save(copyStoredFile(storedFile, user, normalizedTargetPath)));
         }
 
         String oldLogicalPath = buildLogicalPath(storedFile);
@@ -288,8 +294,7 @@ public class FileService {
         ensureWithinStorageQuota(user, additionalBytes);
         List<StoredFile> copiedEntries = new ArrayList<>();
 
-        fileContentStorage.ensureDirectory(user.getId(), newLogicalPath);
-        StoredFile copiedRoot = copyStoredFile(storedFile, normalizedTargetPath);
+        StoredFile copiedRoot = copyStoredFile(storedFile, user, normalizedTargetPath);
         copiedEntries.add(copiedRoot);
 
         descendants.stream()
@@ -303,12 +308,7 @@ public class FileService {
                         throw new BusinessException(ErrorCode.UNKNOWN, "目标目录已存在同名文件");
                     }
 
-                    if (descendant.isDirectory()) {
-                        fileContentStorage.ensureDirectory(user.getId(), buildTargetLogicalPath(copiedPath, descendant.getFilename()));
-                    } else {
-                        fileContentStorage.copyFile(user.getId(), descendant.getPath(), copiedPath, descendant.getStorageName());
-                    }
-                    copiedEntries.add(copyStoredFile(descendant, copiedPath));
+                    copiedEntries.add(copyStoredFile(descendant, user, copiedPath));
                 });
 
         StoredFile savedRoot = null;
@@ -329,10 +329,8 @@ public class FileService {
 
         if (fileContentStorage.supportsDirectDownload()) {
             return ResponseEntity.status(302)
-                    .location(URI.create(fileContentStorage.createDownloadUrl(
-                            user.getId(),
-                            storedFile.getPath(),
-                            storedFile.getStorageName(),
+                    .location(URI.create(fileContentStorage.createBlobDownloadUrl(
+                            getRequiredBlob(storedFile).getObjectKey(),
                             storedFile.getFilename())))
                     .build();
         }
@@ -342,7 +340,7 @@ public class FileService {
                         "attachment; filename*=UTF-8''" + URLEncoder.encode(storedFile.getFilename(), StandardCharsets.UTF_8))
                 .contentType(MediaType.parseMediaType(
                         storedFile.getContentType() == null ? MediaType.APPLICATION_OCTET_STREAM_VALUE : storedFile.getContentType()))
-                .body(fileContentStorage.readFile(user.getId(), storedFile.getPath(), storedFile.getStorageName()));
+                .body(fileContentStorage.readBlob(getRequiredBlob(storedFile).getObjectKey()));
     }
 
     public DownloadUrlResponse getDownloadUrl(User user, Long fileId) {
@@ -353,10 +351,8 @@ public class FileService {
         adminMetricsService.recordDownloadTraffic(storedFile.getSize());
 
         if (fileContentStorage.supportsDirectDownload()) {
-            return new DownloadUrlResponse(fileContentStorage.createDownloadUrl(
-                    user.getId(),
-                    storedFile.getPath(),
-                    storedFile.getStorageName(),
+            return new DownloadUrlResponse(fileContentStorage.createBlobDownloadUrl(
+                    getRequiredBlob(storedFile).getObjectKey(),
                     storedFile.getFilename()
             ));
         }
@@ -407,19 +403,13 @@ public class FileService {
         if (sourceFile.isDirectory()) {
             throw new BusinessException(ErrorCode.UNKNOWN, "目录暂不支持导入");
         }
-
-        byte[] content = fileContentStorage.readFile(
-                sourceFile.getUser().getId(),
-                sourceFile.getPath(),
-                sourceFile.getStorageName()
-        );
-        return importExternalFile(
+        return importReferencedBlob(
                 recipient,
                 path,
                 sourceFile.getFilename(),
                 sourceFile.getContentType(),
                 sourceFile.getSize(),
-                content
+                getRequiredBlob(sourceFile)
         );
     }
 
@@ -434,22 +424,20 @@ public class FileService {
         String normalizedFilename = normalizeLeafName(filename);
         validateUpload(recipient, normalizedPath, normalizedFilename, size);
         ensureDirectoryHierarchy(recipient, normalizedPath);
-        fileContentStorage.storeImportedFile(
-                recipient.getId(),
-                normalizedPath,
-                normalizedFilename,
-                contentType,
-                content
-        );
+        String objectKey = createBlobObjectKey();
+        return executeAfterBlobStored(objectKey, () -> {
+            fileContentStorage.storeBlob(objectKey, contentType, content);
+            FileBlob blob = createAndSaveBlob(objectKey, contentType, size);
 
-        return saveFileMetadata(
-                recipient,
-                normalizedPath,
-                normalizedFilename,
-                normalizedFilename,
-                contentType,
-                size
-        );
+            return saveFileMetadata(
+                    recipient,
+                    normalizedPath,
+                    normalizedFilename,
+                    contentType,
+                    size,
+                    blob
+            );
+        });
     }
 
     private ResponseEntity<byte[]> downloadDirectory(User user, StoredFile directory) {
@@ -475,7 +463,7 @@ public class FileService {
 
                 ensureParentDirectoryEntries(zipOutputStream, createdEntries, entryName);
                 writeFileEntry(zipOutputStream, createdEntries, entryName,
-                        fileContentStorage.readFile(user.getId(), descendant.getPath(), descendant.getStorageName()));
+                        fileContentStorage.readBlob(getRequiredBlob(descendant).getObjectKey()));
             }
             zipOutputStream.finish();
             archiveBytes = outputStream.toByteArray();
@@ -493,17 +481,17 @@ public class FileService {
     private FileMetadataResponse saveFileMetadata(User user,
                                                   String normalizedPath,
                                                   String filename,
-                                                  String storageName,
                                                   String contentType,
-                                                  long size) {
+                                                  long size,
+                                                  FileBlob blob) {
         StoredFile storedFile = new StoredFile();
         storedFile.setUser(user);
         storedFile.setFilename(filename);
         storedFile.setPath(normalizedPath);
-        storedFile.setStorageName(storageName);
         storedFile.setContentType(contentType);
         storedFile.setSize(size);
         storedFile.setDirectory(false);
+        storedFile.setBlob(blob);
         return toResponse(storedFileRepository.save(storedFile));
     }
 
@@ -513,7 +501,7 @@ public class FileService {
     }
 
     private StoredFile getOwnedFile(User user, Long fileId, String action) {
-        StoredFile storedFile = storedFileRepository.findById(fileId)
+        StoredFile storedFile = storedFileRepository.findDetailedById(fileId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.FILE_NOT_FOUND, "文件不存在"));
         if (!storedFile.getUser().getId().equals(user.getId())) {
             throw new BusinessException(ErrorCode.PERMISSION_DENIED, "没有权限" + action + "该文件");
@@ -565,7 +553,6 @@ public class FileService {
             storedFile.setUser(user);
             storedFile.setFilename(segment);
             storedFile.setPath(currentPath);
-            storedFile.setStorageName(segment);
             storedFile.setContentType("directory");
             storedFile.setSize(0L);
             storedFile.setDirectory(true);
@@ -658,15 +645,15 @@ public class FileService {
         return newLogicalPath + currentPath.substring(oldLogicalPath.length());
     }
 
-    private StoredFile copyStoredFile(StoredFile source, String nextPath) {
+    private StoredFile copyStoredFile(StoredFile source, User owner, String nextPath) {
         StoredFile copiedFile = new StoredFile();
-        copiedFile.setUser(source.getUser());
+        copiedFile.setUser(owner);
         copiedFile.setFilename(source.getFilename());
         copiedFile.setPath(nextPath);
-        copiedFile.setStorageName(source.getStorageName());
         copiedFile.setContentType(source.getContentType());
         copiedFile.setSize(source.getSize());
         copiedFile.setDirectory(source.isDirectory());
+        copiedFile.setBlob(source.getBlob());
         return copiedFile;
     }
 
@@ -716,5 +703,109 @@ public class FileService {
             throw new BusinessException(ErrorCode.UNKNOWN, "文件名不合法");
         }
         return cleaned;
+    }
+
+    private String createBlobObjectKey() {
+        return "blobs/" + UUID.randomUUID();
+    }
+
+    private String normalizeBlobObjectKey(String objectKey) {
+        String cleaned = StringUtils.cleanPath(objectKey == null ? "" : objectKey).trim().replace("\\", "/");
+        if (!StringUtils.hasText(cleaned) || cleaned.contains("..") || cleaned.startsWith("/") || !cleaned.startsWith("blobs/")) {
+            throw new BusinessException(ErrorCode.UNKNOWN, "上传对象标识不合法");
+        }
+        return cleaned;
+    }
+
+    private <T> T executeAfterBlobStored(String objectKey, BlobWriteOperation<T> operation) {
+        try {
+            return operation.run();
+        } catch (RuntimeException ex) {
+            try {
+                fileContentStorage.deleteBlob(objectKey);
+            } catch (RuntimeException cleanupEx) {
+                ex.addSuppressed(cleanupEx);
+            }
+            throw ex;
+        }
+    }
+
+    private FileBlob createAndSaveBlob(String objectKey, String contentType, long size) {
+        FileBlob blob = new FileBlob();
+        blob.setObjectKey(objectKey);
+        blob.setContentType(contentType);
+        blob.setSize(size);
+        return fileBlobRepository.save(blob);
+    }
+
+    private FileMetadataResponse importReferencedBlob(User recipient,
+                                                      String path,
+                                                      String filename,
+                                                      String contentType,
+                                                      long size,
+                                                      FileBlob blob) {
+        String normalizedPath = normalizeDirectoryPath(path);
+        String normalizedFilename = normalizeLeafName(filename);
+        validateUpload(recipient, normalizedPath, normalizedFilename, size);
+        ensureDirectoryHierarchy(recipient, normalizedPath);
+        return saveFileMetadata(
+                recipient,
+                normalizedPath,
+                normalizedFilename,
+                contentType,
+                size,
+                blob
+        );
+    }
+
+    private FileBlob getRequiredBlob(StoredFile storedFile) {
+        if (storedFile.isDirectory() || storedFile.getBlob() == null) {
+            throw new BusinessException(ErrorCode.FILE_NOT_FOUND, "文件内容不存在");
+        }
+        return storedFile.getBlob();
+    }
+
+    private List<FileBlob> collectBlobsToDelete(List<StoredFile> filesToDelete) {
+        Map<Long, BlobDeletionCandidate> candidates = new HashMap<>();
+        for (StoredFile file : filesToDelete) {
+            if (file.getBlob() == null || file.getBlob().getId() == null) {
+                continue;
+            }
+            BlobDeletionCandidate candidate = candidates.computeIfAbsent(
+                    file.getBlob().getId(),
+                    ignored -> new BlobDeletionCandidate(file.getBlob())
+            );
+            candidate.referencesToDelete += 1;
+        }
+
+        List<FileBlob> blobsToDelete = new ArrayList<>();
+        for (BlobDeletionCandidate candidate : candidates.values()) {
+            long currentReferences = storedFileRepository.countByBlobId(candidate.blob.getId());
+            if (currentReferences == candidate.referencesToDelete) {
+                blobsToDelete.add(candidate.blob);
+            }
+        }
+        return blobsToDelete;
+    }
+
+    private void deleteBlobs(List<FileBlob> blobsToDelete) {
+        for (FileBlob blob : blobsToDelete) {
+            fileContentStorage.deleteBlob(blob.getObjectKey());
+            fileBlobRepository.delete(blob);
+        }
+    }
+
+    private static final class BlobDeletionCandidate {
+        private final FileBlob blob;
+        private long referencesToDelete;
+
+        private BlobDeletionCandidate(FileBlob blob) {
+            this.blob = blob;
+        }
+    }
+
+    @FunctionalInterface
+    private interface BlobWriteOperation<T> {
+        T run();
     }
 }

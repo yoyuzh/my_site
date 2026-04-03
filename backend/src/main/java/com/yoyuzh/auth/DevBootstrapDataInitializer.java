@@ -1,8 +1,6 @@
 package com.yoyuzh.auth;
 
-import com.yoyuzh.config.FileStorageProperties;
 import com.yoyuzh.files.FileService;
-import com.yoyuzh.files.StoredFile;
 import com.yoyuzh.files.StoredFileRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.boot.CommandLineRunner;
@@ -11,10 +9,7 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.io.IOException;
 import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
-import java.nio.file.Path;
 import java.util.List;
 
 @Component
@@ -59,7 +54,6 @@ public class DevBootstrapDataInitializer implements CommandLineRunner {
     private final PasswordEncoder passwordEncoder;
     private final FileService fileService;
     private final StoredFileRepository storedFileRepository;
-    private final FileStorageProperties fileStorageProperties;
 
     @Override
     @Transactional
@@ -103,31 +97,15 @@ public class DevBootstrapDataInitializer implements CommandLineRunner {
             if (storedFileRepository.existsByUserIdAndPathAndFilename(user.getId(), file.path(), file.filename())) {
                 continue;
             }
-
-            Path filePath = resolveFilePath(user.getId(), file.path(), file.filename());
-            try {
-                Files.createDirectories(filePath.getParent());
-                Files.writeString(filePath, file.content(), StandardCharsets.UTF_8);
-            } catch (IOException ex) {
-                throw new IllegalStateException("无法初始化开发样例文件: " + file.filename(), ex);
-            }
-
-            StoredFile storedFile = new StoredFile();
-            storedFile.setUser(user);
-            storedFile.setFilename(file.filename());
-            storedFile.setPath(file.path());
-            storedFile.setStorageName(file.filename());
-            storedFile.setContentType(file.contentType());
-            storedFile.setSize((long) file.content().getBytes(StandardCharsets.UTF_8).length);
-            storedFile.setDirectory(false);
-            storedFileRepository.save(storedFile);
+            fileService.importExternalFile(
+                    user,
+                    file.path(),
+                    file.filename(),
+                    file.contentType(),
+                    file.content().getBytes(StandardCharsets.UTF_8).length,
+                    file.content().getBytes(StandardCharsets.UTF_8)
+            );
         }
-    }
-
-    private Path resolveFilePath(Long userId, String path, String filename) {
-        Path rootPath = Path.of(fileStorageProperties.getRootDir()).toAbsolutePath().normalize();
-        String normalizedPath = path.startsWith("/") ? path.substring(1) : path;
-        return rootPath.resolve(userId.toString()).resolve(normalizedPath).resolve(filename).normalize();
     }
 
     private record DemoUserSpec(

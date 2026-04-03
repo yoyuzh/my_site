@@ -9,6 +9,7 @@ import com.yoyuzh.auth.RefreshTokenService;
 import com.yoyuzh.common.BusinessException;
 import com.yoyuzh.common.ErrorCode;
 import com.yoyuzh.common.PageResponse;
+import com.yoyuzh.files.FileBlobRepository;
 import com.yoyuzh.files.FileService;
 import com.yoyuzh.files.StoredFile;
 import com.yoyuzh.files.StoredFileRepository;
@@ -32,6 +33,7 @@ public class AdminService {
 
     private final UserRepository userRepository;
     private final StoredFileRepository storedFileRepository;
+    private final FileBlobRepository fileBlobRepository;
     private final FileService fileService;
     private final PasswordEncoder passwordEncoder;
     private final RefreshTokenService refreshTokenService;
@@ -45,12 +47,13 @@ public class AdminService {
         return new AdminSummaryResponse(
                 userRepository.count(),
                 storedFileRepository.count(),
-                storedFileRepository.sumAllFileSize(),
+                fileBlobRepository.sumAllBlobSize(),
                 metrics.downloadTrafficBytes(),
                 metrics.requestCount(),
                 metrics.transferUsageBytes(),
                 offlineTransferSessionRepository.sumUploadedFileSizeByExpiresAtAfter(Instant.now()),
                 metrics.offlineTransferStorageLimitBytes(),
+                metrics.dailyActiveUsers(),
                 metrics.requestTimeline(),
                 registrationInviteService.getCurrentInviteCode()
         );

@@ -68,6 +68,7 @@ import {
   buildDirectoryTree,
   createExpandedDirectorySet,
   getMissingDirectoryListingPaths,
+  hasLoadedDirectoryListing,
   mergeDirectoryChildren,
   toDirectoryPath,
   type DirectoryChildrenMap,
@@ -349,7 +350,7 @@ export default function Files() {
       }
 
       next.add(path);
-      shouldLoadChildren = !(path in directoryChildren);
+      shouldLoadChildren = !hasLoadedDirectoryListing(pathParts, loadedDirectoryPaths);
       return next;
     });
 

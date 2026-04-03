@@ -27,8 +27,9 @@ interface ApiBinaryUploadRequestInit {
   signal?: AbortSignal;
 }
 
-const API_BASE_URL = (import.meta.env?.VITE_API_BASE_URL || '/api').replace(/\/$/, '');
 const AUTH_REFRESH_PATH = '/auth/refresh';
+const DEFAULT_API_BASE_URL = '/api';
+const DEFAULT_CAPACITOR_API_ORIGIN = 'https://api.yoyuzh.xyz';
 
 let refreshRequestPromise: Promise<boolean> | null = null;
 
@@ -90,13 +91,57 @@ function getRetryDelayForRequest(path: string, init: ApiRequestInit = {}, attemp
   return getRetryDelayMs(attempt);
 }
 
+function resolveRuntimeLocation() {
+  if (typeof globalThis.location !== 'undefined') {
+    return globalThis.location;
+  }
+
+  if (typeof window !== 'undefined') {
+    return window.location;
+  }
+
+  return null;
+}
+
+function isCapacitorLocalhostOrigin(location: Location | URL | null) {
+  if (!location) {
+    return false;
+  }
+
+  const protocol = location.protocol || '';
+  const hostname = location.hostname || '';
+  const port = location.port || '';
+
+  if (protocol === 'capacitor:') {
+    return true;
+  }
+
+  const isLocalhostHost = hostname === 'localhost' || hostname === '127.0.0.1';
+  const isCapacitorLocalScheme = protocol === 'http:' || protocol === 'https:';
+
+  return isCapacitorLocalScheme && isLocalhostHost && port === '';
+}
+
+export function getApiBaseUrl() {
+  const configuredBaseUrl = import.meta.env?.VITE_API_BASE_URL?.replace(/\/$/, '');
+  if (configuredBaseUrl) {
+    return configuredBaseUrl;
+  }
+
+  if (isCapacitorLocalhostOrigin(resolveRuntimeLocation())) {
+    return `${DEFAULT_CAPACITOR_API_ORIGIN}${DEFAULT_API_BASE_URL}`;
+  }
+
+  return DEFAULT_API_BASE_URL;
+}
+
 function resolveUrl(path: string) {
   if (/^https?:\/\//.test(path)) {
     return path;
   }
 
   const normalizedPath = path.startsWith('/') ? path : `/${path}`;
-  return `${API_BASE_URL}${normalizedPath}`;
+  return `${getApiBaseUrl()}${normalizedPath}`;
 }
 
 function normalizePath(path: string) {

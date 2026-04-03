@@ -118,5 +118,6 @@ test('parseTransferControlMessage returns null for invalid payloads', () => {
 
 test('toTransferChunk normalizes ArrayBuffer and Blob data into bytes', async () => {
   assert.deepEqual(Array.from(await toTransferChunk(new Uint8Array([1, 2, 3]).buffer)), [1, 2, 3]);
+  assert.deepEqual(Array.from(await toTransferChunk(new Uint8Array([4, 5, 6]))), [4, 5, 6]);
   assert.deepEqual(Array.from(await toTransferChunk(new Blob(['hi']))), [104, 105]);
 });

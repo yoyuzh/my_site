@@ -67,7 +67,7 @@ public class TransferService {
         return createOnlineSession(request);
     }
 
-    public LookupTransferSessionResponse lookupSession(boolean authenticated, String pickupCode) {
+    public LookupTransferSessionResponse lookupSession(String pickupCode) {
         pruneExpiredSessions();
         String normalizedPickupCode = normalizePickupCode(pickupCode);
 
@@ -78,12 +78,11 @@ public class TransferService {
 
         OfflineTransferSession offlineSession = offlineTransferSessionRepository.findWithFilesByPickupCode(normalizedPickupCode)
                 .orElseThrow(() -> new BusinessException(ErrorCode.FILE_NOT_FOUND, "取件码不存在或已失效"));
-        ensureAuthenticatedForOfflineTransfer(authenticated);
         validateOfflineReadySession(offlineSession, "取件码不存在或已失效");
         return toLookupResponse(offlineSession);
     }
 
-    public TransferSessionResponse joinSession(boolean authenticated, String sessionId) {
+    public TransferSessionResponse joinSession(String sessionId) {
         pruneExpiredSessions();
 
         TransferSession onlineSession = sessionStore.findById(sessionId).orElse(null);
@@ -98,7 +97,6 @@ public class TransferService {
 
         OfflineTransferSession offlineSession = offlineTransferSessionRepository.findWithFilesBySessionId(sessionId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.FILE_NOT_FOUND, "快传会话不存在或已失效"));
-        ensureAuthenticatedForOfflineTransfer(authenticated);
         validateOfflineReadySession(offlineSession, "离线快传会话不存在或已失效");
         return toSessionResponse(offlineSession);
     }
@@ -171,9 +169,8 @@ public class TransferService {
         return session.poll(TransferRole.from(role), Math.max(0, after));
     }
 
-    public ResponseEntity<?> downloadOfflineFile(boolean authenticated, String sessionId, String fileId) {
+    public ResponseEntity<?> downloadOfflineFile(String sessionId, String fileId) {
         pruneExpiredSessions();
-        ensureAuthenticatedForOfflineTransfer(authenticated);
         OfflineTransferSession session = getRequiredOfflineReadySession(sessionId);
         OfflineTransferFile file = getRequiredOfflineFile(session, fileId);
         ensureOfflineFileUploaded(file);
@@ -370,12 +367,6 @@ public class TransferService {
             throw new BusinessException(ErrorCode.UNKNOWN, "取件码格式不正确");
         }
         return normalized;
-    }
-
-    private void ensureAuthenticatedForOfflineTransfer(boolean authenticated) {
-        if (!authenticated) {
-            throw new BusinessException(ErrorCode.NOT_LOGGED_IN, "离线快传需要登录后使用");
-        }
     }
 
     private void validateOfflineReadySession(OfflineTransferSession session, String notFoundMessage) {

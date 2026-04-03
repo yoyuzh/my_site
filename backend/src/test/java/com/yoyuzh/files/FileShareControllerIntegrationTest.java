@@ -15,7 +15,10 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.LocalDateTime;
+import java.util.Comparator;
+import java.util.List;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -50,6 +53,8 @@ class FileShareControllerIntegrationTest {
 
     @Autowired
     private StoredFileRepository storedFileRepository;
+    @Autowired
+    private FileBlobRepository fileBlobRepository;
 
     @Autowired
     private FileShareLinkRepository fileShareLinkRepository;
@@ -58,6 +63,7 @@ class FileShareControllerIntegrationTest {
     void setUp() throws Exception {
         fileShareLinkRepository.deleteAll();
         storedFileRepository.deleteAll();
+        fileBlobRepository.deleteAll();
         userRepository.deleteAll();
         if (Files.exists(STORAGE_ROOT)) {
             try (var paths = Files.walk(STORAGE_ROOT)) {
@@ -88,19 +94,26 @@ class FileShareControllerIntegrationTest {
         recipient.setCreatedAt(LocalDateTime.now());
         recipient = userRepository.save(recipient);
 
+        FileBlob blob = new FileBlob();
+        blob.setObjectKey("blobs/share-notes");
+        blob.setContentType("text/plain");
+        blob.setSize(5L);
+        blob.setCreatedAt(LocalDateTime.now());
+        blob = fileBlobRepository.save(blob);
+
         StoredFile file = new StoredFile();
         file.setUser(owner);
         file.setFilename("notes.txt");
         file.setPath("/docs");
-        file.setStorageName("notes.txt");
         file.setContentType("text/plain");
         file.setSize(5L);
         file.setDirectory(false);
+        file.setBlob(blob);
         sharedFileId = storedFileRepository.save(file).getId();
 
-        Path ownerDir = STORAGE_ROOT.resolve(owner.getId().toString()).resolve("docs");
-        Files.createDirectories(ownerDir);
-        Files.writeString(ownerDir.resolve("notes.txt"), "hello", StandardCharsets.UTF_8);
+        Path blobPath = STORAGE_ROOT.resolve("blobs").resolve("share-notes");
+        Files.createDirectories(blobPath.getParent());
+        Files.writeString(blobPath, "hello", StandardCharsets.UTF_8);
     }
 
     @Test
@@ -152,6 +165,18 @@ class FileShareControllerIntegrationTest {
                         .param("size", "20"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.items[0].filename").value("notes.txt"));
+
+        List<StoredFile> allFiles = storedFileRepository.findAll().stream()
+                .filter(file -> !file.isDirectory())
+                .sorted(Comparator.comparing(StoredFile::getId))
+                .toList();
+        assertThat(allFiles).hasSize(2);
+        assertThat(allFiles.get(0).getBlob().getId()).isEqualTo(allFiles.get(1).getBlob().getId());
+        assertThat(fileBlobRepository.count()).isEqualTo(1L);
+        try (var paths = Files.walk(STORAGE_ROOT)) {
+            long physicalObjects = paths.filter(Files::isRegularFile).count();
+            assertThat(physicalObjects).isEqualTo(1L);
+        }
     }
 
     @Test
@@ -162,7 +187,6 @@ class FileShareControllerIntegrationTest {
         downloadDirectory.setUser(owner);
         downloadDirectory.setFilename("下载");
         downloadDirectory.setPath("/");
-        downloadDirectory.setStorageName("下载");
         downloadDirectory.setContentType("directory");
         downloadDirectory.setSize(0L);
         downloadDirectory.setDirectory(true);
@@ -198,7 +222,6 @@ class FileShareControllerIntegrationTest {
         downloadDirectory.setUser(owner);
         downloadDirectory.setFilename("下载");
         downloadDirectory.setPath("/");
-        downloadDirectory.setStorageName("下载");
         downloadDirectory.setContentType("directory");
         downloadDirectory.setSize(0L);
         downloadDirectory.setDirectory(true);
@@ -224,5 +247,13 @@ class FileShareControllerIntegrationTest {
                         .param("size", "20"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.items[0].filename").value("notes.txt"));
+
+        List<StoredFile> allFiles = storedFileRepository.findAll().stream()
+                .filter(file -> !file.isDirectory())
+                .sorted(Comparator.comparing(StoredFile::getId))
+                .toList();
+        assertThat(allFiles).hasSize(2);
+        assertThat(allFiles.get(0).getBlob().getId()).isEqualTo(allFiles.get(1).getBlob().getId());
+        assertThat(fileBlobRepository.count()).isEqualTo(1L);
     }
 }

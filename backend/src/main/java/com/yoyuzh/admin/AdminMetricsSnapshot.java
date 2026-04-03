@@ -7,6 +7,7 @@ public record AdminMetricsSnapshot(
         long downloadTrafficBytes,
         long transferUsageBytes,
         long offlineTransferStorageLimitBytes,
+        List<AdminDailyActiveUserSummary> dailyActiveUsers,
         List<AdminRequestTimelinePoint> requestTimeline
 ) {
 }

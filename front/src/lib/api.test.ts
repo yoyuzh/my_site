@@ -35,6 +35,7 @@ class MemoryStorage implements Storage {
 const originalFetch = globalThis.fetch;
 const originalStorage = globalThis.localStorage;
 const originalXMLHttpRequest = globalThis.XMLHttpRequest;
+const originalLocation = globalThis.location;
 
 class FakeXMLHttpRequest {
   static latest: FakeXMLHttpRequest | null = null;
@@ -136,6 +137,10 @@ afterEach(() => {
     configurable: true,
     value: originalXMLHttpRequest,
   });
+  Object.defineProperty(globalThis, 'location', {
+    configurable: true,
+    value: originalLocation,
+  });
 });
 
 test('apiRequest attaches bearer token and unwraps response payload', async () => {
@@ -178,6 +183,74 @@ test('apiRequest attaches bearer token and unwraps response payload', async () =
   assert.ok(request instanceof Request);
   assert.equal(request.headers.get('Authorization'), 'Bearer token-123');
   assert.equal(request.url, 'http://localhost/api/files/recent');
+});
+
+test('apiRequest uses the production api origin inside the Capacitor localhost shell', async () => {
+  let request: Request | URL | string | undefined;
+  Object.defineProperty(globalThis, 'location', {
+    configurable: true,
+    value: new URL('http://localhost'),
+  });
+
+  globalThis.fetch = async (input, init) => {
+    request =
+      input instanceof Request
+        ? input
+        : new Request(new URL(String(input), 'https://fallback.example.com'), init);
+    return new Response(
+      JSON.stringify({
+        code: 0,
+        msg: 'success',
+        data: {
+          ok: true,
+        },
+      }),
+      {
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      },
+    );
+  };
+
+  await apiRequest<{ok: boolean}>('/files/recent');
+
+  assert.ok(request instanceof Request);
+  assert.equal(request.url, 'https://api.yoyuzh.xyz/api/files/recent');
+});
+
+test('apiRequest uses the production api origin inside the Capacitor https localhost shell', async () => {
+  let request: Request | URL | string | undefined;
+  Object.defineProperty(globalThis, 'location', {
+    configurable: true,
+    value: new URL('https://localhost'),
+  });
+
+  globalThis.fetch = async (input, init) => {
+    request =
+      input instanceof Request
+        ? input
+        : new Request(new URL(String(input), 'https://fallback.example.com'), init);
+    return new Response(
+      JSON.stringify({
+        code: 0,
+        msg: 'success',
+        data: {
+          ok: true,
+        },
+      }),
+      {
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      },
+    );
+  };
+
+  await apiRequest<{ok: boolean}>('/files/recent');
+
+  assert.ok(request instanceof Request);
+  assert.equal(request.url, 'https://api.yoyuzh.xyz/api/files/recent');
 });
 
 test('apiRequest throws backend message on business error', async () => {

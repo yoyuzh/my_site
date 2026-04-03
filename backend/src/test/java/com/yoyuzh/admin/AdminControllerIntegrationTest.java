@@ -4,6 +4,8 @@ import com.yoyuzh.PortalBackendApplication;
 import com.yoyuzh.admin.AdminMetricsStateRepository;
 import com.yoyuzh.auth.User;
 import com.yoyuzh.auth.UserRepository;
+import com.yoyuzh.files.FileBlob;
+import com.yoyuzh.files.FileBlobRepository;
 import com.yoyuzh.files.StoredFile;
 import com.yoyuzh.files.StoredFileRepository;
 import com.yoyuzh.transfer.OfflineTransferSessionRepository;
@@ -17,6 +19,7 @@ import org.springframework.security.test.context.support.WithMockUser;
 import org.springframework.test.web.servlet.MockMvc;
 
 import java.time.LocalDateTime;
+import java.time.LocalDate;
 import java.time.LocalTime;
 
 import static org.hamcrest.Matchers.greaterThanOrEqualTo;
@@ -56,9 +59,13 @@ class AdminControllerIntegrationTest {
     @Autowired
     private StoredFileRepository storedFileRepository;
     @Autowired
+    private FileBlobRepository fileBlobRepository;
+    @Autowired
     private OfflineTransferSessionRepository offlineTransferSessionRepository;
     @Autowired
     private AdminMetricsStateRepository adminMetricsStateRepository;
+    @Autowired
+    private AdminMetricsService adminMetricsService;
 
     private User portalUser;
     private User secondaryUser;
@@ -69,6 +76,7 @@ class AdminControllerIntegrationTest {
     void setUp() {
         offlineTransferSessionRepository.deleteAll();
         storedFileRepository.deleteAll();
+        fileBlobRepository.deleteAll();
         userRepository.deleteAll();
         adminMetricsStateRepository.deleteAll();
 
@@ -88,33 +96,47 @@ class AdminControllerIntegrationTest {
         secondaryUser.setCreatedAt(LocalDateTime.now().minusDays(1));
         secondaryUser = userRepository.save(secondaryUser);
 
+        FileBlob reportBlob = createBlob("blobs/admin-report", "application/pdf", 1024L);
         storedFile = new StoredFile();
         storedFile.setUser(portalUser);
         storedFile.setFilename("report.pdf");
         storedFile.setPath("/");
-        storedFile.setStorageName("report.pdf");
         storedFile.setContentType("application/pdf");
         storedFile.setSize(1024L);
         storedFile.setDirectory(false);
+        storedFile.setBlob(reportBlob);
         storedFile.setCreatedAt(LocalDateTime.now());
         storedFile = storedFileRepository.save(storedFile);
 
+        FileBlob notesBlob = createBlob("blobs/admin-notes", "text/plain", 256L);
         secondaryFile = new StoredFile();
         secondaryFile.setUser(secondaryUser);
         secondaryFile.setFilename("notes.txt");
         secondaryFile.setPath("/docs");
-        secondaryFile.setStorageName("notes.txt");
         secondaryFile.setContentType("text/plain");
         secondaryFile.setSize(256L);
         secondaryFile.setDirectory(false);
+        secondaryFile.setBlob(notesBlob);
         secondaryFile.setCreatedAt(LocalDateTime.now().minusHours(2));
         secondaryFile = storedFileRepository.save(secondaryFile);
+    }
+
+    private FileBlob createBlob(String objectKey, String contentType, long size) {
+        FileBlob blob = new FileBlob();
+        blob.setObjectKey(objectKey);
+        blob.setContentType(contentType);
+        blob.setSize(size);
+        blob.setCreatedAt(LocalDateTime.now());
+        return fileBlobRepository.save(blob);
     }
 
     @Test
     @WithMockUser(username = "admin")
     void shouldAllowConfiguredAdminToListUsersAndSummary() throws Exception {
         int currentHour = LocalTime.now().getHour();
+        LocalDate today = LocalDate.now();
+        adminMetricsService.recordUserOnline(portalUser.getId(), portalUser.getUsername());
+        adminMetricsService.recordUserOnline(secondaryUser.getId(), secondaryUser.getUsername());
 
         mockMvc.perform(get("/api/admin/users?page=0&size=10"))
                 .andExpect(status().isOk())
@@ -134,13 +156,18 @@ class AdminControllerIntegrationTest {
                 .andExpect(jsonPath("$.data.totalStorageBytes").value(1280L))
                 .andExpect(jsonPath("$.data.downloadTrafficBytes").value(0L))
                 .andExpect(jsonPath("$.data.requestCount", greaterThanOrEqualTo(1)))
-                .andExpect(jsonPath("$.data.requestTimeline.length()").value(24))
+                .andExpect(jsonPath("$.data.requestTimeline.length()").value(currentHour + 1))
                 .andExpect(jsonPath("$.data.requestTimeline[" + currentHour + "].hour").value(currentHour))
                 .andExpect(jsonPath("$.data.requestTimeline[" + currentHour + "].label").value(String.format("%02d:00", currentHour)))
                 .andExpect(jsonPath("$.data.requestTimeline[" + currentHour + "].requestCount", greaterThanOrEqualTo(1)))
                 .andExpect(jsonPath("$.data.transferUsageBytes").value(0L))
                 .andExpect(jsonPath("$.data.offlineTransferStorageBytes").value(0L))
                 .andExpect(jsonPath("$.data.offlineTransferStorageLimitBytes").isNumber())
+                .andExpect(jsonPath("$.data.dailyActiveUsers.length()").value(7))
+                .andExpect(jsonPath("$.data.dailyActiveUsers[6].metricDate").value(today.toString()))
+                .andExpect(jsonPath("$.data.dailyActiveUsers[6].userCount").value(2))
+                .andExpect(jsonPath("$.data.dailyActiveUsers[6].usernames[0]").value("alice"))
+                .andExpect(jsonPath("$.data.dailyActiveUsers[6].usernames[1]").value("bob"))
                 .andExpect(jsonPath("$.data.inviteCode").isNotEmpty());
     }
 

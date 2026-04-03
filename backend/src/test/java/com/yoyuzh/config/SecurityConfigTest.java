@@ -15,7 +15,15 @@ class SecurityConfigTest {
         CorsProperties corsProperties = new CorsProperties();
 
         assertThat(corsProperties.getAllowedOrigins())
-                .contains("https://yoyuzh.xyz", "https://www.yoyuzh.xyz");
+                .contains(
+                        "http://localhost",
+                        "https://localhost",
+                        "http://127.0.0.1",
+                        "https://127.0.0.1",
+                        "capacitor://localhost",
+                        "https://yoyuzh.xyz",
+                        "https://www.yoyuzh.xyz"
+                );
     }
 
     @Test

@@ -61,6 +61,13 @@ export function getMissingDirectoryListingPaths(
   return missingPaths;
 }
 
+export function hasLoadedDirectoryListing(
+  pathParts: string[],
+  loadedDirectoryPaths: Set<string>,
+) {
+  return loadedDirectoryPaths.has(toDirectoryPath(pathParts));
+}
+
 export function buildDirectoryTree(
   directoryChildren: DirectoryChildrenMap,
   currentPath: string[],
@@ -68,7 +75,8 @@ export function buildDirectoryTree(
 ): DirectoryTreeNode[] {
   function getChildNames(parentPath: string, parentParts: string[]) {
     const nextNames = new Set(directoryChildren[parentPath] ?? []);
-    const currentChild = currentPath[parentParts.length];
+    const isCurrentBranch = parentParts.every((part, index) => currentPath[index] === part);
+    const currentChild = isCurrentBranch ? currentPath[parentParts.length] : null;
     if (currentChild) {
       nextNames.add(currentChild);
     }

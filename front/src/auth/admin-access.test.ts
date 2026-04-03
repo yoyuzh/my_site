@@ -15,6 +15,7 @@ test('fetchAdminAccessStatus returns true when the admin summary request succeed
     transferUsageBytes: 0,
     offlineTransferStorageBytes: 0,
     offlineTransferStorageLimitBytes: 0,
+    dailyActiveUsers: [],
     requestTimeline: [],
     inviteCode: 'invite-code',
   });

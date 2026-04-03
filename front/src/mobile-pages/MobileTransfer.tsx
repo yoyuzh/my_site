@@ -25,6 +25,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 
 import { useAuth } from '@/src/auth/AuthProvider';
 import { Button } from '@/src/components/ui/button';
+import { appendTransferRelayHint } from '@/src/lib/transfer-ice';
 import { buildTransferShareUrl, getTransferRouterMode } from '@/src/lib/transfer-links';
 import {
   createTransferFileManifest,
@@ -35,12 +36,15 @@ import {
   createTransferFileMetaMessage,
   type TransferFileDescriptor,
   SIGNAL_POLL_INTERVAL_MS,
-  TRANSFER_CHUNK_SIZE,
 } from '@/src/lib/transfer-protocol';
-import { waitForTransferChannelDrain } from '@/src/lib/transfer-runtime';
-import { flushPendingRemoteIceCandidates, handleRemoteIceCandidate } from '@/src/lib/transfer-signaling';
+import {
+  shouldPublishTransferProgress,
+  resolveTransferChunkSize,
+} from '@/src/lib/transfer-runtime';
+import { createTransferPeer, type TransferPeerAdapter } from '@/src/lib/transfer-peer';
 import {
   DEFAULT_TRANSFER_ICE_SERVERS,
+  TRANSFER_HAS_RELAY_SUPPORT,
   createTransferSession,
   listMyOfflineTransferSessions,
   pollTransferSignals,
@@ -92,7 +96,7 @@ function getPhaseMessage(mode: TransferMode, phase: SendPhase, errorMessage: str
 
 export default function MobileTransfer() {
   const navigate = useNavigate();
-  const { session: authSession } = useAuth();
+  const { ready: authReady, session: authSession } = useAuth();
   const [searchParams] = useSearchParams();
   const sessionId = searchParams.get('session');
   const isAuthenticated = Boolean(authSession?.token);
@@ -118,14 +122,14 @@ export default function MobileTransfer() {
   const copiedTimerRef = useRef<number | null>(null);
   const historyCopiedTimerRef = useRef<number | null>(null);
   const pollTimerRef = useRef<number | null>(null);
-  const peerConnectionRef = useRef<RTCPeerConnection | null>(null);
-  const dataChannelRef = useRef<RTCDataChannel | null>(null);
+  const peerRef = useRef<TransferPeerAdapter | null>(null);
   const cursorRef = useRef(0);
   const bootstrapIdRef = useRef(0);
   const totalBytesRef = useRef(0);
   const sentBytesRef = useRef(0);
+  const lastSendProgressPublishAtRef = useRef(0);
+  const lastPublishedSendProgressRef = useRef(0);
   const sendingStartedRef = useRef(false);
-  const pendingRemoteCandidatesRef = useRef<RTCIceCandidateInit[]>([]);
   const manifestRef = useRef<TransferFileDescriptor[]>([]);
 
   useEffect(() => {
@@ -193,14 +197,30 @@ export default function MobileTransfer() {
 
   function cleanupCurrentTransfer() {
     if (pollTimerRef.current) { window.clearInterval(pollTimerRef.current); pollTimerRef.current = null; }
-    if (dataChannelRef.current) { dataChannelRef.current.close(); dataChannelRef.current = null; }
-    if (peerConnectionRef.current) { peerConnectionRef.current.close(); peerConnectionRef.current = null; }
-    cursorRef.current = 0; sendingStartedRef.current = false; pendingRemoteCandidatesRef.current = [];
+    const peer = peerRef.current;
+    peerRef.current = null;
+    peer?.destroy();
+    cursorRef.current = 0; lastSendProgressPublishAtRef.current = 0; lastPublishedSendProgressRef.current = 0; sendingStartedRef.current = false;
+  }
+
+  function publishSendProgress(nextProgress: number, options?: {force?: boolean}) {
+    const normalizedProgress = Math.max(0, Math.min(100, nextProgress));
+    const now = globalThis.performance?.now?.() ?? Date.now();
+    if (!options?.force && !shouldPublishTransferProgress({
+      nextProgress: normalizedProgress,
+      previousProgress: lastPublishedSendProgressRef.current,
+      now,
+      lastPublishedAt: lastSendProgressPublishAtRef.current,
+    })) return;
+
+    lastSendProgressPublishAtRef.current = now;
+    lastPublishedSendProgressRef.current = normalizedProgress;
+    setSendProgress(normalizedProgress);
   }
 
   function resetSenderState() {
     cleanupCurrentTransfer();
-    setSession(null); setSelectedFiles([]); setSendPhase('idle'); setSendProgress(0); setSendError('');
+    setSession(null); setSelectedFiles([]); setSendPhase('idle'); publishSendProgress(0, {force: true}); setSendError('');
   }
 
   async function copyToClipboard(text: string) {
@@ -236,7 +256,7 @@ export default function MobileTransfer() {
     bootstrapIdRef.current = bootstrapId;
 
     cleanupCurrentTransfer();
-    setSendError(''); setSendPhase('creating'); setSendProgress(0);
+    setSendError(''); setSendPhase('creating'); publishSendProgress(0, {force: true});
     manifestRef.current = createTransferFileManifest(files);
     totalBytesRef.current = 0; sentBytesRef.current = 0;
 
@@ -261,7 +281,7 @@ export default function MobileTransfer() {
 
   async function uploadOfflineFiles(createdSession: TransferSessionResponse, files: File[], bootstrapId: number) {
     setSendPhase('uploading');
-    totalBytesRef.current = files.reduce((sum, f) => sum + f.size, 0); sentBytesRef.current = 0; setSendProgress(0);
+    totalBytesRef.current = files.reduce((sum, f) => sum + f.size, 0); sentBytesRef.current = 0; publishSendProgress(0, {force: true});
     for (const [idx, file] of files.entries()) {
       if (bootstrapIdRef.current !== bootstrapId) return;
       const sessionFile = createdSession.files[idx];
@@ -271,55 +291,61 @@ export default function MobileTransfer() {
       await uploadOfflineTransferFile(createdSession.sessionId, sessionFile.id, file, ({ loaded, total }) => {
         sentBytesRef.current += (loaded - lastLoaded); lastLoaded = loaded;
         if (loaded >= total) sentBytesRef.current = Math.min(totalBytesRef.current, sentBytesRef.current);
-        if (totalBytesRef.current > 0) setSendProgress(Math.min(99, Math.round((sentBytesRef.current / totalBytesRef.current) * 100)));
+        if (totalBytesRef.current > 0) publishSendProgress(Math.min(99, Math.round((sentBytesRef.current / totalBytesRef.current) * 100)));
       });
     }
-    setSendProgress(100); setSendPhase('completed');
+    publishSendProgress(100, {force: true}); setSendPhase('completed');
     void loadOfflineHistory({silent: true});
   }
 
   async function setupSenderPeer(createdSession: TransferSessionResponse, files: File[], bootstrapId: number) {
-    const conn = new RTCPeerConnection({ iceServers: DEFAULT_TRANSFER_ICE_SERVERS });
-    const channel = conn.createDataChannel('portal-transfer', { ordered: true });
-    peerConnectionRef.current = conn; dataChannelRef.current = channel; channel.binaryType = 'arraybuffer';
+    const peer = createTransferPeer({
+      initiator: true,
+      peerOptions: {
+        config: {
+          iceServers: DEFAULT_TRANSFER_ICE_SERVERS,
+        },
+      },
+      onSignal: (payload) => {
+        void postTransferSignal(createdSession.sessionId, 'sender', 'signal', payload);
+      },
+      onConnect: () => {
+        if (bootstrapIdRef.current !== bootstrapId) return;
+        setSendPhase(cur => (cur === 'transferring' || cur === 'completed' ? cur : 'connecting'));
+        peer.send(createTransferFileManifestMessage(manifestRef.current));
+      },
+      onData: (payload) => {
+        if (typeof payload !== 'string') return;
+        const msg = parseJsonPayload<{type?: string; fileIds?: string[]}>(payload);
+        if (!msg || msg.type !== 'receive-request' || !Array.isArray(msg.fileIds) || sendingStartedRef.current) return;
 
-    conn.onicecandidate = (e) => {
-      if (e.candidate) void postTransferSignal(createdSession.sessionId, 'sender', 'ice-candidate', JSON.stringify(e.candidate.toJSON()));
-    };
+        const requestedFiles = manifestRef.current.filter((item) => msg.fileIds?.includes(item.id));
+        if (requestedFiles.length === 0) return;
 
-    conn.onconnectionstatechange = () => {
-      if (conn.connectionState === 'connected') setSendPhase(cur => (cur === 'transferring' || cur === 'completed' ? cur : 'connecting'));
-      if (conn.connectionState === 'failed' || conn.connectionState === 'disconnected') { setSendPhase('error'); setSendError('浏览器直连失败'); }
-    };
-
-    channel.onopen = () => channel.send(createTransferFileManifestMessage(manifestRef.current));
-    channel.onmessage = (e) => {
-      if (typeof e.data !== 'string') return;
-      const msg = parseJsonPayload<{type?: string; fileIds?: string[];}>(e.data);
-      if (!msg || msg.type !== 'receive-request' || !Array.isArray(msg.fileIds) || sendingStartedRef.current) return;
-
-      const requestedFiles = manifestRef.current.filter((item) => msg.fileIds?.includes(item.id));
-      if (requestedFiles.length === 0) return;
-
-      sendingStartedRef.current = true;
-      totalBytesRef.current = requestedFiles.reduce((sum, f) => sum + f.size, 0); sentBytesRef.current = 0; setSendProgress(0);
-      void sendSelectedFiles(channel, files, requestedFiles, bootstrapId);
-    };
-    channel.onerror = () => { setSendPhase('error'); setSendError('数据通道建立失败'); };
-    startSenderPolling(createdSession.sessionId, conn, bootstrapId);
-
-    const offer = await conn.createOffer();
-    await conn.setLocalDescription(offer);
-    await postTransferSignal(createdSession.sessionId, 'sender', 'offer', JSON.stringify(offer));
+        sendingStartedRef.current = true;
+        totalBytesRef.current = requestedFiles.reduce((sum, f) => sum + f.size, 0); sentBytesRef.current = 0; publishSendProgress(0, {force: true});
+        void sendSelectedFiles(peer, files, requestedFiles, bootstrapId);
+      },
+      onError: (error) => {
+        if (bootstrapIdRef.current !== bootstrapId) return;
+        setSendPhase('error');
+        setSendError(appendTransferRelayHint(
+          error.message || '数据通道建立失败',
+          TRANSFER_HAS_RELAY_SUPPORT,
+        ));
+      },
+    });
+    peerRef.current = peer;
+    startSenderPolling(createdSession.sessionId, bootstrapId);
   }
 
-  function startSenderPolling(sessionId: string, conn: RTCPeerConnection, bootstrapId: number) {
+  function startSenderPolling(sessionId: string, bootstrapId: number) {
     let polling = false;
     pollTimerRef.current = window.setInterval(() => {
       if (polling || bootstrapIdRef.current !== bootstrapId) return;
       polling = true;
       void pollTransferSignals(sessionId, 'sender', cursorRef.current)
-        .then(async (res) => {
+        .then((res) => {
           if (bootstrapIdRef.current !== bootstrapId) return;
           cursorRef.current = res.nextCursor;
           for (const item of res.items) {
@@ -327,17 +353,8 @@ export default function MobileTransfer() {
                setSendPhase(cur => (cur === 'waiting' ? 'connecting' : cur));
                continue;
             }
-            if (item.type === 'answer' && !conn.currentRemoteDescription) {
-               const answer = parseJsonPayload<RTCSessionDescriptionInit>(item.payload);
-               if (answer) {
-                 await conn.setRemoteDescription(answer);
-                 pendingRemoteCandidatesRef.current = await flushPendingRemoteIceCandidates(conn, pendingRemoteCandidatesRef.current);
-               }
-               continue;
-            }
-            if (item.type === 'ice-candidate') {
-               const cand = parseJsonPayload<RTCIceCandidateInit>(item.payload);
-               if (cand) pendingRemoteCandidatesRef.current = await handleRemoteIceCandidate(conn, pendingRemoteCandidatesRef.current, cand);
+            if (item.type === 'signal') {
+               peerRef.current?.applyRemoteSignal(item.payload);
             }
           }
         })
@@ -349,28 +366,33 @@ export default function MobileTransfer() {
     }, SIGNAL_POLL_INTERVAL_MS);
   }
 
-  async function sendSelectedFiles(channel: RTCDataChannel, files: File[], requestedFiles: TransferFileDescriptor[], bootstrapId: number) {
+  async function sendSelectedFiles(
+    peer: TransferPeerAdapter,
+    files: File[],
+    requestedFiles: TransferFileDescriptor[],
+    bootstrapId: number,
+  ) {
     setSendPhase('transferring');
     const filesById = new Map(files.map((f) => [createTransferFileId(f), f]));
+    const chunkSize = resolveTransferChunkSize();
 
     for (const desc of requestedFiles) {
-      if (bootstrapIdRef.current !== bootstrapId || channel.readyState !== 'open') return;
+      if (bootstrapIdRef.current !== bootstrapId || !peer.connected) return;
       const file = filesById.get(desc.id);
       if (!file) continue;
 
-      channel.send(createTransferFileMetaMessage(desc));
-      for (let offset = 0; offset < file.size; offset += TRANSFER_CHUNK_SIZE) {
-        if (bootstrapIdRef.current !== bootstrapId || channel.readyState !== 'open') return;
-        const chunk = await file.slice(offset, offset + TRANSFER_CHUNK_SIZE).arrayBuffer();
-        await waitForTransferChannelDrain(channel);
-        channel.send(chunk);
+      peer.send(createTransferFileMetaMessage(desc));
+      for (let offset = 0; offset < file.size; offset += chunkSize) {
+        if (bootstrapIdRef.current !== bootstrapId || !peer.connected) return;
+        const chunk = await file.slice(offset, offset + chunkSize).arrayBuffer();
+        await peer.write(chunk);
         sentBytesRef.current += chunk.byteLength;
-        if (totalBytesRef.current > 0) setSendProgress(Math.min(99, Math.round((sentBytesRef.current / totalBytesRef.current) * 100)));
+        if (totalBytesRef.current > 0) publishSendProgress(Math.min(99, Math.round((sentBytesRef.current / totalBytesRef.current) * 100)));
       }
-      channel.send(createTransferFileCompleteMessage(desc.id));
+      peer.send(createTransferFileCompleteMessage(desc.id));
     }
-    channel.send(createTransferCompleteMessage());
-    setSendProgress(100); setSendPhase('completed');
+    peer.send(createTransferCompleteMessage());
+    publishSendProgress(100, {force: true}); setSendPhase('completed');
   }
 
   async function copyOfflineSessionLink(s: TransferSessionResponse) {
@@ -423,9 +445,9 @@ export default function MobileTransfer() {
       )}
 
       <div className="relative z-10 flex-1 flex flex-col p-4 min-w-0 pb-24">
-        {!isAuthenticated && (
+        {authReady && !isAuthenticated && (
            <div className="mb-4 flex flex-col gap-2 rounded-xl bg-blue-500/10 px-4 py-3 text-xs text-blue-100/90 border border-blue-400/10">
-             <p className="leading-relaxed">无需登录仅支持在线模式。离线模式可保留文件7天，需登录后可用。</p>
+             <p className="leading-relaxed">无需登录即可在线发送、在线接收和离线接收。只有发离线和把离线文件存入网盘时才需要登录。</p>
              <Button variant="outline" size="sm" onClick={navigateBackToLogin} className="w-full bg-white/5 border-white/10 text-white mt-1">
                <LogIn className="mr-2 h-3.5 w-3.5" /> 去登录
              </Button>

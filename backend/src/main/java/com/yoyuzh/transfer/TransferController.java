@@ -41,16 +41,14 @@ public class TransferController {
 
     @Operation(summary = "通过取件码查找快传会话")
     @GetMapping("/sessions/lookup")
-    public ApiResponse<LookupTransferSessionResponse> lookupSession(@AuthenticationPrincipal UserDetails userDetails,
-                                                                    @RequestParam String pickupCode) {
-        return ApiResponse.success(transferService.lookupSession(userDetails != null, pickupCode));
+    public ApiResponse<LookupTransferSessionResponse> lookupSession(@RequestParam String pickupCode) {
+        return ApiResponse.success(transferService.lookupSession(pickupCode));
     }
 
     @Operation(summary = "加入快传会话")
     @PostMapping("/sessions/{sessionId}/join")
-    public ApiResponse<TransferSessionResponse> joinSession(@AuthenticationPrincipal UserDetails userDetails,
-                                                            @PathVariable String sessionId) {
-        return ApiResponse.success(transferService.joinSession(userDetails != null, sessionId));
+    public ApiResponse<TransferSessionResponse> joinSession(@PathVariable String sessionId) {
+        return ApiResponse.success(transferService.joinSession(sessionId));
     }
 
     @Operation(summary = "查看当前用户的离线快传列表")
@@ -80,10 +78,9 @@ public class TransferController {
 
     @Operation(summary = "下载离线快传文件")
     @GetMapping("/sessions/{sessionId}/files/{fileId}/download")
-    public ResponseEntity<?> downloadOfflineFile(@AuthenticationPrincipal UserDetails userDetails,
-                                                 @PathVariable String sessionId,
+    public ResponseEntity<?> downloadOfflineFile(@PathVariable String sessionId,
                                                  @PathVariable String fileId) {
-        return transferService.downloadOfflineFile(userDetails != null, sessionId, fileId);
+        return transferService.downloadOfflineFile(sessionId, fileId);
     }
 
     @Operation(summary = "把离线快传文件存入网盘")

@@ -144,7 +144,7 @@ class TransferControllerIntegrationTest {
 
     @Test
     @WithMockUser(username = "alice")
-    void shouldRejectAnonymousOfflineLookupJoinAndDownload() throws Exception {
+    void shouldAllowAnonymousOfflineLookupJoinAndDownloadButKeepImportProtected() throws Exception {
         String response = mockMvc.perform(post("/api/transfer/sessions")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
@@ -176,12 +176,27 @@ class TransferControllerIntegrationTest {
                 .andExpect(status().isOk());
 
         mockMvc.perform(get("/api/transfer/sessions/lookup").with(anonymous()).param("pickupCode", pickupCode))
-                .andExpect(status().isUnauthorized());
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.sessionId").value(sessionId))
+                .andExpect(jsonPath("$.data.mode").value("OFFLINE"));
 
         mockMvc.perform(post("/api/transfer/sessions/{sessionId}/join", sessionId).with(anonymous()))
-                .andExpect(status().isUnauthorized());
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.sessionId").value(sessionId))
+                .andExpect(jsonPath("$.data.files[0].name").value("offline.txt"));
 
         mockMvc.perform(get("/api/transfer/sessions/{sessionId}/files/{fileId}/download", sessionId, fileId).with(anonymous()))
+                .andExpect(status().isOk())
+                .andExpect(content().bytes("hello offline".getBytes(StandardCharsets.UTF_8)));
+
+        mockMvc.perform(post("/api/transfer/sessions/{sessionId}/files/{fileId}/import", sessionId, fileId)
+                        .with(anonymous())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "path": "/"
+                                }
+                                """))
                 .andExpect(status().isUnauthorized());
     }
 

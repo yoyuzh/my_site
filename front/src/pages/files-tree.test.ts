@@ -5,6 +5,7 @@ import {
   buildDirectoryTree,
   createExpandedDirectorySet,
   getMissingDirectoryListingPaths,
+  hasLoadedDirectoryListing,
   mergeDirectoryChildren,
 } from './files-tree';
 
@@ -83,6 +84,27 @@ test('buildDirectoryTree marks the active branch and nested folders correctly', 
   ]);
 });
 
+test('buildDirectoryTree does not leak the active branch child into sibling folders', () => {
+  const tree = buildDirectoryTree(
+    {
+      '/': ['文件夹1', '文件夹2'],
+      '/文件夹1': ['子文件夹1'],
+    },
+    ['文件夹1', '子文件夹1'],
+    new Set(['/', '/文件夹1', '/文件夹2']),
+  );
+
+  assert.deepEqual(tree[1], {
+    id: '/文件夹2',
+    name: '文件夹2',
+    path: ['文件夹2'],
+    depth: 0,
+    active: false,
+    expanded: true,
+    children: [],
+  });
+});
+
 test('getMissingDirectoryListingPaths requests any unloaded ancestors for a deep current path', () => {
   assert.deepEqual(
     getMissingDirectoryListingPaths(
@@ -100,5 +122,17 @@ test('getMissingDirectoryListingPaths ignores ancestors that were only inferred 
       new Set(['/文档/课程资料']),
     ),
     [[], ['文档']],
+  );
+});
+
+test('hasLoadedDirectoryListing only trusts the loaded listing set instead of inferred tree nodes', () => {
+  assert.equal(
+    hasLoadedDirectoryListing(['文档'], new Set(['/文档'])),
+    true,
+  );
+
+  assert.equal(
+    hasLoadedDirectoryListing(['文档'], new Set(['/文档/课程资料'])),
+    false,
   );
 });

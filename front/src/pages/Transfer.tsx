@@ -25,6 +25,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 
 import { useAuth } from '@/src/auth/AuthProvider';
 import { Button } from '@/src/components/ui/button';
+import { appendTransferRelayHint } from '@/src/lib/transfer-ice';
 import { buildTransferShareUrl, getTransferRouterMode } from '@/src/lib/transfer-links';
 import {
   createTransferFileManifest,
@@ -35,12 +36,15 @@ import {
   createTransferFileMetaMessage,
   type TransferFileDescriptor,
   SIGNAL_POLL_INTERVAL_MS,
-  TRANSFER_CHUNK_SIZE,
 } from '@/src/lib/transfer-protocol';
-import { waitForTransferChannelDrain } from '@/src/lib/transfer-runtime';
-import { flushPendingRemoteIceCandidates, handleRemoteIceCandidate } from '@/src/lib/transfer-signaling';
+import {
+  shouldPublishTransferProgress,
+  resolveTransferChunkSize,
+} from '@/src/lib/transfer-runtime';
+import { createTransferPeer, type TransferPeerAdapter } from '@/src/lib/transfer-peer';
 import {
   DEFAULT_TRANSFER_ICE_SERVERS,
+  TRANSFER_HAS_RELAY_SUPPORT,
   createTransferSession,
   listMyOfflineTransferSessions,
   pollTransferSignals,
@@ -108,7 +112,7 @@ function getPhaseMessage(mode: TransferMode, phase: SendPhase, errorMessage: str
 
 export default function Transfer() {
   const navigate = useNavigate();
-  const { session: authSession } = useAuth();
+  const { ready: authReady, session: authSession } = useAuth();
   const [searchParams] = useSearchParams();
   const sessionId = searchParams.get('session');
   const isAuthenticated = Boolean(authSession?.token);
@@ -134,14 +138,14 @@ export default function Transfer() {
   const copiedTimerRef = useRef<number | null>(null);
   const historyCopiedTimerRef = useRef<number | null>(null);
   const pollTimerRef = useRef<number | null>(null);
-  const peerConnectionRef = useRef<RTCPeerConnection | null>(null);
-  const dataChannelRef = useRef<RTCDataChannel | null>(null);
+  const peerRef = useRef<TransferPeerAdapter | null>(null);
   const cursorRef = useRef(0);
   const bootstrapIdRef = useRef(0);
   const totalBytesRef = useRef(0);
   const sentBytesRef = useRef(0);
+  const lastSendProgressPublishAtRef = useRef(0);
+  const lastPublishedSendProgressRef = useRef(0);
   const sendingStartedRef = useRef(false);
-  const pendingRemoteCandidatesRef = useRef<RTCIceCandidateInit[]>([]);
   const manifestRef = useRef<TransferFileDescriptor[]>([]);
 
   useEffect(() => {
@@ -252,19 +256,31 @@ export default function Transfer() {
       pollTimerRef.current = null;
     }
 
-    if (dataChannelRef.current) {
-      dataChannelRef.current.close();
-      dataChannelRef.current = null;
-    }
-
-    if (peerConnectionRef.current) {
-      peerConnectionRef.current.close();
-      peerConnectionRef.current = null;
-    }
+    const peer = peerRef.current;
+    peerRef.current = null;
+    peer?.destroy();
 
     cursorRef.current = 0;
+    lastSendProgressPublishAtRef.current = 0;
+    lastPublishedSendProgressRef.current = 0;
     sendingStartedRef.current = false;
-    pendingRemoteCandidatesRef.current = [];
+  }
+
+  function publishSendProgress(nextProgress: number, options?: {force?: boolean}) {
+    const normalizedProgress = Math.max(0, Math.min(100, nextProgress));
+    const now = globalThis.performance?.now?.() ?? Date.now();
+    if (!options?.force && !shouldPublishTransferProgress({
+      nextProgress: normalizedProgress,
+      previousProgress: lastPublishedSendProgressRef.current,
+      now,
+      lastPublishedAt: lastSendProgressPublishAtRef.current,
+    })) {
+      return;
+    }
+
+    lastSendProgressPublishAtRef.current = now;
+    lastPublishedSendProgressRef.current = normalizedProgress;
+    setSendProgress(normalizedProgress);
   }
 
   function resetSenderState() {
@@ -272,7 +288,7 @@ export default function Transfer() {
     setSession(null);
     setSelectedFiles([]);
     setSendPhase('idle');
-    setSendProgress(0);
+    publishSendProgress(0, {force: true});
     setSendError('');
   }
 
@@ -334,7 +350,7 @@ export default function Transfer() {
     cleanupCurrentTransfer();
     setSendError('');
     setSendPhase('creating');
-    setSendProgress(0);
+    publishSendProgress(0, {force: true});
     manifestRef.current = createTransferFileManifest(files);
     totalBytesRef.current = 0;
     sentBytesRef.current = 0;
@@ -367,7 +383,7 @@ export default function Transfer() {
     setSendPhase('uploading');
     totalBytesRef.current = files.reduce((sum, file) => sum + file.size, 0);
     sentBytesRef.current = 0;
-    setSendProgress(0);
+    publishSendProgress(0, {force: true});
 
     for (const [index, file] of files.entries()) {
       if (bootstrapIdRef.current !== bootstrapId) {
@@ -390,95 +406,71 @@ export default function Transfer() {
         }
 
         if (totalBytesRef.current > 0) {
-          setSendProgress(Math.min(99, Math.round((sentBytesRef.current / totalBytesRef.current) * 100)));
+          publishSendProgress(Math.min(99, Math.round((sentBytesRef.current / totalBytesRef.current) * 100)));
         }
       });
     }
 
-    setSendProgress(100);
+    publishSendProgress(100, {force: true});
     setSendPhase('completed');
     void loadOfflineHistory({silent: true});
   }
 
   async function setupSenderPeer(createdSession: TransferSessionResponse, files: File[], bootstrapId: number) {
-    const connection = new RTCPeerConnection({
-      iceServers: DEFAULT_TRANSFER_ICE_SERVERS,
-    });
-    const channel = connection.createDataChannel('portal-transfer', {
-      ordered: true,
-    });
-
-    peerConnectionRef.current = connection;
-    dataChannelRef.current = channel;
-    channel.binaryType = 'arraybuffer';
-
-    connection.onicecandidate = (event) => {
-      if (!event.candidate) {
-        return;
-      }
-
-      void postTransferSignal(
-        createdSession.sessionId,
-        'sender',
-        'ice-candidate',
-        JSON.stringify(event.candidate.toJSON()),
-      );
-    };
-
-    connection.onconnectionstatechange = () => {
-      if (connection.connectionState === 'connected') {
+    const peer = createTransferPeer({
+      initiator: true,
+      peerOptions: {
+        config: {
+          iceServers: DEFAULT_TRANSFER_ICE_SERVERS,
+        },
+      },
+      onSignal: (payload) => {
+        void postTransferSignal(createdSession.sessionId, 'sender', 'signal', payload);
+      },
+      onConnect: () => {
+        if (bootstrapIdRef.current !== bootstrapId) {
+          return;
+        }
         setSendPhase((current) => (current === 'transferring' || current === 'completed' ? current : 'connecting'));
-      }
+        peer.send(createTransferFileManifestMessage(manifestRef.current));
+      },
+      onData: (payload) => {
+        if (typeof payload !== 'string') {
+          return;
+        }
 
-      if (connection.connectionState === 'failed' || connection.connectionState === 'disconnected') {
+        const message = parseJsonPayload<{type?: string; fileIds?: string[]}>(payload);
+        if (!message || message.type !== 'receive-request' || !Array.isArray(message.fileIds) || sendingStartedRef.current) {
+          return;
+        }
+
+        const requestedFiles = manifestRef.current.filter((item) => message.fileIds?.includes(item.id));
+        if (requestedFiles.length === 0) {
+          return;
+        }
+
+        sendingStartedRef.current = true;
+        totalBytesRef.current = requestedFiles.reduce((sum, file) => sum + file.size, 0);
+        sentBytesRef.current = 0;
+        publishSendProgress(0, {force: true});
+        void sendSelectedFiles(peer, files, requestedFiles, bootstrapId);
+      },
+      onError: (error) => {
+        if (bootstrapIdRef.current !== bootstrapId) {
+          return;
+        }
         setSendPhase('error');
-        setSendError('浏览器直连失败，请重新生成分享链接再试一次。');
-      }
-    };
-
-    channel.onopen = () => {
-      channel.send(createTransferFileManifestMessage(manifestRef.current));
-    };
-
-    channel.onmessage = (event) => {
-      if (typeof event.data !== 'string') {
-        return;
-      }
-
-      const message = parseJsonPayload<{type?: string; fileIds?: string[];}>(event.data);
-      if (!message || message.type !== 'receive-request' || !Array.isArray(message.fileIds)) {
-        return;
-      }
-
-      if (sendingStartedRef.current) {
-        return;
-      }
-
-      const requestedFiles = manifestRef.current.filter((item) => message.fileIds?.includes(item.id));
-      if (requestedFiles.length === 0) {
-        return;
-      }
-
-      sendingStartedRef.current = true;
-      totalBytesRef.current = requestedFiles.reduce((sum, file) => sum + file.size, 0);
-      sentBytesRef.current = 0;
-      setSendProgress(0);
-      void sendSelectedFiles(channel, files, requestedFiles, bootstrapId);
-    };
-
-    channel.onerror = () => {
-      setSendPhase('error');
-      setSendError('数据通道建立失败，请重新开始本次快传。');
-    };
-
-    startSenderPolling(createdSession.sessionId, connection, bootstrapId);
-
-    const offer = await connection.createOffer();
-    await connection.setLocalDescription(offer);
-    await postTransferSignal(createdSession.sessionId, 'sender', 'offer', JSON.stringify(offer));
+        setSendError(appendTransferRelayHint(
+          error.message || '数据通道建立失败，请重新开始本次快传。',
+          TRANSFER_HAS_RELAY_SUPPORT,
+        ));
+      },
+    });
+    peerRef.current = peer;
+    startSenderPolling(createdSession.sessionId, bootstrapId);
   }
 
-  function startSenderPolling(sessionId: string, connection: RTCPeerConnection, bootstrapId: number) {
+  function startSenderPolling(sessionId: string, bootstrapId: number) {
     let polling = false;
 
     pollTimerRef.current = window.setInterval(() => {
@@ -502,27 +494,8 @@ export default function Transfer() {
               continue;
             }
 
-            if (item.type === 'answer' && !connection.currentRemoteDescription) {
-              const answer = parseJsonPayload<RTCSessionDescriptionInit>(item.payload);
-              if (answer) {
-                await connection.setRemoteDescription(answer);
-                pendingRemoteCandidatesRef.current = await flushPendingRemoteIceCandidates(
-                  connection,
-                  pendingRemoteCandidatesRef.current,
-                );
-              }
-              continue;
-            }
-
-            if (item.type === 'ice-candidate') {
-              const candidate = parseJsonPayload<RTCIceCandidateInit>(item.payload);
-              if (candidate) {
-                pendingRemoteCandidatesRef.current = await handleRemoteIceCandidate(
-                  connection,
-                  pendingRemoteCandidatesRef.current,
-                  candidate,
-                );
-              }
+            if (item.type === 'signal') {
+              peerRef.current?.applyRemoteSignal(item.payload);
             }
           }
         })
@@ -540,16 +513,17 @@ export default function Transfer() {
   }
 
   async function sendSelectedFiles(
-    channel: RTCDataChannel,
+    peer: TransferPeerAdapter,
     files: File[],
     requestedFiles: TransferFileDescriptor[],
     bootstrapId: number,
   ) {
     setSendPhase('transferring');
     const filesById = new Map(files.map((file) => [createTransferFileId(file), file]));
+    const chunkSize = resolveTransferChunkSize();
 
     for (const descriptor of requestedFiles) {
-      if (bootstrapIdRef.current !== bootstrapId || channel.readyState !== 'open') {
+      if (bootstrapIdRef.current !== bootstrapId || !peer.connected) {
         return;
       }
 
@@ -558,31 +532,30 @@ export default function Transfer() {
         continue;
       }
 
-      channel.send(createTransferFileMetaMessage(descriptor));
+      peer.send(createTransferFileMetaMessage(descriptor));
 
-      for (let offset = 0; offset < file.size; offset += TRANSFER_CHUNK_SIZE) {
-        if (bootstrapIdRef.current !== bootstrapId || channel.readyState !== 'open') {
+      for (let offset = 0; offset < file.size; offset += chunkSize) {
+        if (bootstrapIdRef.current !== bootstrapId || !peer.connected) {
           return;
         }
 
-        const chunk = await file.slice(offset, offset + TRANSFER_CHUNK_SIZE).arrayBuffer();
-        await waitForTransferChannelDrain(channel);
-        channel.send(chunk);
+        const chunk = await file.slice(offset, offset + chunkSize).arrayBuffer();
+        await peer.write(chunk);
         sentBytesRef.current += chunk.byteLength;
 
         if (totalBytesRef.current > 0) {
-          setSendProgress(Math.min(
+          publishSendProgress(Math.min(
             99,
             Math.round((sentBytesRef.current / totalBytesRef.current) * 100),
           ));
         }
       }
 
-      channel.send(createTransferFileCompleteMessage(descriptor.id));
+      peer.send(createTransferFileCompleteMessage(descriptor.id));
     }
 
-    channel.send(createTransferCompleteMessage());
-    setSendProgress(100);
+    peer.send(createTransferCompleteMessage());
+    publishSendProgress(100, {force: true});
     setSendPhase('completed');
   }
 
@@ -650,10 +623,10 @@ export default function Transfer() {
           ) : null}
 
           <div className="p-8 min-h-[420px] flex flex-col relative min-w-0">
-            {!isAuthenticated ? (
+            {authReady && !isAuthenticated ? (
               <div className="mb-6 flex flex-col gap-3 rounded-2xl border border-blue-400/15 bg-blue-500/10 px-4 py-4 text-sm text-blue-100 md:flex-row md:items-center md:justify-between">
                 <p className="leading-6">
-                  当前无需登录即可使用快传，但仅支持在线发送和在线接收。离线快传仍需登录后使用。
+                  当前无需登录即可在线发送、在线接收和离线接收。只有发离线和把离线文件存入网盘时才需要登录。
                 </p>
                 <Button
                   type="button"

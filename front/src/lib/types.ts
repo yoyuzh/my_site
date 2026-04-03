@@ -21,6 +21,13 @@ export interface AdminRequestTimelinePoint {
   requestCount: number;
 }
 
+export interface AdminDailyActiveUserSummary {
+  metricDate: string;
+  label: string;
+  userCount: number;
+  usernames: string[];
+}
+
 export interface AdminSummary {
   totalUsers: number;
   totalFiles: number;
@@ -30,6 +37,7 @@ export interface AdminSummary {
   transferUsageBytes: number;
   offlineTransferStorageBytes: number;
   offlineTransferStorageLimitBytes: number;
+  dailyActiveUsers: AdminDailyActiveUserSummary[];
   requestTimeline: AdminRequestTimelinePoint[];
   inviteCode: string;
 }

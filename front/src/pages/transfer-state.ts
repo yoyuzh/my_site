@@ -11,6 +11,31 @@ export function sanitizeReceiveCode(value: string) {
   return value.replace(/\D/g, '').slice(0, 6);
 }
 
+export function buildTransferReceiveSearchParams(params: {
+  sessionId?: string | null;
+  receiveCode?: string | null;
+}) {
+  const nextParams = new URLSearchParams();
+  if (params.sessionId) {
+    nextParams.set('session', params.sessionId);
+  }
+
+  const normalizedCode = sanitizeReceiveCode(params.receiveCode ?? '');
+  if (normalizedCode) {
+    nextParams.set('code', normalizedCode);
+  }
+
+  return nextParams;
+}
+
+export function canSubmitReceiveCodeLookupOnEnter(params: {
+  key: string;
+  receiveCode: string;
+  lookupBusy: boolean;
+}) {
+  return params.key === 'Enter' && params.receiveCode.length === 6 && !params.lookupBusy;
+}
+
 export function formatTransferSize(bytes: number) {
   if (bytes <= 0) {
     return '0 B';

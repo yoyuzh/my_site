@@ -32,6 +32,33 @@ const NAV_ITEMS = [
   { name: '快传', path: '/transfer', icon: Send },
 ] as const;
 
+export function isNativeMobileShellLocation(location: Location | URL | null) {
+  if (!location) {
+    return false;
+  }
+
+  const hostname = location.hostname || '';
+  const protocol = location.protocol || '';
+  const isLocalhostHost = hostname === 'localhost' || hostname === '127.0.0.1';
+  const isCapacitorScheme = protocol === 'http:' || protocol === 'https:' || protocol === 'capacitor:';
+
+  return isLocalhostHost && isCapacitorScheme;
+}
+
+export function getMobileViewportOffsetClassNames(isNativeShell = false) {
+  if (isNativeShell) {
+    return {
+      header: 'safe-area-pt pt-6',
+      main: 'pt-[calc(3.5rem+1.5rem+var(--app-safe-area-top))]',
+    };
+  }
+
+  return {
+    header: 'safe-area-pt',
+    main: 'pt-[calc(3.5rem+var(--app-safe-area-top))]',
+  };
+}
+
 type ActiveModal = 'security' | 'settings' | null;
 
 export function getVisibleNavItems(isAdmin: boolean) {
@@ -47,6 +74,9 @@ export function MobileLayout({ children }: LayoutProps = {}) {
   const navigate = useNavigate();
   const { isAdmin, logout, refreshProfile, user } = useAuth();
   const navItems = getVisibleNavItems(isAdmin);
+  const viewportOffsets = getMobileViewportOffsetClassNames(
+    typeof window !== 'undefined' && isNativeMobileShellLocation(window.location),
+  );
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
@@ -234,7 +264,7 @@ export function MobileLayout({ children }: LayoutProps = {}) {
       </div>
 
       {/* Top App Bar */}
-      <header className="fixed top-0 left-0 right-0 z-40 w-full glass-panel border-b border-white/5 bg-[#07101D]/70 backdrop-blur-2xl">
+      <header className={cn("fixed top-0 left-0 right-0 z-40 w-full glass-panel border-b border-white/5 bg-[#07101D]/70 backdrop-blur-2xl", viewportOffsets.header)}>
         <div className="flex items-center justify-between px-4 h-14">
           <div className="flex items-center gap-2">
             <div className="w-8 h-8 rounded-full bg-gradient-to-br from-[#336EFF] to-blue-400 flex items-center justify-center shadow-lg">
@@ -306,7 +336,7 @@ export function MobileLayout({ children }: LayoutProps = {}) {
       </AnimatePresence>
 
       {/* Main Content Area */}
-      <main className="flex-1 w-full overflow-y-auto overflow-x-hidden pt-14 pb-16 z-10">
+      <main className={cn("flex-1 w-full overflow-y-auto overflow-x-hidden pb-16 z-10", viewportOffsets.main)}>
         {children ?? <Outlet />}
       </main>
 

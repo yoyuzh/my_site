@@ -32,6 +32,8 @@ class FileServiceEdgeCaseTest {
     @Mock
     private StoredFileRepository storedFileRepository;
     @Mock
+    private FileBlobRepository fileBlobRepository;
+    @Mock
     private FileContentStorage fileContentStorage;
     @Mock
     private FileShareLinkRepository fileShareLinkRepository;
@@ -44,7 +46,14 @@ class FileServiceEdgeCaseTest {
     void setUp() {
         FileStorageProperties properties = new FileStorageProperties();
         properties.setMaxFileSize(500L * 1024 * 1024);
-        fileService = new FileService(storedFileRepository, fileContentStorage, fileShareLinkRepository, adminMetricsService, properties);
+        fileService = new FileService(
+                storedFileRepository,
+                fileBlobRepository,
+                fileContentStorage,
+                fileShareLinkRepository,
+                adminMetricsService,
+                properties
+        );
     }
 
     // --- normalizeDirectoryPath edge cases ---
@@ -131,9 +140,9 @@ class FileServiceEdgeCaseTest {
     void shouldReturn302RedirectWhenStorageSupportsDirectDownloadForFile() {
         User user = createUser(1L);
         StoredFile file = createFile(10L, user, "/docs", "notes.txt");
-        when(storedFileRepository.findById(10L)).thenReturn(Optional.of(file));
+        when(storedFileRepository.findDetailedById(10L)).thenReturn(Optional.of(file));
         when(fileContentStorage.supportsDirectDownload()).thenReturn(true);
-        when(fileContentStorage.createDownloadUrl(1L, "/docs", "notes.txt", "notes.txt"))
+        when(fileContentStorage.createBlobDownloadUrl("blobs/blob-10", "notes.txt"))
                 .thenReturn("https://cdn.example.com/notes.txt");
 
         ResponseEntity<?> response = fileService.download(user, 10L);
@@ -149,7 +158,7 @@ class FileServiceEdgeCaseTest {
     void shouldRejectCreatingShareLinkForDirectory() {
         User user = createUser(1L);
         StoredFile directory = createDirectory(10L, user, "/", "docs");
-        when(storedFileRepository.findById(10L)).thenReturn(Optional.of(directory));
+        when(storedFileRepository.findDetailedById(10L)).thenReturn(Optional.of(directory));
 
         assertThatThrownBy(() -> fileService.createShareLink(user, 10L))
                 .isInstanceOf(BusinessException.class)
@@ -162,7 +171,7 @@ class FileServiceEdgeCaseTest {
     void shouldRejectDownloadUrlForDirectory() {
         User user = createUser(1L);
         StoredFile directory = createDirectory(10L, user, "/", "docs");
-        when(storedFileRepository.findById(10L)).thenReturn(Optional.of(directory));
+        when(storedFileRepository.findDetailedById(10L)).thenReturn(Optional.of(directory));
 
         assertThatThrownBy(() -> fileService.getDownloadUrl(user, 10L))
                 .isInstanceOf(BusinessException.class)
@@ -211,7 +220,7 @@ class FileServiceEdgeCaseTest {
     void shouldReturnUnchangedFileWhenRenameToSameName() {
         User user = createUser(1L);
         StoredFile file = createFile(10L, user, "/docs", "notes.txt");
-        when(storedFileRepository.findById(10L)).thenReturn(Optional.of(file));
+        when(storedFileRepository.findDetailedById(10L)).thenReturn(Optional.of(file));
 
         FileMetadataResponse response = fileService.rename(user, 10L, "notes.txt");
 
@@ -237,9 +246,10 @@ class FileServiceEdgeCaseTest {
         file.setUser(user);
         file.setFilename(filename);
         file.setPath(path);
-        file.setStorageName(filename);
         file.setSize(5L);
         file.setDirectory(false);
+        file.setContentType("text/plain");
+        file.setBlob(createBlob(id, "blobs/blob-" + id, 5L, "text/plain"));
         file.setCreatedAt(LocalDateTime.now());
         return file;
     }
@@ -249,6 +259,17 @@ class FileServiceEdgeCaseTest {
         dir.setDirectory(true);
         dir.setContentType("directory");
         dir.setSize(0L);
+        dir.setBlob(null);
         return dir;
+    }
+
+    private FileBlob createBlob(Long id, String objectKey, Long size, String contentType) {
+        FileBlob blob = new FileBlob();
+        blob.setId(id);
+        blob.setObjectKey(objectKey);
+        blob.setSize(size);
+        blob.setContentType(contentType);
+        blob.setCreatedAt(LocalDateTime.now());
+        return blob;
     }
 }

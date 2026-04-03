@@ -10,6 +10,7 @@ import java.time.LocalDateTime;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.TreeMap;
 import java.util.stream.IntStream;
 
 @Service
@@ -18,13 +19,16 @@ public class AdminMetricsService {
 
     private static final Long STATE_ID = 1L;
     private static final long DEFAULT_OFFLINE_TRANSFER_STORAGE_LIMIT_BYTES = 20L * 1024 * 1024 * 1024;
+    private static final int DAILY_ACTIVE_USER_RETENTION_DAYS = 7;
 
     private final AdminMetricsStateRepository adminMetricsStateRepository;
     private final AdminRequestTimelinePointRepository adminRequestTimelinePointRepository;
+    private final AdminDailyActiveUserRepository adminDailyActiveUserRepository;
 
     @Transactional
     public AdminMetricsSnapshot getSnapshot() {
         LocalDate today = LocalDate.now();
+        pruneExpiredDailyActiveUsers(today);
         AdminMetricsState state = refreshRequestCountDateIfNeeded(ensureCurrentState(), today, true);
         return toSnapshot(state, today);
     }
@@ -32,6 +36,21 @@ public class AdminMetricsService {
     @Transactional
     public long getOfflineTransferStorageLimitBytes() {
         return ensureCurrentState().getOfflineTransferStorageLimitBytes();
+    }
+
+    @Transactional
+    public void recordUserOnline(Long userId, String username) {
+        if (userId == null || username == null || username.isBlank()) {
+            return;
+        }
+        LocalDate today = LocalDate.now();
+        pruneExpiredDailyActiveUsers(today);
+        AdminDailyActiveUserEntity entry = adminDailyActiveUserRepository.findByMetricDateAndUserIdForUpdate(today, userId)
+                .orElseGet(() -> createDailyActiveUser(today, userId, username));
+        if (!username.equals(entry.getUsername())) {
+            entry.setUsername(username);
+            adminDailyActiveUserRepository.save(entry);
+        }
     }
 
     @Transactional
@@ -78,6 +97,7 @@ public class AdminMetricsService {
                 state.getDownloadTrafficBytes(),
                 state.getTransferUsageBytes(),
                 state.getOfflineTransferStorageLimitBytes(),
+                buildDailyActiveUsers(metricDate),
                 buildRequestTimeline(metricDate)
         );
     }
@@ -129,8 +149,31 @@ public class AdminMetricsService {
         for (AdminRequestTimelinePointEntity point : adminRequestTimelinePointRepository.findAllByMetricDateOrderByHourAsc(metricDate)) {
             countsByHour.put(point.getHour(), point.getRequestCount());
         }
-        return IntStream.range(0, 24)
+        int currentHour = LocalDate.now().equals(metricDate) ? LocalDateTime.now().getHour() : 23;
+        return IntStream.rangeClosed(0, currentHour)
                 .mapToObj(hour -> new AdminRequestTimelinePoint(hour, formatHourLabel(hour), countsByHour.getOrDefault(hour, 0L)))
+                .toList();
+    }
+
+    private List<AdminDailyActiveUserSummary> buildDailyActiveUsers(LocalDate today) {
+        LocalDate startDate = today.minusDays(DAILY_ACTIVE_USER_RETENTION_DAYS - 1L);
+        Map<LocalDate, java.util.List<String>> usernamesByDate = new TreeMap<>();
+        for (AdminDailyActiveUserEntity entry : adminDailyActiveUserRepository
+                .findAllByMetricDateBetweenOrderByMetricDateAscUsernameAsc(startDate, today)) {
+            usernamesByDate.computeIfAbsent(entry.getMetricDate(), ignored -> new java.util.ArrayList<>())
+                    .add(entry.getUsername());
+        }
+        return IntStream.range(0, DAILY_ACTIVE_USER_RETENTION_DAYS)
+                .mapToObj(offset -> startDate.plusDays(offset))
+                .map(metricDate -> {
+                    List<String> usernames = List.copyOf(usernamesByDate.getOrDefault(metricDate, List.of()));
+                    return new AdminDailyActiveUserSummary(
+                            metricDate,
+                            formatDailyActiveUserLabel(metricDate, today),
+                            usernames.size(),
+                            usernames
+                    );
+                })
                 .toList();
     }
 
@@ -155,7 +198,34 @@ public class AdminMetricsService {
         }
     }
 
+    private AdminDailyActiveUserEntity createDailyActiveUser(LocalDate metricDate, Long userId, String username) {
+        AdminDailyActiveUserEntity entry = new AdminDailyActiveUserEntity();
+        entry.setMetricDate(metricDate);
+        entry.setUserId(userId);
+        entry.setUsername(username);
+        try {
+            return adminDailyActiveUserRepository.saveAndFlush(entry);
+        } catch (DataIntegrityViolationException ignored) {
+            return adminDailyActiveUserRepository.findByMetricDateAndUserIdForUpdate(metricDate, userId)
+                    .orElseThrow(() -> ignored);
+        }
+    }
+
+    private void pruneExpiredDailyActiveUsers(LocalDate today) {
+        adminDailyActiveUserRepository.deleteAllByMetricDateBefore(today.minusDays(DAILY_ACTIVE_USER_RETENTION_DAYS - 1L));
+    }
+
     private String formatHourLabel(int hour) {
         return "%02d:00".formatted(hour);
+    }
+
+    private String formatDailyActiveUserLabel(LocalDate metricDate, LocalDate today) {
+        if (metricDate.equals(today)) {
+            return "今天";
+        }
+        if (metricDate.equals(today.minusDays(1))) {
+            return "昨天";
+        }
+        return "%02d-%02d".formatted(metricDate.getMonthValue(), metricDate.getDayOfMonth());
     }
 }

@@ -11,6 +11,11 @@ public class CorsProperties {
     private List<String> allowedOrigins = new ArrayList<>(List.of(
             "http://localhost:3000",
             "http://127.0.0.1:3000",
+            "http://localhost",
+            "https://localhost",
+            "http://127.0.0.1",
+            "https://127.0.0.1",
+            "capacitor://localhost",
             "https://yoyuzh.xyz",
             "https://www.yoyuzh.xyz"
     ));

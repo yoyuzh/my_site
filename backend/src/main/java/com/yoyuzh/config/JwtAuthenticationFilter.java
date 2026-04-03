@@ -1,5 +1,6 @@
 package com.yoyuzh.config;
 
+import com.yoyuzh.admin.AdminMetricsService;
 import com.yoyuzh.auth.CustomUserDetailsService;
 import com.yoyuzh.auth.JwtTokenProvider;
 import com.yoyuzh.auth.User;
@@ -24,6 +25,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
     private final JwtTokenProvider jwtTokenProvider;
     private final CustomUserDetailsService userDetailsService;
+    private final AdminMetricsService adminMetricsService;
 
     @Override
     protected void doFilterInternal(HttpServletRequest request,
@@ -55,6 +57,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                         userDetails, null, userDetails.getAuthorities());
                 authentication.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
                 SecurityContextHolder.getContext().setAuthentication(authentication);
+                adminMetricsService.recordUserOnline(domainUser.getId(), domainUser.getUsername());
             }
         }
         filterChain.doFilter(request, response);

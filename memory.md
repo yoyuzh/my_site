@@ -14,9 +14,22 @@
   - 管理台用户列表已显示每个用户的已用空间 / 配额，表格也已收紧
   - 游戏页已接入 `/race/`、`/t_race/`，带站内播放器、退出按钮和友情链接
   - 2026-04-02 已统一密码策略为“至少 8 位且包含大写字母”，并补测试确认管理员改密后旧密码失效、新密码生效
-  - 2026-04-02 已放开未登录直达快传：登录页可直接进入快传，匿名用户可发在线快传和接收在线快传，但离线快传仍要求登录
+  - 2026-04-02 已放开未登录直达快传：登录页可直接进入快传，匿名用户可发在线快传；2026-04-03 又放开了离线接收，因此匿名用户现在可发在线快传、接收在线快传、接收离线快传，但发离线和把离线文件存入网盘仍要求登录
   - 2026-04-02 快传发送页已新增“我的离线快传”区域：登录用户可查看自己未过期的离线快传记录，并点开弹层重新查看取件码、二维码和分享链接
+  - 2026-04-02 已将“我的离线快传”后端接口正式部署到生产，`/api/transfer/sessions/offline/mine` 在线可用，未登录访问会返回 `401`
   - 2026-04-02 前端主入口已按屏幕宽度自动切换桌面壳与移动壳，宽度小于 768px 时渲染 `MobileApp`
+  - 2026-04-02 移动端 `MobileFiles` 与 `MobileTransfer` 已发布与桌面一致的动态光晕背景，不再使用纯黑静态底色
+  - 2026-04-02 网盘存储模型已改为“`StoredFile` 逻辑元数据 + `FileBlob` 物理对象引用”；新上传写入全局 `blobs/...` key，分享导入与网盘复制都会直接复用同一个 blob，不再复制物理文件
+  - 2026-04-02 后端启动时会自动把旧 `portal_file.storage_name` 数据回填到新的 `blob_id` 引用；管理台 `totalStorageBytes` 现已按 `FileBlob` 汇总真实物理占用，而不是按逻辑文件行数重复累加
+  - 2026-04-02 18:43 CST 已将共享 blob 改造后的后端 jar 部署到生产；`my-site-api.service` 重启成功，`https://api.yoyuzh.xyz/swagger-ui.html` 仍可访问
+  - 2026-04-02 19:08 CST 已将“上传落库失败时自动删除已写入 blob”修复部署到生产；当前普通上传、直传完成、外部导入在元数据保存失败时都会回滚底层 `blobs/...` 对象，避免再产生孤儿 blob
+  - 2026-04-02 管理台 summary 已新增“最近 7 天上线记录”：JWT 鉴权成功后会按天去重记录上线用户，保留 7 天并返回每天人数与用户名单
+  - 2026-04-02 管理台“今日请求折线图”已改为只展示当天已过去的小时；例如当天只到 07 点时，曲线只会覆盖 00:00-07:00，点位也缩成小圆点
+  - 2026-04-03 已在 `front/` 接入 Capacitor，生成 `front/android` Android 工程并成功产出调试 APK：`front/android/app/build/outputs/apk/debug/app-debug.apk`
+  - 2026-04-03 快传前端已支持通过 `VITE_TRANSFER_ICE_SERVERS_JSON` 追加自定义 ICE / TURN 服务器；当前默认仍只有 STUN，因此跨运营商或手机蜂窝网络的在线 P2P 传输仍依赖后续补 TURN 才能稳定
+  - 2026-04-03 Android 打包已确认走“Vite 产物 -> `npx cap sync android` -> Gradle `assembleDebug`”链路；当前应用包名为 `xyz.yoyuzh.portal`
+  - 2026-04-03 Android WebView 壳内的前端 API 基址已改成运行时判断：Web 站点继续走相对 `/api`，Capacitor `localhost` 壳在 `http://localhost` 与 `https://localhost` 下都会默认直连 `https://api.yoyuzh.xyz/api`，避免 APK 把请求误打到应用内本地地址；后端 CORS 也同步放行了 `https://localhost`
+  - 2026-04-03 由于这台机器直连 `dl.google.com` / Android Maven 仓库会 TLS 握手失败，Android 构建已改走阿里云 Google Maven 镜像，并通过 `redirector.gvt1.com` 手动落本机 SDK 包
   - 根目录 README 已重写为中文公开版 GitHub 风格
   - VS Code 工作区已补 `.vscode/settings.json`、`.vscode/extensions.json`、`lombok.config`，并在 `backend/pom.xml` 显式声明了 Lombok annotation processor
 - 进行中:
@@ -30,6 +43,7 @@
 |---|---|---|
 | 用快传模块替换旧教务模块 | 当前产品方向已经转向文件流转和个人站点工具集合 | 继续保留教务逻辑: 已不符合当前站点定位，维护成本高 |
 | 快传采用“后端信令 + 浏览器 P2P 传输” | 文件内容不走自有服务器带宽，体验更接近局域/点对点传输 | 走服务器中转: 会增加服务器流量和实现复杂度 |
+| 网盘文件改成“共享 blob + `StoredFile` 引用” | 分享导入、网盘复制、重命名、移动都不应再触发物理对象复制，删除时也需要按最后引用回收真实对象 | 继续把物理 key 绑定 `userId/path/storageName`: 会导致转存和复制永远写出第二份对象，浪费存储 |
 | 快传接收页收口回原 `/transfer` 页面 | 用户不需要单独进入专门的接收页面，入口更统一 | 独立接收页: 路径分散、用户心智更差 |
 | 网盘侧边栏改成单一树状目录结构 | 更像真实网盘，层级关系清晰 | 保留“快速访问 + 目录”双区块: 结构割裂 |
 | 注册邀请码改成单次使用后自动刷新 | 更适合私域邀请式注册，管理台也能直接查看当前邀请码 | 固定邀请码: 容易扩散且不可控 |
@@ -42,12 +56,15 @@
 | 匿名用户仅开放在线快传，不开放离线快传 | 允许登录页直接进入快传，同时避免匿名用户占用站点持久存储 | 匿名也开放离线快传: 会增加滥用风险和存储成本 |
 | 已登录用户可以在快传页回看自己的离线快传记录 | 离线快传有效期长达 7 天，用户需要在不重新上传的情况下再次查看取件码和分享链接 | 只在刚创建成功时展示一次取件信息: 用户丢失取件码后无法自助找回 |
 | 前端主入口按宽度自动切换到移动壳 | 不需要单独维护 `/m` 路由，用户在小屏设备上直接进入移动端布局 | 独立 `/m` 路由: 需要额外记忆入口且与主站状态分叉 |
+| 管理台上线记录按“JWT 鉴权成功的每日去重用户”统计，并只保留 7 天 | 后台需要回答“每天多少人上线、具体是谁”，同时不必引入更重的行为埋点系统 | 只统计登录接口: 无法覆盖 refresh 之后的真实活跃访问；无限保留历史: 超出当前管理需求 |
+| Android 客户端先采用 Capacitor 包裹现有前端站点 | 现有 React/Vite 页面、鉴权和 API 调用可以直接复用，成本最低 | 重新单写原生 Android WebView 壳: 会引入额外原生维护面；改成 React Native / Flutter: 超出当前需求 |
 
 ## 待解决问题
 - [ ] VS Code 若仍报 `final 字段未在构造器初始化` 之类错误，优先判断为 Lombok / Java Language Server 误报，而不是源码真实错误
 - [ ] `front/README.md` 仍是旧模板风格说明，当前真实入口说明以根目录 `README.md` 为准，后续可继续整理
 - [ ] 前端构建仍有 chunk size warning，目前不阻塞发布，但后续可以考虑做更细的拆包
 - [ ] 线上前端 bundle 当前仍内嵌 `https://api.yoyuzh.xyz/api`，API 子域名异常时会直接表现为“网络异常/登录失败”
+- [ ] 当前 Android 工程里的 Google Maven 镜像改动有一部分落在生成/依赖文件中；如果后续升级 Capacitor 或重新 `npm install`，需要重新确认 `front/android/build.gradle`、`front/android/capacitor-cordova-android-plugins/build.gradle`、`front/node_modules/@capacitor/android/capacitor/build.gradle` 的仓库源仍指向可访问镜像
 
 ## 关键约束
 (只写这个任务特有的限制，区别于项目通用规则)
@@ -62,6 +79,19 @@
 - 2026-04-01 已将线上文件桶与前端桶切到多吉云对象存储，后端配置走多吉云临时密钥 API
 - 2026-04-02 部署验证：`http://yoyuzh.xyz/` 返回 200，`https://yoyuzh.xyz/` 返回 200，`https://api.yoyuzh.xyz/swagger-ui.html` 最终返回 200，前端资源 `https://yoyuzh.xyz/assets/AdminApp-C9j3tmPO.js` 返回 200
 - 2026-04-02 后端服务重启后为 active，启动时间为 `2026-04-02 12:14:25 CST`
+- 2026-04-02 再次部署后端，`my-site-api.service` 启动时间更新为 `2026-04-02 17:26:16 CST`，生产接口 `/api/transfer/sessions/offline/mine` 返回已恢复正常
+- 2026-04-02 再次发布前端，移动端背景修复对应资源为 `index-DdEYkdGD.js`、`index-qIc3rBab.css`、`AdminApp-DFQ6SlBP.js`
+- 2026-04-02 共享 blob 上线前检查：生产库普通文件里 `storage_name` 为空的脏数据数量为 0，总普通文件数为 55
+- 2026-04-02 新 blob 模型依赖应用启动时的 `FileBlobBackfillService` 把旧 `storage_name` 行回填到 `blob_id`；如线上表里存在缺少 `storage_name` 且 `blob_id` 为空的历史脏数据，启动会直接失败并暴露该文件 ID
+- 2026-04-02 共享 blob 上线后校验：`portal_file.blob_id` 列已存在，普通文件 `blob_id IS NULL` 数量为 0，`portal_file_blob` 当前共有 54 条记录
+- 2026-04-02 18:45 CST 线上上传报 `Column 'storage_name' cannot be null`，已定位为旧表结构未把 `portal_file.storage_name` 放宽为可空；已在线执行 `ALTER TABLE portal_file MODIFY storage_name varchar(255) NULL` 修复
+- 2026-04-02 19:08 CST 再次发布后端，`my-site-api.service` 启动时间更新为 `2026-04-02 19:08:14 CST`，`https://api.yoyuzh.xyz/swagger-ui.html` 再次确认返回 `200`
+- Android 本机构建当前默认 SDK 根目录为 `/Users/mac/Library/Android/sdk`
+- Android 本地打包命令链：
+  - `cd front && npm run build`
+  - `cd front && npx cap sync android`
+  - `cd front/android && ./gradlew assembleDebug`
+- Android 调试 APK 当前输出路径：`front/android/app/build/outputs/apk/debug/app-debug.apk`
 - 服务器登录信息保存在本地 `账号密码.txt`，不要把内容写进文档或对外输出
 
 ## 参考资料
@@ -83,4 +113,8 @@
   - 离线快传历史与详情弹层: `front/src/pages/Transfer.tsx`、`front/src/pages/transfer-state.ts`
   - 移动端入口切换: `front/src/main.tsx`、`front/src/MobileApp.tsx`、`front/src/lib/app-shell.ts`
   - 管理员改密接口: `backend/src/main/java/com/yoyuzh/admin/AdminService.java`
+  - 管理台统计与 7 天上线记录: `backend/src/main/java/com/yoyuzh/admin/AdminMetricsService.java`、`backend/src/main/java/com/yoyuzh/admin/AdminDailyActiveUserEntity.java`、`backend/src/main/java/com/yoyuzh/config/JwtAuthenticationFilter.java`
+  - 管理台 dashboard 展示与请求折线图: `front/src/admin/dashboard.tsx`、`front/src/admin/dashboard-state.ts`
+  - 网盘 blob 模型与回填: `backend/src/main/java/com/yoyuzh/files/FileService.java`、`backend/src/main/java/com/yoyuzh/files/FileBlob.java`、`backend/src/main/java/com/yoyuzh/files/FileBlobBackfillService.java`
   - 前端生产 API 基址: `front/.env.production`
+  - Capacitor Android 入口与配置: `front/capacitor.config.ts`、`front/android/`

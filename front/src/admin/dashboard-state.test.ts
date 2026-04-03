@@ -3,6 +3,7 @@ import test from 'node:test';
 
 import {
   buildRequestLineChartModel,
+  buildRequestLineChartXAxisPoints,
   formatMetricValue,
   getInviteCodePanelState,
   parseStorageLimitInput,
@@ -19,6 +20,7 @@ test('getInviteCodePanelState returns a copyable invite code when summary contai
       transferUsageBytes: 0,
       offlineTransferStorageBytes: 0,
       offlineTransferStorageLimitBytes: 0,
+      dailyActiveUsers: [],
       requestTimeline: [],
       inviteCode: ' AbCd1234 ',
     }),
@@ -40,6 +42,7 @@ test('getInviteCodePanelState falls back to a placeholder when summary has no in
       transferUsageBytes: 0,
       offlineTransferStorageBytes: 0,
       offlineTransferStorageLimitBytes: 0,
+      dailyActiveUsers: [],
       requestTimeline: [],
       inviteCode: '   ',
     }),
@@ -86,4 +89,39 @@ test('buildRequestLineChartModel converts hourly request data into chart coordin
   assert.equal(model.linePath, 'M 0 100 L 33.333 50 L 66.667 0 L 100 75');
   assert.deepEqual(model.yAxisTicks, [0, 15, 30, 45, 60]);
   assert.equal(model.peakPoint?.label, '02:00');
+});
+
+test('buildRequestLineChartModel stretches only the available hours across the chart width', () => {
+  const model = buildRequestLineChartModel([
+    { hour: 0, label: '00:00', requestCount: 2 },
+    { hour: 1, label: '01:00', requestCount: 4 },
+    { hour: 2, label: '02:00', requestCount: 3 },
+    { hour: 3, label: '03:00', requestCount: 6 },
+    { hour: 4, label: '04:00', requestCount: 5 },
+    { hour: 5, label: '05:00', requestCount: 1 },
+    { hour: 6, label: '06:00', requestCount: 2 },
+    { hour: 7, label: '07:00', requestCount: 4 },
+  ]);
+
+  assert.equal(model.points[0]?.x, 0);
+  assert.equal(model.points.at(-1)?.x, 100);
+  assert.equal(model.points.length, 8);
+});
+
+test('buildRequestLineChartXAxisPoints only shows elapsed-hour labels plus start and end', () => {
+  const model = buildRequestLineChartModel([
+    { hour: 0, label: '00:00', requestCount: 2 },
+    { hour: 1, label: '01:00', requestCount: 4 },
+    { hour: 2, label: '02:00', requestCount: 3 },
+    { hour: 3, label: '03:00', requestCount: 6 },
+    { hour: 4, label: '04:00', requestCount: 5 },
+    { hour: 5, label: '05:00', requestCount: 1 },
+    { hour: 6, label: '06:00', requestCount: 2 },
+    { hour: 7, label: '07:00', requestCount: 4 },
+  ]);
+
+  assert.deepEqual(
+    buildRequestLineChartXAxisPoints(model.points).map((point) => point.label),
+    ['00:00', '06:00', '07:00'],
+  );
 });

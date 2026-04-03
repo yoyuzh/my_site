@@ -8,6 +8,7 @@ import com.yoyuzh.auth.UserRepository;
 import com.yoyuzh.auth.UserRole;
 import com.yoyuzh.common.BusinessException;
 import com.yoyuzh.common.PageResponse;
+import com.yoyuzh.files.FileBlobRepository;
 import com.yoyuzh.files.FileService;
 import com.yoyuzh.files.StoredFile;
 import com.yoyuzh.files.StoredFileRepository;
@@ -42,6 +43,8 @@ class AdminServiceTest {
     @Mock
     private StoredFileRepository storedFileRepository;
     @Mock
+    private FileBlobRepository fileBlobRepository;
+    @Mock
     private FileService fileService;
     @Mock
     private PasswordEncoder passwordEncoder;
@@ -59,7 +62,7 @@ class AdminServiceTest {
     @BeforeEach
     void setUp() {
         adminService = new AdminService(
-                userRepository, storedFileRepository, fileService,
+                userRepository, storedFileRepository, fileBlobRepository, fileService,
                 passwordEncoder, refreshTokenService, registrationInviteService,
                 offlineTransferSessionRepository, adminMetricsService);
     }
@@ -70,12 +73,16 @@ class AdminServiceTest {
     void shouldReturnSummaryWithCountsAndInviteCode() {
         when(userRepository.count()).thenReturn(5L);
         when(storedFileRepository.count()).thenReturn(42L);
-        when(storedFileRepository.sumAllFileSize()).thenReturn(8192L);
+        when(fileBlobRepository.sumAllBlobSize()).thenReturn(8192L);
         when(adminMetricsService.getSnapshot()).thenReturn(new AdminMetricsSnapshot(
                 0L,
                 0L,
                 0L,
                 20L * 1024 * 1024 * 1024,
+                List.of(
+                        new AdminDailyActiveUserSummary(LocalDateTime.now().toLocalDate().minusDays(1), "昨天", 1L, List.of("alice")),
+                        new AdminDailyActiveUserSummary(LocalDateTime.now().toLocalDate(), "今天", 2L, List.of("alice", "bob"))
+                ),
                 List.of(
                         new AdminRequestTimelinePoint(0, "00:00", 0L),
                         new AdminRequestTimelinePoint(1, "01:00", 3L)
@@ -94,6 +101,10 @@ class AdminServiceTest {
         assertThat(summary.transferUsageBytes()).isZero();
         assertThat(summary.offlineTransferStorageBytes()).isZero();
         assertThat(summary.offlineTransferStorageLimitBytes()).isGreaterThan(0L);
+        assertThat(summary.dailyActiveUsers()).containsExactly(
+                new AdminDailyActiveUserSummary(LocalDateTime.now().toLocalDate().minusDays(1), "昨天", 1L, List.of("alice")),
+                new AdminDailyActiveUserSummary(LocalDateTime.now().toLocalDate(), "今天", 2L, List.of("alice", "bob"))
+        );
         assertThat(summary.requestTimeline()).containsExactly(
                 new AdminRequestTimelinePoint(0, "00:00", 0L),
                 new AdminRequestTimelinePoint(1, "01:00", 3L)

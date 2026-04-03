@@ -1,6 +1,6 @@
 import type { FileMetadata, TransferMode } from './types';
-import { apiRequest } from './api';
-import { apiUploadRequest } from './api';
+import { apiRequest, apiUploadRequest, getApiBaseUrl } from './api';
+import { hasRelayTransferIceServer, resolveTransferIceServers } from './transfer-ice';
 import { getTransferFileRelativePath } from './transfer-protocol';
 import type {
   LookupTransferSessionResponse,
@@ -8,10 +8,8 @@ import type {
   TransferSessionResponse,
 } from './types';
 
-export const DEFAULT_TRANSFER_ICE_SERVERS: RTCIceServer[] = [
-  {urls: 'stun:stun.cloudflare.com:3478'},
-  {urls: 'stun:stun.l.google.com:19302'},
-];
+export const DEFAULT_TRANSFER_ICE_SERVERS = resolveTransferIceServers();
+export const TRANSFER_HAS_RELAY_SUPPORT = hasRelayTransferIceServer(DEFAULT_TRANSFER_ICE_SERVERS);
 
 export function toTransferFilePayload(files: File[]) {
   return files.map((file) => ({
@@ -64,8 +62,7 @@ export function uploadOfflineTransferFile(
 }
 
 export function buildOfflineTransferDownloadUrl(sessionId: string, fileId: string) {
-  const apiBaseUrl = (import.meta.env?.VITE_API_BASE_URL || '/api').replace(/\/$/, '');
-  return `${apiBaseUrl}/transfer/sessions/${encodeURIComponent(sessionId)}/files/${encodeURIComponent(fileId)}/download`;
+  return `${getApiBaseUrl()}/transfer/sessions/${encodeURIComponent(sessionId)}/files/${encodeURIComponent(fileId)}/download`;
 }
 
 export function importOfflineTransferFile(sessionId: string, fileId: string, path: string) {

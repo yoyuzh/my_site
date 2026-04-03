@@ -22,6 +22,7 @@ export interface RequestLineChartModel {
 type MetricValueKind = 'bytes' | 'count';
 
 const BYTE_UNITS = ['B', 'KB', 'MB', 'GB', 'TB', 'PB'];
+const REQUEST_CHART_X_AXIS_HOURS = [0, 6, 12, 18, 23];
 
 export function formatMetricValue(value: number, kind: MetricValueKind): string {
   if (kind === 'count') {
@@ -101,6 +102,23 @@ export function buildRequestLineChartModel(timeline: AdminRequestTimelinePoint[]
       return peak;
     }, null),
   };
+}
+
+export function buildRequestLineChartXAxisPoints(points: RequestLineChartPoint[]): RequestLineChartPoint[] {
+  if (points.length === 0) {
+    return [];
+  }
+
+  const firstHour = points[0]?.hour ?? 0;
+  const lastHour = points.at(-1)?.hour ?? firstHour;
+  const visibleHours = new Set<number>([firstHour, lastHour]);
+  for (const hour of REQUEST_CHART_X_AXIS_HOURS) {
+    if (hour > firstHour && hour < lastHour) {
+      visibleHours.add(hour);
+    }
+  }
+
+  return points.filter((point) => visibleHours.has(point.hour));
 }
 
 export function getInviteCodePanelState(summary: AdminSummary | null | undefined): InviteCodePanelState {

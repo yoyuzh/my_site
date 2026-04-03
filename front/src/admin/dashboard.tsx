@@ -14,7 +14,13 @@ import { useNavigate } from 'react-router-dom';
 import { apiRequest } from '@/src/lib/api';
 import { readStoredSession } from '@/src/lib/session';
 import type { AdminOfflineTransferStorageLimitResponse, AdminSummary } from '@/src/lib/types';
-import { buildRequestLineChartModel, formatMetricValue, getInviteCodePanelState, parseStorageLimitInput } from './dashboard-state';
+import {
+  buildRequestLineChartModel,
+  buildRequestLineChartXAxisPoints,
+  formatMetricValue,
+  getInviteCodePanelState,
+  parseStorageLimitInput,
+} from './dashboard-state';
 
 interface DashboardState {
   summary: AdminSummary | null;
@@ -30,7 +36,6 @@ interface MetricCardDefinition {
   helper: string;
 }
 
-const REQUEST_CHART_X_AXIS_HOURS = new Set([0, 6, 12, 18, 23]);
 const DASHBOARD_CARD_BG = '#111827';
 const DASHBOARD_CARD_BORDER = 'rgba(148, 163, 184, 0.22)';
 const DASHBOARD_CARD_TEXT = '#f8fafc';
@@ -129,7 +134,7 @@ function RequestTrendChart({ summary }: { summary: AdminSummary }) {
   const chart = buildRequestLineChartModel(summary.requestTimeline);
   const currentHour = new Date().getHours();
   const currentPoint = chart.points.find((point) => point.hour === currentHour) ?? chart.points.at(-1) ?? null;
-  const xAxisPoints = chart.points.filter((point) => REQUEST_CHART_X_AXIS_HOURS.has(point.hour));
+  const xAxisPoints = buildRequestLineChartXAxisPoints(chart.points);
   const hasRequests = chart.maxValue > 0;
   const scaleMax = chart.maxValue > 0 ? chart.maxValue : 4;
 
@@ -161,7 +166,7 @@ function RequestTrendChart({ summary }: { summary: AdminSummary }) {
                   color: theme.palette.mode === 'dark' ? DASHBOARD_CARD_MUTED_TEXT : 'text.secondary',
                 })}
               >
-                按小时统计今天的 `/api/**` 请求，当前小时会持续累加，方便判断白天峰值和异常抖动。
+                按小时统计今天已发生的 `/api/**` 请求；曲线会随当天已过时间自然拉长，不再预留未来小时。
               </Typography>
             </Stack>
 
@@ -340,20 +345,25 @@ function RequestTrendChart({ summary }: { summary: AdminSummary }) {
                         vectorEffect="non-scaling-stroke"
                       />
                     )}
-
-                    {chart.points.map((point) => (
-                      <circle
-                        key={point.label}
-                        cx={point.x}
-                        cy={point.y}
-                        r={point.hour === currentPoint?.hour ? 2.35 : 1.45}
-                        fill={point.hour === currentPoint?.hour ? '#0f172a' : '#2563eb'}
-                        stroke="#ffffff"
-                        strokeWidth="1.2"
-                        vectorEffect="non-scaling-stroke"
-                      />
-                    ))}
                   </Box>
+
+                  {chart.points.map((point) => (
+                    <Box
+                      key={point.label}
+                      sx={{
+                        position: 'absolute',
+                        left: `${point.x}%`,
+                        top: `${point.y}%`,
+                        width: point.hour === currentPoint?.hour ? 8 : 6,
+                        height: point.hour === currentPoint?.hour ? 8 : 6,
+                        borderRadius: '50%',
+                        backgroundColor: point.hour === currentPoint?.hour ? '#0f172a' : '#2563eb',
+                        transform: 'translate(-50%, -50%)',
+                        pointerEvents: 'none',
+                        zIndex: 1,
+                      }}
+                    />
+                  ))}
 
                   {!hasRequests && (
                     <Stack
@@ -399,6 +409,141 @@ function RequestTrendChart({ summary }: { summary: AdminSummary }) {
               </Stack>
             </Box>
           </Box>
+        </Stack>
+      </CardContent>
+    </Card>
+  );
+}
+
+function DailyActiveUsersCard({ summary }: { summary: AdminSummary }) {
+  const latestDay = summary.dailyActiveUsers.at(-1) ?? null;
+
+  return (
+    <Card
+      variant="outlined"
+      sx={(theme) => ({
+        borderColor: theme.palette.mode === 'dark' ? DASHBOARD_CARD_BORDER : 'divider',
+        backgroundColor: theme.palette.mode === 'dark' ? DASHBOARD_CARD_BG : '#fff',
+        color: theme.palette.mode === 'dark' ? DASHBOARD_CARD_TEXT : theme.palette.text.primary,
+        boxShadow: theme.palette.mode === 'dark' ? '0 20px 45px rgba(15, 23, 42, 0.28)' : 'none',
+      })}
+    >
+      <CardContent>
+        <Stack spacing={2}>
+          <Stack
+            direction={{ xs: 'column', md: 'row' }}
+            spacing={1.5}
+            justifyContent="space-between"
+            alignItems={{ xs: 'flex-start', md: 'center' }}
+          >
+            <Stack spacing={0.75}>
+              <Typography variant="h6" fontWeight={700}>
+                最近 7 天上线记录
+              </Typography>
+              <Typography
+                variant="body2"
+                sx={(theme) => ({
+                  color: theme.palette.mode === 'dark' ? DASHBOARD_CARD_MUTED_TEXT : 'text.secondary',
+                })}
+              >
+                JWT 鉴权成功后会记录当天首次上线用户，只保留最近 7 天，便于回看每天有多少人上线以及具体是谁。
+              </Typography>
+            </Stack>
+
+            <Stack
+              spacing={0.35}
+              sx={{
+                minWidth: 156,
+                px: 1.5,
+                py: 1.25,
+                borderRadius: 2,
+                backgroundColor: (theme) => theme.palette.mode === 'dark' ? 'rgba(16, 185, 129, 0.12)' : '#ecfdf5',
+                border: (theme) => theme.palette.mode === 'dark' ? '1px solid rgba(52, 211, 153, 0.18)' : '1px solid transparent',
+              }}
+            >
+              <Typography
+                variant="caption"
+                sx={(theme) => ({
+                  color: theme.palette.mode === 'dark' ? DASHBOARD_CARD_MUTED_TEXT : 'text.secondary',
+                })}
+                fontWeight={700}
+              >
+                今日上线人数
+              </Typography>
+              <Typography
+                variant="h6"
+                fontWeight={800}
+                sx={(theme) => ({
+                  color: theme.palette.mode === 'dark' ? DASHBOARD_CARD_TEXT : 'text.primary',
+                })}
+              >
+                {formatMetricValue(latestDay?.userCount ?? 0, 'count')}
+              </Typography>
+              <Typography
+                variant="caption"
+                sx={(theme) => ({
+                  color: theme.palette.mode === 'dark' ? DASHBOARD_CARD_MUTED_TEXT : 'text.secondary',
+                })}
+              >
+                {latestDay?.label ?? '--'}
+              </Typography>
+            </Stack>
+          </Stack>
+
+          <Stack spacing={1.2}>
+            {summary.dailyActiveUsers.slice().reverse().map((day) => (
+              <Box
+                key={day.metricDate}
+                sx={(theme) => ({
+                  px: 1.5,
+                  py: 1.25,
+                  borderRadius: 2,
+                  border: theme.palette.mode === 'dark' ? '1px solid rgba(148, 163, 184, 0.16)' : '1px solid rgba(148, 163, 184, 0.24)',
+                  backgroundColor: theme.palette.mode === 'dark' ? 'rgba(255, 255, 255, 0.03)' : '#f8fafc',
+                })}
+              >
+                <Stack
+                  direction={{ xs: 'column', md: 'row' }}
+                  spacing={1.25}
+                  justifyContent="space-between"
+                  alignItems={{ xs: 'flex-start', md: 'center' }}
+                >
+                  <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" useFlexGap>
+                    <Typography fontWeight={700}>{day.label}</Typography>
+                    <Typography
+                      variant="caption"
+                      sx={(theme) => ({
+                        px: 0.9,
+                        py: 0.3,
+                        borderRadius: 99,
+                        color: theme.palette.mode === 'dark' ? DASHBOARD_CARD_TEXT : 'text.primary',
+                        backgroundColor: theme.palette.mode === 'dark' ? 'rgba(59, 130, 246, 0.18)' : '#dbeafe',
+                      })}
+                    >
+                      {formatMetricValue(day.userCount, 'count')} 人
+                    </Typography>
+                    <Typography
+                      variant="caption"
+                      sx={(theme) => ({
+                        color: theme.palette.mode === 'dark' ? DASHBOARD_CARD_MUTED_TEXT : 'text.secondary',
+                      })}
+                    >
+                      {day.metricDate}
+                    </Typography>
+                  </Stack>
+
+                  <Typography
+                    variant="body2"
+                    sx={(theme) => ({
+                      color: theme.palette.mode === 'dark' ? DASHBOARD_CARD_MUTED_TEXT : 'text.secondary',
+                    })}
+                  >
+                    {day.usernames.length > 0 ? day.usernames.join('、') : '当天无人上线'}
+                  </Typography>
+                </Stack>
+              </Box>
+            ))}
+          </Stack>
         </Stack>
       </CardContent>
     </Card>
@@ -586,7 +731,12 @@ export function PortalAdminDashboard() {
         ))}
       </Grid>
 
-      {summary && <RequestTrendChart summary={summary} />}
+      {summary && (
+        <Stack spacing={2}>
+          <RequestTrendChart summary={summary} />
+          <DailyActiveUsersCard summary={summary} />
+        </Stack>
+      )}
 
       <Grid container spacing={2}>
         <Grid size={{ xs: 12, md: 4 }}>

@@ -12,10 +12,10 @@ import java.util.Optional;
 
 public interface StoredFileRepository extends JpaRepository<StoredFile, Long> {
 
-    @EntityGraph(attributePaths = "user")
+    @EntityGraph(attributePaths = {"user", "blob"})
     Page<StoredFile> findAllByOrderByCreatedAtDesc(Pageable pageable);
 
-    @EntityGraph(attributePaths = "user")
+    @EntityGraph(attributePaths = {"user", "blob"})
     @Query("""
             select f from StoredFile f
             join f.user u
@@ -47,6 +47,7 @@ public interface StoredFileRepository extends JpaRepository<StoredFile, Long> {
                                                         @Param("path") String path,
                                                         @Param("filename") String filename);
 
+    @EntityGraph(attributePaths = "blob")
     @Query("""
             select f from StoredFile f
             where f.user.id = :userId and f.path = :path
@@ -56,6 +57,7 @@ public interface StoredFileRepository extends JpaRepository<StoredFile, Long> {
                                                                           @Param("path") String path,
                                                                           Pageable pageable);
 
+    @EntityGraph(attributePaths = "blob")
     @Query("""
             select f from StoredFile f
             where f.user.id = :userId and (f.path = :path or f.path like concat(:path, '/%'))
@@ -78,5 +80,22 @@ public interface StoredFileRepository extends JpaRepository<StoredFile, Long> {
             """)
     long sumAllFileSize();
 
+    @EntityGraph(attributePaths = "blob")
     List<StoredFile> findTop12ByUserIdAndDirectoryFalseOrderByCreatedAtDesc(Long userId);
+
+    @Query("""
+            select count(f)
+            from StoredFile f
+            where f.blob.id = :blobId
+            """)
+    long countByBlobId(@Param("blobId") Long blobId);
+
+    @EntityGraph(attributePaths = {"user", "blob"})
+    @Query("""
+            select f from StoredFile f
+            where f.id = :id
+            """)
+    Optional<StoredFile> findDetailedById(@Param("id") Long id);
+
+    List<StoredFile> findAllByDirectoryFalseAndBlobIsNull();
 }

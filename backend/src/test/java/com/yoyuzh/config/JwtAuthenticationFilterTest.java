@@ -1,5 +1,6 @@
 package com.yoyuzh.config;
 
+import com.yoyuzh.admin.AdminMetricsService;
 import com.yoyuzh.auth.CustomUserDetailsService;
 import com.yoyuzh.auth.JwtTokenProvider;
 import com.yoyuzh.auth.User;
@@ -33,13 +34,15 @@ class JwtAuthenticationFilterTest {
     @Mock
     private CustomUserDetailsService userDetailsService;
     @Mock
+    private AdminMetricsService adminMetricsService;
+    @Mock
     private FilterChain filterChain;
 
     private JwtAuthenticationFilter filter;
 
     @BeforeEach
     void setUp() {
-        filter = new JwtAuthenticationFilter(jwtTokenProvider, userDetailsService);
+        filter = new JwtAuthenticationFilter(jwtTokenProvider, userDetailsService, adminMetricsService);
         SecurityContextHolder.clearContext();
     }
 
@@ -159,6 +162,7 @@ class JwtAuthenticationFilterTest {
         verify(filterChain).doFilter(request, response);
         assertThat(SecurityContextHolder.getContext().getAuthentication()).isNotNull();
         assertThat(SecurityContextHolder.getContext().getAuthentication().getName()).isEqualTo("alice");
+        verify(adminMetricsService).recordUserOnline(1L, "alice");
     }
 
     private User createDomainUser(String username, String sessionId) {

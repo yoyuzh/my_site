@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import {
   Archive,
+  ArrowLeft,
   CheckCircle,
   CheckSquare,
   DownloadCloud,
@@ -17,6 +18,7 @@ import { NetdiskPathPickerModal } from '@/src/components/ui/NetdiskPathPickerMod
 import { Button } from '@/src/components/ui/button';
 import { Input } from '@/src/components/ui/input';
 import { buildTransferArchiveFileName, createTransferZipArchive } from '@/src/lib/transfer-archive';
+import { appendTransferRelayHint } from '@/src/lib/transfer-ice';
 import { resolveNetdiskSaveDirectory, saveFileToNetdisk } from '@/src/lib/netdisk-upload';
 import {
   createTransferReceiveRequestMessage,
@@ -25,10 +27,12 @@ import {
   toTransferChunk,
   type TransferFileDescriptor,
 } from '@/src/lib/transfer-protocol';
-import { flushPendingRemoteIceCandidates, handleRemoteIceCandidate } from '@/src/lib/transfer-signaling';
+import { shouldPublishTransferProgress } from '@/src/lib/transfer-runtime';
+import { createTransferPeer, type TransferPeerAdapter } from '@/src/lib/transfer-peer';
 import {
   buildOfflineTransferDownloadUrl,
   DEFAULT_TRANSFER_ICE_SERVERS,
+  TRANSFER_HAS_RELAY_SUPPORT,
   importOfflineTransferFile,
   joinTransferSession,
   lookupTransferSession,
@@ -37,7 +41,13 @@ import {
 } from '@/src/lib/transfer';
 import type { TransferSessionResponse } from '@/src/lib/types';
 
-import { canArchiveTransferSelection, formatTransferSize, sanitizeReceiveCode } from './transfer-state';
+import {
+  buildTransferReceiveSearchParams,
+  canSubmitReceiveCodeLookupOnEnter,
+  canArchiveTransferSelection,
+  formatTransferSize,
+  sanitizeReceiveCode,
+} from './transfer-state';
 
 type ReceivePhase = 'idle' | 'joining' | 'waiting' | 'connecting' | 'receiving' | 'completed' | 'error';
 
@@ -52,14 +62,6 @@ interface DownloadableFile extends TransferFileDescriptor {
 interface IncomingTransferFile extends TransferFileDescriptor {
   chunks: Uint8Array[];
   receivedBytes: number;
-}
-
-function parseJsonPayload<T>(payload: string): T | null {
-  try {
-    return JSON.parse(payload) as T;
-  } catch {
-    return null;
-  }
 }
 
 interface TransferReceiveProps {
@@ -85,17 +87,19 @@ export default function TransferReceive({ embedded = false }: TransferReceivePro
   const [savePathPickerFileId, setSavePathPickerFileId] = useState<string | null>(null);
   const [saveRootPath, setSaveRootPath] = useState('/下载');
 
-  const peerConnectionRef = useRef<RTCPeerConnection | null>(null);
-  const dataChannelRef = useRef<RTCDataChannel | null>(null);
+  const peerRef = useRef<TransferPeerAdapter | null>(null);
   const pollTimerRef = useRef<number | null>(null);
   const cursorRef = useRef(0);
   const lifecycleIdRef = useRef(0);
   const currentFileIdRef = useRef<string | null>(null);
   const totalBytesRef = useRef(0);
   const receivedBytesRef = useRef(0);
+  const lastOverallProgressPublishAtRef = useRef(0);
+  const lastPublishedOverallProgressRef = useRef(0);
+  const lastFileProgressPublishAtRef = useRef(new Map<string, number>());
+  const lastPublishedFileProgressRef = useRef(new Map<string, number>());
   const downloadUrlsRef = useRef<string[]>([]);
   const requestedFileIdsRef = useRef<string[]>([]);
-  const pendingRemoteCandidatesRef = useRef<RTCIceCandidateInit[]>([]);
   const archiveBuiltRef = useRef(false);
   const completedFilesRef = useRef(new Map<string, {
     name: string;
@@ -117,7 +121,7 @@ export default function TransferReceive({ embedded = false }: TransferReceivePro
       setTransferSession(null);
       setFiles([]);
       setPhase('idle');
-      setOverallProgress(0);
+      publishOverallProgress(0, {force: true});
       setRequestSubmitted(false);
       setArchiveRequested(false);
       setArchiveUrl(null);
@@ -133,15 +137,9 @@ export default function TransferReceive({ embedded = false }: TransferReceivePro
       pollTimerRef.current = null;
     }
 
-    if (dataChannelRef.current) {
-      dataChannelRef.current.close();
-      dataChannelRef.current = null;
-    }
-
-    if (peerConnectionRef.current) {
-      peerConnectionRef.current.close();
-      peerConnectionRef.current = null;
-    }
+    const peer = peerRef.current;
+    peerRef.current = null;
+    peer?.destroy();
 
     for (const url of downloadUrlsRef.current) {
       URL.revokeObjectURL(url);
@@ -153,9 +151,48 @@ export default function TransferReceive({ embedded = false }: TransferReceivePro
     cursorRef.current = 0;
     receivedBytesRef.current = 0;
     totalBytesRef.current = 0;
+    lastOverallProgressPublishAtRef.current = 0;
+    lastPublishedOverallProgressRef.current = 0;
+    lastFileProgressPublishAtRef.current.clear();
+    lastPublishedFileProgressRef.current.clear();
     requestedFileIdsRef.current = [];
-    pendingRemoteCandidatesRef.current = [];
     archiveBuiltRef.current = false;
+  }
+
+  function publishOverallProgress(nextProgress: number, options?: {force?: boolean}) {
+    const normalizedProgress = Math.max(0, Math.min(100, nextProgress));
+    const now = globalThis.performance?.now?.() ?? Date.now();
+    if (!options?.force && !shouldPublishTransferProgress({
+      nextProgress: normalizedProgress,
+      previousProgress: lastPublishedOverallProgressRef.current,
+      now,
+      lastPublishedAt: lastOverallProgressPublishAtRef.current,
+    })) {
+      return;
+    }
+
+    lastOverallProgressPublishAtRef.current = now;
+    lastPublishedOverallProgressRef.current = normalizedProgress;
+    setOverallProgress(normalizedProgress);
+  }
+
+  function shouldPublishFileProgress(fileId: string, nextProgress: number, options?: {force?: boolean}) {
+    const normalizedProgress = Math.max(0, Math.min(100, nextProgress));
+    const now = globalThis.performance?.now?.() ?? Date.now();
+    const previousProgress = lastPublishedFileProgressRef.current.get(fileId) ?? 0;
+    const lastPublishedAt = lastFileProgressPublishAtRef.current.get(fileId) ?? 0;
+    if (!options?.force && !shouldPublishTransferProgress({
+      nextProgress: normalizedProgress,
+      previousProgress,
+      now,
+      lastPublishedAt,
+    })) {
+      return false;
+    }
+
+    lastFileProgressPublishAtRef.current.set(fileId, now);
+    lastPublishedFileProgressRef.current.set(fileId, normalizedProgress);
+    return true;
   }
 
   async function startReceivingSession(sessionId: string) {
@@ -166,7 +203,7 @@ export default function TransferReceive({ embedded = false }: TransferReceivePro
     setPhase('joining');
     setErrorMessage('');
     setFiles([]);
-    setOverallProgress(0);
+    publishOverallProgress(0, {force: true});
     setRequestSubmitted(false);
     setArchiveRequested(false);
     setArchiveName(buildTransferArchiveFileName('快传文件'));
@@ -199,53 +236,43 @@ export default function TransferReceive({ embedded = false }: TransferReceivePro
 
         setFiles(offlineFiles);
         setRequestSubmitted(true);
-        setOverallProgress(offlineFiles.length > 0 ? 100 : 0);
+        publishOverallProgress(offlineFiles.length > 0 ? 100 : 0, {force: true});
         setPhase('completed');
         return;
       }
 
-      const connection = new RTCPeerConnection({
-        iceServers: DEFAULT_TRANSFER_ICE_SERVERS,
-      });
-      peerConnectionRef.current = connection;
-
-      connection.onicecandidate = (event) => {
-        if (!event.candidate) {
-          return;
-        }
-
-        void postTransferSignal(
-          joinedSession.sessionId,
-          'receiver',
-          'ice-candidate',
-          JSON.stringify(event.candidate.toJSON()),
-        );
-      };
-
-      connection.onconnectionstatechange = () => {
-        if (connection.connectionState === 'connected') {
+      const peer = createTransferPeer({
+        initiator: false,
+        peerOptions: {
+          config: {
+            iceServers: DEFAULT_TRANSFER_ICE_SERVERS,
+          },
+        },
+        onSignal: (payload) => {
+          void postTransferSignal(joinedSession.sessionId, 'receiver', 'signal', payload);
+        },
+        onConnect: () => {
+          if (lifecycleIdRef.current !== lifecycleId) {
+            return;
+          }
           setPhase((current) => (current === 'completed' ? current : 'connecting'));
-        }
-
-        if (connection.connectionState === 'failed' || connection.connectionState === 'disconnected') {
+        },
+        onData: (payload) => {
+          void handleIncomingMessage(payload);
+        },
+        onError: (error) => {
+          if (lifecycleIdRef.current !== lifecycleId) {
+            return;
+          }
           setPhase('error');
-          setErrorMessage('浏览器之间的直连失败，请重新打开分享链接。');
-        }
-      };
-
-      connection.ondatachannel = (event) => {
-        const channel = event.channel;
-        dataChannelRef.current = channel;
-        channel.binaryType = 'arraybuffer';
-        channel.onopen = () => {
-          setPhase((current) => (current === 'completed' ? current : 'connecting'));
-        };
-        channel.onmessage = (messageEvent) => {
-          void handleIncomingMessage(messageEvent.data);
-        };
-      };
-
-      startReceiverPolling(joinedSession.sessionId, connection, lifecycleId);
+          setErrorMessage(appendTransferRelayHint(
+            error.message || '浏览器之间的直连失败，请重新打开分享链接。',
+            TRANSFER_HAS_RELAY_SUPPORT,
+          ));
+        },
+      });
+      peerRef.current = peer;
+      startReceiverPolling(joinedSession.sessionId, lifecycleId);
       setPhase('waiting');
     } catch (error) {
       if (lifecycleIdRef.current !== lifecycleId) {
@@ -257,7 +284,7 @@ export default function TransferReceive({ embedded = false }: TransferReceivePro
     }
   }
 
-  function startReceiverPolling(sessionId: string, connection: RTCPeerConnection, lifecycleId: number) {
+  function startReceiverPolling(sessionId: string, lifecycleId: number) {
     let polling = false;
 
     pollTimerRef.current = window.setInterval(() => {
@@ -276,33 +303,9 @@ export default function TransferReceive({ embedded = false }: TransferReceivePro
           cursorRef.current = response.nextCursor;
 
           for (const item of response.items) {
-            if (item.type === 'offer') {
-              const offer = parseJsonPayload<RTCSessionDescriptionInit>(item.payload);
-              if (!offer) {
-                continue;
-              }
-
+            if (item.type === 'signal') {
               setPhase('connecting');
-              await connection.setRemoteDescription(offer);
-              pendingRemoteCandidatesRef.current = await flushPendingRemoteIceCandidates(
-                connection,
-                pendingRemoteCandidatesRef.current,
-              );
-              const answer = await connection.createAnswer();
-              await connection.setLocalDescription(answer);
-              await postTransferSignal(sessionId, 'receiver', 'answer', JSON.stringify(answer));
-              continue;
-            }
-
-            if (item.type === 'ice-candidate') {
-              const candidate = parseJsonPayload<RTCIceCandidateInit>(item.payload);
-              if (candidate) {
-                pendingRemoteCandidatesRef.current = await handleRemoteIceCandidate(
-                  connection,
-                  pendingRemoteCandidatesRef.current,
-                  candidate,
-                );
-              }
+              peerRef.current?.applyRemoteSignal(item.payload);
             }
           }
         })
@@ -344,7 +347,7 @@ export default function TransferReceive({ embedded = false }: TransferReceivePro
     setArchiveUrl(nextArchiveUrl);
   }
 
-  async function handleIncomingMessage(data: string | ArrayBuffer | Blob) {
+  async function handleIncomingMessage(data: string | Uint8Array | ArrayBuffer | Blob) {
     if (typeof data === 'string') {
       const message = parseTransferControlMessage(data);
 
@@ -394,7 +397,7 @@ export default function TransferReceive({ embedded = false }: TransferReceivePro
 
       if (message.type === 'transfer-complete') {
         await finalizeArchiveDownload();
-        setOverallProgress(100);
+        publishOverallProgress(100, {force: true});
         setPhase('completed');
       }
 
@@ -418,19 +421,22 @@ export default function TransferReceive({ embedded = false }: TransferReceivePro
 
     setPhase('receiving');
     if (totalBytesRef.current > 0) {
-      setOverallProgress(Math.min(99, Math.round((receivedBytesRef.current / totalBytesRef.current) * 100)));
+      publishOverallProgress(Math.min(99, Math.round((receivedBytesRef.current / totalBytesRef.current) * 100)));
     }
 
-    setFiles((current) =>
-      current.map((file) =>
-        file.id === activeFileId
-          ? {
-              ...file,
-              progress: Math.min(99, Math.round((targetFile.receivedBytes / Math.max(targetFile.size, 1)) * 100)),
-            }
-          : file,
-      ),
-    );
+    const nextFileProgress = Math.min(99, Math.round((targetFile.receivedBytes / Math.max(targetFile.size, 1)) * 100));
+    if (shouldPublishFileProgress(activeFileId, nextFileProgress)) {
+      setFiles((current) =>
+        current.map((file) =>
+          file.id === activeFileId
+            ? {
+                ...file,
+                progress: nextFileProgress,
+              }
+            : file,
+        ),
+      );
+    }
   }
 
   function finalizeDownloadableFile(fileId: string) {
@@ -531,8 +537,8 @@ export default function TransferReceive({ embedded = false }: TransferReceivePro
   }
 
   async function submitReceiveRequest(archive: boolean, fileIds?: string[]) {
-    const channel = dataChannelRef.current;
-    if (!channel || channel.readyState !== 'open') {
+    const peer = peerRef.current;
+    if (!peer || !peer.connected) {
       setPhase('error');
       setErrorMessage('P2P 通道尚未准备好，请稍后再试。');
       return;
@@ -553,7 +559,7 @@ export default function TransferReceive({ embedded = false }: TransferReceivePro
     totalBytesRef.current = requestedBytes;
     receivedBytesRef.current = 0;
     archiveBuiltRef.current = false;
-    setOverallProgress(0);
+    publishOverallProgress(0, {force: true});
     setArchiveRequested(archive);
     setArchiveUrl(null);
     setRequestSubmitted(true);
@@ -568,7 +574,7 @@ export default function TransferReceive({ embedded = false }: TransferReceivePro
       })),
     );
 
-    channel.send(createTransferReceiveRequestMessage(requestedIds, archive));
+    peer.send(createTransferReceiveRequestMessage(requestedIds, archive));
     setPhase('waiting');
   }
 
@@ -578,9 +584,10 @@ export default function TransferReceive({ embedded = false }: TransferReceivePro
 
     try {
       const result = await lookupTransferSession(receiveCode);
-      setSearchParams({
-        session: result.sessionId,
-      });
+      setSearchParams(buildTransferReceiveSearchParams({
+        sessionId: result.sessionId,
+        receiveCode,
+      }));
     } catch (error) {
       setPhase('error');
       setErrorMessage(error instanceof Error ? error.message : '取件码无效或会话已过期');
@@ -589,13 +596,30 @@ export default function TransferReceive({ embedded = false }: TransferReceivePro
     }
   }
 
+  function returnToCodeEntry() {
+    const nextCode = transferSession?.pickupCode ?? receiveCode;
+    cleanupReceiver();
+    setTransferSession(null);
+    setFiles([]);
+    setPhase('idle');
+    setErrorMessage('');
+    publishOverallProgress(0, {force: true});
+    setRequestSubmitted(false);
+    setArchiveRequested(false);
+    setArchiveUrl(null);
+    setReceiveCode(sanitizeReceiveCode(nextCode));
+    setSearchParams(buildTransferReceiveSearchParams({
+      receiveCode: nextCode,
+    }));
+  }
+
   const sessionId = searchParams.get('session');
   const selectedFiles = files.filter((file) => file.selected);
   const requestedFiles = files.filter((file) => file.requested);
   const selectedSize = selectedFiles.reduce((sum, file) => sum + file.size, 0);
   const canZipAllFiles = canArchiveTransferSelection(files);
   const hasSelectableFiles = selectedFiles.length > 0;
-  const canSubmitSelection = Boolean(dataChannelRef.current && dataChannelRef.current.readyState === 'open' && hasSelectableFiles);
+  const canSubmitSelection = Boolean(peerRef.current?.connected && hasSelectableFiles);
   const isOfflineSession = transferSession?.mode === 'OFFLINE';
 
   const panelContent = (
@@ -622,6 +646,17 @@ export default function TransferReceive({ embedded = false }: TransferReceivePro
                 <Input
                   value={receiveCode}
                   onChange={(event) => setReceiveCode(sanitizeReceiveCode(event.target.value))}
+                  onKeyDown={(event) => {
+                    if (!canSubmitReceiveCodeLookupOnEnter({
+                      key: event.key,
+                      receiveCode,
+                      lookupBusy,
+                    })) {
+                      return;
+                    }
+                    event.preventDefault();
+                    void handleLookupByCode();
+                  }}
                   inputMode="numeric"
                   aria-label="六位取件码"
                   placeholder="请输入 6 位取件码"
@@ -649,18 +684,28 @@ export default function TransferReceive({ embedded = false }: TransferReceivePro
                     <p className="text-xs uppercase tracking-[0.24em] text-slate-500">当前会话</p>
                     <h2 className="text-2xl font-semibold mt-2">{transferSession?.pickupCode ?? '连接中...'}</h2>
                   </div>
-                  <Button
-                    variant="outline"
-                    className="border-white/10 text-slate-200 hover:bg-white/10"
-                    onClick={() => {
-                      if (sessionId) {
-                        void startReceivingSession(sessionId);
-                      }
-                    }}
-                  >
-                    <RefreshCcw className="mr-2 h-4 w-4" />
-                    重新连接
-                  </Button>
+                  <div className="flex flex-wrap justify-end gap-2">
+                    <Button
+                      variant="outline"
+                      className="border-white/10 text-slate-200 hover:bg-white/10"
+                      onClick={returnToCodeEntry}
+                    >
+                      <ArrowLeft className="mr-2 h-4 w-4" />
+                      返回输入取件码
+                    </Button>
+                    <Button
+                      variant="outline"
+                      className="border-white/10 text-slate-200 hover:bg-white/10"
+                      onClick={() => {
+                        if (sessionId) {
+                          void startReceivingSession(sessionId);
+                        }
+                      }}
+                    >
+                      <RefreshCcw className="mr-2 h-4 w-4" />
+                      重新连接
+                    </Button>
+                  </div>
                 </div>
 
                 <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
@@ -774,7 +819,7 @@ export default function TransferReceive({ embedded = false }: TransferReceivePro
                       <Button
                         variant="outline"
                         className="border-cyan-400/20 bg-cyan-500/10 text-cyan-100 hover:bg-cyan-500/15"
-                        disabled={!dataChannelRef.current || dataChannelRef.current.readyState !== 'open'}
+                        disabled={!peerRef.current?.connected}
                         onClick={() => void submitReceiveRequest(true, files.map((file) => file.id))}
                       >
                         <Archive className="mr-2 h-4 w-4" />

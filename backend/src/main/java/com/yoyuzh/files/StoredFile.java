@@ -36,8 +36,12 @@ public class StoredFile {
     @Column(nullable = false, length = 512)
     private String path;
 
-    @Column(name = "storage_name", nullable = false, length = 255)
-    private String storageName;
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "blob_id")
+    private FileBlob blob;
+
+    @Column(name = "storage_name", length = 255)
+    private String legacyStorageName;
 
     @Column(name = "content_type", length = 255)
     private String contentType;
@@ -90,12 +94,20 @@ public class StoredFile {
         this.path = path;
     }
 
-    public String getStorageName() {
-        return storageName;
+    public FileBlob getBlob() {
+        return blob;
     }
 
-    public void setStorageName(String storageName) {
-        this.storageName = storageName;
+    public void setBlob(FileBlob blob) {
+        this.blob = blob;
+    }
+
+    public String getLegacyStorageName() {
+        return legacyStorageName;
+    }
+
+    public void setLegacyStorageName(String legacyStorageName) {
+        this.legacyStorageName = legacyStorageName;
     }
 
     public String getContentType() {

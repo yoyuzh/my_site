@@ -3,6 +3,8 @@ import test from 'node:test';
 
 import { buildTransferShareUrl } from '../lib/transfer-links';
 import {
+  buildTransferReceiveSearchParams,
+  canSubmitReceiveCodeLookupOnEnter,
   getAvailableTransferModes,
   getOfflineTransferSessionLabel,
   getOfflineTransferSessionSize,
@@ -24,6 +26,44 @@ test('createMockTransferCode returns a six digit numeric code', () => {
 
 test('sanitizeReceiveCode keeps only the first six digits', () => {
   assert.equal(sanitizeReceiveCode(' 98a76-54321 '), '987654');
+});
+
+test('buildTransferReceiveSearchParams toggles between session and code entry states', () => {
+  assert.equal(
+    buildTransferReceiveSearchParams({ sessionId: 'session-1', receiveCode: ' 98a76-54321 ' }).toString(),
+    'session=session-1&code=987654',
+  );
+  assert.equal(
+    buildTransferReceiveSearchParams({ receiveCode: '723325' }).toString(),
+    'code=723325',
+  );
+  assert.equal(
+    buildTransferReceiveSearchParams({ receiveCode: '' }).toString(),
+    '',
+  );
+});
+
+test('canSubmitReceiveCodeLookupOnEnter only allows Enter when the lookup is ready', () => {
+  assert.equal(canSubmitReceiveCodeLookupOnEnter({
+    key: 'Enter',
+    receiveCode: '723325',
+    lookupBusy: false,
+  }), true);
+  assert.equal(canSubmitReceiveCodeLookupOnEnter({
+    key: 'Enter',
+    receiveCode: '72332',
+    lookupBusy: false,
+  }), false);
+  assert.equal(canSubmitReceiveCodeLookupOnEnter({
+    key: 'Enter',
+    receiveCode: '723325',
+    lookupBusy: true,
+  }), false);
+  assert.equal(canSubmitReceiveCodeLookupOnEnter({
+    key: 'Tab',
+    receiveCode: '723325',
+    lookupBusy: false,
+  }), false);
 });
 
 test('formatTransferSize uses readable units', () => {

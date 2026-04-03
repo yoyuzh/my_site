@@ -10,6 +10,8 @@
 2. Spring Boot 后端 API
 3. 文件存储层（本地文件系统或 S3 兼容对象存储）
 
+当前前端除了作为 Web 站点发布外，也已支持通过 Capacitor 打包成 Android WebView 壳应用。
+
 业务主线已经从旧教务方向切换为：
 
 - 账号系统
@@ -33,6 +35,7 @@
 - 快传发/收流程
 - 管理台前端
 - 生产环境 API 基址拼装与调用
+- Android WebView 壳的静态资源承载与 Capacitor 同步
 
 关键入口：
 
@@ -41,6 +44,8 @@
 - `front/src/main.tsx`
 - `front/src/lib/api.ts`
 - `front/src/components/layout/Layout.tsx`
+- `front/capacitor.config.ts`
+- `front/android/`
 
 主要页面：
 
@@ -133,10 +138,25 @@
 关键实现说明：
 
 - 文件元数据在数据库
-- 文件内容走存储层抽象
+- 文件内容通过独立 `FileBlob` 实体映射到底层对象；`StoredFile` 只负责用户、目录、文件名、路径、分享关系等逻辑元数据
+- 新文件的物理对象 key 使用全局 `blobs/...` 命名，不再把 `userId/path` 编进对象 key
 - 支持本地磁盘和 S3 兼容对象存储
+- 分享导入与网盘复制会直接复用源文件的 `FileBlob`，不会再次写入字节内容
+- 文件重命名、移动只更新 `StoredFile` 元数据，不会移动底层对象
+- 删除文件时会先删除 `StoredFile` 引用；只有最后一个引用消失时，才真正删除 `FileBlob` 对应的底层对象
+- 应用启动时会把旧 `portal_file.storage_name` 行自动回填到新的 `blob_id` 引用，保证存量数据能继续读取
 - 当前线上网盘文件存储已切到多吉云对象存储，后端先通过多吉云临时密钥 API 换取短期 S3 会话，再访问底层 COS 兼容桶
 - 前端会缓存目录列表和最后访问路径
+
+Android 壳补充说明：
+
+- Android 客户端当前使用 Capacitor 直接承载 `front/dist`，不单独维护原生业务页面
+- 当前包名是 `xyz.yoyuzh.portal`
+- 前端 API 基址在 Web 与 Android 壳上分开解析：网页继续走相对 `/api`，Capacitor `localhost` 壳在 `http://localhost` 与 `https://localhost` 下都默认改走 `https://api.yoyuzh.xyz/api`
+- 后端 CORS 默认放行 `http://localhost`、`https://localhost`、`http://127.0.0.1`、`https://127.0.0.1` 与 `capacitor://localhost`，以兼容 Web 开发环境和 Android WebView 壳
+- Web 端构建完成后，通过 `npx cap sync android` 把静态资源复制到 `front/android/app/src/main/assets/public`
+- Android 调试包当前通过 `cd front/android && ./gradlew assembleDebug` 生成，输出路径是 `front/android/app/build/outputs/apk/debug/app-debug.apk`
+- 由于当前开发机直连 `dl.google.com` 与 Google Android Maven 仓库存在 TLS 握手失败，本地 Android 构建仓库源已切到可访问镜像；如果后续重新生成 Capacitor 工程，需要重新确认镜像配置仍存在
 
 ### 3.3 快传模块
 
@@ -166,8 +186,10 @@
 - 多文件或文件夹可走 ZIP 下载
 - 在线快传是一次性浏览器 P2P 传输，首个接收者进入后即占用该会话
 - 离线快传会把文件内容落到站点存储，线上环境使用多吉云对象存储，默认保留 7 天并支持重复接收
-- 登录页提供直达快传入口；匿名用户只允许创建在线快传并接收在线快传，离线快传相关操作仍要求登录
+- 登录页提供直达快传入口；匿名用户允许创建在线快传、接收在线快传和接收离线快传，离线快传的发送以及“存入网盘”仍要求登录
 - 已登录发送端可在快传页查看自己未过期的离线快传记录，并重新打开取件码 / 二维码 / 分享链接详情弹层
+- 生产环境当前已经部署 `GET /api/transfer/sessions/offline/mine`，用于驱动“我的离线快传”列表
+- 前端默认内置 STUN 服务器，并支持通过 `VITE_TRANSFER_ICE_SERVERS_JSON` 追加 TURN / ICE 配置；未配置 TURN 时，跨运营商或手机蜂窝网络下的在线 P2P 直连不保证成功
 
 ### 3.4 管理台模块
 
@@ -182,7 +204,7 @@
 - 管理用户
 - 管理文件
 - 查看邀请码
-- 展示总存储量、下载流量、今日请求次数、快传使用量、离线快传占用和请求折线图
+- 展示总存储量、下载流量、今日请求次数、快传使用量、离线快传占用、请求折线图和最近 7 天上线记录
 - 调整离线快传总上限
 
 关键实现说明：
@@ -191,6 +213,8 @@
 - 当前邀请码由后端返回给管理台展示
 - 用户列表会展示每个用户的已用空间 / 配额
 - 管理员修改用户密码后，旧密码应立即失效，新密码可直接重新登录
+- JWT 过滤器在受保护接口鉴权成功后，会把当天首次上线的用户写入管理统计表，只保留最近 7 天
+- 管理台请求折线图只渲染当天已发生的小时，不再为未来小时补空点
 
 ## 4. 关键业务流程
 
@@ -198,6 +222,7 @@
 
 - 前端主入口会在 `main.tsx` 按屏幕宽度选择桌面壳或移动壳
 - 当前规则为：宽度小于 `768px` 时渲染 `MobileApp`，否则渲染桌面 `App`
+- 移动端 `MobileFiles` 与 `MobileTransfer` 独立维护页面级动态光晕层，视觉上与桌面端网盘/快传保持同一背景语言
 
 ### 4.1 登录流程
 
@@ -226,16 +251,19 @@
 
 1. 前端在 `Files` 页面选择文件或文件夹
 2. 前端优先调用 `/api/files/upload/initiate`
-3. 如果存储支持直传，则浏览器直接上传到对象存储
-4. 前端再调用 `/api/files/upload/complete`
-5. 如果直传失败，会回退到代理上传接口 `/api/files/upload`
+3. 后端为新文件预留一个全局 blob object key（`blobs/...`）并返回给前端
+4. 如果存储支持直传，则浏览器直接把字节上传到该 blob key
+5. 前端再调用 `/api/files/upload/complete`
+6. 如果直传失败，会回退到代理上传接口 `/api/files/upload`
+7. 后端创建 `FileBlob`，再创建指向该 blob 的 `StoredFile`
 
 ### 4.4 文件分享流程
 
 1. 登录用户创建分享链接
 2. 后端生成 token
 3. 公开用户通过 `/share/:token` 查看详情
-4. 登录用户可以导入到自己的网盘
+4. 登录用户导入时会新建自己的 `StoredFile`
+5. 若源对象是普通文件，则新条目直接复用源 `FileBlob`，不会复制物理内容
 
 ### 4.5 快传流程
 
@@ -258,7 +286,7 @@
 
 补充说明：
 
-- 离线快传的创建、查找、加入和下载都要求登录
+- 离线快传只有“创建会话 / 上传文件 / 存入网盘”要求登录；匿名用户可以查找、加入和下载离线快传
 - 匿名用户进入 `/transfer` 时默认落在发送页，但仅会看到在线模式
 - 登录用户可通过 `/api/transfer/sessions/offline/mine` 拉取自己仍在有效期内的离线快传会话，用于在快传页回看历史取件信息
 
