@@ -84,8 +84,8 @@ class AuthServiceTest {
             user.setCreatedAt(LocalDateTime.now());
             return user;
         });
-        when(jwtTokenProvider.generateAccessToken(eq(1L), eq("alice"), anyString())).thenReturn("access-token");
-        when(refreshTokenService.issueRefreshToken(any(User.class))).thenReturn("refresh-token");
+        when(jwtTokenProvider.generateAccessToken(eq(1L), eq("alice"), anyString(), eq(AuthClientType.DESKTOP))).thenReturn("access-token");
+        when(refreshTokenService.issueRefreshToken(any(User.class), eq(AuthClientType.DESKTOP))).thenReturn("refresh-token");
 
         AuthResponse response = authService.register(request);
 
@@ -166,8 +166,8 @@ class AuthServiceTest {
         user.setCreatedAt(LocalDateTime.now());
         when(userRepository.findByUsername("alice")).thenReturn(Optional.of(user));
         when(userRepository.save(user)).thenReturn(user);
-        when(jwtTokenProvider.generateAccessToken(eq(1L), eq("alice"), anyString())).thenReturn("access-token");
-        when(refreshTokenService.issueRefreshToken(user)).thenReturn("refresh-token");
+        when(jwtTokenProvider.generateAccessToken(eq(1L), eq("alice"), anyString(), eq(AuthClientType.DESKTOP))).thenReturn("access-token");
+        when(refreshTokenService.issueRefreshToken(user, AuthClientType.DESKTOP)).thenReturn("refresh-token");
 
         AuthResponse response = authService.login(request);
 
@@ -188,9 +188,9 @@ class AuthServiceTest {
         user.setEmail("alice@example.com");
         user.setCreatedAt(LocalDateTime.now());
         when(refreshTokenService.rotateRefreshToken("old-refresh"))
-                .thenReturn(new RefreshTokenService.RotatedRefreshToken(user, "new-refresh"));
+                .thenReturn(new RefreshTokenService.RotatedRefreshToken(user, "new-refresh", AuthClientType.DESKTOP));
         when(userRepository.save(user)).thenReturn(user);
-        when(jwtTokenProvider.generateAccessToken(eq(1L), eq("alice"), anyString())).thenReturn("new-access");
+        when(jwtTokenProvider.generateAccessToken(eq(1L), eq("alice"), anyString(), eq(AuthClientType.DESKTOP))).thenReturn("new-access");
 
         AuthResponse response = authService.refresh("old-refresh");
 
@@ -232,8 +232,8 @@ class AuthServiceTest {
             user.setCreatedAt(LocalDateTime.now());
             return user;
         });
-        when(jwtTokenProvider.generateAccessToken(eq(9L), eq("demo"), anyString())).thenReturn("access-token");
-        when(refreshTokenService.issueRefreshToken(any(User.class))).thenReturn("refresh-token");
+        when(jwtTokenProvider.generateAccessToken(eq(9L), eq("demo"), anyString(), eq(AuthClientType.DESKTOP))).thenReturn("access-token");
+        when(refreshTokenService.issueRefreshToken(any(User.class), eq(AuthClientType.DESKTOP))).thenReturn("refresh-token");
 
         AuthResponse response = authService.devLogin("demo");
 
@@ -296,7 +296,7 @@ class AuthServiceTest {
         when(passwordEncoder.matches("OldPass1!", "encoded-old")).thenReturn(true);
         when(passwordEncoder.encode("NewPass1!A")).thenReturn("encoded-new");
         when(userRepository.save(user)).thenReturn(user);
-        when(jwtTokenProvider.generateAccessToken(eq(1L), eq("alice"), anyString())).thenReturn("new-access");
+        when(jwtTokenProvider.generateAccessToken(eq(1L), eq("alice"), anyString(), eq(AuthClientType.DESKTOP))).thenReturn("new-access");
         when(refreshTokenService.issueRefreshToken(user)).thenReturn("new-refresh");
 
         AuthResponse response = authService.changePassword("alice", request);

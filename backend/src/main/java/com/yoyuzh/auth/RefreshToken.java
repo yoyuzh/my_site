@@ -39,6 +39,9 @@ public class RefreshToken {
     @Column(name = "revoked", nullable = false)
     private boolean revoked;
 
+    @Column(name = "client_type", nullable = false, length = 16)
+    private String clientType;
+
     @Column(name = "created_at", nullable = false)
     private LocalDateTime createdAt;
 
@@ -49,6 +52,9 @@ public class RefreshToken {
     public void prePersist() {
         if (createdAt == null) {
             createdAt = LocalDateTime.now();
+        }
+        if (clientType == null || clientType.isBlank()) {
+            clientType = AuthClientType.DESKTOP.name();
         }
     }
 
@@ -95,6 +101,14 @@ public class RefreshToken {
 
     public void setRevoked(boolean revoked) {
         this.revoked = revoked;
+    }
+
+    public String getClientType() {
+        return clientType;
+    }
+
+    public void setClientType(String clientType) {
+        this.clientType = clientType;
     }
 
     public LocalDateTime getCreatedAt() {

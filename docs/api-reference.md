@@ -33,8 +33,10 @@
 
 - 采用 `Authorization: Bearer <accessToken>`
 - `refreshToken` 通过 `/api/auth/refresh` 换取新的登录态
-- 当前实现为“单账号单设备在线”
-  - 新设备登录后，旧设备的 access token 会失效
+- 当前实现为“按客户端类型拆分会话”
+  - 桌面端与移动端可以同时在线
+  - 同一端类型再次登录后，该端旧 access token 会失效
+  - `/api/auth/register`、`/api/auth/login`、`/api/auth/refresh` 与开发环境 `/api/auth/dev-login` 支持可选请求头 `X-Yoyuzh-Client: desktop|mobile`
 
 ### 权限分层
 
@@ -64,6 +66,7 @@
 - 使用邀请码注册
 - 注册成功后直接返回登录态
 - 邀请码成功使用后会自动刷新
+- 若请求未显式带 `X-Yoyuzh-Client`，后端默认按 `desktop` 处理
 
 请求重点字段：
 
@@ -90,6 +93,11 @@
 - `refreshToken`
 - `user`
 
+补充说明：
+
+- 可选请求头 `X-Yoyuzh-Client` 用于声明当前登录来自桌面端还是移动端
+- 同账号桌面端与移动端可同时保持登录，但同类型端再次登录会顶掉旧会话
+
 ### 2.3 刷新登录态
 
 `POST /api/auth/refresh`
@@ -102,6 +110,7 @@
 
 - 刷新后会返回新的 access token 与 refresh token
 - 当前系统会让旧 refresh token 失效
+- 刷新会沿用该 refresh token 原本所属的客户端类型；请求头缺省时仍按 `desktop` 兜底
 
 ### 2.4 开发环境登录
 
@@ -111,6 +120,7 @@
 
 - 仅用于开发联调
 - 是否可用取决于当前环境配置
+- 同样支持可选请求头 `X-Yoyuzh-Client: desktop|mobile`
 
 ### 2.5 获取用户资料
 
@@ -188,6 +198,8 @@
 - `PATCH /api/files/{fileId}/move`
 - `POST /api/files/{fileId}/copy`
 - `DELETE /api/files/{fileId}`
+- `GET /api/files/recycle-bin`
+- `POST /api/files/recycle-bin/{fileId}/restore`
 
 说明：
 
@@ -195,6 +207,9 @@
 - `copy` 用于复制到目标路径
 - 文件和文件夹都支持移动 / 复制
 - 普通文件的 `move` / `rename` / `copy` 只改逻辑元数据；`copy` 会复用原有 `FileBlob`，不会复制底层对象
+- `DELETE /api/files/{fileId}` 现在语义是“移入回收站”，不会立刻物理删除；删除的文件或整个目录树会保留 10 天
+- `GET /api/files/recycle-bin` 返回当前用户回收站根条目分页列表，包含删除时间和预计清理时间
+- `POST /api/files/recycle-bin/{fileId}/restore` 用于把某个回收站根条目恢复到原目录；若原位置已有同名文件，或当前剩余空间不足，则恢复失败
 
 ### 3.5 分享链接
 

@@ -17,6 +17,7 @@ import { AnimatePresence, motion } from 'motion/react';
 
 import { useAuth } from '@/src/auth/AuthProvider';
 import { apiBinaryUploadRequest, apiDownload, apiRequest, apiUploadRequest } from '@/src/lib/api';
+import { isNativeAppShellLocation } from '@/src/lib/app-shell';
 import { createSession, readStoredSession, saveStoredSession } from '@/src/lib/session';
 import type { AuthResponse, InitiateUploadResponse, UserProfile } from '@/src/lib/types';
 import { cn } from '@/src/lib/utils';
@@ -33,16 +34,7 @@ const NAV_ITEMS = [
 ] as const;
 
 export function isNativeMobileShellLocation(location: Location | URL | null) {
-  if (!location) {
-    return false;
-  }
-
-  const hostname = location.hostname || '';
-  const protocol = location.protocol || '';
-  const isLocalhostHost = hostname === 'localhost' || hostname === '127.0.0.1';
-  const isCapacitorScheme = protocol === 'http:' || protocol === 'https:' || protocol === 'capacitor:';
-
-  return isLocalhostHost && isCapacitorScheme;
+  return isNativeAppShellLocation(location);
 }
 
 export function getMobileViewportOffsetClassNames(isNativeShell = false) {

@@ -22,6 +22,7 @@ public interface StoredFileRepository extends JpaRepository<StoredFile, Long> {
             where (:query is null or :query = ''
                 or lower(f.filename) like lower(concat('%', :query, '%'))
                 or lower(f.path) like lower(concat('%', :query, '%')))
+              and f.deletedAt is null
               and (:ownerQuery is null or :ownerQuery = ''
                 or lower(u.username) like lower(concat('%', :ownerQuery, '%'))
                 or lower(u.email) like lower(concat('%', :ownerQuery, '%')))
@@ -33,7 +34,7 @@ public interface StoredFileRepository extends JpaRepository<StoredFile, Long> {
     @Query("""
             select case when count(f) > 0 then true else false end
             from StoredFile f
-            where f.user.id = :userId and f.path = :path and f.filename = :filename
+            where f.user.id = :userId and f.path = :path and f.filename = :filename and f.deletedAt is null
             """)
     boolean existsByUserIdAndPathAndFilename(@Param("userId") Long userId,
                                              @Param("path") String path,
@@ -41,7 +42,7 @@ public interface StoredFileRepository extends JpaRepository<StoredFile, Long> {
 
     @Query("""
             select f from StoredFile f
-            where f.user.id = :userId and f.path = :path and f.filename = :filename
+            where f.user.id = :userId and f.path = :path and f.filename = :filename and f.deletedAt is null
             """)
     Optional<StoredFile> findByUserIdAndPathAndFilename(@Param("userId") Long userId,
                                                         @Param("path") String path,
@@ -50,7 +51,7 @@ public interface StoredFileRepository extends JpaRepository<StoredFile, Long> {
     @EntityGraph(attributePaths = "blob")
     @Query("""
             select f from StoredFile f
-            where f.user.id = :userId and f.path = :path
+            where f.user.id = :userId and f.path = :path and f.deletedAt is null
             order by f.directory desc, f.createdAt desc
             """)
     Page<StoredFile> findByUserIdAndPathOrderByDirectoryDescCreatedAtDesc(@Param("userId") Long userId,
@@ -60,7 +61,7 @@ public interface StoredFileRepository extends JpaRepository<StoredFile, Long> {
     @EntityGraph(attributePaths = "blob")
     @Query("""
             select f from StoredFile f
-            where f.user.id = :userId and (f.path = :path or f.path like concat(:path, '/%'))
+            where f.user.id = :userId and f.deletedAt is null and (f.path = :path or f.path like concat(:path, '/%'))
             order by f.createdAt asc
             """)
     List<StoredFile> findByUserIdAndPathEqualsOrDescendant(@Param("userId") Long userId,
@@ -69,7 +70,7 @@ public interface StoredFileRepository extends JpaRepository<StoredFile, Long> {
     @Query("""
             select coalesce(sum(f.size), 0)
             from StoredFile f
-            where f.user.id = :userId and f.directory = false
+            where f.user.id = :userId and f.directory = false and f.deletedAt is null
             """)
     long sumFileSizeByUserId(@Param("userId") Long userId);
 
@@ -81,7 +82,31 @@ public interface StoredFileRepository extends JpaRepository<StoredFile, Long> {
     long sumAllFileSize();
 
     @EntityGraph(attributePaths = "blob")
-    List<StoredFile> findTop12ByUserIdAndDirectoryFalseOrderByCreatedAtDesc(Long userId);
+    List<StoredFile> findTop12ByUserIdAndDirectoryFalseAndDeletedAtIsNullOrderByCreatedAtDesc(Long userId);
+
+    @EntityGraph(attributePaths = "blob")
+    @Query("""
+            select f from StoredFile f
+            where f.user.id = :userId and f.deletedAt is not null and f.recycleRoot = true
+            order by f.deletedAt desc
+            """)
+    Page<StoredFile> findRecycleBinRootsByUserId(@Param("userId") Long userId, Pageable pageable);
+
+    @EntityGraph(attributePaths = "blob")
+    @Query("""
+            select f from StoredFile f
+            where f.recycleGroupId = :groupId
+            order by length(coalesce(f.recycleOriginalPath, f.path)) asc, f.directory desc, f.createdAt asc
+            """)
+    List<StoredFile> findByRecycleGroupId(@Param("groupId") String groupId);
+
+    @EntityGraph(attributePaths = "blob")
+    @Query("""
+            select f from StoredFile f
+            where f.deletedAt is not null and f.deletedAt < :cutoff
+            order by f.deletedAt asc
+            """)
+    List<StoredFile> findByDeletedAtBefore(@Param("cutoff") java.time.LocalDateTime cutoff);
 
     @Query("""
             select count(f)

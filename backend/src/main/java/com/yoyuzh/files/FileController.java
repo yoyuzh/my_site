@@ -82,6 +82,18 @@ public class FileController {
         return ApiResponse.success(fileService.recent(userDetailsService.loadDomainUser(userDetails.getUsername())));
     }
 
+    @Operation(summary = "分页列出回收站")
+    @GetMapping("/recycle-bin")
+    public ApiResponse<PageResponse<RecycleBinItemResponse>> listRecycleBin(@AuthenticationPrincipal UserDetails userDetails,
+                                                                            @RequestParam(defaultValue = "0") int page,
+                                                                            @RequestParam(defaultValue = "10") int size) {
+        return ApiResponse.success(fileService.listRecycleBin(
+                userDetailsService.loadDomainUser(userDetails.getUsername()),
+                page,
+                size
+        ));
+    }
+
     @Operation(summary = "下载文件")
     @GetMapping("/download/{fileId}")
     public ResponseEntity<?> download(@AuthenticationPrincipal UserDetails userDetails,
@@ -161,5 +173,15 @@ public class FileController {
                                     @PathVariable Long fileId) {
         fileService.delete(userDetailsService.loadDomainUser(userDetails.getUsername()), fileId);
         return ApiResponse.success();
+    }
+
+    @Operation(summary = "从回收站恢复文件")
+    @PostMapping("/recycle-bin/{fileId}/restore")
+    public ApiResponse<FileMetadataResponse> restoreRecycleBinItem(@AuthenticationPrincipal UserDetails userDetails,
+                                                                   @PathVariable Long fileId) {
+        return ApiResponse.success(fileService.restoreFromRecycleBin(
+                userDetailsService.loadDomainUser(userDetails.getUsername()),
+                fileId
+        ));
     }
 }

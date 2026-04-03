@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
+import { useLocation, useNavigate } from 'react-router-dom';
 import {
   ChevronDown,
   Folder,
@@ -16,6 +17,7 @@ import {
   X,
   Edit2,
   Trash2,
+  RotateCcw,
 } from 'lucide-react';
 
 import { NetdiskPathPickerModal } from '@/src/components/ui/NetdiskPathPickerModal';
@@ -74,6 +76,7 @@ import {
   type DirectoryChildrenMap,
   type DirectoryTreeNode,
 } from './files-tree';
+import { getFilesSidebarFooterEntries, RECYCLE_BIN_RETENTION_DAYS, RECYCLE_BIN_ROUTE } from './recycle-bin-state';
 
 function sleep(ms: number) {
   return new Promise((resolve) => {
@@ -180,6 +183,8 @@ interface UiFile {
 type NetdiskTargetAction = 'move' | 'copy';
 
 export default function Files() {
+  const navigate = useNavigate();
+  const location = useLocation();
   const initialPath = readCachedValue<string[]>(getFilesLastPathCacheKey()) ?? [];
   const initialCachedFiles = readCachedValue<FileMetadata[]>(getFilesListCacheKey(toBackendPath(initialPath))) ?? [];
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -752,11 +757,11 @@ export default function Files() {
   return (
     <div className="flex flex-col lg:flex-row gap-6 h-[calc(100vh-8rem)]">
       {/* Left Sidebar */}
-      <Card className="w-full lg:w-64 shrink-0 flex flex-col h-full overflow-y-auto">
-        <CardContent className="p-4">
-          <div className="space-y-2">
+      <Card className="w-full lg:w-64 shrink-0 flex flex-col h-full overflow-hidden">
+        <CardContent className="flex h-full flex-col p-4">
+          <div className="min-h-0 flex-1 space-y-2">
             <p className="px-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">网盘目录</p>
-            <div className="rounded-2xl border border-white/5 bg-black/20 p-2">
+            <div className="flex min-h-0 flex-1 flex-col rounded-2xl border border-white/5 bg-black/20 p-2">
               <button
                 type="button"
                 onClick={() => handleSidebarClick([])}
@@ -768,7 +773,7 @@ export default function Files() {
                 <Folder className={cn('h-4 w-4', currentPath.length === 0 ? 'text-[#336EFF]' : 'text-slate-500')} />
                 <span className="truncate">网盘</span>
               </button>
-              <div className="mt-1 space-y-0.5">
+              <div className="mt-1 min-h-0 flex-1 space-y-0.5 overflow-y-auto pr-1">
                 {directoryTree.map((node) => (
                   <DirectoryTreeItem
                     key={node.id}
@@ -779,6 +784,30 @@ export default function Files() {
                 ))}
               </div>
             </div>
+          </div>
+          <div className="mt-4 border-t border-white/10 pt-4">
+            {getFilesSidebarFooterEntries().map((entry) => {
+              const isActive = location.pathname === entry.path || location.pathname === RECYCLE_BIN_ROUTE;
+              return (
+                <button
+                  key={entry.path}
+                  type="button"
+                  onClick={() => navigate(entry.path)}
+                  className={cn(
+                    'flex w-full items-center gap-3 rounded-2xl border px-3 py-3 text-left text-sm transition-colors',
+                    isActive
+                      ? 'border-[#336EFF]/30 bg-[#336EFF]/15 text-[#7ea6ff]'
+                      : 'border-white/10 bg-white/5 text-slate-300 hover:bg-white/10 hover:text-white',
+                  )}
+                >
+                  <RotateCcw className={cn('h-4 w-4', isActive ? 'text-[#7ea6ff]' : 'text-slate-400')} />
+                  <div className="min-w-0">
+                    <p className="font-medium">{entry.label}</p>
+                    <p className="truncate text-xs text-slate-500">删除后保留 {RECYCLE_BIN_RETENTION_DAYS} 天</p>
+                  </div>
+                </button>
+              );
+            })}
           </div>
         </CardContent>
       </Card>
@@ -1136,7 +1165,7 @@ export default function Files() {
               </div>
               <div className="space-y-5 p-5">
                 <p className="text-sm leading-relaxed text-slate-300">
-                  确定要删除 <span className="rounded bg-white/10 px-1 py-0.5 font-medium text-white">{fileToDelete?.name}</span> 吗？此操作无法撤销。
+                  确定要将 <span className="rounded bg-white/10 px-1 py-0.5 font-medium text-white">{fileToDelete?.name}</span> 移入回收站吗？文件会保留 {RECYCLE_BIN_RETENTION_DAYS} 天，期间可以恢复。
                 </p>
                 <div className="flex justify-end gap-3 pt-2">
                   <Button
@@ -1154,7 +1183,7 @@ export default function Files() {
                     className="border-red-500/30 bg-red-500 text-white hover:bg-red-600"
                     onClick={() => void handleDelete()}
                   >
-                    删除
+                    移入回收站
                   </Button>
                 </div>
               </div>

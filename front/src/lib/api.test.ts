@@ -182,6 +182,7 @@ test('apiRequest attaches bearer token and unwraps response payload', async () =
   assert.deepEqual(payload, {ok: true});
   assert.ok(request instanceof Request);
   assert.equal(request.headers.get('Authorization'), 'Bearer token-123');
+  assert.equal(request.headers.get('X-Yoyuzh-Client'), 'desktop');
   assert.equal(request.url, 'http://localhost/api/files/recent');
 });
 

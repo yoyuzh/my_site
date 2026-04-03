@@ -120,7 +120,7 @@ class AuthControllerValidationTest {
                 "new-refresh-token",
                 new UserProfileResponse(7L, "alice", "alice@example.com", LocalDateTime.now())
         );
-        when(authService.refresh("refresh-1")).thenReturn(response);
+        when(authService.refresh("refresh-1", AuthClientType.DESKTOP)).thenReturn(response);
 
         mockMvc.perform(post("/api/auth/refresh")
                         .contentType(MediaType.APPLICATION_JSON)
@@ -134,6 +134,6 @@ class AuthControllerValidationTest {
                 .andExpect(jsonPath("$.data.refreshToken").value("new-refresh-token"))
                 .andExpect(jsonPath("$.data.user.username").value("alice"));
 
-        verify(authService).refresh("refresh-1");
+        verify(authService).refresh("refresh-1", AuthClientType.DESKTOP);
     }
 }

@@ -7,7 +7,7 @@
   - 快传模块已整合进主站，支持取件码、分享链接、P2P 传输、部分文件接收、ZIP 下载、存入网盘
   - 网盘已支持上传、下载、重命名、删除、移动、复制、公开分享、接收快传后存入
   - 注册改成邀请码机制，邀请码单次使用后自动刷新，并在管理台展示与复制
-  - 同账号仅允许一台设备同时登录，旧设备会在下一次访问受保护接口时失效
+  - 同账号现已允许桌面端与移动端同时在线，但同一端类型仍只保留一个有效会话；同端再次登录会在下一次受保护请求时挤掉旧会话
   - 后端已补生产 CORS，默认放行 `https://yoyuzh.xyz` 与 `https://www.yoyuzh.xyz`
   - 线上文件存储与前端静态托管已迁到多吉云对象存储，后端通过临时密钥 API 获取短期 S3 会话访问底层 COS 兼容桶
   - 管理台 dashboard 已显示总存储量、下载流量、今日请求次数、快传使用量、离线快传占用和请求折线图，并支持调整离线快传总上限
@@ -30,6 +30,10 @@
   - 2026-04-03 Android 打包已确认走“Vite 产物 -> `npx cap sync android` -> Gradle `assembleDebug`”链路；当前应用包名为 `xyz.yoyuzh.portal`
   - 2026-04-03 Android WebView 壳内的前端 API 基址已改成运行时判断：Web 站点继续走相对 `/api`，Capacitor `localhost` 壳在 `http://localhost` 与 `https://localhost` 下都会默认直连 `https://api.yoyuzh.xyz/api`，避免 APK 把请求误打到应用内本地地址；后端 CORS 也同步放行了 `https://localhost`
   - 2026-04-03 由于这台机器直连 `dl.google.com` / Android Maven 仓库会 TLS 握手失败，Android 构建已改走阿里云 Google Maven 镜像，并通过 `redirector.gvt1.com` 手动落本机 SDK 包
+  - 2026-04-03 总览页已新增 Android APK 下载入口；Web 桌面端和移动端总览都会展示稳定下载链接 `/downloads/yoyuzh-portal.apk`
+  - 2026-04-03 鉴权链路已按客户端类型拆分会话：前端请求会带 `X-Yoyuzh-Client`，后端分别维护桌面和移动的活跃 `sid` 与 refresh token 集合，因此桌面 Web 与移动端 APK 可同时登录；移动端总览页在 Capacitor 原生壳内会显示“检查更新”，通过探测 OSS 上 APK 最新修改时间并直接跳转下载链接完成更新
+  - 2026-04-03 前端 OSS 发布脚本已支持额外上传 `front/android/app/build/outputs/apk/debug/app-debug.apk` 到对象存储稳定 key `downloads/yoyuzh-portal.apk`；这样不会把 APK 混进 `front/dist`，也不会在后续 `npx cap sync android` 时被再次打包进 Android 壳
+  - 2026-04-03 网盘已新增回收站：`DELETE /api/files/{id}` 现在会把文件或整个目录树软删除进回收站，默认保留 10 天；前端桌面网盘页在左侧目录栏最下方新增“回收站”入口，移动端网盘页头也可进入回收站查看并恢复
   - 根目录 README 已重写为中文公开版 GitHub 风格
   - VS Code 工作区已补 `.vscode/settings.json`、`.vscode/extensions.json`、`lombok.config`，并在 `backend/pom.xml` 显式声明了 Lombok annotation processor
 - 进行中:
@@ -47,7 +51,7 @@
 | 快传接收页收口回原 `/transfer` 页面 | 用户不需要单独进入专门的接收页面，入口更统一 | 独立接收页: 路径分散、用户心智更差 |
 | 网盘侧边栏改成单一树状目录结构 | 更像真实网盘，层级关系清晰 | 保留“快速访问 + 目录”双区块: 结构割裂 |
 | 注册邀请码改成单次使用后自动刷新 | 更适合私域邀请式注册，管理台也能直接查看当前邀请码 | 固定邀请码: 容易扩散且不可控 |
-| 单设备登录通过“用户当前会话 ID + JWT sid claim”实现 | 新登录能立即顶掉旧 access token，而不仅仅是旧 refresh token | 只撤销 refresh token: 旧 access token 仍会继续有效一段时间 |
+| 登录态通过“按客户端类型拆分的会话 ID + JWT sid/client claim”实现 | 桌面 Web 和移动 APK 可以同时在线，但同一端再次登录仍会立即挤掉旧 access token，而不仅仅是旧 refresh token | 只保留全局单会话: 会让桌面/移动互相顶下线；只撤销 refresh token: 旧 access token 仍会继续有效一段时间 |
 | 前端发布继续使用 `node scripts/deploy-front-oss.mjs` | 仓库已有正式静态站发布脚本，现已切到多吉云临时密钥 + S3 兼容上传流程 | 手动上传对象存储: 容易出错，也不利于复用 |
 | 后端发布继续采用“本地打包 + SSH/ SCP 上传 jar + systemd 重启” | 当前线上就按这个方式运行 | 自创部署脚本: 仓库里没有现成正式脚本，容易和现网偏离 |
 | 主站 CORS 默认放行 `https://yoyuzh.xyz` 与 `https://www.yoyuzh.xyz` | 前端生产环境托管在独立静态站域名下，必须允许主站跨域调用后端 API | 仅保留 localhost: 会导致生产站调用 API 时被浏览器拦截 |
@@ -58,6 +62,8 @@
 | 前端主入口按宽度自动切换到移动壳 | 不需要单独维护 `/m` 路由，用户在小屏设备上直接进入移动端布局 | 独立 `/m` 路由: 需要额外记忆入口且与主站状态分叉 |
 | 管理台上线记录按“JWT 鉴权成功的每日去重用户”统计，并只保留 7 天 | 后台需要回答“每天多少人上线、具体是谁”，同时不必引入更重的行为埋点系统 | 只统计登录接口: 无法覆盖 refresh 之后的真实活跃访问；无限保留历史: 超出当前管理需求 |
 | Android 客户端先采用 Capacitor 包裹现有前端站点 | 现有 React/Vite 页面、鉴权和 API 调用可以直接复用，成本最低 | 重新单写原生 Android WebView 壳: 会引入额外原生维护面；改成 React Native / Flutter: 超出当前需求 |
+| APK 发布通过前端 OSS 脚本额外上传稳定对象 key，而不是进入 `front/dist` | 既能让总览页长期使用固定下载地址，也能避免 `npx cap sync android` 把旧 APK 再次塞进新的 APK 资产里 | 把 APK 直接放进 `front/public` 或 `front/dist`: 会污染前端静态产物，并可能导致 Android 包体递归膨胀 |
+| 网盘删除采用“回收站软删除 + 10 天过期清理” | 用户删错文件后需要可恢复，同时共享 blob 仍要等最后引用真正过期后才删除底层对象 | 继续立即物理删除: 不可恢复且误删成本高；额外建独立归档表: 当前需求下实现过重 |
 
 ## 待解决问题
 - [ ] VS Code 若仍报 `final 字段未在构造器初始化` 之类错误，优先判断为 Lombok / Java Language Server 误报，而不是源码真实错误
@@ -92,6 +98,7 @@
   - `cd front && npx cap sync android`
   - `cd front/android && ./gradlew assembleDebug`
 - Android 调试 APK 当前输出路径：`front/android/app/build/outputs/apk/debug/app-debug.apk`
+- 前端 OSS 发布现会额外把调试 APK 上传到稳定对象 key：`downloads/yoyuzh-portal.apk`
 - 服务器登录信息保存在本地 `账号密码.txt`，不要把内容写进文档或对外输出
 
 ## 参考资料
@@ -102,7 +109,7 @@
 - 前端/后端工作区配置: `.vscode/settings.json`、`.vscode/extensions.json`
 - Lombok 配置: `lombok.config`
 - 最近关键实现位置:
-  - 单设备登录: `backend/src/main/java/com/yoyuzh/auth/AuthService.java`
+  - 分端会话登录: `backend/src/main/java/com/yoyuzh/auth/AuthService.java`
   - JWT 会话校验: `backend/src/main/java/com/yoyuzh/auth/JwtTokenProvider.java`
   - JWT 过滤器: `backend/src/main/java/com/yoyuzh/config/JwtAuthenticationFilter.java`
   - CORS 配置: `backend/src/main/java/com/yoyuzh/config/CorsProperties.java`、`backend/src/main/resources/application.yml`
@@ -116,5 +123,6 @@
   - 管理台统计与 7 天上线记录: `backend/src/main/java/com/yoyuzh/admin/AdminMetricsService.java`、`backend/src/main/java/com/yoyuzh/admin/AdminDailyActiveUserEntity.java`、`backend/src/main/java/com/yoyuzh/config/JwtAuthenticationFilter.java`
   - 管理台 dashboard 展示与请求折线图: `front/src/admin/dashboard.tsx`、`front/src/admin/dashboard-state.ts`
   - 网盘 blob 模型与回填: `backend/src/main/java/com/yoyuzh/files/FileService.java`、`backend/src/main/java/com/yoyuzh/files/FileBlob.java`、`backend/src/main/java/com/yoyuzh/files/FileBlobBackfillService.java`
+  - 网盘回收站与恢复: `backend/src/main/java/com/yoyuzh/files/FileService.java`、`backend/src/main/java/com/yoyuzh/files/FileController.java`、`backend/src/main/java/com/yoyuzh/files/StoredFile.java`、`front/src/pages/RecycleBin.tsx`、`front/src/pages/recycle-bin-state.ts`
   - 前端生产 API 基址: `front/.env.production`
   - Capacitor Android 入口与配置: `front/capacitor.config.ts`、`front/android/`

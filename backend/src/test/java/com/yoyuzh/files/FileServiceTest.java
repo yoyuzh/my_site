@@ -158,7 +158,8 @@ class FileServiceTest {
         MockMultipartFile multipartFile = new MockMultipartFile(
                 "file", "notes.txt", "text/plain", "hello".getBytes());
         when(storedFileRepository.existsByUserIdAndPathAndFilename(7L, "/docs", "notes.txt")).thenReturn(false);
-        when(storedFileRepository.existsByUserIdAndPathAndFilename(7L, "/", "docs")).thenReturn(true);
+        when(storedFileRepository.findByUserIdAndPathAndFilename(7L, "/", "docs"))
+                .thenReturn(Optional.of(createDirectory(20L, user, "/", "docs")));
         when(fileBlobRepository.save(any(FileBlob.class))).thenAnswer(invocation -> invocation.getArgument(0));
         doThrow(new IllegalStateException("insert failed")).when(storedFileRepository).save(any(StoredFile.class));
 
@@ -174,7 +175,8 @@ class FileServiceTest {
     void shouldDeleteCompletedUploadBlobWhenMetadataSaveFails() {
         User user = createUser(7L);
         when(storedFileRepository.existsByUserIdAndPathAndFilename(7L, "/docs", "notes.txt")).thenReturn(false);
-        when(storedFileRepository.existsByUserIdAndPathAndFilename(7L, "/", "docs")).thenReturn(true);
+        when(storedFileRepository.findByUserIdAndPathAndFilename(7L, "/", "docs"))
+                .thenReturn(Optional.of(createDirectory(21L, user, "/", "docs")));
         when(fileBlobRepository.save(any(FileBlob.class))).thenAnswer(invocation -> invocation.getArgument(0));
         doThrow(new IllegalStateException("insert failed")).when(storedFileRepository).save(any(StoredFile.class));
 
@@ -190,8 +192,8 @@ class FileServiceTest {
     void shouldCreateMissingDirectoriesBeforeCompletingNestedUpload() {
         User user = createUser(7L);
         when(storedFileRepository.existsByUserIdAndPathAndFilename(7L, "/projects/site", "logo.png")).thenReturn(false);
-        when(storedFileRepository.existsByUserIdAndPathAndFilename(7L, "/", "projects")).thenReturn(false);
-        when(storedFileRepository.existsByUserIdAndPathAndFilename(7L, "/projects", "site")).thenReturn(false);
+        when(storedFileRepository.findByUserIdAndPathAndFilename(7L, "/", "projects")).thenReturn(Optional.empty());
+        when(storedFileRepository.findByUserIdAndPathAndFilename(7L, "/projects", "site")).thenReturn(Optional.empty());
         when(fileBlobRepository.save(any(FileBlob.class))).thenAnswer(invocation -> invocation.getArgument(0));
         when(storedFileRepository.save(any(StoredFile.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
@@ -384,52 +386,74 @@ class FileServiceTest {
     }
 
     @Test
-    void shouldDeleteDirectoryWithNestedFilesViaStorage() {
+    void shouldMoveDeletedDirectoryAndDescendantsIntoRecycleBinGroup() {
         User user = createUser(7L);
         StoredFile directory = createDirectory(10L, user, "/docs", "archive");
+        StoredFile nestedDirectory = createDirectory(12L, user, "/docs/archive", "nested");
         FileBlob blob = createBlob(60L, "blobs/blob-delete", 5L, "text/plain");
         StoredFile childFile = createFile(11L, user, "/docs/archive", "nested.txt", blob);
 
         when(storedFileRepository.findDetailedById(10L)).thenReturn(Optional.of(directory));
-        when(storedFileRepository.findByUserIdAndPathEqualsOrDescendant(7L, "/docs/archive")).thenReturn(List.of(childFile));
-        when(storedFileRepository.countByBlobId(60L)).thenReturn(1L);
+        when(storedFileRepository.findByUserIdAndPathEqualsOrDescendant(7L, "/docs/archive")).thenReturn(List.of(nestedDirectory, childFile));
 
         fileService.delete(user, 10L);
 
-        verify(fileContentStorage).deleteBlob("blobs/blob-delete");
-        verify(fileBlobRepository).delete(blob);
-        verify(storedFileRepository).deleteAll(List.of(childFile));
-        verify(storedFileRepository).delete(directory);
+        assertThat(directory.getDeletedAt()).isNotNull();
+        assertThat(directory.isRecycleRoot()).isTrue();
+        assertThat(directory.getRecycleGroupId()).isNotBlank();
+        assertThat(directory.getRecycleOriginalPath()).isEqualTo("/docs");
+        assertThat(directory.getPath()).startsWith("/.recycle/");
+
+        assertThat(nestedDirectory.getDeletedAt()).isEqualTo(directory.getDeletedAt());
+        assertThat(nestedDirectory.isRecycleRoot()).isFalse();
+        assertThat(nestedDirectory.getRecycleGroupId()).isEqualTo(directory.getRecycleGroupId());
+        assertThat(nestedDirectory.getRecycleOriginalPath()).isEqualTo("/docs/archive");
+
+        assertThat(childFile.getDeletedAt()).isEqualTo(directory.getDeletedAt());
+        assertThat(childFile.isRecycleRoot()).isFalse();
+        assertThat(childFile.getRecycleGroupId()).isEqualTo(directory.getRecycleGroupId());
+        assertThat(childFile.getRecycleOriginalPath()).isEqualTo("/docs/archive");
+
+        verify(fileContentStorage, never()).deleteBlob(any());
+        verify(fileBlobRepository, never()).delete(any());
+        verify(storedFileRepository, never()).deleteAll(any());
+        verify(storedFileRepository, never()).delete(any());
     }
 
     @Test
-    void shouldDeleteSharedBlobOnlyWhenLastReferenceIsRemoved() {
+    void shouldKeepSharedBlobWhenFileMovesIntoRecycleBin() {
         User user = createUser(7L);
         FileBlob blob = createBlob(70L, "blobs/blob-shared", 5L, "text/plain");
         StoredFile storedFile = createFile(15L, user, "/docs", "shared.txt", blob);
         when(storedFileRepository.findDetailedById(15L)).thenReturn(Optional.of(storedFile));
-        when(storedFileRepository.countByBlobId(70L)).thenReturn(2L);
 
         fileService.delete(user, 15L);
 
+        assertThat(storedFile.getDeletedAt()).isNotNull();
+        assertThat(storedFile.isRecycleRoot()).isTrue();
         verify(fileContentStorage, never()).deleteBlob(any());
         verify(fileBlobRepository, never()).delete(any());
-        verify(storedFileRepository).delete(storedFile);
+        verify(storedFileRepository, never()).delete(any());
     }
 
     @Test
-    void shouldDeleteBlobObjectWhenLastReferenceIsRemoved() {
+    void shouldDeleteExpiredRecycleBinBlobWhenLastReferenceIsRemoved() {
         User user = createUser(7L);
         FileBlob blob = createBlob(71L, "blobs/blob-last", 5L, "text/plain");
         StoredFile storedFile = createFile(16L, user, "/docs", "last.txt", blob);
-        when(storedFileRepository.findDetailedById(16L)).thenReturn(Optional.of(storedFile));
+        storedFile.setDeletedAt(LocalDateTime.now().minusDays(11));
+        storedFile.setRecycleRoot(true);
+        storedFile.setRecycleGroupId("recycle-group-1");
+        storedFile.setRecycleOriginalPath("/docs");
+        storedFile.setPath("/.recycle/recycle-group-1/docs");
+        when(storedFileRepository.findByDeletedAtBefore(any(LocalDateTime.class))).thenReturn(List.of(storedFile));
         when(storedFileRepository.countByBlobId(71L)).thenReturn(1L);
 
-        fileService.delete(user, 16L);
+        fileService.pruneExpiredRecycleBinItems();
 
         verify(fileContentStorage).deleteBlob("blobs/blob-last");
         verify(fileBlobRepository).delete(blob);
-        verify(storedFileRepository).delete(storedFile);
+        verify(storedFileRepository).deleteAll(List.of(storedFile));
     }
 
     @Test
@@ -582,7 +606,8 @@ class FileServiceTest {
         User recipient = createUser(8L);
         byte[] content = "hello".getBytes(StandardCharsets.UTF_8);
         when(storedFileRepository.existsByUserIdAndPathAndFilename(8L, "/下载", "notes.txt")).thenReturn(false);
-        when(storedFileRepository.existsByUserIdAndPathAndFilename(8L, "/", "下载")).thenReturn(true);
+        when(storedFileRepository.findByUserIdAndPathAndFilename(8L, "/", "下载"))
+                .thenReturn(Optional.of(createDirectory(22L, recipient, "/", "下载")));
         when(fileBlobRepository.save(any(FileBlob.class))).thenAnswer(invocation -> invocation.getArgument(0));
         doThrow(new IllegalStateException("insert failed")).when(storedFileRepository).save(any(StoredFile.class));
 

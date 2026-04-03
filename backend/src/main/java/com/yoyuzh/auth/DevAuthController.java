@@ -5,6 +5,7 @@ import com.yoyuzh.common.ApiResponse;
 import io.swagger.v3.oas.annotations.Operation;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Profile;
+import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -20,7 +21,8 @@ public class DevAuthController {
 
     @Operation(summary = "开发环境免密登录")
     @PostMapping("/dev-login")
-    public ApiResponse<AuthResponse> devLogin(@RequestParam(required = false) String username) {
-        return ApiResponse.success(authService.devLogin(username));
+    public ApiResponse<AuthResponse> devLogin(@RequestParam(required = false) String username,
+                                              @RequestHeader(name = AuthClientType.HEADER_NAME, required = false) String clientTypeHeader) {
+        return ApiResponse.success(authService.devLogin(username, AuthClientType.fromHeader(clientTypeHeader)));
     }
 }

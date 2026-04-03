@@ -1,4 +1,5 @@
 import type { AuthResponse } from './types';
+import { PORTAL_CLIENT_HEADER, resolvePortalClientType } from './app-shell';
 import { clearStoredSession, createSession, readStoredSession, saveStoredSession } from './session';
 
 interface ApiEnvelope<T> {
@@ -148,6 +149,10 @@ function normalizePath(path: string) {
   return path.startsWith('/') ? path : `/${path}`;
 }
 
+function shouldAttachPortalClientHeader(path: string) {
+  return !/^https?:\/\//.test(path);
+}
+
 function shouldAttemptTokenRefresh(path: string) {
   const normalizedPath = normalizePath(path);
   return ![
@@ -189,12 +194,15 @@ async function refreshAccessToken() {
 
   refreshRequestPromise = (async () => {
     try {
+      const headers = new Headers({
+        Accept: 'application/json',
+        'Content-Type': 'application/json',
+      });
+      headers.set(PORTAL_CLIENT_HEADER, resolvePortalClientType());
+
       const response = await fetch(resolveUrl(AUTH_REFRESH_PATH), {
         method: 'POST',
-        headers: {
-          Accept: 'application/json',
-          'Content-Type': 'application/json',
-        },
+        headers,
         body: JSON.stringify({
           refreshToken: currentSession.refreshToken,
         }),
@@ -269,6 +277,9 @@ async function performRequest(path: string, init: ApiRequestInit = {}, allowRefr
   if (session?.token) {
     headers.set('Authorization', `Bearer ${session.token}`);
   }
+  if (shouldAttachPortalClientHeader(path) && !headers.has(PORTAL_CLIENT_HEADER)) {
+    headers.set(PORTAL_CLIENT_HEADER, resolvePortalClientType());
+  }
   if (requestBody && !(requestBody instanceof FormData) && !headers.has('Content-Type')) {
     headers.set('Content-Type', 'application/json');
   }
@@ -340,6 +351,9 @@ function apiUploadRequestInternal<T>(path: string, init: ApiUploadRequestInit, a
 
   if (session?.token) {
     headers.set('Authorization', `Bearer ${session.token}`);
+  }
+  if (shouldAttachPortalClientHeader(path) && !headers.has(PORTAL_CLIENT_HEADER)) {
+    headers.set(PORTAL_CLIENT_HEADER, resolvePortalClientType());
   }
   if (!headers.has('Accept')) {
     headers.set('Accept', 'application/json');

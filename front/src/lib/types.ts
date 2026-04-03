@@ -106,6 +106,18 @@ export interface FileMetadata {
   createdAt: string;
 }
 
+export interface RecycleBinItem {
+  id: number;
+  filename: string;
+  path: string;
+  size: number;
+  contentType: string | null;
+  directory: boolean;
+  createdAt: string;
+  deletedAt: string;
+  expiresAt: string;
+}
+
 export interface InitiateUploadResponse {
   direct: boolean;
   uploadUrl: string;

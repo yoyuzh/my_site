@@ -44,7 +44,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                     filterChain.doFilter(request, response);
                     return;
                 }
-                if (!jwtTokenProvider.hasMatchingSession(token, domainUser.getActiveSessionId())) {
+                if (!jwtTokenProvider.hasMatchingSession(token, domainUser)) {
                     filterChain.doFilter(request, response);
                     return;
                 }

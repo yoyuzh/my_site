@@ -104,11 +104,11 @@ class JwtAuthenticationFilterTest {
         MockHttpServletRequest request = new MockHttpServletRequest();
         request.addHeader("Authorization", "Bearer valid-token");
         MockHttpServletResponse response = new MockHttpServletResponse();
-        User domainUser = createDomainUser("alice", "session-1");
+        User domainUser = createDomainUser("alice", "session-1", null);
         when(jwtTokenProvider.validateToken("valid-token")).thenReturn(true);
         when(jwtTokenProvider.getUsername("valid-token")).thenReturn("alice");
         when(userDetailsService.loadDomainUser("alice")).thenReturn(domainUser);
-        when(jwtTokenProvider.hasMatchingSession("valid-token", "session-1")).thenReturn(false);
+        when(jwtTokenProvider.hasMatchingSession("valid-token", domainUser)).thenReturn(false);
 
         filter.doFilterInternal(request, response, filterChain);
 
@@ -121,7 +121,7 @@ class JwtAuthenticationFilterTest {
         MockHttpServletRequest request = new MockHttpServletRequest();
         request.addHeader("Authorization", "Bearer valid-token");
         MockHttpServletResponse response = new MockHttpServletResponse();
-        User domainUser = createDomainUser("alice", "session-1");
+        User domainUser = createDomainUser("alice", "session-1", null);
         UserDetails disabledUserDetails = org.springframework.security.core.userdetails.User.builder()
                 .username("alice")
                 .password("hashed")
@@ -131,7 +131,7 @@ class JwtAuthenticationFilterTest {
         when(jwtTokenProvider.validateToken("valid-token")).thenReturn(true);
         when(jwtTokenProvider.getUsername("valid-token")).thenReturn("alice");
         when(userDetailsService.loadDomainUser("alice")).thenReturn(domainUser);
-        when(jwtTokenProvider.hasMatchingSession("valid-token", "session-1")).thenReturn(true);
+        when(jwtTokenProvider.hasMatchingSession("valid-token", domainUser)).thenReturn(true);
         when(userDetailsService.loadUserByUsername("alice")).thenReturn(disabledUserDetails);
 
         filter.doFilterInternal(request, response, filterChain);
@@ -145,7 +145,7 @@ class JwtAuthenticationFilterTest {
         MockHttpServletRequest request = new MockHttpServletRequest();
         request.addHeader("Authorization", "Bearer valid-token");
         MockHttpServletResponse response = new MockHttpServletResponse();
-        User domainUser = createDomainUser("alice", "session-1");
+        User domainUser = createDomainUser("alice", "session-1", null);
         UserDetails activeUserDetails = org.springframework.security.core.userdetails.User.builder()
                 .username("alice")
                 .password("hashed")
@@ -154,7 +154,7 @@ class JwtAuthenticationFilterTest {
         when(jwtTokenProvider.validateToken("valid-token")).thenReturn(true);
         when(jwtTokenProvider.getUsername("valid-token")).thenReturn("alice");
         when(userDetailsService.loadDomainUser("alice")).thenReturn(domainUser);
-        when(jwtTokenProvider.hasMatchingSession("valid-token", "session-1")).thenReturn(true);
+        when(jwtTokenProvider.hasMatchingSession("valid-token", domainUser)).thenReturn(true);
         when(userDetailsService.loadUserByUsername("alice")).thenReturn(activeUserDetails);
 
         filter.doFilterInternal(request, response, filterChain);
@@ -165,13 +165,15 @@ class JwtAuthenticationFilterTest {
         verify(adminMetricsService).recordUserOnline(1L, "alice");
     }
 
-    private User createDomainUser(String username, String sessionId) {
+    private User createDomainUser(String username, String desktopSessionId, String mobileSessionId) {
         User user = new User();
         user.setId(1L);
         user.setUsername(username);
         user.setEmail(username + "@example.com");
         user.setPasswordHash("hashed");
-        user.setActiveSessionId(sessionId);
+        user.setActiveSessionId(desktopSessionId);
+        user.setDesktopActiveSessionId(desktopSessionId);
+        user.setMobileActiveSessionId(mobileSessionId);
         user.setCreatedAt(LocalDateTime.now());
         return user;
     }

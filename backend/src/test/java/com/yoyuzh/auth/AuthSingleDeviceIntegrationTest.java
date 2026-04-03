@@ -39,15 +39,77 @@ class AuthSingleDeviceIntegrationTest {
     private UserRepository userRepository;
 
     @Autowired
+    private com.yoyuzh.files.StoredFileRepository storedFileRepository;
+
+    @Autowired
+    private RefreshTokenRepository refreshTokenRepository;
+
+    @Autowired
     private PasswordEncoder passwordEncoder;
 
     @BeforeEach
     void setUp() {
+        storedFileRepository.deleteAll();
+        refreshTokenRepository.deleteAll();
         userRepository.deleteAll();
     }
 
     @Test
-    void shouldInvalidatePreviousAccessTokenAfterLoggingInAgain() throws Exception {
+    void shouldKeepDesktopAndMobileAccessTokensValidAtTheSameTime() throws Exception {
+        User user = new User();
+        user.setUsername("alice");
+        user.setDisplayName("Alice");
+        user.setEmail("alice@example.com");
+        user.setPhoneNumber("13800138000");
+        user.setPasswordHash(passwordEncoder.encode("StrongPass1!"));
+        user.setPreferredLanguage("zh-CN");
+        user.setRole(UserRole.USER);
+        user.setCreatedAt(LocalDateTime.now());
+        userRepository.save(user);
+
+        String loginRequest = """
+                {
+                  "username": "alice",
+                  "password": "StrongPass1!"
+                }
+                """;
+
+        String desktopLoginResponse = mockMvc.perform(post("/api/auth/login")
+                        .contentType("application/json")
+                        .header("X-Yoyuzh-Client", "desktop")
+                        .content(loginRequest))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.accessToken").isNotEmpty())
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+
+        String mobileLoginResponse = mockMvc.perform(post("/api/auth/login")
+                        .contentType("application/json")
+                        .header("X-Yoyuzh-Client", "mobile")
+                        .content(loginRequest))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.accessToken").isNotEmpty())
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+
+        String desktopAccessToken = JsonPath.read(desktopLoginResponse, "$.data.accessToken");
+        String mobileAccessToken = JsonPath.read(mobileLoginResponse, "$.data.accessToken");
+
+        mockMvc.perform(get("/api/user/profile")
+                        .header("Authorization", "Bearer " + desktopAccessToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.username").value("alice"));
+
+        mockMvc.perform(get("/api/user/profile")
+                        .header("Authorization", "Bearer " + mobileAccessToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.username").value("alice"));
+    }
+
+    @Test
+    void shouldInvalidatePreviousAccessTokenAfterLoggingInAgainOnTheSameClientType() throws Exception {
         User user = new User();
         user.setUsername("alice");
         user.setDisplayName("Alice");
@@ -68,6 +130,7 @@ class AuthSingleDeviceIntegrationTest {
 
         String firstLoginResponse = mockMvc.perform(post("/api/auth/login")
                         .contentType("application/json")
+                        .header("X-Yoyuzh-Client", "desktop")
                         .content(loginRequest))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.accessToken").isNotEmpty())
@@ -77,6 +140,7 @@ class AuthSingleDeviceIntegrationTest {
 
         String secondLoginResponse = mockMvc.perform(post("/api/auth/login")
                         .contentType("application/json")
+                        .header("X-Yoyuzh-Client", "desktop")
                         .content(loginRequest))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.accessToken").isNotEmpty())

@@ -9,6 +9,7 @@ import {
   FolderPlus,
   Mail,
   Send,
+  Smartphone,
   Upload,
   User,
   Zap,
@@ -25,7 +26,14 @@ import { getOverviewCacheKey } from '@/src/lib/page-cache';
 import { clearPostLoginPending, hasPostLoginPending, readStoredSession } from '@/src/lib/session';
 import type { FileMetadata, PageResponse, UserProfile } from '@/src/lib/types';
 
-import { getOverviewLoadErrorMessage } from './overview-state';
+import {
+  APK_DOWNLOAD_PATH,
+  getDesktopOverviewSectionColumns,
+  getDesktopOverviewStretchSection,
+  getOverviewLoadErrorMessage,
+  getOverviewStorageQuotaLabel,
+  shouldShowOverviewApkDownload,
+} from './overview-state';
 
 function formatFileSize(size: number) {
   if (size <= 0) {
@@ -89,6 +97,9 @@ export default function Overview() {
   const latestFile = recentFiles[0] ?? null;
   const profileDisplayName = profile?.displayName || profile?.username || '未登录';
   const profileAvatarFallback = profileDisplayName.charAt(0).toUpperCase();
+  const showApkDownload = shouldShowOverviewApkDownload();
+  const desktopSections = getDesktopOverviewSectionColumns(showApkDownload);
+  const desktopStretchSection = getDesktopOverviewStretchSection(showApkDownload);
 
   useEffect(() => {
     let cancelled = false;
@@ -242,8 +253,8 @@ export default function Overview() {
         />
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <div className="lg:col-span-2 space-y-6">
+      <div className="grid grid-cols-1 items-stretch lg:grid-cols-3 gap-6">
+        <div className="lg:col-span-2 flex flex-col gap-6">
           <Card>
             <CardHeader className="flex flex-row items-center justify-between pb-2">
               <CardTitle>最近文件</CardTitle>
@@ -297,9 +308,9 @@ export default function Overview() {
             </CardContent>
           </Card>
 
-          <Card className="overflow-hidden">
+          <Card className={desktopStretchSection === 'transfer-workbench' ? 'flex-1 overflow-hidden' : 'overflow-hidden'}>
             <CardContent className="p-0">
-              <div className="relative overflow-hidden rounded-2xl bg-[radial-gradient(circle_at_top_left,rgba(51,110,255,0.22),transparent_45%),linear-gradient(135deg,rgba(15,23,42,0.94),rgba(15,23,42,0.8))] p-6">
+              <div className="relative h-full overflow-hidden rounded-2xl bg-[radial-gradient(circle_at_top_left,rgba(51,110,255,0.22),transparent_45%),linear-gradient(135deg,rgba(15,23,42,0.94),rgba(15,23,42,0.8))] p-6">
                 <div className="absolute -right-10 -top-10 h-32 w-32 rounded-full bg-cyan-400/10 blur-2xl" />
                 <div className="relative z-10 flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
                   <div className="space-y-3">
@@ -326,9 +337,45 @@ export default function Overview() {
               </div>
             </CardContent>
           </Card>
+
+          {desktopSections.main.includes('apk-download') ? (
+            <Card className={`${desktopStretchSection === 'apk-download' ? 'flex-1' : ''} overflow-hidden border-[#336EFF]/20 bg-[radial-gradient(circle_at_top_right,rgba(51,110,255,0.18),transparent_40%),linear-gradient(180deg,rgba(10,14,28,0.96),rgba(15,23,42,0.92))]`}>
+              <CardContent className="h-full p-0">
+                <div className="relative flex h-full flex-col overflow-hidden rounded-2xl p-6">
+                  <div className="absolute -left-12 bottom-0 h-28 w-28 rounded-full bg-[#336EFF]/10 blur-3xl" />
+                  <div className="relative z-10 flex h-full flex-col gap-5 md:flex-row md:items-end md:justify-between">
+                    <div className="space-y-3">
+                      <div className="inline-flex items-center gap-2 rounded-full border border-[#336EFF]/20 bg-[#336EFF]/10 px-3 py-1 text-xs font-medium text-[#b9ccff]">
+                        <Smartphone className="h-3.5 w-3.5" />
+                        Android 客户端
+                      </div>
+                      <div>
+                        <h3 className="text-2xl font-semibold text-white">下载 APK 安装包</h3>
+                        <p className="mt-2 max-w-xl text-sm leading-6 text-slate-300">
+                          当前 Android 安装包会随前端站点一起发布到 OSS，可直接从这里下载最新版本。
+                        </p>
+                      </div>
+                      <div className="flex flex-wrap gap-3 text-xs text-slate-400">
+                        <span className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1">稳定路径</span>
+                        <span className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1">OSS 托管</span>
+                        <span className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1">一键下载</span>
+                      </div>
+                    </div>
+                    <a
+                      href={APK_DOWNLOAD_PATH}
+                      download="yoyuzh-portal.apk"
+                      className="inline-flex h-11 shrink-0 items-center justify-center rounded-xl bg-[#336EFF] px-6 text-sm font-medium text-white shadow-md shadow-[#336EFF]/20 transition-colors hover:bg-[#2958cc]"
+                    >
+                      下载 APK
+                    </a>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          ) : null}
         </div>
 
-        <div className="space-y-6">
+        <div className="flex flex-col gap-6">
           <Card>
             <CardHeader className="pb-4">
               <CardTitle>快捷操作</CardTitle>
@@ -353,7 +400,7 @@ export default function Overview() {
                   <p className="text-3xl font-bold text-white tracking-tight">
                     {usedGb.toFixed(2)} <span className="text-sm text-slate-400 font-normal">GB</span>
                   </p>
-                  <p className="text-xs text-slate-500 uppercase tracking-wider">已使用 / 共 50 GB</p>
+                  <p className="text-xs text-slate-500 uppercase tracking-wider">{getOverviewStorageQuotaLabel(storageQuotaBytes)}</p>
                 </div>
                 <span className="text-xl font-mono text-[#336EFF] font-medium">{storagePercent.toFixed(1)}%</span>
               </div>

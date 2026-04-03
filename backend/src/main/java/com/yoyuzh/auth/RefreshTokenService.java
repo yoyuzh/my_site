@@ -27,11 +27,17 @@ public class RefreshTokenService {
 
     @Transactional
     public String issueRefreshToken(User user) {
+        return issueRefreshToken(user, AuthClientType.DESKTOP);
+    }
+
+    @Transactional
+    public String issueRefreshToken(User user, AuthClientType clientType) {
         String rawToken = generateRawToken();
 
         RefreshToken refreshToken = new RefreshToken();
         refreshToken.setUser(user);
         refreshToken.setTokenHash(hashToken(rawToken));
+        refreshToken.setClientType(clientType.name());
         refreshToken.setExpiresAt(LocalDateTime.now().plusSeconds(jwtProperties.getRefreshExpirationSeconds()));
         refreshToken.setRevoked(false);
         refreshTokenRepository.save(refreshToken);
@@ -54,16 +60,22 @@ public class RefreshTokenService {
         }
 
         User user = existing.getUser();
+        AuthClientType clientType = AuthClientType.fromHeader(existing.getClientType());
         existing.revoke(LocalDateTime.now());
-        revokeAllForUser(user.getId());
+        revokeAllForUser(user.getId(), clientType);
 
-        String nextRefreshToken = issueRefreshToken(user);
-        return new RotatedRefreshToken(user, nextRefreshToken);
+        String nextRefreshToken = issueRefreshToken(user, clientType);
+        return new RotatedRefreshToken(user, nextRefreshToken, clientType);
     }
 
     @Transactional
     public void revokeAllForUser(Long userId) {
         refreshTokenRepository.revokeAllActiveByUserId(userId, LocalDateTime.now());
+    }
+
+    @Transactional
+    public void revokeAllForUser(Long userId, AuthClientType clientType) {
+        refreshTokenRepository.revokeAllActiveByUserIdAndClientType(userId, clientType.name(), LocalDateTime.now());
     }
 
     private String generateRawToken() {
@@ -85,6 +97,6 @@ public class RefreshTokenService {
         }
     }
 
-    public record RotatedRefreshToken(User user, String refreshToken) {
+    public record RotatedRefreshToken(User user, String refreshToken, AuthClientType clientType) {
     }
 }

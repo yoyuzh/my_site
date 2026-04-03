@@ -50,6 +50,11 @@ public class AuthService {
 
     @Transactional
     public AuthResponse register(RegisterRequest request) {
+        return register(request, AuthClientType.DESKTOP);
+    }
+
+    @Transactional
+    public AuthResponse register(RegisterRequest request, AuthClientType clientType) {
         if (userRepository.existsByUsername(request.username())) {
             throw new BusinessException(ErrorCode.UNKNOWN, "用户名已存在");
         }
@@ -72,11 +77,16 @@ public class AuthService {
         user.setPreferredLanguage("zh-CN");
         User saved = userRepository.save(user);
         fileService.ensureDefaultDirectories(saved);
-        return issueFreshTokens(saved);
+        return issueFreshTokens(saved, clientType);
     }
 
     @Transactional
     public AuthResponse login(LoginRequest request) {
+        return login(request, AuthClientType.DESKTOP);
+    }
+
+    @Transactional
+    public AuthResponse login(LoginRequest request, AuthClientType clientType) {
         try {
             authenticationManager.authenticate(
                     new UsernamePasswordAuthenticationToken(request.username(), request.password()));
@@ -89,11 +99,16 @@ public class AuthService {
         User user = userRepository.findByUsername(request.username())
                 .orElseThrow(() -> new BusinessException(ErrorCode.NOT_LOGGED_IN, "用户不存在"));
         fileService.ensureDefaultDirectories(user);
-        return issueFreshTokens(user);
+        return issueFreshTokens(user, clientType);
     }
 
     @Transactional
     public AuthResponse devLogin(String username) {
+        return devLogin(username, AuthClientType.DESKTOP);
+    }
+
+    @Transactional
+    public AuthResponse devLogin(String username, AuthClientType clientType) {
         String candidate = username == null ? "" : username.trim();
         if (candidate.isEmpty()) {
             candidate = "1";
@@ -111,13 +126,19 @@ public class AuthService {
             return userRepository.save(created);
         });
         fileService.ensureDefaultDirectories(user);
-        return issueFreshTokens(user);
+        return issueFreshTokens(user, clientType);
     }
 
     @Transactional
     public AuthResponse refresh(String refreshToken) {
+        return refresh(refreshToken, AuthClientType.DESKTOP);
+    }
+
+    @Transactional
+    public AuthResponse refresh(String refreshToken, AuthClientType defaultClientType) {
         RefreshTokenService.RotatedRefreshToken rotated = refreshTokenService.rotateRefreshToken(refreshToken);
-        return issueTokens(rotated.user(), rotated.refreshToken());
+        AuthClientType clientType = rotated.clientType() == null ? defaultClientType : rotated.clientType();
+        return issueTokens(rotated.user(), rotated.refreshToken(), clientType);
     }
 
     public UserProfileResponse getProfile(String username) {
@@ -158,7 +179,9 @@ public class AuthService {
         }
 
         user.setPasswordHash(passwordEncoder.encode(request.newPassword()));
-        return issueFreshTokens(user);
+        rotateAllActiveSessions(user);
+        refreshTokenService.revokeAllForUser(user.getId());
+        return issueTokens(userRepository.save(user), refreshTokenService.issueRefreshToken(user), AuthClientType.DESKTOP);
     }
 
     public InitiateUploadResponse initiateAvatarUpload(String username, UpdateUserAvatarRequest request) {
@@ -267,24 +290,41 @@ public class AuthService {
         );
     }
 
-    private AuthResponse issueFreshTokens(User user) {
-        refreshTokenService.revokeAllForUser(user.getId());
-        return issueTokens(user, refreshTokenService.issueRefreshToken(user));
+    private AuthResponse issueFreshTokens(User user, AuthClientType clientType) {
+        refreshTokenService.revokeAllForUser(user.getId(), clientType);
+        return issueTokens(user, refreshTokenService.issueRefreshToken(user, clientType), clientType);
     }
 
-    private AuthResponse issueTokens(User user, String refreshToken) {
-        User sessionUser = rotateActiveSession(user);
+    private AuthResponse issueTokens(User user, String refreshToken, AuthClientType clientType) {
+        User sessionUser = rotateActiveSession(user, clientType);
         String accessToken = jwtTokenProvider.generateAccessToken(
                 sessionUser.getId(),
                 sessionUser.getUsername(),
-                sessionUser.getActiveSessionId()
+                getActiveSessionId(sessionUser, clientType),
+                clientType
         );
         return AuthResponse.issued(accessToken, refreshToken, toProfile(sessionUser));
     }
 
-    private User rotateActiveSession(User user) {
-        user.setActiveSessionId(UUID.randomUUID().toString());
+    private User rotateActiveSession(User user, AuthClientType clientType) {
+        String nextSessionId = UUID.randomUUID().toString();
+        if (clientType == AuthClientType.MOBILE) {
+            user.setMobileActiveSessionId(nextSessionId);
+        } else {
+            user.setDesktopActiveSessionId(nextSessionId);
+            user.setActiveSessionId(nextSessionId);
+        }
         return userRepository.save(user);
+    }
+
+    private void rotateAllActiveSessions(User user) {
+        user.setActiveSessionId(UUID.randomUUID().toString());
+        user.setDesktopActiveSessionId(UUID.randomUUID().toString());
+        user.setMobileActiveSessionId(UUID.randomUUID().toString());
+    }
+
+    private String getActiveSessionId(User user, AuthClientType clientType) {
+        return clientType == AuthClientType.MOBILE ? user.getMobileActiveSessionId() : user.getDesktopActiveSessionId();
     }
 
     private String normalizeOptionalText(String value) {

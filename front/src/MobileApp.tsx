@@ -11,6 +11,7 @@ import MobileOverview from './mobile-pages/MobileOverview';
 import MobileFiles from './mobile-pages/MobileFiles';
 import MobileTransfer from './mobile-pages/MobileTransfer';
 import MobileFileShare from './mobile-pages/MobileFileShare';
+import RecycleBin from './pages/RecycleBin';
 
 function LegacyTransferRedirect() {
   const location = useLocation();
@@ -53,6 +54,7 @@ function MobileAppRoutes() {
         <Route index element={<Navigate to="/overview" replace />} />
         <Route path="overview" element={<MobileOverview />} />
         <Route path="files" element={<MobileFiles />} />
+        <Route path="recycle-bin" element={<RecycleBin />} />
         <Route path="games" element={<Navigate to="/overview" replace />} />
       </Route>
 

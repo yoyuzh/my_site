@@ -23,4 +23,15 @@ public interface RefreshTokenRepository extends JpaRepository<RefreshToken, Long
             where token.user.id = :userId and token.revoked = false
             """)
     int revokeAllActiveByUserId(@Param("userId") Long userId, @Param("revokedAt") LocalDateTime revokedAt);
+
+    @Modifying
+    @Query("""
+            update RefreshToken token
+            set token.revoked = true, token.revokedAt = :revokedAt
+            where token.user.id = :userId and token.revoked = false
+              and (token.clientType = :clientType or (:clientType = 'DESKTOP' and token.clientType is null))
+            """)
+    int revokeAllActiveByUserIdAndClientType(@Param("userId") Long userId,
+                                             @Param("clientType") String clientType,
+                                             @Param("revokedAt") LocalDateTime revokedAt);
 }

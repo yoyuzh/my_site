@@ -18,7 +18,9 @@ import java.time.LocalDateTime;
 @Entity
 @Table(name = "portal_file", indexes = {
         @Index(name = "uk_file_user_path_name", columnList = "user_id,path,filename", unique = true),
-        @Index(name = "idx_file_created_at", columnList = "created_at")
+        @Index(name = "idx_file_created_at", columnList = "created_at"),
+        @Index(name = "idx_file_deleted_at", columnList = "deleted_at"),
+        @Index(name = "idx_file_recycle_group", columnList = "recycle_group_id")
 })
 public class StoredFile {
 
@@ -54,6 +56,18 @@ public class StoredFile {
 
     @Column(name = "created_at", nullable = false)
     private LocalDateTime createdAt;
+
+    @Column(name = "deleted_at")
+    private LocalDateTime deletedAt;
+
+    @Column(name = "recycle_original_path", length = 512)
+    private String recycleOriginalPath;
+
+    @Column(name = "recycle_group_id", length = 64)
+    private String recycleGroupId;
+
+    @Column(name = "is_recycle_root", nullable = false)
+    private boolean recycleRoot;
 
     @PrePersist
     public void prePersist() {
@@ -140,5 +154,37 @@ public class StoredFile {
 
     public void setCreatedAt(LocalDateTime createdAt) {
         this.createdAt = createdAt;
+    }
+
+    public LocalDateTime getDeletedAt() {
+        return deletedAt;
+    }
+
+    public void setDeletedAt(LocalDateTime deletedAt) {
+        this.deletedAt = deletedAt;
+    }
+
+    public String getRecycleOriginalPath() {
+        return recycleOriginalPath;
+    }
+
+    public void setRecycleOriginalPath(String recycleOriginalPath) {
+        this.recycleOriginalPath = recycleOriginalPath;
+    }
+
+    public String getRecycleGroupId() {
+        return recycleGroupId;
+    }
+
+    public void setRecycleGroupId(String recycleGroupId) {
+        this.recycleGroupId = recycleGroupId;
+    }
+
+    public boolean isRecycleRoot() {
+        return recycleRoot;
+    }
+
+    public void setRecycleRoot(boolean recycleRoot) {
+        this.recycleRoot = recycleRoot;
     }
 }

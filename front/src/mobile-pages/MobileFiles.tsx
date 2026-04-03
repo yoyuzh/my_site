@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
+import { useNavigate } from 'react-router-dom';
 import {
   ChevronRight,
   Folder,
@@ -13,7 +14,8 @@ import {
   Edit2,
   Trash2,
   FolderPlus,
-  ChevronLeft
+  ChevronLeft,
+  RotateCcw,
 } from 'lucide-react';
 
 import { NetdiskPathPickerModal } from '@/src/components/ui/NetdiskPathPickerModal';
@@ -66,6 +68,7 @@ import {
 import {
   toDirectoryPath,
 } from '@/src/pages/files-tree';
+import { RECYCLE_BIN_RETENTION_DAYS, RECYCLE_BIN_ROUTE } from '@/src/pages/recycle-bin-state';
 
 function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -119,6 +122,7 @@ interface UiFile {
 type NetdiskTargetAction = 'move' | 'copy';
 
 export default function MobileFiles() {
+  const navigate = useNavigate();
   const initialPath = readCachedValue<string[]>(getFilesLastPathCacheKey()) ?? [];
   const initialCachedFiles = readCachedValue<FileMetadata[]>(getFilesListCacheKey(toBackendPath(initialPath))) ?? [];
   
@@ -445,19 +449,29 @@ export default function MobileFiles() {
       
       {/* Top Header - Path navigation */}
       <div className="flex-none px-4 py-3 bg-[#0f172a]/80 border-b border-white/5 sticky top-0 z-20 shadow-md backdrop-blur-xl">
-        <div className="flex flex-nowrap items-center text-sm overflow-x-auto custom-scrollbar whitespace-nowrap">
-          {currentPath.length > 0 && (
-            <button className="mr-3 p-1.5 rounded-full bg-white/5 text-slate-300 active:bg-white/10" onClick={handleBackClick}>
-              <ChevronLeft className="w-4 h-4" />
-            </button>
-          )}
-          <button className="text-slate-400 hover:text-white" onClick={() => handleBreadcrumbClick(-1)}>根目录</button>
-          {currentPath.map((pathItem, index) => (
-            <React.Fragment key={index}>
-              <ChevronRight className="w-3 h-3 mx-1 text-slate-600 shrink-0" />
-              <button onClick={() => handleBreadcrumbClick(index)} className={cn(index === currentPath.length - 1 ? 'text-white font-medium' : 'text-slate-400', 'shrink-0')}>{pathItem}</button>
-            </React.Fragment>
-          ))}
+        <div className="flex items-center gap-3">
+          <div className="flex min-w-0 flex-1 flex-nowrap items-center text-sm overflow-x-auto custom-scrollbar whitespace-nowrap">
+            {currentPath.length > 0 && (
+              <button className="mr-3 p-1.5 rounded-full bg-white/5 text-slate-300 active:bg-white/10" onClick={handleBackClick}>
+                <ChevronLeft className="w-4 h-4" />
+              </button>
+            )}
+            <button className="text-slate-400 hover:text-white" onClick={() => handleBreadcrumbClick(-1)}>根目录</button>
+            {currentPath.map((pathItem, index) => (
+              <React.Fragment key={index}>
+                <ChevronRight className="w-3 h-3 mx-1 text-slate-600 shrink-0" />
+                <button onClick={() => handleBreadcrumbClick(index)} className={cn(index === currentPath.length - 1 ? 'text-white font-medium' : 'text-slate-400', 'shrink-0')}>{pathItem}</button>
+              </React.Fragment>
+            ))}
+          </div>
+          <button
+            type="button"
+            onClick={() => navigate(RECYCLE_BIN_ROUTE)}
+            className="flex shrink-0 items-center gap-1.5 rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-xs text-slate-200"
+          >
+            <RotateCcw className="h-3.5 w-3.5" />
+            回收站
+          </button>
         </div>
       </div>
 
@@ -584,10 +598,10 @@ export default function MobileFiles() {
              <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setDeleteModalOpen(false)} />
              <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} className="relative w-full max-w-sm glass-panel bg-[#0f172a] border border-white/10 rounded-2xl p-5 z-10 shadow-2xl">
                 <h3 className="text-lg font-bold text-white mb-2 flex items-center gap-2"><Trash2 className="text-red-400 w-5 h-5"/>确认删除</h3>
-                <p className="text-sm text-slate-300 mb-6 mt-3">你确实要彻底删除 <span className="text-white font-medium break-all">{fileToDelete?.name}</span> 吗？</p>
+                <p className="text-sm text-slate-300 mb-6 mt-3">确定要将 <span className="text-white font-medium break-all">{fileToDelete?.name}</span> 移入回收站吗？文件会保留 {RECYCLE_BIN_RETENTION_DAYS} 天，期间可以恢复。</p>
                 <div className="flex gap-3">
                   <Button variant="outline" className="flex-1 bg-white/5 border-white/10 text-white" onClick={() => setDeleteModalOpen(false)}>取消</Button>
-                  <Button className="flex-1 bg-red-500 text-white hover:bg-red-600" onClick={handleDelete}>删除</Button>
+                  <Button className="flex-1 bg-red-500 text-white hover:bg-red-600" onClick={handleDelete}>移入回收站</Button>
                 </div>
              </motion.div>
           </div>

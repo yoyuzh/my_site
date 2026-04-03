@@ -107,15 +107,16 @@
 - 用户资料查询和修改
 - 用户自行修改密码
 - 头像上传
-- 单设备登录控制
+- 按客户端类型拆分的登录会话控制
 - 邀请码消费与轮换
 
 关键实现说明：
 
 - access token 使用 JWT
 - refresh token 持久化到数据库
-- 当前会话通过 `activeSessionId + JWT sid claim` 绑定
-- 新登录会挤掉旧设备
+- 当前会话通过“客户端类型 + 会话 ID”绑定：JWT 同时携带 `sid` 和 `client` claim
+- 用户表分别记录桌面端与移动端活跃会话；桌面端仍同步回写旧的 `activeSessionId` 以兼容存量逻辑
+- 同账号现在允许桌面端与移动端同时在线，但同一端类型再次登录仍会挤掉旧会话
 - 当前密码策略统一为“至少 8 位且包含大写字母”
 
 ### 3.2 网盘模块
@@ -132,6 +133,7 @@
 - 文件/文件夹上传、下载、删除、重命名
 - 目录创建与分页列表
 - 移动、复制
+- 回收站列表、恢复与过期清理
 - 分享链接与导入
 - 前端树状目录导航
 
@@ -143,10 +145,13 @@
 - 支持本地磁盘和 S3 兼容对象存储
 - 分享导入与网盘复制会直接复用源文件的 `FileBlob`，不会再次写入字节内容
 - 文件重命名、移动只更新 `StoredFile` 元数据，不会移动底层对象
-- 删除文件时会先删除 `StoredFile` 引用；只有最后一个引用消失时，才真正删除 `FileBlob` 对应的底层对象
+- 删除文件时不会立刻物理删除，而是把 `StoredFile` 及其目录树标记为回收站条目；根条目会记录 `deletedAt`、原始父路径和回收分组 ID，回收站保留期固定为 10 天
+- 回收站恢复会把整组条目恢复到原路径，并在恢复前检查同名冲突和用户剩余配额
+- 定时清理任务会删除超过 10 天的回收站条目；只有当某个 `FileBlob` 的最后一个逻辑引用随之消失时，才真正删除底层对象
 - 应用启动时会把旧 `portal_file.storage_name` 行自动回填到新的 `blob_id` 引用，保证存量数据能继续读取
 - 当前线上网盘文件存储已切到多吉云对象存储，后端先通过多吉云临时密钥 API 换取短期 S3 会话，再访问底层 COS 兼容桶
 - 前端会缓存目录列表和最后访问路径
+- 桌面网盘页在左侧树状目录栏底部固定展示回收站入口；移动端在网盘页顶部提供回收站入口；两端共用独立 `RecycleBin` 页面调用 `/api/files/recycle-bin` 与恢复接口
 
 Android 壳补充说明：
 
@@ -156,6 +161,9 @@ Android 壳补充说明：
 - 后端 CORS 默认放行 `http://localhost`、`https://localhost`、`http://127.0.0.1`、`https://127.0.0.1` 与 `capacitor://localhost`，以兼容 Web 开发环境和 Android WebView 壳
 - Web 端构建完成后，通过 `npx cap sync android` 把静态资源复制到 `front/android/app/src/main/assets/public`
 - Android 调试包当前通过 `cd front/android && ./gradlew assembleDebug` 生成，输出路径是 `front/android/app/build/outputs/apk/debug/app-debug.apk`
+- 前端总览页会在 Web 环境展示稳定 APK 下载入口 `/downloads/yoyuzh-portal.apk`
+- Capacitor 原生壳内的移动端总览页会改为“检查更新”入口；前端会先对 OSS 上的 APK 做 `HEAD` 探测并读取最新修改时间，再直接打开下载链接完成更新
+- 前端 OSS 发布脚本会在上传 `front/dist` 后，额外把 `front/android/app/build/outputs/apk/debug/app-debug.apk` 上传到同一个静态站桶里的 `downloads/yoyuzh-portal.apk`；这里刻意不把 APK 放进 `front/dist`，以避免后续 `npx cap sync android` 时把旧 APK 再次打进新的 Android 包
 - 由于当前开发机直连 `dl.google.com` 与 Google Android Maven 仓库存在 TLS 握手失败，本地 Android 构建仓库源已切到可访问镜像；如果后续重新生成 Capacitor 工程，需要重新确认镜像配置仍存在
 
 ### 3.3 快传模块
@@ -228,10 +236,11 @@ Android 壳补充说明：
 
 1. 前端登录页调用 `/api/auth/login`
 2. 后端鉴权成功后签发 access token + refresh token
-3. 后端刷新 `activeSessionId`
-4. 前端本地存储 `portal-session`
-5. 后续请求通过 `Authorization: Bearer <token>` 访问
-6. JWT 过滤器校验 token、用户状态和会话 ID 是否仍匹配
+3. 前端同时上送 `X-Yoyuzh-Client` 标记当前是 `desktop` 还是 `mobile`
+4. 后端按客户端类型刷新对应的活跃会话 ID 与 refresh token 集合
+5. 前端本地存储 `portal-session`
+6. 后续请求通过 `Authorization: Bearer <token>` 访问，并继续带上 `X-Yoyuzh-Client`
+7. JWT 过滤器校验 token、用户状态，以及当前客户端类型对应的会话 ID 是否仍匹配
 
 补充说明：
 
@@ -295,7 +304,7 @@ Android 壳补充说明：
 1. 管理台调用 `PUT /api/admin/users/{userId}/password`
 2. 后端按统一密码规则校验新密码
 3. 后端重算密码哈希并写回用户表
-4. 后端刷新 `activeSessionId` 并撤销该用户全部 refresh token
+4. 后端刷新桌面端与移动端全部活跃会话，并撤销该用户全部 refresh token
 5. 旧密码后续登录应失败，新密码登录成功
 
 ## 5. 前端路由架构
@@ -330,14 +339,15 @@ Android 壳补充说明：
 - `GET /api/files/share-links/{token}` 公开
 - `/api/files/**`、`/api/user/**`、`/api/admin/**` 需登录
 
-### 6.2 单设备登录
+### 6.2 分端单会话登录
 
-当前实现不是只撤销 refresh token，而是同时控制 access token：
+当前实现不是只撤销 refresh token，而是同时控制 access token，并按客户端类型拆分：
 
-- 用户表记录 `activeSessionId`
-- JWT 里包含 `sid`
-- 过滤器每次请求都会比对当前用户的 `activeSessionId`
-- 新登录成功后，旧设备 token 会失效
+- 前端会在鉴权与上传请求里附带 `X-Yoyuzh-Client: desktop|mobile`
+- 用户表记录 `desktopActiveSessionId` 与 `mobileActiveSessionId`
+- JWT 里同时包含 `sid` 和 `client`
+- 过滤器每次请求都会按 token 里的 `client` 去比对对应端的活跃会话 ID
+- 桌面端与移动端可以同时在线，但同一端再次登录成功后，该端旧 token 会失效
 
 ## 7. 存储架构
 

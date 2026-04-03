@@ -102,6 +102,8 @@ public class AdminService {
         User user = getRequiredUser(userId);
         user.setBanned(banned);
         user.setActiveSessionId(UUID.randomUUID().toString());
+        user.setDesktopActiveSessionId(UUID.randomUUID().toString());
+        user.setMobileActiveSessionId(UUID.randomUUID().toString());
         refreshTokenService.revokeAllForUser(user.getId());
         return toUserResponse(userRepository.save(user));
     }
@@ -114,6 +116,8 @@ public class AdminService {
         User user = getRequiredUser(userId);
         user.setPasswordHash(passwordEncoder.encode(newPassword));
         user.setActiveSessionId(UUID.randomUUID().toString());
+        user.setDesktopActiveSessionId(UUID.randomUUID().toString());
+        user.setMobileActiveSessionId(UUID.randomUUID().toString());
         refreshTokenService.revokeAllForUser(user.getId());
         return toUserResponse(userRepository.save(user));
     }

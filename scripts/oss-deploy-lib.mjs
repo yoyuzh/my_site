@@ -21,6 +21,7 @@ const FRONTEND_SPA_ALIASES = [
   't',
   'overview',
   'files',
+  'recycle-bin',
   'transfer',
   'games',
   'login',

@@ -41,10 +41,15 @@ public class JwtTokenProvider {
     }
 
     public String generateAccessToken(Long userId, String username, String sessionId) {
+        return generateAccessToken(userId, username, sessionId, AuthClientType.DESKTOP);
+    }
+
+    public String generateAccessToken(Long userId, String username, String sessionId, AuthClientType clientType) {
         Instant now = Instant.now();
         var builder = Jwts.builder()
                 .subject(username)
                 .claim("uid", userId)
+                .claim("client", clientType.name())
                 .issuedAt(Date.from(now))
                 .expiration(Date.from(now.plusSeconds(jwtProperties.getAccessExpirationSeconds())))
                 .signWith(secretKey);
@@ -79,6 +84,11 @@ public class JwtTokenProvider {
         return sessionId == null ? null : sessionId.toString();
     }
 
+    public AuthClientType getClientType(String token) {
+        Object clientType = parseClaims(token).get("client");
+        return AuthClientType.fromHeader(clientType == null ? null : clientType.toString());
+    }
+
     public boolean hasMatchingSession(String token, String activeSessionId) {
         String tokenSessionId = getSessionId(token);
 
@@ -87,6 +97,17 @@ public class JwtTokenProvider {
         }
 
         return activeSessionId.equals(tokenSessionId);
+    }
+
+    public boolean hasMatchingSession(String token, User user) {
+        String expectedSessionId = switch (getClientType(token)) {
+            case MOBILE -> user.getMobileActiveSessionId();
+            case DESKTOP -> StringUtils.hasText(user.getDesktopActiveSessionId())
+                    ? user.getDesktopActiveSessionId()
+                    : user.getActiveSessionId();
+        };
+
+        return hasMatchingSession(token, expectedSessionId);
     }
 
     private Claims parseClaims(String token) {

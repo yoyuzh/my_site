@@ -63,6 +63,12 @@ public class User {
     @Column(name = "active_session_id", length = 64)
     private String activeSessionId;
 
+    @Column(name = "desktop_active_session_id", length = 64)
+    private String desktopActiveSessionId;
+
+    @Column(name = "mobile_active_session_id", length = 64)
+    private String mobileActiveSessionId;
+
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 32)
     private UserRole role;
@@ -200,6 +206,22 @@ public class User {
 
     public void setActiveSessionId(String activeSessionId) {
         this.activeSessionId = activeSessionId;
+    }
+
+    public String getDesktopActiveSessionId() {
+        return desktopActiveSessionId;
+    }
+
+    public void setDesktopActiveSessionId(String desktopActiveSessionId) {
+        this.desktopActiveSessionId = desktopActiveSessionId;
+    }
+
+    public String getMobileActiveSessionId() {
+        return mobileActiveSessionId;
+    }
+
+    public void setMobileActiveSessionId(String mobileActiveSessionId) {
+        this.mobileActiveSessionId = mobileActiveSessionId;
     }
 
     public UserRole getRole() {

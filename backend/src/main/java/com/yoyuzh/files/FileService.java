@@ -12,6 +12,7 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -23,12 +24,14 @@ import java.io.IOException;
 import java.net.URI;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
+import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import java.util.zip.ZipEntry;
@@ -37,6 +40,8 @@ import java.util.zip.ZipOutputStream;
 @Service
 public class FileService {
     private static final List<String> DEFAULT_DIRECTORIES = List.of("下载", "文档", "图片");
+    private static final String RECYCLE_BIN_PATH_PREFIX = "/.recycle";
+    private static final long RECYCLE_BIN_RETENTION_DAYS = 10L;
 
     private final StoredFileRepository storedFileRepository;
     private final FileBlobRepository fileBlobRepository;
@@ -145,10 +150,16 @@ public class FileService {
     }
 
     public List<FileMetadataResponse> recent(User user) {
-        return storedFileRepository.findTop12ByUserIdAndDirectoryFalseOrderByCreatedAtDesc(user.getId())
+        return storedFileRepository.findTop12ByUserIdAndDirectoryFalseAndDeletedAtIsNullOrderByCreatedAtDesc(user.getId())
                 .stream()
                 .map(this::toResponse)
                 .toList();
+    }
+
+    public PageResponse<RecycleBinItemResponse> listRecycleBin(User user, int page, int size) {
+        Page<StoredFile> result = storedFileRepository.findRecycleBinRootsByUserId(user.getId(), PageRequest.of(page, size));
+        List<RecycleBinItemResponse> items = result.getContent().stream().map(this::toRecycleBinResponse).toList();
+        return new PageResponse<>(items, result.getTotalElements(), page, size);
     }
 
     @Transactional
@@ -174,26 +185,58 @@ public class FileService {
 
     @Transactional
     public void delete(User user, Long fileId) {
-        StoredFile storedFile = getOwnedFile(user, fileId, "删除");
-        List<StoredFile> filesToDelete = new ArrayList<>();
+        StoredFile storedFile = getOwnedActiveFile(user, fileId, "删除");
+        List<StoredFile> filesToRecycle = new ArrayList<>();
+        filesToRecycle.add(storedFile);
         if (storedFile.isDirectory()) {
             String logicalPath = buildLogicalPath(storedFile);
             List<StoredFile> descendants = storedFileRepository.findByUserIdAndPathEqualsOrDescendant(user.getId(), logicalPath);
-            filesToDelete.addAll(descendants.stream().filter(descendant -> !descendant.isDirectory()).toList());
-            if (!descendants.isEmpty()) {
-                storedFileRepository.deleteAll(descendants);
-            }
-        } else {
-            filesToDelete.add(storedFile);
+            filesToRecycle.addAll(descendants);
         }
-        List<FileBlob> blobsToDelete = collectBlobsToDelete(filesToDelete);
-        storedFileRepository.delete(storedFile);
+        moveToRecycleBin(filesToRecycle, storedFile.getId());
+    }
+
+    @Transactional
+    public FileMetadataResponse restoreFromRecycleBin(User user, Long fileId) {
+        StoredFile recycleRoot = getOwnedRecycleRootFile(user, fileId);
+        List<StoredFile> recycleGroupItems = loadRecycleGroupItems(recycleRoot);
+        long additionalBytes = recycleGroupItems.stream()
+                .filter(item -> !item.isDirectory())
+                .mapToLong(StoredFile::getSize)
+                .sum();
+        ensureWithinStorageQuota(user, additionalBytes);
+        validateRecycleRestoreTargets(user.getId(), recycleGroupItems);
+        ensureRecycleRestoreParentHierarchy(user, recycleRoot);
+
+        for (StoredFile item : recycleGroupItems) {
+            item.setPath(requireRecycleOriginalPath(item));
+            item.setDeletedAt(null);
+            item.setRecycleOriginalPath(null);
+            item.setRecycleGroupId(null);
+            item.setRecycleRoot(false);
+        }
+        storedFileRepository.saveAll(recycleGroupItems);
+        return toResponse(recycleRoot);
+    }
+
+    @Scheduled(fixedDelay = 60 * 60 * 1000L)
+    @Transactional
+    public void pruneExpiredRecycleBinItems() {
+        List<StoredFile> expiredItems = storedFileRepository.findByDeletedAtBefore(LocalDateTime.now().minusDays(RECYCLE_BIN_RETENTION_DAYS));
+        if (expiredItems.isEmpty()) {
+            return;
+        }
+
+        List<FileBlob> blobsToDelete = collectBlobsToDelete(
+                expiredItems.stream().filter(item -> !item.isDirectory()).toList()
+        );
+        storedFileRepository.deleteAll(expiredItems);
         deleteBlobs(blobsToDelete);
     }
 
     @Transactional
     public FileMetadataResponse rename(User user, Long fileId, String nextFilename) {
-        StoredFile storedFile = getOwnedFile(user, fileId, "重命名");
+        StoredFile storedFile = getOwnedActiveFile(user, fileId, "重命名");
         String sanitizedFilename = normalizeLeafName(nextFilename);
         if (sanitizedFilename.equals(storedFile.getFilename())) {
             return toResponse(storedFile);
@@ -228,7 +271,7 @@ public class FileService {
 
     @Transactional
     public FileMetadataResponse move(User user, Long fileId, String nextPath) {
-        StoredFile storedFile = getOwnedFile(user, fileId, "移动");
+        StoredFile storedFile = getOwnedActiveFile(user, fileId, "移动");
         String normalizedTargetPath = normalizeDirectoryPath(nextPath);
         if (normalizedTargetPath.equals(storedFile.getPath())) {
             return toResponse(storedFile);
@@ -268,7 +311,7 @@ public class FileService {
 
     @Transactional
     public FileMetadataResponse copy(User user, Long fileId, String nextPath) {
-        StoredFile storedFile = getOwnedFile(user, fileId, "复制");
+        StoredFile storedFile = getOwnedActiveFile(user, fileId, "复制");
         String normalizedTargetPath = normalizeDirectoryPath(nextPath);
         ensureExistingDirectoryPath(user.getId(), normalizedTargetPath);
         if (storedFileRepository.existsByUserIdAndPathAndFilename(user.getId(), normalizedTargetPath, storedFile.getFilename())) {
@@ -322,7 +365,7 @@ public class FileService {
     }
 
     public ResponseEntity<?> download(User user, Long fileId) {
-        StoredFile storedFile = getOwnedFile(user, fileId, "下载");
+        StoredFile storedFile = getOwnedActiveFile(user, fileId, "下载");
         if (storedFile.isDirectory()) {
             return downloadDirectory(user, storedFile);
         }
@@ -344,7 +387,7 @@ public class FileService {
     }
 
     public DownloadUrlResponse getDownloadUrl(User user, Long fileId) {
-        StoredFile storedFile = getOwnedFile(user, fileId, "下载");
+        StoredFile storedFile = getOwnedActiveFile(user, fileId, "下载");
         if (storedFile.isDirectory()) {
             throw new BusinessException(ErrorCode.UNKNOWN, "目录不支持下载");
         }
@@ -362,7 +405,7 @@ public class FileService {
 
     @Transactional
     public CreateFileShareLinkResponse createShareLink(User user, Long fileId) {
-        StoredFile storedFile = getOwnedFile(user, fileId, "分享");
+        StoredFile storedFile = getOwnedActiveFile(user, fileId, "分享");
         if (storedFile.isDirectory()) {
             throw new BusinessException(ErrorCode.UNKNOWN, "目录暂不支持分享链接");
         }
@@ -500,6 +543,25 @@ public class FileService {
                 .orElseThrow(() -> new BusinessException(ErrorCode.FILE_NOT_FOUND, "分享链接不存在"));
     }
 
+    private RecycleBinItemResponse toRecycleBinResponse(StoredFile storedFile) {
+        LocalDateTime deletedAt = storedFile.getDeletedAt();
+        if (deletedAt == null) {
+            throw new BusinessException(ErrorCode.FILE_NOT_FOUND, "回收站文件不存在");
+        }
+
+        return new RecycleBinItemResponse(
+                storedFile.getId(),
+                storedFile.getFilename(),
+                requireRecycleOriginalPath(storedFile),
+                storedFile.getSize(),
+                storedFile.getContentType(),
+                storedFile.isDirectory(),
+                storedFile.getCreatedAt(),
+                deletedAt,
+                deletedAt.plusDays(RECYCLE_BIN_RETENTION_DAYS)
+        );
+    }
+
     private StoredFile getOwnedFile(User user, Long fileId, String action) {
         StoredFile storedFile = storedFileRepository.findDetailedById(fileId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.FILE_NOT_FOUND, "文件不存在"));
@@ -507,6 +569,30 @@ public class FileService {
             throw new BusinessException(ErrorCode.PERMISSION_DENIED, "没有权限" + action + "该文件");
         }
         return storedFile;
+    }
+
+    private StoredFile getOwnedActiveFile(User user, Long fileId, String action) {
+        StoredFile storedFile = getOwnedFile(user, fileId, action);
+        if (storedFile.getDeletedAt() != null) {
+            throw new BusinessException(ErrorCode.FILE_NOT_FOUND, "文件不存在");
+        }
+        return storedFile;
+    }
+
+    private StoredFile getOwnedRecycleRootFile(User user, Long fileId) {
+        StoredFile storedFile = getOwnedFile(user, fileId, "恢复");
+        if (storedFile.getDeletedAt() == null || !storedFile.isRecycleRoot()) {
+            throw new BusinessException(ErrorCode.FILE_NOT_FOUND, "回收站文件不存在");
+        }
+        return storedFile;
+    }
+
+    private List<StoredFile> loadRecycleGroupItems(StoredFile recycleRoot) {
+        List<StoredFile> items = storedFileRepository.findByRecycleGroupId(recycleRoot.getRecycleGroupId());
+        if (items.isEmpty()) {
+            throw new BusinessException(ErrorCode.FILE_NOT_FOUND, "回收站文件不存在");
+        }
+        return items;
     }
 
     private void validateUpload(User user, String normalizedPath, String filename, long size) {
@@ -541,7 +627,11 @@ public class FileService {
         String currentPath = "/";
 
         for (String segment : segments) {
-            if (storedFileRepository.existsByUserIdAndPathAndFilename(user.getId(), currentPath, segment)) {
+            Optional<StoredFile> existing = storedFileRepository.findByUserIdAndPathAndFilename(user.getId(), currentPath, segment);
+            if (existing.isPresent()) {
+                if (!existing.get().isDirectory()) {
+                    throw new BusinessException(ErrorCode.UNKNOWN, "目标路径不是目录");
+                }
                 currentPath = "/".equals(currentPath) ? "/" + segment : currentPath + "/" + segment;
                 continue;
             }
@@ -560,6 +650,70 @@ public class FileService {
 
             currentPath = logicalPath;
         }
+    }
+
+    private void moveToRecycleBin(List<StoredFile> filesToRecycle, Long recycleRootId) {
+        if (filesToRecycle.isEmpty()) {
+            return;
+        }
+
+        StoredFile recycleRoot = filesToRecycle.stream()
+                .filter(item -> recycleRootId.equals(item.getId()))
+                .findFirst()
+                .orElseThrow(() -> new BusinessException(ErrorCode.FILE_NOT_FOUND, "文件不存在"));
+        String recycleGroupId = UUID.randomUUID().toString().replace("-", "");
+        LocalDateTime deletedAt = LocalDateTime.now();
+        String rootLogicalPath = buildLogicalPath(recycleRoot);
+        String recycleRootPath = buildRecycleBinPath(recycleGroupId, recycleRoot.getPath());
+        String recycleRootLogicalPath = buildTargetLogicalPath(recycleRootPath, recycleRoot.getFilename());
+
+        List<StoredFile> orderedItems = filesToRecycle.stream()
+                .sorted(Comparator
+                        .comparingInt((StoredFile item) -> buildLogicalPath(item).length())
+                        .thenComparing(item -> item.isDirectory() ? 0 : 1)
+                        .thenComparing(StoredFile::getFilename))
+                .toList();
+
+        for (StoredFile item : orderedItems) {
+            String originalPath = item.getPath();
+            String recyclePath = recycleRootId.equals(item.getId())
+                    ? recycleRootPath
+                    : remapCopiedPath(item.getPath(), rootLogicalPath, recycleRootLogicalPath);
+            item.setDeletedAt(deletedAt);
+            item.setRecycleOriginalPath(originalPath);
+            item.setRecycleGroupId(recycleGroupId);
+            item.setRecycleRoot(recycleRootId.equals(item.getId()));
+            item.setPath(recyclePath);
+        }
+
+        storedFileRepository.saveAll(orderedItems);
+    }
+
+    private String buildRecycleBinPath(String recycleGroupId, String originalPath) {
+        if ("/".equals(originalPath)) {
+            return RECYCLE_BIN_PATH_PREFIX + "/" + recycleGroupId;
+        }
+        return RECYCLE_BIN_PATH_PREFIX + "/" + recycleGroupId + originalPath;
+    }
+
+    private String requireRecycleOriginalPath(StoredFile storedFile) {
+        if (!StringUtils.hasText(storedFile.getRecycleOriginalPath())) {
+            throw new BusinessException(ErrorCode.FILE_NOT_FOUND, "回收站文件不存在");
+        }
+        return storedFile.getRecycleOriginalPath();
+    }
+
+    private void validateRecycleRestoreTargets(Long userId, List<StoredFile> recycleGroupItems) {
+        for (StoredFile item : recycleGroupItems) {
+            String originalPath = requireRecycleOriginalPath(item);
+            if (storedFileRepository.existsByUserIdAndPathAndFilename(userId, originalPath, item.getFilename())) {
+                throw new BusinessException(ErrorCode.UNKNOWN, "原目录已存在同名文件，无法恢复");
+            }
+        }
+    }
+
+    private void ensureRecycleRestoreParentHierarchy(User user, StoredFile recycleRoot) {
+        ensureDirectoryHierarchy(user, requireRecycleOriginalPath(recycleRoot));
     }
 
     private void ensureExistingDirectoryPath(Long userId, String normalizedPath) {

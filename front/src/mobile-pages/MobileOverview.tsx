@@ -9,6 +9,7 @@ import {
   FolderPlus,
   Mail,
   Send,
+  Smartphone,
   Upload,
   User,
   Zap,
@@ -25,7 +26,14 @@ import { getOverviewCacheKey } from '@/src/lib/page-cache';
 import { clearPostLoginPending, hasPostLoginPending, readStoredSession } from '@/src/lib/session';
 import type { FileMetadata, PageResponse, UserProfile } from '@/src/lib/types';
 
-import { getOverviewLoadErrorMessage } from '@/src/pages/overview-state';
+import {
+  APK_DOWNLOAD_PUBLIC_URL,
+  APK_DOWNLOAD_PATH,
+  getMobileOverviewApkEntryMode,
+  getOverviewLoadErrorMessage,
+  getOverviewStorageQuotaLabel,
+  shouldShowOverviewApkDownload,
+} from '@/src/pages/overview-state';
 
 function formatFileSize(size: number) {
   if (size <= 0) return '0 B';
@@ -56,6 +64,8 @@ export default function MobileOverview() {
   const [loadingError, setLoadingError] = useState('');
   const [retryToken, setRetryToken] = useState(0);
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
+  const [apkActionMessage, setApkActionMessage] = useState('');
+  const [checkingApkUpdate, setCheckingApkUpdate] = useState(false);
 
   const currentHour = new Date().getHours();
   let greeting = '晚上好';
@@ -72,6 +82,46 @@ export default function MobileOverview() {
   const latestFile = recentFiles[0] ?? null;
   const profileDisplayName = profile?.displayName || profile?.username || '未登录';
   const profileAvatarFallback = profileDisplayName.charAt(0).toUpperCase();
+  const showApkDownload = shouldShowOverviewApkDownload();
+  const apkEntryMode = getMobileOverviewApkEntryMode();
+
+  const handleCheckApkUpdate = async () => {
+    setCheckingApkUpdate(true);
+    setApkActionMessage('');
+
+    try {
+      const response = await fetch(APK_DOWNLOAD_PUBLIC_URL, {
+        method: 'HEAD',
+        cache: 'no-store',
+      });
+      if (!response.ok) {
+        throw new Error(`检查更新失败 (${response.status})`);
+      }
+
+      const lastModified = response.headers.get('last-modified');
+      setApkActionMessage(
+        lastModified
+          ? `发现最新安装包，更新时间 ${new Intl.DateTimeFormat('zh-CN', {
+              month: '2-digit',
+              day: '2-digit',
+              hour: '2-digit',
+              minute: '2-digit',
+            }).format(new Date(lastModified))}，正在打开下载链接。`
+          : '发现最新安装包，正在打开下载链接。'
+      );
+
+      if (typeof window !== 'undefined') {
+        const openedWindow = window.open(APK_DOWNLOAD_PUBLIC_URL, '_blank', 'noopener,noreferrer');
+        if (!openedWindow) {
+          window.location.href = APK_DOWNLOAD_PUBLIC_URL;
+        }
+      }
+    } catch (error) {
+      setApkActionMessage(error instanceof Error ? error.message : '检查更新失败，请稍后重试');
+    } finally {
+      setCheckingApkUpdate(false);
+    }
+  };
 
   useEffect(() => {
     let cancelled = false;
@@ -166,7 +216,7 @@ export default function MobileOverview() {
         <MobileMetricCard title="文件总数" value={`${rootFiles.length}`} icon={FileText} delay={0.1} color="text-amber-400" bg="bg-amber-500/20" />
         <MobileMetricCard title="近期上传" value={`${recentWeekUploads}`} icon={Upload} delay={0.15} color="text-emerald-400" bg="bg-emerald-500/20" />
         <MobileMetricCard title="快传就绪" value={latestFile ? '使用中' : '待命'} icon={Send} delay={0.2} color="text-[#336EFF]" bg="bg-[#336EFF]/20" />
-        <MobileMetricCard title="存储占用" value={`${storagePercent.toFixed(1)}%`} icon={Database} delay={0.25} color="text-purple-400" bg="bg-purple-500/20" subtitle={`${formatFileSize(usedBytes)}`} />
+        <MobileMetricCard title="存储占用" value={`${storagePercent.toFixed(1)}%`} icon={Database} delay={0.25} color="text-purple-400" bg="bg-purple-500/20" subtitle={getOverviewStorageQuotaLabel(storageQuotaBytes)} />
       </div>
 
       {/* 快捷操作区 */}
@@ -181,6 +231,48 @@ export default function MobileOverview() {
           <QuickAction icon={Send} label="快传" onClick={() => navigate('/transfer')} />
         </CardContent>
       </Card>
+
+      {showApkDownload || apkEntryMode === 'update' ? (
+        <Card className="glass-panel overflow-hidden border-[#336EFF]/20 relative">
+          <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(51,110,255,0.2),transparent_45%),linear-gradient(180deg,rgba(16,24,40,0.94),rgba(15,23,42,0.88))]" />
+          <CardContent className="relative z-10 p-4 space-y-3">
+            <div className="flex items-start gap-3">
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-[#336EFF]/15 text-[#7ea4ff]">
+                <Smartphone className="h-4 w-4" />
+              </div>
+              <div className="space-y-1">
+                <p className="text-sm font-semibold text-white">Android 客户端</p>
+                <p className="text-[11px] leading-5 text-slate-300">
+                  {apkEntryMode === 'update'
+                    ? '在 App 内检查 OSS 上的最新安装包，并跳转到更新下载链接。'
+                    : '总览页可直接下载最新 APK，安装包与前端站点一起托管在 OSS。'}
+                </p>
+              </div>
+            </div>
+            {apkEntryMode === 'update' ? (
+              <button
+                type="button"
+                onClick={() => void handleCheckApkUpdate()}
+                disabled={checkingApkUpdate}
+                className="inline-flex h-10 w-full items-center justify-center rounded-xl bg-[#336EFF] px-4 text-sm font-medium text-white shadow-md shadow-[#336EFF]/20 transition-colors hover:bg-[#2958cc] disabled:cursor-not-allowed disabled:opacity-70"
+              >
+                {checkingApkUpdate ? '检查中...' : '检查更新'}
+              </button>
+            ) : (
+              <a
+                href={APK_DOWNLOAD_PATH}
+                download="yoyuzh-portal.apk"
+                className="inline-flex h-10 w-full items-center justify-center rounded-xl bg-[#336EFF] px-4 text-sm font-medium text-white shadow-md shadow-[#336EFF]/20 transition-colors hover:bg-[#2958cc]"
+              >
+                下载 APK
+              </a>
+            )}
+            {apkActionMessage ? (
+              <p className="text-[11px] leading-5 text-slate-300">{apkActionMessage}</p>
+            ) : null}
+          </CardContent>
+        </Card>
+      ) : null}
 
       {/* 近期文件 (精简版) */}
       <Card className="glass-panel">

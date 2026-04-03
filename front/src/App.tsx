@@ -5,6 +5,7 @@ import { useAuth } from './auth/AuthProvider';
 import Login from './pages/Login';
 import Overview from './pages/Overview';
 import Files from './pages/Files';
+import RecycleBin from './pages/RecycleBin';
 import Transfer from './pages/Transfer';
 import FileShare from './pages/FileShare';
 import Games from './pages/Games';
@@ -58,6 +59,7 @@ function AppRoutes() {
         <Route index element={<Navigate to="/overview" replace />} />
         <Route path="overview" element={<Overview />} />
         <Route path="files" element={<Files />} />
+        <Route path="recycle-bin" element={<RecycleBin />} />
         <Route path="games" element={<Games />} />
         <Route path="games/:gameId" element={<GamePlayer />} />
       </Route>
