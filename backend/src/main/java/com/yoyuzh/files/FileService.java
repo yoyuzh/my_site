@@ -8,6 +8,7 @@ import com.yoyuzh.common.PageResponse;
 import com.yoyuzh.config.FileStorageProperties;
 import com.yoyuzh.files.storage.FileContentStorage;
 import com.yoyuzh.files.storage.PreparedUpload;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.http.HttpHeaders;
@@ -24,8 +25,12 @@ import java.io.IOException;
 import java.net.URI;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.time.Clock;
+import java.time.Instant;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.Base64;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.LinkedHashSet;
@@ -34,6 +39,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
+import java.util.Locale;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
 
@@ -49,19 +55,42 @@ public class FileService {
     private final FileShareLinkRepository fileShareLinkRepository;
     private final AdminMetricsService adminMetricsService;
     private final long maxFileSize;
+    private final String packageDownloadBaseUrl;
+    private final String packageDownloadSecret;
+    private final long packageDownloadTtlSeconds;
+    private final Clock clock;
 
+    @Autowired
     public FileService(StoredFileRepository storedFileRepository,
                        FileBlobRepository fileBlobRepository,
                        FileContentStorage fileContentStorage,
                        FileShareLinkRepository fileShareLinkRepository,
                        AdminMetricsService adminMetricsService,
                        FileStorageProperties properties) {
+        this(storedFileRepository, fileBlobRepository, fileContentStorage, fileShareLinkRepository, adminMetricsService, properties, Clock.systemUTC());
+    }
+
+    FileService(StoredFileRepository storedFileRepository,
+                FileBlobRepository fileBlobRepository,
+                FileContentStorage fileContentStorage,
+                FileShareLinkRepository fileShareLinkRepository,
+                AdminMetricsService adminMetricsService,
+                FileStorageProperties properties,
+                Clock clock) {
         this.storedFileRepository = storedFileRepository;
         this.fileBlobRepository = fileBlobRepository;
         this.fileContentStorage = fileContentStorage;
         this.fileShareLinkRepository = fileShareLinkRepository;
         this.adminMetricsService = adminMetricsService;
         this.maxFileSize = properties.getMaxFileSize();
+        this.packageDownloadBaseUrl = StringUtils.hasText(properties.getS3().getPackageDownloadBaseUrl())
+                ? properties.getS3().getPackageDownloadBaseUrl().trim()
+                : null;
+        this.packageDownloadSecret = StringUtils.hasText(properties.getS3().getPackageDownloadSecret())
+                ? properties.getS3().getPackageDownloadSecret().trim()
+                : null;
+        this.packageDownloadTtlSeconds = Math.max(1, properties.getS3().getPackageDownloadTtlSeconds());
+        this.clock = clock;
     }
 
     @Transactional
@@ -370,6 +399,12 @@ public class FileService {
             return downloadDirectory(user, storedFile);
         }
 
+        if (shouldUsePublicPackageDownload(storedFile)) {
+            return ResponseEntity.status(302)
+                    .location(URI.create(buildPublicPackageDownloadUrl(storedFile)))
+                    .build();
+        }
+
         if (fileContentStorage.supportsDirectDownload()) {
             return ResponseEntity.status(302)
                     .location(URI.create(fileContentStorage.createBlobDownloadUrl(
@@ -392,6 +427,10 @@ public class FileService {
             throw new BusinessException(ErrorCode.UNKNOWN, "目录不支持下载");
         }
         adminMetricsService.recordDownloadTraffic(storedFile.getSize());
+
+        if (shouldUsePublicPackageDownload(storedFile)) {
+            return new DownloadUrlResponse(buildPublicPackageDownloadUrl(storedFile));
+        }
 
         if (fileContentStorage.supportsDirectDownload()) {
             return new DownloadUrlResponse(fileContentStorage.createBlobDownloadUrl(
@@ -519,6 +558,117 @@ public class FileService {
                         "attachment; filename*=UTF-8''" + URLEncoder.encode(archiveName, StandardCharsets.UTF_8))
                 .contentType(MediaType.parseMediaType("application/zip"))
                 .body(archiveBytes);
+    }
+
+    private boolean shouldUsePublicPackageDownload(StoredFile storedFile) {
+        return fileContentStorage.supportsDirectDownload()
+                && StringUtils.hasText(packageDownloadBaseUrl)
+                && StringUtils.hasText(packageDownloadSecret)
+                && isAppPackage(storedFile);
+    }
+
+    private boolean isAppPackage(StoredFile storedFile) {
+        String filename = storedFile.getFilename() == null ? "" : storedFile.getFilename().toLowerCase(Locale.ROOT);
+        String contentType = storedFile.getContentType() == null ? "" : storedFile.getContentType().toLowerCase(Locale.ROOT);
+        return filename.endsWith(".apk")
+                || filename.endsWith(".ipa")
+                || "application/vnd.android.package-archive".equals(contentType)
+                || "application/octet-stream".equals(contentType) && (filename.endsWith(".apk") || filename.endsWith(".ipa"));
+    }
+
+    private String buildPublicPackageDownloadUrl(StoredFile storedFile) {
+        FileBlob blob = getRequiredBlob(storedFile);
+        String base = packageDownloadBaseUrl.endsWith("/")
+                ? packageDownloadBaseUrl.substring(0, packageDownloadBaseUrl.length() - 1)
+                : packageDownloadBaseUrl;
+        String path = "/" + trimLeadingSlash(blob.getObjectKey());
+        if (base.endsWith("/_dl")) {
+            path = "/_dl" + path;
+        }
+        long expires = clock.instant().getEpochSecond() + packageDownloadTtlSeconds;
+        String signature = buildSecureLinkSignature(path, expires);
+        return base
+                + "/"
+                + trimLeadingSlash(blob.getObjectKey())
+                + "?md5="
+                + encodeQueryParam(signature)
+                + "&expires="
+                + expires
+                + "&response-content-disposition="
+                + encodeQueryParam(buildAsciiContentDisposition(storedFile.getFilename()));
+    }
+
+    private String buildAsciiContentDisposition(String filename) {
+        String sanitized = sanitizeDownloadFilename(filename);
+        StringBuilder disposition = new StringBuilder("attachment; filename=\"")
+                .append(escapeContentDispositionFilename(buildAsciiDownloadFilename(sanitized)))
+                .append("\"");
+        if (StringUtils.hasText(sanitized)) {
+            disposition.append("; filename*=UTF-8''")
+                    .append(sanitized);
+        }
+        return disposition.toString();
+    }
+
+    private String buildAsciiDownloadFilename(String filename) {
+        String normalized = sanitizeDownloadFilename(filename);
+        if (!StringUtils.hasText(normalized)) {
+            return "download";
+        }
+
+        String sanitized = normalized.replaceAll("[\\r\\n]", "_");
+        StringBuilder ascii = new StringBuilder(sanitized.length());
+        for (int i = 0; i < sanitized.length(); i++) {
+            char current = sanitized.charAt(i);
+            if (current >= 32 && current <= 126 && current != '"' && current != '\\') {
+                ascii.append(current);
+            } else {
+                ascii.append('_');
+            }
+        }
+
+        String fallback = ascii.toString().trim();
+        String extension = extractAsciiExtension(normalized);
+        String baseName = extension.isEmpty() ? fallback : fallback.substring(0, Math.max(0, fallback.length() - extension.length()));
+        if (baseName.replace("_", "").isBlank()) {
+            return extension.isEmpty() ? "download" : "download" + extension;
+        }
+        return fallback;
+    }
+
+    private String sanitizeDownloadFilename(String filename) {
+        return StringUtils.hasText(filename) ? filename.trim().replaceAll("[\\r\\n]", "_") : "";
+    }
+
+    private String extractAsciiExtension(String filename) {
+        int extensionIndex = filename.lastIndexOf('.');
+        if (extensionIndex > 0 && extensionIndex < filename.length() - 1) {
+            String extension = filename.substring(extensionIndex).replaceAll("[^A-Za-z0-9.]", "");
+            return StringUtils.hasText(extension) ? extension : "";
+        }
+        return "";
+    }
+
+    private String escapeContentDispositionFilename(String filename) {
+        return filename.replace("\\", "\\\\").replace("\"", "\\\"");
+    }
+
+    private String trimLeadingSlash(String value) {
+        return value.startsWith("/") ? value.substring(1) : value;
+    }
+
+    private String buildSecureLinkSignature(String path, long expires) {
+        try {
+            MessageDigest digest = MessageDigest.getInstance("MD5");
+            byte[] hash = digest.digest((expires + path + " " + packageDownloadSecret).getBytes(StandardCharsets.UTF_8));
+            return Base64.getUrlEncoder().withoutPadding().encodeToString(hash);
+        } catch (Exception ex) {
+            throw new IllegalStateException("生成下载签名失败", ex);
+        }
+    }
+
+    private String encodeQueryParam(String value) {
+        return URLEncoder.encode(value, StandardCharsets.UTF_8).replace("+", "%20");
     }
 
     private FileMetadataResponse saveFileMetadata(User user,

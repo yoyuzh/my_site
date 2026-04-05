@@ -352,18 +352,17 @@ export default function Overview() {
                       <div>
                         <h3 className="text-2xl font-semibold text-white">下载 APK 安装包</h3>
                         <p className="mt-2 max-w-xl text-sm leading-6 text-slate-300">
-                          当前 Android 安装包会随前端站点一起发布到 OSS，可直接从这里下载最新版本。
+                          当前 Android 安装包通过独立发包链路维护，可直接从这里获取最新版本。
                         </p>
                       </div>
                       <div className="flex flex-wrap gap-3 text-xs text-slate-400">
-                        <span className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1">稳定路径</span>
-                        <span className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1">OSS 托管</span>
+                        <span className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1">后端分发</span>
+                        <span className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1">独立发包</span>
                         <span className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1">一键下载</span>
                       </div>
                     </div>
                     <a
                       href={APK_DOWNLOAD_PATH}
-                      download="yoyuzh-portal.apk"
                       className="inline-flex h-11 shrink-0 items-center justify-center rounded-xl bg-[#336EFF] px-6 text-sm font-medium text-white shadow-md shadow-[#336EFF]/20 transition-colors hover:bg-[#2958cc]"
                     >
                       下载 APK

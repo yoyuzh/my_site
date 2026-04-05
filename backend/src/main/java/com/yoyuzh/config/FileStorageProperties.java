@@ -62,6 +62,10 @@ public class FileStorageProperties {
         private String scope;
         private int ttlSeconds = 3600;
         private String region = "automatic";
+        private String publicDownloadBaseUrl;
+        private String packageDownloadBaseUrl;
+        private String packageDownloadSecret;
+        private int packageDownloadTtlSeconds = 300;
 
         public String getApiBaseUrl() {
             return apiBaseUrl;
@@ -109,6 +113,38 @@ public class FileStorageProperties {
 
         public void setRegion(String region) {
             this.region = region;
+        }
+
+        public String getPublicDownloadBaseUrl() {
+            return publicDownloadBaseUrl;
+        }
+
+        public void setPublicDownloadBaseUrl(String publicDownloadBaseUrl) {
+            this.publicDownloadBaseUrl = publicDownloadBaseUrl;
+        }
+
+        public String getPackageDownloadBaseUrl() {
+            return packageDownloadBaseUrl;
+        }
+
+        public void setPackageDownloadBaseUrl(String packageDownloadBaseUrl) {
+            this.packageDownloadBaseUrl = packageDownloadBaseUrl;
+        }
+
+        public String getPackageDownloadSecret() {
+            return packageDownloadSecret;
+        }
+
+        public void setPackageDownloadSecret(String packageDownloadSecret) {
+            this.packageDownloadSecret = packageDownloadSecret;
+        }
+
+        public int getPackageDownloadTtlSeconds() {
+            return packageDownloadTtlSeconds;
+        }
+
+        public void setPackageDownloadTtlSeconds(int packageDownloadTtlSeconds) {
+            this.packageDownloadTtlSeconds = packageDownloadTtlSeconds;
         }
     }
 }

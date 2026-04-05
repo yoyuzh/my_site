@@ -161,9 +161,11 @@ Android 壳补充说明：
 - 后端 CORS 默认放行 `http://localhost`、`https://localhost`、`http://127.0.0.1`、`https://127.0.0.1` 与 `capacitor://localhost`，以兼容 Web 开发环境和 Android WebView 壳
 - Web 端构建完成后，通过 `npx cap sync android` 把静态资源复制到 `front/android/app/src/main/assets/public`
 - Android 调试包当前通过 `cd front/android && ./gradlew assembleDebug` 生成，输出路径是 `front/android/app/build/outputs/apk/debug/app-debug.apk`
-- 前端总览页会在 Web 环境展示稳定 APK 下载入口 `/downloads/yoyuzh-portal.apk`
-- Capacitor 原生壳内的移动端总览页会改为“检查更新”入口；前端会先对 OSS 上的 APK 做 `HEAD` 探测并读取最新修改时间，再直接打开下载链接完成更新
-- 前端 OSS 发布脚本会在上传 `front/dist` 后，额外把 `front/android/app/build/outputs/apk/debug/app-debug.apk` 上传到同一个静态站桶里的 `downloads/yoyuzh-portal.apk`；这里刻意不把 APK 放进 `front/dist`，以避免后续 `npx cap sync android` 时把旧 APK 再次打进新的 Android 包
+- 仓库根目录已提供一键脚本 `node scripts/deploy-android-apk.mjs`，会串起前端构建、Capacitor 同步、Gradle 打包、前端静态站发布与 Android 独立发包，并在 `cap sync` 之后自动补回 Android 插件工程里的 Google Maven 镜像配置
+- `node scripts/deploy-android-release.mjs` 会把 APK 和 `android/releases/latest.json` 上传到 Android 独立对象路径；默认复用文件桶 scope，不再写入前端静态桶
+- 前端总览页在 Web 环境下不再直接指向静态桶里的 APK，而是跳到后端公开下载入口 `https://api.yoyuzh.xyz/api/app/android/download`
+- Capacitor 原生壳内的移动端总览页会改为“检查更新”入口；前端通过后端 `/api/app/android/latest` 获取更新信息，后端从文件桶里的 `android/releases/latest.json` 读取版本元数据，并返回带版本号的后端下载地址；真正下载时由 `/api/app/android/download` 直接回传 APK 字节流
+- 私有网盘里的 `apk/ipa` 不再直接暴露对象存储默认域名，也不直接暴露长期有效的自定义域名直链；后端会返回短时 `https://api.yoyuzh.xyz/_dl/...` 下载地址，由 `api.yoyuzh.xyz` 上的 Nginx `secure_link` 做签名和过期校验，再代理到 `dl.yoyuzh.xyz`
 - 由于当前开发机直连 `dl.google.com` 与 Google Android Maven 仓库存在 TLS 握手失败，本地 Android 构建仓库源已切到可访问镜像；如果后续重新生成 Capacitor 工程，需要重新确认镜像配置仍存在
 
 ### 3.3 快传模块
@@ -371,6 +373,7 @@ Android 壳补充说明：
 - 后端通过多吉云临时密钥 API 获取短期 `accessKeyId / secretAccessKey / sessionToken`
 - 实际对象访问走 S3 兼容协议，底层 endpoint 为 COS 兼容地址
 - 普通文件下载仍采用“后端鉴权后返回签名 URL，浏览器直连对象存储下载”的主链路
+- 私有 `apk/ipa` 下载是例外：后端只负责返回短时签名的 `/_dl` 地址，真正文件流量经过服务器 Nginx 反向代理到 `dl.yoyuzh.xyz`，不经过 Spring Boot 业务进程
 
 ## 8. 部署架构
 

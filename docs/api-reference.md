@@ -122,15 +122,36 @@
 - 是否可用取决于当前环境配置
 - 同样支持可选请求头 `X-Yoyuzh-Client: desktop|mobile`
 
-### 2.5 获取用户资料
+### 2.5 Android 客户端更新信息
+
+`GET /api/app/android/latest`
+
+说明：
+
+- 公开接口，不需要登录
+- 返回当前 Android 安装包下载地址、文件名和最新发布时间
+- 后端会先读取文件桶中的 `android/releases/latest.json` 元数据，再返回当前 APK 对应的后端下载地址
+- 安卓端原生壳应通过该接口检查更新
+
+### 2.6 Android 客户端下载入口
+
+`GET /api/app/android/download`
+
+说明：
+
+- 公开接口，不需要登录
+- 该接口会直接回传当前最新 APK 的字节流，并通过 `Content-Disposition` 指定带版本号的文件名
+- Web 端总览页应直接使用这个公开下载入口，而不是直接访问对象存储路径
+
+### 2.7 获取用户资料
 
 `GET /api/user/profile`
 
-### 2.6 更新用户资料
+### 2.8 更新用户资料
 
 `PUT /api/user/profile`
 
-### 2.7 修改密码
+### 2.9 修改密码
 
 `POST /api/user/password`
 
@@ -139,7 +160,7 @@
 - 成功后会重新签发新的登录态
 - 同时会顶掉旧设备会话
 
-### 2.8 头像相关
+### 2.10 头像相关
 
 - `POST /api/user/avatar/upload/initiate`
 - `POST /api/user/avatar/upload`
@@ -191,6 +212,7 @@
 
 - 普通文件优先获取下载 URL
 - 文件夹可走 ZIP 下载
+- 私有 `apk/ipa` 下载会返回一个短时有效的 `https://api.yoyuzh.xyz/_dl/...` URL；该 URL 由 Nginx 按签名和过期时间校验后代理到对象存储自定义下载域名，不是长期可复用的公开直链
 
 ### 3.4 文件操作
 

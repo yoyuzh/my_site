@@ -42,6 +42,8 @@ Important: there is no dedicated backend lint command and no dedicated backend t
 
 ### Script files
 
+- `scripts/deploy-android-apk.mjs`
+- `scripts/deploy-android-release.mjs`
 - `scripts/deploy-front-oss.mjs`
 - `scripts/migrate-file-storage-to-oss.mjs`
 - `scripts/oss-deploy-lib.mjs`
@@ -54,6 +56,10 @@ If you need one of these, run it explicitly from the file that already exists in
 
 ### Release and deploy commands
 
+- Android APK build + OSS publish from repo root:
+  `node scripts/deploy-android-apk.mjs`
+- Android APK publish only from repo root:
+  `node scripts/deploy-android-release.mjs`
 - Frontend OSS publish from repo root:
   `node scripts/deploy-front-oss.mjs`
 - Frontend OSS dry run from repo root:
@@ -65,7 +71,9 @@ If you need one of these, run it explicitly from the file that already exists in
 
 Important:
 
-- `scripts/deploy-front-oss.mjs` expects OSS credentials from environment variables or `.env.oss.local`.
+- `scripts/deploy-android-apk.mjs` 会顺序执行前端构建、`npx cap sync android`、Android `assembleDebug`、前端静态站发布，以及独立的 APK 发布脚本，并自动补回 `capacitor-cordova-android-plugins/build.gradle` 里的 Google Maven 镜像配置。
+- `scripts/deploy-android-release.mjs` 只负责把 APK 和 `android/releases/latest.json` 发布到 Android 独立对象路径，默认复用文件桶 scope，而不是前端静态桶。
+- `scripts/deploy-front-oss.mjs` 现在只发布 `front/dist` 静态站资源，不再上传 APK。
 - The repository does not currently contain a checked-in backend deploy script. Backend delivery is therefore a two-step process: build `backend/target/yoyuzh-portal-backend-0.0.1-SNAPSHOT.jar`, then upload/restart it via `ssh` or `scp` using the real target host and remote procedure that are available at deploy time.
 - Do not invent a backend service name, process manager, remote directory, or restart command. Discover them from the server or ask only if they cannot be discovered safely.
 

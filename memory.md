@@ -30,10 +30,14 @@
   - 2026-04-03 Android 打包已确认走“Vite 产物 -> `npx cap sync android` -> Gradle `assembleDebug`”链路；当前应用包名为 `xyz.yoyuzh.portal`
   - 2026-04-03 Android WebView 壳内的前端 API 基址已改成运行时判断：Web 站点继续走相对 `/api`，Capacitor `localhost` 壳在 `http://localhost` 与 `https://localhost` 下都会默认直连 `https://api.yoyuzh.xyz/api`，避免 APK 把请求误打到应用内本地地址；后端 CORS 也同步放行了 `https://localhost`
   - 2026-04-03 由于这台机器直连 `dl.google.com` / Android Maven 仓库会 TLS 握手失败，Android 构建已改走阿里云 Google Maven 镜像，并通过 `redirector.gvt1.com` 手动落本机 SDK 包
-  - 2026-04-03 总览页已新增 Android APK 下载入口；Web 桌面端和移动端总览都会展示稳定下载链接 `/downloads/yoyuzh-portal.apk`
+  - 2026-04-03 总览页已新增 Android APK 下载入口；当前 Web 总览已改走后端公开下载口 `https://api.yoyuzh.xyz/api/app/android/download`，不再直接指向前端静态桶
   - 2026-04-03 鉴权链路已按客户端类型拆分会话：前端请求会带 `X-Yoyuzh-Client`，后端分别维护桌面和移动的活跃 `sid` 与 refresh token 集合，因此桌面 Web 与移动端 APK 可同时登录；移动端总览页在 Capacitor 原生壳内会显示“检查更新”，通过探测 OSS 上 APK 最新修改时间并直接跳转下载链接完成更新
-  - 2026-04-03 前端 OSS 发布脚本已支持额外上传 `front/android/app/build/outputs/apk/debug/app-debug.apk` 到对象存储稳定 key `downloads/yoyuzh-portal.apk`；这样不会把 APK 混进 `front/dist`，也不会在后续 `npx cap sync android` 时被再次打包进 Android 壳
+  - 2026-04-03 前端 OSS 发布脚本现已收口为“只发布 `front/dist` 静态站”，不再上传 APK
+  - 2026-04-03 已新增仓库根脚本 `node scripts/deploy-android-release.mjs`，只负责把 APK 与 `android/releases/latest.json` 上传到 Android 独立对象路径；`node scripts/deploy-android-apk.mjs` 会在前端静态站发布后自动调用它
+  - 2026-04-03 Android 更新链路已改为“APK 存在文件桶独立路径 `android/releases/`，后端 `/api/app/android/latest` 读取 `android/releases/latest.json` 返回带版本号的后端下载地址，`/api/app/android/download` 直接分发 APK 字节流”；这样 App 内检查更新和 Web 下载都不会再误用前端静态桶旧包，也不依赖对象存储预签名下载
   - 2026-04-03 网盘已新增回收站：`DELETE /api/files/{id}` 现在会把文件或整个目录树软删除进回收站，默认保留 10 天；前端桌面网盘页在左侧目录栏最下方新增“回收站”入口，移动端网盘页头也可进入回收站查看并恢复
+  - 2026-04-05 Git 远程已从 GitHub 迁到自建私有 Gitea：`https://git.yoyuzh.xyz/yoyuz/my_site.git`；当前本地 `main` 已推到新的 `origin/main`
+  - 2026-04-05 因为仓库现在是私人仓库，`.gitignore` 已放开 `账号密码.txt`、`开发测试账号.md`、`.env.local`、`.env.*.local`、`.env.oss.local`、`front/.env.production` 等私有配置文件，后续可以直接纳入版本控制
   - 根目录 README 已重写为中文公开版 GitHub 风格
   - VS Code 工作区已补 `.vscode/settings.json`、`.vscode/extensions.json`、`lombok.config`，并在 `backend/pom.xml` 显式声明了 Lombok annotation processor
 - 进行中:
@@ -92,13 +96,20 @@
 - 2026-04-02 共享 blob 上线后校验：`portal_file.blob_id` 列已存在，普通文件 `blob_id IS NULL` 数量为 0，`portal_file_blob` 当前共有 54 条记录
 - 2026-04-02 18:45 CST 线上上传报 `Column 'storage_name' cannot be null`，已定位为旧表结构未把 `portal_file.storage_name` 放宽为可空；已在线执行 `ALTER TABLE portal_file MODIFY storage_name varchar(255) NULL` 修复
 - 2026-04-02 19:08 CST 再次发布后端，`my-site-api.service` 启动时间更新为 `2026-04-02 19:08:14 CST`，`https://api.yoyuzh.xyz/swagger-ui.html` 再次确认返回 `200`
+- 2026-04-04 私有 `apk/ipa` 下载链路已改为“后端鉴权后返回短时 `https://api.yoyuzh.xyz/_dl/...` 链接，Nginx `secure_link` 校验通过后再代理到 `dl.yoyuzh.xyz` 对象域名”；这样安装包不再走默认 `*.myqcloud.com` 域名，也不再暴露长期可用的公开 `dl` 直链
+- 2026-04-04 12:48 CST 已将私有 `apk/ipa` 的 `/_dl` 短时签名修复重新部署到生产；`my-site-api.service` 重启成功，`https://api.yoyuzh.xyz/swagger-ui/index.html` 返回 `200`，带签名的 `https://api.yoyuzh.xyz/_dl/...` 实测返回 `200 OK`
+- 2026-04-05 Git 远程 `origin` 已改为私有 Gitea 仓库 `https://git.yoyuzh.xyz/yoyuz/my_site.git`，默认分支 `main` 已建立对 `origin/main` 的跟踪
+- 2026-04-05 仓库当前不再把密码文件、本地环境变量文件和前端生产环境文件视为必须忽略项；提交前要主动区分“想入库的私有配置”与“仍应保留本地的临时产物”
 - Android 本机构建当前默认 SDK 根目录为 `/Users/mac/Library/Android/sdk`
 - Android 本地打包命令链：
   - `cd front && npm run build`
   - `cd front && npx cap sync android`
   - `cd front/android && ./gradlew assembleDebug`
+- Android 一键发包命令：
+  - `node scripts/deploy-android-apk.mjs`
 - Android 调试 APK 当前输出路径：`front/android/app/build/outputs/apk/debug/app-debug.apk`
-- 前端 OSS 发布现会额外把调试 APK 上传到稳定对象 key：`downloads/yoyuzh-portal.apk`
+- Android APK 独立发包命令：
+  - `node scripts/deploy-android-release.mjs`
 - 服务器登录信息保存在本地 `账号密码.txt`，不要把内容写进文档或对外输出
 
 ## 参考资料

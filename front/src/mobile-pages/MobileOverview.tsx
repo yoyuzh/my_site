@@ -24,14 +24,15 @@ import { readCachedValue, writeCachedValue } from '@/src/lib/cache';
 import { resolveStoredFileType } from '@/src/lib/file-type';
 import { getOverviewCacheKey } from '@/src/lib/page-cache';
 import { clearPostLoginPending, hasPostLoginPending, readStoredSession } from '@/src/lib/session';
-import type { FileMetadata, PageResponse, UserProfile } from '@/src/lib/types';
+import type { AndroidReleaseInfo, FileMetadata, PageResponse, UserProfile } from '@/src/lib/types';
 
 import {
-  APK_DOWNLOAD_PUBLIC_URL,
   APK_DOWNLOAD_PATH,
+  formatApkPublishedAtLabel,
   getMobileOverviewApkEntryMode,
   getOverviewLoadErrorMessage,
   getOverviewStorageQuotaLabel,
+  isAndroidReleaseNewer,
   shouldShowOverviewApkDownload,
 } from '@/src/pages/overview-state';
 
@@ -48,6 +49,22 @@ function formatRecentTime(value: string) {
   const diffHours = Math.floor((Date.now() - date.getTime()) / (1000 * 60 * 60));
   if (diffHours < 24) return `${Math.max(diffHours, 0)}小时前`;
   return new Intl.DateTimeFormat('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }).format(date);
+}
+
+async function getInstalledAndroidAppVersion() {
+  try {
+    const { App } = await import('@capacitor/app');
+    const info = await App.getInfo();
+    return {
+      versionName: info.version ?? null,
+      versionCode: info.build ?? null,
+    };
+  } catch {
+    return {
+      versionName: null,
+      versionCode: null,
+    };
+  }
 }
 
 export default function MobileOverview() {
@@ -90,34 +107,49 @@ export default function MobileOverview() {
     setApkActionMessage('');
 
     try {
-      const response = await fetch(APK_DOWNLOAD_PUBLIC_URL, {
-        method: 'HEAD',
-        cache: 'no-store',
+      const [release, installedVersion] = await Promise.all([
+        apiRequest<AndroidReleaseInfo>('/app/android/latest', {
+          method: 'GET',
+        }),
+        getInstalledAndroidAppVersion(),
+      ]);
+
+      const hasNewerRelease = isAndroidReleaseNewer({
+        currentVersionCode: installedVersion.versionCode,
+        currentVersionName: installedVersion.versionName,
+        releaseVersionCode: release.versionCode,
+        releaseVersionName: release.versionName,
       });
-      if (!response.ok) {
-        throw new Error(`检查更新失败 (${response.status})`);
+
+      if (!hasNewerRelease) {
+        setApkActionMessage(
+          installedVersion.versionName
+            ? `当前已是最新版 ${installedVersion.versionName}`
+            : '当前已是最新版'
+        );
+        return;
       }
 
-      const lastModified = response.headers.get('last-modified');
+      const downloadUrl = release.downloadUrl;
+      const publishedAtLabel = formatApkPublishedAtLabel(release.publishedAt);
       setApkActionMessage(
-        lastModified
-          ? `发现最新安装包，更新时间 ${new Intl.DateTimeFormat('zh-CN', {
-              month: '2-digit',
-              day: '2-digit',
-              hour: '2-digit',
-              minute: '2-digit',
-            }).format(new Date(lastModified))}，正在打开下载链接。`
-          : '发现最新安装包，正在打开下载链接。'
+        publishedAtLabel
+          ? `发现新版本 ${release.versionName ?? ''}，更新时间 ${publishedAtLabel}，正在打开下载链接。`
+          : `发现新版本 ${release.versionName ?? ''}，正在打开下载链接。`
       );
 
       if (typeof window !== 'undefined') {
-        const openedWindow = window.open(APK_DOWNLOAD_PUBLIC_URL, '_blank', 'noopener,noreferrer');
+        const openedWindow = window.open(downloadUrl, '_blank', 'noopener,noreferrer');
         if (!openedWindow) {
-          window.location.href = APK_DOWNLOAD_PUBLIC_URL;
+          window.location.href = downloadUrl;
         }
       }
     } catch (error) {
-      setApkActionMessage(error instanceof Error ? error.message : '检查更新失败，请稍后重试');
+      setApkActionMessage(
+        error instanceof Error && error.message
+          ? `更新服务暂时不可用：${error.message}`
+          : '更新服务暂时不可用，请稍后重试'
+      );
     } finally {
       setCheckingApkUpdate(false);
     }
@@ -232,48 +264,6 @@ export default function MobileOverview() {
         </CardContent>
       </Card>
 
-      {showApkDownload || apkEntryMode === 'update' ? (
-        <Card className="glass-panel overflow-hidden border-[#336EFF]/20 relative">
-          <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(51,110,255,0.2),transparent_45%),linear-gradient(180deg,rgba(16,24,40,0.94),rgba(15,23,42,0.88))]" />
-          <CardContent className="relative z-10 p-4 space-y-3">
-            <div className="flex items-start gap-3">
-              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-[#336EFF]/15 text-[#7ea4ff]">
-                <Smartphone className="h-4 w-4" />
-              </div>
-              <div className="space-y-1">
-                <p className="text-sm font-semibold text-white">Android 客户端</p>
-                <p className="text-[11px] leading-5 text-slate-300">
-                  {apkEntryMode === 'update'
-                    ? '在 App 内检查 OSS 上的最新安装包，并跳转到更新下载链接。'
-                    : '总览页可直接下载最新 APK，安装包与前端站点一起托管在 OSS。'}
-                </p>
-              </div>
-            </div>
-            {apkEntryMode === 'update' ? (
-              <button
-                type="button"
-                onClick={() => void handleCheckApkUpdate()}
-                disabled={checkingApkUpdate}
-                className="inline-flex h-10 w-full items-center justify-center rounded-xl bg-[#336EFF] px-4 text-sm font-medium text-white shadow-md shadow-[#336EFF]/20 transition-colors hover:bg-[#2958cc] disabled:cursor-not-allowed disabled:opacity-70"
-              >
-                {checkingApkUpdate ? '检查中...' : '检查更新'}
-              </button>
-            ) : (
-              <a
-                href={APK_DOWNLOAD_PATH}
-                download="yoyuzh-portal.apk"
-                className="inline-flex h-10 w-full items-center justify-center rounded-xl bg-[#336EFF] px-4 text-sm font-medium text-white shadow-md shadow-[#336EFF]/20 transition-colors hover:bg-[#2958cc]"
-              >
-                下载 APK
-              </a>
-            )}
-            {apkActionMessage ? (
-              <p className="text-[11px] leading-5 text-slate-300">{apkActionMessage}</p>
-            ) : null}
-          </CardContent>
-        </Card>
-      ) : null}
-
       {/* 近期文件 (精简版) */}
       <Card className="glass-panel">
         <CardHeader className="flex flex-row items-center justify-between py-3 px-4 pb-2 border-b border-white/5">
@@ -318,6 +308,47 @@ export default function MobileOverview() {
           <ChevronRight className="h-5 w-5 text-cyan-400 opacity-70" />
         </CardContent>
       </Card>
+
+      {showApkDownload || apkEntryMode === 'update' ? (
+        <Card className="glass-panel overflow-hidden border-[#336EFF]/20 relative">
+          <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(51,110,255,0.2),transparent_45%),linear-gradient(180deg,rgba(16,24,40,0.94),rgba(15,23,42,0.88))]" />
+          <CardContent className="relative z-10 p-4 space-y-3">
+            <div className="flex items-start gap-3">
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-[#336EFF]/15 text-[#7ea4ff]">
+                <Smartphone className="h-4 w-4" />
+              </div>
+              <div className="space-y-1">
+                <p className="text-sm font-semibold text-white">Android 客户端</p>
+                <p className="text-[11px] leading-5 text-slate-300">
+                  {apkEntryMode === 'update'
+                    ? '在 App 内检查最新安装包，并跳转到当前版本的下载地址。'
+                    : '总览页可直接下载最新 APK，安装包通过独立发包链路提供。'}
+                </p>
+              </div>
+            </div>
+            {apkEntryMode === 'update' ? (
+              <button
+                type="button"
+                onClick={() => void handleCheckApkUpdate()}
+                disabled={checkingApkUpdate}
+                className="inline-flex h-10 w-full items-center justify-center rounded-xl bg-[#336EFF] px-4 text-sm font-medium text-white shadow-md shadow-[#336EFF]/20 transition-colors hover:bg-[#2958cc] disabled:cursor-not-allowed disabled:opacity-70"
+              >
+                {checkingApkUpdate ? '检查中...' : '检查更新'}
+              </button>
+            ) : (
+              <a
+                href={APK_DOWNLOAD_PATH}
+                className="inline-flex h-10 w-full items-center justify-center rounded-xl bg-[#336EFF] px-4 text-sm font-medium text-white shadow-md shadow-[#336EFF]/20 transition-colors hover:bg-[#2958cc]"
+              >
+                下载 APK
+              </a>
+            )}
+            {apkActionMessage ? (
+              <p className="text-[11px] leading-5 text-slate-300">{apkActionMessage}</p>
+            ) : null}
+          </CardContent>
+        </Card>
+      ) : null}
       
       {/* 留出底部边距给导航栏 */}
       <div className="h-6" />

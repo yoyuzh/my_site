@@ -1,7 +1,73 @@
 import { isNativeAppShellLocation } from '@/src/lib/app-shell';
 
-export const APK_DOWNLOAD_PATH = '/downloads/yoyuzh-portal.apk';
-export const APK_DOWNLOAD_PUBLIC_URL = 'https://yoyuzh.xyz/downloads/yoyuzh-portal.apk';
+export const APK_DOWNLOAD_PATH = 'https://api.yoyuzh.xyz/api/app/android/download';
+export const APK_DOWNLOAD_PUBLIC_URL = 'https://api.yoyuzh.xyz/api/app/android/download';
+
+function normalizeVersionParts(value: string | null | undefined) {
+  if (!value) {
+    return [];
+  }
+
+  return value
+    .split(/[^0-9A-Za-z]+/)
+    .filter(Boolean)
+    .map((part) => (/^\d+$/.test(part) ? Number(part) : part.toLowerCase()));
+}
+
+function compareVersionParts(left: Array<number | string>, right: Array<number | string>) {
+  const length = Math.max(left.length, right.length);
+  for (let index = 0; index < length; index += 1) {
+    const leftPart = left[index] ?? 0;
+    const rightPart = right[index] ?? 0;
+
+    if (leftPart === rightPart) {
+      continue;
+    }
+
+    if (typeof leftPart === 'number' && typeof rightPart === 'number') {
+      return leftPart > rightPart ? 1 : -1;
+    }
+
+    return String(leftPart).localeCompare(String(rightPart), 'en');
+  }
+
+  return 0;
+}
+
+export function isAndroidReleaseNewer({
+  currentVersionCode,
+  currentVersionName,
+  releaseVersionCode,
+  releaseVersionName,
+}: {
+  currentVersionCode?: string | null;
+  currentVersionName?: string | null;
+  releaseVersionCode?: string | null;
+  releaseVersionName?: string | null;
+}) {
+  if (currentVersionCode && releaseVersionCode && /^\d+$/.test(currentVersionCode) && /^\d+$/.test(releaseVersionCode)) {
+    return BigInt(releaseVersionCode) > BigInt(currentVersionCode);
+  }
+
+  if (currentVersionName && releaseVersionName) {
+    return compareVersionParts(normalizeVersionParts(currentVersionName), normalizeVersionParts(releaseVersionName)) < 0;
+  }
+
+  return true;
+}
+
+export function formatApkPublishedAtLabel(publishedAt: string | null) {
+  if (!publishedAt) {
+    return null;
+  }
+
+  return new Intl.DateTimeFormat('zh-CN', {
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+  }).format(new Date(publishedAt));
+}
 
 function formatOverviewStorageSize(size: number) {
   if (size <= 0) {

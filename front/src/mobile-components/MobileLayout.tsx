@@ -51,6 +51,14 @@ export function getMobileViewportOffsetClassNames(isNativeShell = false) {
   };
 }
 
+export function getMobileUploadPanelOffsetClassName(isNativeShell = false) {
+  if (isNativeShell) {
+    return 'top-[calc(3.5rem+1rem+var(--app-safe-area-top))]';
+  }
+
+  return 'top-[calc(3.5rem+0.75rem+var(--app-safe-area-top))]';
+}
+
 type ActiveModal = 'security' | 'settings' | null;
 
 export function getVisibleNavItems(isAdmin: boolean) {
@@ -66,8 +74,9 @@ export function MobileLayout({ children }: LayoutProps = {}) {
   const navigate = useNavigate();
   const { isAdmin, logout, refreshProfile, user } = useAuth();
   const navItems = getVisibleNavItems(isAdmin);
+  const isNativeShell = typeof window !== 'undefined' && isNativeMobileShellLocation(window.location);
   const viewportOffsets = getMobileViewportOffsetClassNames(
-    typeof window !== 'undefined' && isNativeMobileShellLocation(window.location),
+    isNativeShell,
   );
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -333,9 +342,9 @@ export function MobileLayout({ children }: LayoutProps = {}) {
       </main>
 
       {/* Upload Panel (Floating above bottom bar) */}
-      <div className="fixed bottom-20 right-4 left-4 z-40 pointer-events-none">
+      <div className={cn('fixed left-3 right-3 z-40 pointer-events-none', getMobileUploadPanelOffsetClassName(isNativeShell))}>
         <div className="pointer-events-auto">
-          <UploadProgressPanel />
+          <UploadProgressPanel variant="mobile" />
         </div>
       </div>
 

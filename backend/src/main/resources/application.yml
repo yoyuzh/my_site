@@ -31,6 +31,9 @@ app:
     usernames: ${APP_ADMIN_USERNAMES:}
   registration:
     invite-code: ${APP_AUTH_REGISTRATION_INVITE_CODE:}
+  android:
+    metadata-object-key: ${YOYUZH_ANDROID_RELEASE_METADATA_OBJECT_KEY:android/releases/latest.json}
+    download-public-url: ${YOYUZH_ANDROID_DOWNLOAD_PUBLIC_URL:https://api.yoyuzh.xyz/api/app/android/download}
   storage:
     provider: ${YOYUZH_STORAGE_PROVIDER:local}
     max-file-size: ${YOYUZH_STORAGE_MAX_FILE_SIZE:524288000}
@@ -43,6 +46,10 @@ app:
       scope: ${YOYUZH_DOGECLOUD_STORAGE_SCOPE:}
       ttl-seconds: ${YOYUZH_DOGECLOUD_STORAGE_TTL_SECONDS:3600}
       region: ${YOYUZH_DOGECLOUD_S3_REGION:automatic}
+      public-download-base-url: ${YOYUZH_DOGECLOUD_PUBLIC_DOWNLOAD_BASE_URL:}
+      package-download-base-url: ${YOYUZH_PACKAGE_DOWNLOAD_BASE_URL:https://api.yoyuzh.xyz/_dl}
+      package-download-secret: ${YOYUZH_PACKAGE_DOWNLOAD_SECRET:}
+      package-download-ttl-seconds: ${YOYUZH_PACKAGE_DOWNLOAD_TTL_SECONDS:300}
   cors:
     allowed-origins:
       - http://localhost:3000

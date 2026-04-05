@@ -4,11 +4,13 @@ import { test } from 'node:test';
 import {
   APK_DOWNLOAD_PATH,
   APK_DOWNLOAD_PUBLIC_URL,
+  formatApkPublishedAtLabel,
   getDesktopOverviewSectionColumns,
   getDesktopOverviewStretchSection,
   getMobileOverviewApkEntryMode,
   getOverviewLoadErrorMessage,
   getOverviewStorageQuotaLabel,
+  isAndroidReleaseNewer,
   shouldShowOverviewApkDownload,
 } from './overview-state';
 
@@ -26,9 +28,9 @@ test('generic overview failures stay generic when not coming right after login',
   );
 });
 
-test('overview exposes a stable apk download path for oss hosting', () => {
-  assert.equal(APK_DOWNLOAD_PATH, '/downloads/yoyuzh-portal.apk');
-  assert.equal(APK_DOWNLOAD_PUBLIC_URL, 'https://yoyuzh.xyz/downloads/yoyuzh-portal.apk');
+test('overview exposes a backend download endpoint for apk delivery', () => {
+  assert.equal(APK_DOWNLOAD_PATH, 'https://api.yoyuzh.xyz/api/app/android/download');
+  assert.equal(APK_DOWNLOAD_PUBLIC_URL, 'https://api.yoyuzh.xyz/api/app/android/download');
 });
 
 test('overview hides the apk download entry inside the native app shell', () => {
@@ -63,4 +65,31 @@ test('desktop overview stretches the last visible main card to keep column botto
 test('overview storage quota label uses the real quota instead of a fixed 50 GB copy', () => {
   assert.equal(getOverviewStorageQuotaLabel(50 * 1024 * 1024 * 1024), '已使用 / 共 50 GB');
   assert.equal(getOverviewStorageQuotaLabel(100 * 1024 * 1024 * 1024), '已使用 / 共 100 GB');
+});
+
+test('apk published time is formatted into a readable update label', () => {
+  assert.match(formatApkPublishedAtLabel('2026-04-03T08:33:54Z') ?? '', /04[/-]03 16:33/);
+  assert.equal(formatApkPublishedAtLabel(null), null);
+});
+
+test('android update check compares numeric versionCode first', () => {
+  assert.equal(isAndroidReleaseNewer({
+    currentVersionCode: '260931807',
+    releaseVersionCode: '260931807',
+  }), false);
+  assert.equal(isAndroidReleaseNewer({
+    currentVersionCode: '260931807',
+    releaseVersionCode: '260931808',
+  }), true);
+});
+
+test('android update check falls back to versionName comparison', () => {
+  assert.equal(isAndroidReleaseNewer({
+    currentVersionName: '2026.04.03.1807',
+    releaseVersionName: '2026.04.03.1807',
+  }), false);
+  assert.equal(isAndroidReleaseNewer({
+    currentVersionName: '2026.04.03.1807',
+    releaseVersionName: '2026.04.03.1810',
+  }), true);
 });

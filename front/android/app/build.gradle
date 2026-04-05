@@ -1,5 +1,9 @@
 apply plugin: 'com.android.application'
 
+def buildTimestamp = new Date()
+def buildVersionCode = System.getenv('YOYUZH_ANDROID_VERSION_CODE') ?: buildTimestamp.format('yyDDDHHmm')
+def buildVersionName = System.getenv('YOYUZH_ANDROID_VERSION_NAME') ?: buildTimestamp.format('yyyy.MM.dd.HHmm')
+
 android {
     namespace = "xyz.yoyuzh.portal"
     compileSdk = rootProject.ext.compileSdkVersion
@@ -7,8 +11,8 @@ android {
         applicationId "xyz.yoyuzh.portal"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 1
-        versionName "1.0"
+        versionCode Integer.parseInt(buildVersionCode)
+        versionName buildVersionName
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.

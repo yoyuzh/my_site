@@ -10,13 +10,70 @@ import {
   toggleFilesUploadPanelOpen,
   useFilesUploadStore,
 } from '@/src/pages/files-upload-store';
+import type { UploadTask } from '@/src/pages/files-upload';
 
-export function UploadProgressPanel() {
+export type UploadProgressPanelVariant = 'desktop' | 'mobile';
+
+export function getUploadProgressSummary(uploads: UploadTask[]) {
+  const uploadingCount = uploads.filter((task) => task.status === 'uploading').length;
+  const completedCount = uploads.filter((task) => task.status === 'completed').length;
+  const errorCount = uploads.filter((task) => task.status === 'error').length;
+  const cancelledCount = uploads.filter((task) => task.status === 'cancelled').length;
+  const uploadingTasks = uploads.filter((task) => task.status === 'uploading');
+  const activeProgress = uploadingTasks.length > 0
+    ? Math.round(uploadingTasks.reduce((sum, task) => sum + task.progress, 0) / uploadingTasks.length)
+    : uploads.length > 0 && completedCount === uploads.length
+      ? 100
+      : 0;
+
+  if (uploadingCount > 0) {
+    return {
+      title: `已在后台上传 ${uploadingCount} 项`,
+      detail: `${completedCount}/${uploads.length} 已完成 · ${activeProgress}%`,
+      progress: activeProgress,
+    };
+  }
+
+  if (errorCount > 0) {
+    return {
+      title: `上传结束，${errorCount} 项失败`,
+      detail: `${completedCount}/${uploads.length} 已完成`,
+      progress: activeProgress,
+    };
+  }
+
+  if (cancelledCount > 0) {
+    return {
+      title: '上传已停止',
+      detail: `${completedCount}/${uploads.length} 已完成`,
+      progress: activeProgress,
+    };
+  }
+
+  return {
+    title: `上传已完成 ${completedCount} 项`,
+    detail: `${completedCount}/${uploads.length} 已完成`,
+    progress: activeProgress,
+  };
+}
+
+interface UploadProgressPanelProps {
+  className?: string;
+  variant?: UploadProgressPanelVariant;
+}
+
+export function UploadProgressPanel({
+  className,
+  variant = 'desktop',
+}: UploadProgressPanelProps = {}) {
   const { uploads, isUploadPanelOpen } = useFilesUploadStore();
 
   if (uploads.length === 0) {
     return null;
   }
+
+  const summary = getUploadProgressSummary(uploads);
+  const isMobile = variant === 'mobile';
 
   return (
     <AnimatePresence>
@@ -24,7 +81,13 @@ export function UploadProgressPanel() {
         initial={{ opacity: 0, y: 50, scale: 0.95 }}
         animate={{ opacity: 1, y: 0, scale: 1 }}
         exit={{ opacity: 0, y: 50, scale: 0.95 }}
-        className="fixed bottom-6 right-6 z-50 flex w-[min(24rem,calc(100vw-2rem))] flex-col overflow-hidden rounded-xl border border-white/10 bg-[#0f172a]/95 shadow-2xl backdrop-blur-xl"
+        className={cn(
+          'z-50 flex flex-col overflow-hidden border border-white/10 bg-[#0f172a]/95 backdrop-blur-xl',
+          isMobile
+            ? 'w-full rounded-2xl shadow-[0_16px_40px_rgba(15,23,42,0.28)]'
+            : 'fixed bottom-6 right-6 w-[min(24rem,calc(100vw-2rem))] rounded-xl shadow-2xl',
+          className,
+        )}
       >
         <div
           className="flex cursor-pointer items-center justify-between border-b border-white/10 bg-white/5 px-4 py-3 transition-colors hover:bg-white/10"
@@ -32,11 +95,21 @@ export function UploadProgressPanel() {
         >
           <div className="flex items-center gap-2">
             <UploadCloud className="h-4 w-4 text-[#336EFF]" />
-            <span className="text-sm font-medium text-white">
-              上传进度 ({uploads.filter((task) => task.status === 'completed').length}/{uploads.length})
-            </span>
+            <div className="flex min-w-0 flex-col">
+              <span className="text-sm font-medium text-white">
+                {isMobile ? summary.title : `上传进度 (${uploads.filter((task) => task.status === 'completed').length}/${uploads.length})`}
+              </span>
+              {isMobile ? (
+                <span className="text-[11px] text-slate-400">{summary.detail}</span>
+              ) : null}
+            </div>
           </div>
           <div className="flex items-center gap-1">
+            {isMobile ? (
+              <span className="rounded-full bg-[#336EFF]/15 px-2 py-1 text-[11px] font-medium text-[#8fb0ff]">
+                {summary.progress}%
+              </span>
+            ) : null}
             <button type="button" className="rounded p-1 text-slate-400 transition-colors hover:bg-white/10 hover:text-white">
               {isUploadPanelOpen ? <ChevronDown className="h-4 w-4" /> : <ChevronUp className="h-4 w-4" />}
             </button>
@@ -55,7 +128,12 @@ export function UploadProgressPanel() {
 
         <AnimatePresence initial={false}>
           {isUploadPanelOpen && (
-            <motion.div initial={{ height: 0 }} animate={{ height: 'auto' }} exit={{ height: 0 }} className="max-h-80 overflow-y-auto">
+            <motion.div
+              initial={{ height: 0 }}
+              animate={{ height: 'auto' }}
+              exit={{ height: 0 }}
+              className={cn(isMobile ? 'max-h-64 overflow-y-auto' : 'max-h-80 overflow-y-auto')}
+            >
               <div className="space-y-1 p-2">
                 {uploads.map((task) => (
                   <div

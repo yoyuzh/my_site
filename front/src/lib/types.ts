@@ -130,6 +130,14 @@ export interface DownloadUrlResponse {
   url: string;
 }
 
+export interface AndroidReleaseInfo {
+  downloadUrl: string;
+  fileName: string;
+  versionCode: string | null;
+  versionName: string | null;
+  publishedAt: string | null;
+}
+
 export interface CreateFileShareLinkResponse {
   token: string;
   filename: string;

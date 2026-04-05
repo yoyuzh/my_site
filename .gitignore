@@ -15,12 +15,6 @@ frontend-dev.out.log
 frontend-dev.err.log
 *.log
 
-.env.oss.local
-.env.local
-.env.*.local
-front/.env.production
-
-账号密码.txt
 .history/
 .vscode/
 .idea/
@@ -30,7 +24,6 @@ front/.env.production
 !.codex/agents/
 .codex/agents/*
 !.codex/agents/*.toml
-开发测试账号.md
 
 .DS_Store
 *.swp

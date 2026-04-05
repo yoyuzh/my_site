@@ -94,6 +94,17 @@ function getPhaseMessage(mode: TransferMode, phase: SendPhase, errorMessage: str
   }
 }
 
+export function getMobileTransferLayoutClassNames() {
+  return {
+    root: 'relative flex min-h-full flex-col bg-transparent',
+    header: 'sticky top-0 z-30 px-4 py-2',
+    headerPanel: 'glass-panel relative overflow-hidden rounded-[24px] border border-white/12 bg-[#0b1528]/82 px-3.5 py-3 shadow-[0_14px_36px_rgba(8,15,30,0.32)] backdrop-blur-2xl',
+    titlePanel: 'relative overflow-hidden rounded-[18px] px-3.5 pt-3 pb-3',
+    content: 'relative z-10 flex-1 flex flex-col min-w-0 px-4 pt-3 pb-6',
+    sendFileList: 'glass-panel rounded-2xl p-2.5',
+  };
+}
+
 export default function MobileTransfer() {
   const navigate = useNavigate();
   const { ready: authReady, session: authSession } = useAuth();
@@ -116,6 +127,7 @@ export default function MobileTransfer() {
   const [offlineHistoryError, setOfflineHistoryError] = useState('');
   const [selectedOfflineSession, setSelectedOfflineSession] = useState<TransferSessionResponse | null>(null);
   const [historyCopiedSessionId, setHistoryCopiedSessionId] = useState<string | null>(null);
+  const layoutClassNames = getMobileTransferLayoutClassNames();
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const folderInputRef = useRef<HTMLInputElement>(null);
@@ -406,7 +418,7 @@ export default function MobileTransfer() {
   }
 
   return (
-    <div className="relative flex flex-col min-h-full overflow-hidden bg-[#07101D]">
+    <div className={layoutClassNames.root}>
       <div className="pointer-events-none absolute inset-0 z-0">
         <div className="absolute top-[-18%] left-[-22%] h-72 w-72 rounded-full bg-[#336EFF] opacity-20 mix-blend-screen blur-[100px] animate-blob" />
         <div className="absolute top-[10%] right-[-18%] h-80 w-80 rounded-full bg-cyan-500 opacity-16 mix-blend-screen blur-[96px] animate-blob animation-delay-2000" />
@@ -416,35 +428,44 @@ export default function MobileTransfer() {
       <input type="file" multiple className="hidden" ref={fileInputRef} onChange={handleFileSelect} />
       <input type="file" multiple className="hidden" ref={folderInputRef} onChange={handleFileSelect} />
 
-      {/* 顶部标题区 */}
-      <div className="relative z-10 overflow-hidden bg-[url('/noise.png')] px-5 pt-8 pb-4">
-        <div className="absolute top-[-50%] right-[-10%] h-[150%] w-[120%] rounded-full bg-[#336EFF] opacity-15 mix-blend-screen blur-[80px]" />
-        <div className="relative z-10 font-bold text-2xl tracking-wide flex items-center">
-           <Send className="mr-3 w-6 h-6 text-cyan-400" />
-           快传
+      <div className={layoutClassNames.header}>
+        <div className={layoutClassNames.headerPanel}>
+          <div className="absolute inset-0 bg-[#0b1528]/64 backdrop-blur-2xl" />
+          <div className="absolute inset-0 bg-[url('/noise.png')] opacity-30" />
+          <div className="absolute inset-x-0 top-0 h-px bg-white/18" />
+          <div className="absolute top-[-40%] right-[-8%] h-[140%] w-[95%] rounded-full bg-[#336EFF] opacity-14 mix-blend-screen blur-[80px]" />
+          <div className="absolute bottom-[-65%] left-[-8%] h-[120%] w-[55%] rounded-full bg-cyan-400/10 mix-blend-screen blur-[72px]" />
+
+          <div className={layoutClassNames.titlePanel}>
+            <div className="relative z-10 flex items-center text-[1.375rem] font-bold tracking-wide">
+              <Send className="mr-2.5 h-5.5 w-5.5 text-cyan-400" />
+              快传
+            </div>
+          </div>
+
+          {allowSend && (
+            <div className="relative z-10 mt-2.5 flex overflow-hidden rounded-2xl border border-white/8 bg-black/18">
+              <button
+                onClick={() => setActiveTab('send')}
+                className={cn('flex-1 py-3.5 text-sm font-medium transition-colors relative flex items-center justify-center gap-2',
+                  activeTab === 'send' ? 'text-white bg-blue-500/10' : 'text-slate-400')}
+              >
+                <UploadCloud className="w-4 h-4" /> 发送
+              </button>
+              <button
+                onClick={() => setActiveTab('receive')}
+                className={cn('flex-1 py-3.5 text-sm font-medium transition-colors relative flex items-center justify-center gap-2',
+                  activeTab === 'receive' ? 'text-white bg-blue-500/10' : 'text-slate-400')}
+              >
+                <DownloadCloud className="w-4 h-4" /> 接收
+              </button>
+            </div>
+          )}
+          <div className="pointer-events-none absolute inset-x-3 bottom-0 h-px bg-white/8" />
         </div>
       </div>
 
-      {allowSend && (
-        <div className="relative z-10 flex bg-[#0f172a] shadow-md border-b border-white/5 mx-4 mt-2 rounded-2xl overflow-hidden glass-panel shrink-0">
-          <button
-            onClick={() => setActiveTab('send')}
-            className={cn('flex-1 py-3.5 text-sm font-medium transition-colors relative flex items-center justify-center gap-2',
-              activeTab === 'send' ? 'text-white bg-blue-500/10' : 'text-slate-400')}
-          >
-            <UploadCloud className="w-4 h-4" /> 发送
-          </button>
-          <button
-            onClick={() => setActiveTab('receive')}
-            className={cn('flex-1 py-3.5 text-sm font-medium transition-colors relative flex items-center justify-center gap-2',
-              activeTab === 'receive' ? 'text-white bg-blue-500/10' : 'text-slate-400')}
-          >
-            <DownloadCloud className="w-4 h-4" /> 接收
-          </button>
-        </div>
-      )}
-
-      <div className="relative z-10 flex-1 flex flex-col p-4 min-w-0 pb-24">
+      <div className={layoutClassNames.content}>
         {authReady && !isAuthenticated && (
            <div className="mb-4 flex flex-col gap-2 rounded-xl bg-blue-500/10 px-4 py-3 text-xs text-blue-100/90 border border-blue-400/10">
              <p className="leading-relaxed">无需登录即可在线发送、在线接收和离线接收。只有发离线和把离线文件存入网盘时才需要登录。</p>
@@ -520,7 +541,7 @@ export default function MobileTransfer() {
                    </div>
 
                    {/* 文件列表 */}
-                   <div className="glass-panel rounded-2xl p-2.5 max-h-[40vh] overflow-y-auto">
+                   <div className={layoutClassNames.sendFileList}>
                      <p className="text-xs text-slate-500 mb-2 px-2.5 pt-2">共 {selectedFiles.length} 项 / {formatTransferSize(totalSize)}</p>
                      {selectedFiles.map((f, i) => (
                        <div key={i} className="flex px-2.5 py-2 items-center gap-3 bg-white/[0.03] rounded-xl mb-1 hover:bg-white/5 active:bg-white/10 transition-colors">

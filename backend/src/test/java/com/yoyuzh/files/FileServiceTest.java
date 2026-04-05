@@ -15,11 +15,16 @@ import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.mock.web.MockMultipartFile;
 
 import java.io.ByteArrayInputStream;
+import java.net.URI;
 import java.nio.charset.StandardCharsets;
+import java.time.Clock;
+import java.time.Instant;
 import java.time.LocalDateTime;
+import java.time.ZoneOffset;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -498,6 +503,75 @@ class FileServiceTest {
         DownloadUrlResponse response = fileService.getDownloadUrl(user, 22L);
 
         assertThat(response.url()).isEqualTo("https://download.example.com/file");
+    }
+
+    @Test
+    void shouldUseDlUrlForPrivateApkWhenConfigured() {
+        FileStorageProperties properties = new FileStorageProperties();
+        properties.setMaxFileSize(500L * 1024 * 1024);
+        properties.getS3().setPackageDownloadBaseUrl("https://api.yoyuzh.xyz/_dl");
+        properties.getS3().setPackageDownloadSecret("test-secret");
+        properties.getS3().setPackageDownloadTtlSeconds(300);
+        fileService = new FileService(
+                storedFileRepository,
+                fileBlobRepository,
+                fileContentStorage,
+                fileShareLinkRepository,
+                adminMetricsService,
+                properties,
+                Clock.fixed(Instant.parse("2026-04-04T04:30:00Z"), ZoneOffset.UTC)
+        );
+
+        User user = createUser(7L);
+        StoredFile file = createFile(22L, user, "/apps", "安装包.apk");
+        file.setContentType("application/vnd.android.package-archive");
+        when(storedFileRepository.findDetailedById(22L)).thenReturn(Optional.of(file));
+        when(fileContentStorage.supportsDirectDownload()).thenReturn(true);
+
+        DownloadUrlResponse response = fileService.getDownloadUrl(user, 22L);
+
+        URI uri = URI.create(response.url());
+        assertThat(uri.getScheme()).isEqualTo("https");
+        assertThat(uri.getHost()).isEqualTo("api.yoyuzh.xyz");
+        assertThat(uri.getPath()).isEqualTo("/_dl/blobs/blob-22");
+        assertThat(response.url()).contains("expires=1775277300");
+        assertThat(response.url()).contains("md5=1z0AP88pnPz-TpgnYfIT4A");
+        assertThat(response.url()).contains("response-content-disposition=attachment%3B%20filename%3D%22download.apk%22%3B%20filename*%3DUTF-8%27%27%E5%AE%89%E8%A3%85%E5%8C%85.apk");
+        verify(fileContentStorage, never()).createBlobDownloadUrl(any(), any());
+    }
+
+    @Test
+    void shouldRedirectPrivateApkDownloadToDlWhenConfigured() {
+        FileStorageProperties properties = new FileStorageProperties();
+        properties.setMaxFileSize(500L * 1024 * 1024);
+        properties.getS3().setPackageDownloadBaseUrl("https://api.yoyuzh.xyz/_dl");
+        properties.getS3().setPackageDownloadSecret("test-secret");
+        properties.getS3().setPackageDownloadTtlSeconds(300);
+        fileService = new FileService(
+                storedFileRepository,
+                fileBlobRepository,
+                fileContentStorage,
+                fileShareLinkRepository,
+                adminMetricsService,
+                properties,
+                Clock.fixed(Instant.parse("2026-04-04T04:30:00Z"), ZoneOffset.UTC)
+        );
+
+        User user = createUser(7L);
+        StoredFile file = createFile(22L, user, "/apps", "app-debug.apk");
+        file.setContentType("application/vnd.android.package-archive");
+        when(storedFileRepository.findDetailedById(22L)).thenReturn(Optional.of(file));
+        when(fileContentStorage.supportsDirectDownload()).thenReturn(true);
+
+        ResponseEntity<?> response = fileService.download(user, 22L);
+
+        assertThat(response.getStatusCode().value()).isEqualTo(302);
+        assertThat(response.getHeaders().getLocation()).isNotNull();
+        assertThat(response.getHeaders().getLocation().getHost()).isEqualTo("api.yoyuzh.xyz");
+        assertThat(response.getHeaders().getLocation().getPath()).isEqualTo("/_dl/blobs/blob-22");
+        assertThat(response.getHeaders().getLocation().getQuery()).contains("expires=1775277300");
+        assertThat(response.getHeaders().getLocation().getQuery()).contains("md5=1z0AP88pnPz-TpgnYfIT4A");
+        verify(fileContentStorage, never()).createBlobDownloadUrl(any(), any());
     }
 
     @Test

@@ -181,6 +181,9 @@ YOYUZH_DOGECLOUD_API_SECRET_KEY=...
 YOYUZH_DOGECLOUD_FRONT_SCOPE=yoyuzh-front
 YOYUZH_DOGECLOUD_FRONT_TTL_SECONDS=3600
 YOYUZH_DOGECLOUD_FRONT_PREFIX=
+YOYUZH_DOGECLOUD_STORAGE_SCOPE=yoyuzh-files
+YOYUZH_DOGECLOUD_ANDROID_SCOPE=yoyuzh-files
+YOYUZH_ANDROID_RELEASE_PREFIX=android/releases
 ```
 
 参考文件：
@@ -203,6 +206,29 @@ node scripts/deploy-front-oss.mjs
 ```bash
 node scripts/deploy-front-oss.mjs --dry-run
 node scripts/deploy-front-oss.mjs --skip-build
+```
+
+### Android APK 发包
+
+在仓库根目录执行：
+
+```bash
+node scripts/deploy-android-apk.mjs
+```
+
+这个脚本会自动完成以下步骤：
+
+- `cd front && npm run build`
+- `cd front && npx cap sync android`
+- 自动补回 Android 插件工程里的 Google Maven 镜像配置
+- `cd front/android && ./gradlew assembleDebug`
+- `node scripts/deploy-front-oss.mjs --skip-build`
+- `node scripts/deploy-android-release.mjs`
+
+如果只想重新上传 APK，不想重发前端静态站，可以直接执行：
+
+```bash
+node scripts/deploy-android-release.mjs
 ```
 
 ### 阿里云 OSS 到多吉云 S3 迁移

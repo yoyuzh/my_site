@@ -121,6 +121,15 @@ interface UiFile {
 
 type NetdiskTargetAction = 'move' | 'copy';
 
+export function getMobileFilesLayoutClassNames() {
+  return {
+    root: 'relative flex min-h-full flex-col text-white bg-transparent',
+    toolbar: 'sticky top-0 z-30 flex-none px-4 py-2',
+    toolbarInner: 'glass-panel flex items-center gap-3 rounded-[22px] border border-white/10 bg-[#0f172a]/72 px-3.5 py-2.5 shadow-md backdrop-blur-2xl',
+    list: 'relative z-10 flex-1 px-3 pt-2 pb-4 space-y-1.5',
+  };
+}
+
 export default function MobileFiles() {
   const navigate = useNavigate();
   const initialPath = readCachedValue<string[]>(getFilesLastPathCacheKey()) ?? [];
@@ -152,6 +161,7 @@ export default function MobileFiles() {
   
   // Floating Action Button
   const [fabOpen, setFabOpen] = useState(false);
+  const layoutClassNames = getMobileFilesLayoutClassNames();
 
   const loadCurrentPath = async (pathParts: string[]) => {
     const response = await apiRequest<PageResponse<FileMetadata>>(
@@ -437,7 +447,7 @@ export default function MobileFiles() {
   };
 
   return (
-    <div className="flex flex-col h-[calc(100vh-3.5rem)] relative overflow-hidden text-white bg-[#07101D]">
+    <div className={layoutClassNames.root}>
       <div className="pointer-events-none absolute inset-0 z-0">
         <div className="absolute top-[-12%] left-[-24%] h-72 w-72 rounded-full bg-[#336EFF] opacity-20 mix-blend-screen blur-[100px] animate-blob" />
         <div className="absolute top-[22%] right-[-20%] h-80 w-80 rounded-full bg-purple-600 opacity-20 mix-blend-screen blur-[100px] animate-blob animation-delay-2000" />
@@ -448,8 +458,8 @@ export default function MobileFiles() {
       <input type="file" ref={directoryInputRef} className="hidden" onChange={handleFolderChange} />
       
       {/* Top Header - Path navigation */}
-      <div className="flex-none px-4 py-3 bg-[#0f172a]/80 border-b border-white/5 sticky top-0 z-20 shadow-md backdrop-blur-xl">
-        <div className="flex items-center gap-3">
+      <div className={layoutClassNames.toolbar}>
+        <div className={layoutClassNames.toolbarInner}>
           <div className="flex min-w-0 flex-1 flex-nowrap items-center text-sm overflow-x-auto custom-scrollbar whitespace-nowrap">
             {currentPath.length > 0 && (
               <button className="mr-3 p-1.5 rounded-full bg-white/5 text-slate-300 active:bg-white/10" onClick={handleBackClick}>
@@ -476,7 +486,7 @@ export default function MobileFiles() {
       </div>
 
       {/* File List */}
-      <div className="relative z-10 flex-1 overflow-y-auto px-3 py-2 space-y-1.5 pb-24">
+      <div className={layoutClassNames.list}>
         {currentFiles.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-48 text-slate-500">
             <FolderPlus className="w-10 h-10 mb-3 opacity-20" />

@@ -1,6 +1,7 @@
 package com.yoyuzh;
 
 import com.yoyuzh.config.AdminProperties;
+import com.yoyuzh.config.AndroidReleaseProperties;
 import com.yoyuzh.config.CorsProperties;
 import com.yoyuzh.config.FileStorageProperties;
 import com.yoyuzh.config.JwtProperties;
@@ -15,7 +16,8 @@ import org.springframework.boot.context.properties.EnableConfigurationProperties
         FileStorageProperties.class,
         CorsProperties.class,
         AdminProperties.class,
-        RegistrationProperties.class
+        RegistrationProperties.class,
+        AndroidReleaseProperties.class
 })
 public class PortalBackendApplication {
 

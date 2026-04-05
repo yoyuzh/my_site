@@ -50,6 +50,8 @@ public class SecurityConfig {
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers("/api/auth/**", "/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html")
                         .permitAll()
+                        .requestMatchers("/api/app/android/latest", "/api/app/android/download", "/api/app/android/download/*")
+                        .permitAll()
                         .requestMatchers("/api/transfer/**")
                         .permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/files/share-links/*")

@@ -23,8 +23,6 @@ const repoRoot = process.cwd();
 const frontDir = path.join(repoRoot, 'front');
 const distDir = path.join(frontDir, 'dist');
 const envFilePath = path.join(repoRoot, '.env.oss.local');
-const apkSourcePath = path.join(frontDir, 'android', 'app', 'build', 'outputs', 'apk', 'debug', 'app-debug.apk');
-const apkObjectPath = 'downloads/yoyuzh-portal.apk';
 
 function parseArgs(argv) {
   return {
@@ -155,48 +153,6 @@ async function uploadSpaAliases({
   }
 }
 
-async function uploadApkIfPresent({
-  bucket,
-  endpoint,
-  region,
-  accessKeyId,
-  secretAccessKey,
-  sessionToken,
-  remotePrefix,
-  dryRun,
-}) {
-  try {
-    await fs.access(apkSourcePath);
-  } catch (error) {
-    if (error && typeof error === 'object' && 'code' in error && error.code === 'ENOENT') {
-      console.warn(`skip apk upload: not found at ${apkSourcePath}`);
-      return;
-    }
-
-    throw error;
-  }
-
-  const objectKey = buildObjectKey(remotePrefix, apkObjectPath);
-
-  if (dryRun) {
-    console.log(`[dry-run] upload ${apkObjectPath} -> ${objectKey}`);
-    return;
-  }
-
-  await uploadFile({
-    bucket,
-    endpoint,
-    region,
-    objectKey,
-    filePath: apkSourcePath,
-    contentTypeOverride: 'application/vnd.android.package-archive',
-    accessKeyId,
-    secretAccessKey,
-    sessionToken,
-  });
-  console.log(`uploaded ${objectKey}`);
-}
-
 async function main() {
   const {dryRun, skipBuild} = parseArgs(process.argv.slice(2));
 
@@ -259,17 +215,6 @@ async function main() {
     endpoint,
     region,
     distIndexPath: path.join(distDir, 'index.html'),
-    accessKeyId,
-    secretAccessKey,
-    sessionToken,
-    remotePrefix,
-    dryRun,
-  });
-
-  await uploadApkIfPresent({
-    bucket,
-    endpoint,
-    region,
     accessKeyId,
     secretAccessKey,
     sessionToken,
