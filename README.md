@@ -14,7 +14,7 @@
 
 - 用户注册与登录
 - 邀请码注册
-- 同账号仅允许一台设备同时登录
+- 同账号支持桌面端与移动端同时在线
 - 个人资料管理
 
 ### 网盘
@@ -71,6 +71,7 @@
 ├── backend/      Spring Boot 后端
 ├── front/        React 前端
 ├── docs/         计划与文档
+├── docs/agents/  agent 补充交接文档
 ├── scripts/      部署与辅助脚本
 ├── data/         本地数据或辅助文件
 └── 模板/         页面参考模板
@@ -88,16 +89,30 @@
 
 ### 1. 启动后端
 
+先准备根目录环境变量：
+
+```bash
+cp .env.example .env
+```
+
+填好 `APP_JWT_SECRET` 后，在当前 shell 里加载：
+
+```bash
+set -a
+source .env
+set +a
+```
+
 ```bash
 cd backend
-APP_JWT_SECRET=<至少32字节的密钥> mvn spring-boot:run
+mvn spring-boot:run
 ```
 
 如果要使用本地开发配置：
 
 ```bash
 cd backend
-APP_JWT_SECRET=<至少32字节的密钥> mvn spring-boot:run -Dspring-boot.run.profiles=dev
+mvn spring-boot:run -Dspring-boot.run.profiles=dev
 ```
 
 说明：
@@ -144,6 +159,8 @@ mvn package
 
 ## 环境变量
 
+推荐把本地密钥和部署配置统一维护在仓库根目录 `.env`，模板在 `.env.example`。
+
 ### 后端必填
 
 ```env
@@ -171,7 +188,7 @@ YOYUZH_DOGECLOUD_S3_REGION=automatic
 
 ### 前端发布配置
 
-前端发布脚本会从环境变量或 `.env.oss.local` 中读取多吉云 API 凭据，再动态换取临时 S3 密钥。前端静态桶应填写逻辑桶名 `yoyuzh-front`，不要直接把底层 `s3Bucket` 写死到配置里。
+前端发布脚本会优先从仓库根目录 `.env` 读取多吉云 API 凭据，再动态换取临时 S3 密钥；旧 `.env.oss.local` 只保留兼容回退读取。前端静态桶应填写逻辑桶名 `yoyuzh-front`，不要直接把底层 `s3Bucket` 写死到配置里。
 
 常用变量：
 
@@ -188,8 +205,8 @@ YOYUZH_ANDROID_RELEASE_PREFIX=android/releases
 
 参考文件：
 
-- `.env.oss.example`
-- `.env.oss.local`
+- `.env.example`
+- `.env`
 
 ## 部署
 

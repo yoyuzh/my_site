@@ -9,37 +9,18 @@ import {
   createAwsV4Headers,
   encodeObjectKey,
   getCacheControl,
+  loadRepoEnv,
   normalizeEndpoint,
-  parseSimpleEnv,
   requestDogeCloudTemporaryS3Session,
 } from './oss-deploy-lib.mjs';
 
 const repoRoot = process.cwd();
-const envFilePath = path.join(repoRoot, '.env.oss.local');
 const apkSourcePath = path.join(repoRoot, 'front', 'android', 'app', 'build', 'outputs', 'apk', 'debug', 'app-debug.apk');
 
 function parseArgs(argv) {
   return {
     dryRun: argv.includes('--dry-run'),
   };
-}
-
-async function loadEnvFileIfPresent() {
-  try {
-    const raw = await fs.readFile(envFilePath, 'utf-8');
-    const values = parseSimpleEnv(raw);
-    for (const [key, value] of Object.entries(values)) {
-      if (!process.env[key]) {
-        process.env[key] = value;
-      }
-    }
-  } catch (error) {
-    if (error && typeof error === 'object' && 'code' in error && error.code === 'ENOENT') {
-      return;
-    }
-
-    throw error;
-  }
 }
 
 function requireEnv(name) {
@@ -133,7 +114,7 @@ async function uploadFile({
 
 async function main() {
   const {dryRun} = parseArgs(process.argv.slice(2));
-  await loadEnvFileIfPresent();
+  await loadRepoEnv({repoRoot});
 
   const androidScope = getAndroidReleaseScope();
   if (!androidScope) {

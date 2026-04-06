@@ -15,17 +15,24 @@
 
 ## 启动
 
+推荐先在仓库根目录准备并加载 `.env`：
+
+```bash
+cp .env.example .env
+set -a
+source ../.env
+set +a
+```
+
 默认配置：
 
 ```bash
-APP_JWT_SECRET=<至少32字节的随机密钥> \
 mvn spring-boot:run
 ```
 
 本地联调建议使用 `dev` 环境：
 
 ```bash
-APP_JWT_SECRET=<至少32字节的随机密钥> \
 mvn spring-boot:run -Dspring-boot.run.profiles=dev
 ```
 

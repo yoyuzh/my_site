@@ -19,6 +19,9 @@ frontend-dev.err.log
 .vscode/
 .idea/
 .gemini/
+.env
+.env.local
+.env.*.local
 .codex/*
 !.codex/config.toml
 !.codex/agents/

@@ -33,7 +33,7 @@ Important:
 - `npm run lint` is the current TypeScript check because it runs `tsc --noEmit`.
 - There is no separate ESLint script.
 - There is no separate `typecheck` script beyond `npm run lint`.
-- OSS publishing uses `scripts/deploy-front-oss.mjs`, which reads credentials from environment variables or `.env.oss.local`.
+- OSS publishing uses `scripts/deploy-front-oss.mjs`, which reads credentials from environment variables or the repository root `.env` file, with `.env.oss.local` kept only as a legacy fallback.
 
 ## Frontend rules
 

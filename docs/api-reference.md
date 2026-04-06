@@ -410,5 +410,12 @@
 1. `memory.md`
 2. `docs/architecture.md`
 3. `docs/api-reference.md`
-4. `backend/src/main/java/com/yoyuzh/config/SecurityConfig.java`
-5. 对应业务模块的 `Controller + Service`
+4. `AGENTS.md`
+5. `CLAUDE.md`
+6. `backend/src/main/java/com/yoyuzh/config/SecurityConfig.java`
+7. 对应业务模块的 `Controller + Service`
+
+补充说明：
+
+- 根目录 `.env` 现在是本地密钥和部署参数的统一入口
+- 额外的交接背景可查看 `docs/agents/handoff.md`

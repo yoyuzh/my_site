@@ -13,40 +13,21 @@ import {
   getFrontendSpaAliasKeys,
   getCacheControl,
   getContentType,
+  loadRepoEnv,
   listFiles,
   normalizeEndpoint,
-  parseSimpleEnv,
   requestDogeCloudTemporaryS3Session,
 } from './oss-deploy-lib.mjs';
 
 const repoRoot = process.cwd();
 const frontDir = path.join(repoRoot, 'front');
 const distDir = path.join(frontDir, 'dist');
-const envFilePath = path.join(repoRoot, '.env.oss.local');
 
 function parseArgs(argv) {
   return {
     dryRun: argv.includes('--dry-run'),
     skipBuild: argv.includes('--skip-build'),
   };
-}
-
-async function loadEnvFileIfPresent() {
-  try {
-    const raw = await fs.readFile(envFilePath, 'utf-8');
-    const values = parseSimpleEnv(raw);
-    for (const [key, value] of Object.entries(values)) {
-      if (!process.env[key]) {
-        process.env[key] = value;
-      }
-    }
-  } catch (error) {
-    if (error && typeof error === 'object' && 'code' in error && error.code === 'ENOENT') {
-      return;
-    }
-
-    throw error;
-  }
 }
 
 function requireEnv(name) {
@@ -156,7 +137,7 @@ async function uploadSpaAliases({
 async function main() {
   const {dryRun, skipBuild} = parseArgs(process.argv.slice(2));
 
-  await loadEnvFileIfPresent();
+  await loadRepoEnv({repoRoot});
 
   const apiAccessKey = requireEnv('YOYUZH_DOGECLOUD_API_ACCESS_KEY');
   const apiSecretKey = requireEnv('YOYUZH_DOGECLOUD_API_SECRET_KEY');

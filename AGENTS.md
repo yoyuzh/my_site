@@ -14,6 +14,7 @@ This repository is split across a Java backend, a Vite/React frontend, a small `
 - `backend/`: Spring Boot 3.3.8, Java 17, Maven, domain packages under `com.yoyuzh.{auth,cqu,files,config,common}`.
 - `front/`: Vite 6, React 19, TypeScript, Tailwind CSS v4, route/page code under `src/pages`, reusable UI under `src/components`, shared logic under `src/lib`.
 - `docs/`: currently contains implementation plans under `docs/superpowers/plans/`.
+- `docs/agents/`: supplementary agent / handoff docs. Keep root `AGENTS.md` as the entrypoint and put extra collaboration notes there instead of scattering more root files.
 - `scripts/`: deployment, migration, smoke, and local startup helpers.
 
 ## Command source of truth
@@ -120,7 +121,7 @@ Important:
 
 ## Repo-specific guardrails
 
-- Do not run `npm` commands at the repository root. This repo has a root `package-lock.json` but no root `package.json`.
+- Do not run `npm` commands at the repository root. The repository root is not an application package; frontend commands belong under `front/`.
 - Frontend API proxying is defined in `front/vite.config.ts`, with `VITE_BACKEND_URL` defaulting to `http://localhost:8080`.
 - Backend local development behavior is split between `backend/src/main/resources/application.yml` and `application-dev.yml`; the `dev` profile uses H2 and mock CQU data.
 - Backend tests already exist under `backend/src/test/java/com/yoyuzh/...`; prefer adding or updating tests in the matching package.

@@ -87,6 +87,7 @@
 ### 2.3 文档与脚本
 
 - `docs/`: 实现计划与补充文档
+- `docs/agents/`: 补充性的 agent / handoff 文档；根目录 `CLAUDE.md` 与 `AGENTS.md` 仍是入口
 - `scripts/`: 前端静态站发布、对象存储迁移和本地辅助脚本
 
 ## 3. 模块划分
@@ -402,6 +403,7 @@ Android 壳补充说明：
 - 仓库根目录没有 `package.json`，不要在根目录执行 `npm`
 - 前端命令只从 `front/package.json` 读取
 - 后端命令只从 `backend/pom.xml` 读取
+- 根目录 `.env` 是当前统一的本地密钥与部署配置入口；`.env.example` 是模板，旧 `.env.oss.local` 仅保留兼容回退
 - 前端 `npm run lint` 实际是 `tsc --noEmit`
 - 后端没有单独 lint 命令
 - 本仓库大量使用 Lombok，VS Code 若出现“final 字段未初始化”之类误报，优先检查 Lombok 扩展、Java Language Server 和 annotation processor
@@ -414,9 +416,14 @@ Android 壳补充说明：
 2. `docs/architecture.md`
 3. `docs/api-reference.md`
 4. `AGENTS.md`
+5. `CLAUDE.md`
 
 如果要继续某个具体功能，再进入对应模块的：
 
 - 前端页面文件
 - 后端 Controller / Service
 - 紧邻测试文件
+
+如果需要额外的交接背景，再补读：
+
+- `docs/agents/handoff.md`

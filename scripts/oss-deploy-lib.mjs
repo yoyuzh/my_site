@@ -299,3 +299,28 @@ export function parseSimpleEnv(rawText) {
 
   return parsed;
 }
+
+export async function loadRepoEnv({
+  repoRoot,
+  candidateFileNames = ['.env.local', '.env', '.env.oss.local'],
+}) {
+  for (const fileName of candidateFileNames) {
+    const filePath = path.join(repoRoot, fileName);
+
+    try {
+      const raw = await fs.readFile(filePath, 'utf-8');
+      const values = parseSimpleEnv(raw);
+      for (const [key, value] of Object.entries(values)) {
+        if (!process.env[key]) {
+          process.env[key] = value;
+        }
+      }
+    } catch (error) {
+      if (error && typeof error === 'object' && 'code' in error && error.code === 'ENOENT') {
+        continue;
+      }
+
+      throw error;
+    }
+  }
+}

@@ -37,7 +37,10 @@
   - 2026-04-03 Android 更新链路已改为“APK 存在文件桶独立路径 `android/releases/`，后端 `/api/app/android/latest` 读取 `android/releases/latest.json` 返回带版本号的后端下载地址，`/api/app/android/download` 直接分发 APK 字节流”；这样 App 内检查更新和 Web 下载都不会再误用前端静态桶旧包，也不依赖对象存储预签名下载
   - 2026-04-03 网盘已新增回收站：`DELETE /api/files/{id}` 现在会把文件或整个目录树软删除进回收站，默认保留 10 天；前端桌面网盘页在左侧目录栏最下方新增“回收站”入口，移动端网盘页头也可进入回收站查看并恢复
   - 2026-04-05 Git 远程已从 GitHub 迁到自建私有 Gitea：`https://git.yoyuzh.xyz/yoyuz/my_site.git`；当前本地 `main` 已推到新的 `origin/main`
-  - 2026-04-05 因为仓库现在是私人仓库，`.gitignore` 已放开 `账号密码.txt`、`开发测试账号.md`、`.env.local`、`.env.*.local`、`.env.oss.local`、`front/.env.production` 等私有配置文件，后续可以直接纳入版本控制
+  - 2026-04-06 已把本地项目密钥和部署元信息统一收口到仓库根目录 `.env`，模板文件改为 `.env.example`；前端 / Android 发布脚本现在优先读取 `.env`，旧 `.env.oss.local` 只作为兼容回退，不再作为主入口
+  - 2026-04-06 已删除根目录 `账号密码.txt`，服务器 SSH 登录信息改为放在根目录 `.env`
+  - 2026-04-06 已把补充型 handoff 文档收口到 `docs/agents/handoff.md`；`CLAUDE.md` 继续保留在根目录作为 agent 入口，额外的 `NEXT_CODEX_HANDOFF.md` 与目录说明文档已删除
+  - 2026-04-06 已确认前端当前只是在源码层使用 `front/src/components/ui/*` 组件，不依赖根目录 `shadcn` CLI；因此已删除根目录 `package.json`、`package-lock.json`、`components.json` 和根目录 `node_modules`
   - 根目录 README 已重写为中文公开版 GitHub 风格
   - VS Code 工作区已补 `.vscode/settings.json`、`.vscode/extensions.json`、`lombok.config`，并在 `backend/pom.xml` 显式声明了 Lombok annotation processor
 - 进行中:
@@ -75,6 +78,7 @@
 - [ ] 前端构建仍有 chunk size warning，目前不阻塞发布，但后续可以考虑做更细的拆包
 - [ ] 线上前端 bundle 当前仍内嵌 `https://api.yoyuzh.xyz/api`，API 子域名异常时会直接表现为“网络异常/登录失败”
 - [ ] 当前 Android 工程里的 Google Maven 镜像改动有一部分落在生成/依赖文件中；如果后续升级 Capacitor 或重新 `npm install`，需要重新确认 `front/android/build.gradle`、`front/android/capacitor-cordova-android-plugins/build.gradle`、`front/node_modules/@capacitor/android/capacitor/build.gradle` 的仓库源仍指向可访问镜像
+- [ ] 根目录目前仍有 `开发测试账号.md`、`需求文档.md`、`模板/` 等非运行时资料，后续如需继续瘦身可再决定是否迁入 `docs/` 或单独资料目录
 
 ## 关键约束
 (只写这个任务特有的限制，区别于项目通用规则)
@@ -82,6 +86,7 @@
 - 前端真实命令以 `front/package.json` 为准；`npm run lint` 实际是 `tsc --noEmit`
 - 后端真实命令以 `backend/pom.xml` / `backend/README.md` 为准；常用的是 `mvn test` 和 `mvn package`
 - 修改文件时默认用 `apply_patch`
+- 根目录 `.env` 现在是本地密钥、部署参数和服务器 SSH 元信息的统一入口；`.env.example` 是模板，`.env.oss.local` 不再作为主入口
 - 已知线上后端服务名是 `my-site-api.service`
 - 已知线上后端运行包路径是 `/opt/yoyuzh/yoyuzh-portal-backend.jar`
 - 已知新服务器公网 IP 是 `1.14.49.201`
@@ -110,13 +115,14 @@
 - Android 调试 APK 当前输出路径：`front/android/app/build/outputs/apk/debug/app-debug.apk`
 - Android APK 独立发包命令：
   - `node scripts/deploy-android-release.mjs`
-- 服务器登录信息保存在本地 `账号密码.txt`，不要把内容写进文档或对外输出
+- 服务器登录信息保存在根目录 `.env`，不要把内容写进文档或对外输出
 
 ## 参考资料
 (相关链接、文档片段、背景资料)
 - 根目录说明: `README.md`
 - 后端说明: `backend/README.md`
 - 仓库协作规范: `AGENTS.md`
+- agent / handoff 补充文档: `docs/agents/handoff.md`
 - 前端/后端工作区配置: `.vscode/settings.json`、`.vscode/extensions.json`
 - Lombok 配置: `lombok.config`
 - 最近关键实现位置:
