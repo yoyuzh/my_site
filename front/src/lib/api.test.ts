@@ -1,7 +1,16 @@
 import assert from 'node:assert/strict';
 import { afterEach, beforeEach, test } from 'node:test';
 
-import { apiBinaryUploadRequest, apiRequest, apiUploadRequest, shouldRetryRequest, toNetworkApiError } from './api';
+import {
+  YOYUZH_CLIENT_ID_HEADER,
+  apiBinaryUploadRequest,
+  apiRequest,
+  apiUploadRequest,
+  apiV2Request,
+  resolveYoyuzhClientId,
+  shouldRetryRequest,
+  toNetworkApiError,
+} from './api';
 import { clearStoredSession, readStoredSession, saveStoredSession } from './session';
 
 class MemoryStorage implements Storage {
@@ -183,7 +192,49 @@ test('apiRequest attaches bearer token and unwraps response payload', async () =
   assert.ok(request instanceof Request);
   assert.equal(request.headers.get('Authorization'), 'Bearer token-123');
   assert.equal(request.headers.get('X-Yoyuzh-Client'), 'desktop');
+  assert.equal(request.headers.get(YOYUZH_CLIENT_ID_HEADER), resolveYoyuzhClientId());
   assert.equal(request.url, 'http://localhost/api/files/recent');
+});
+
+test('apiV2Request prefixes v2 paths and attaches a stable client id header', async () => {
+  let request: Request | URL | string | undefined;
+
+  globalThis.fetch = async (input, init) => {
+    request =
+      input instanceof Request
+        ? input
+        : new Request(new URL(String(input), 'http://localhost'), init);
+    return new Response(
+      JSON.stringify({
+        code: 0,
+        msg: 'success',
+        data: {
+          status: 'ok',
+          apiVersion: 'v2',
+        },
+      }),
+      {
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      },
+    );
+  };
+
+  const payload = await apiV2Request<{status: string; apiVersion: string}>('/site/ping');
+
+  assert.deepEqual(payload, {status: 'ok', apiVersion: 'v2'});
+  assert.ok(request instanceof Request);
+  assert.equal(request.url, 'http://localhost/api/v2/site/ping');
+  assert.equal(request.headers.get(YOYUZH_CLIENT_ID_HEADER), resolveYoyuzhClientId());
+});
+
+test('resolveYoyuzhClientId reuses the same generated client id for later requests', () => {
+  const firstClientId = resolveYoyuzhClientId();
+  const secondClientId = resolveYoyuzhClientId();
+
+  assert.equal(secondClientId, firstClientId);
+  assert.match(firstClientId, /^yoyuzh-client-[a-zA-Z0-9-]+$/);
 });
 
 test('apiRequest uses the production api origin inside the Capacitor localhost shell', async () => {
@@ -338,6 +389,7 @@ test('apiUploadRequest attaches auth header and forwards upload progress', async
   assert.equal(request.url, '/api/files/upload?path=%2F');
   assert.equal(request.headers.get('authorization'), 'Bearer token-456');
   assert.equal(request.headers.get('accept'), 'application/json');
+  assert.equal(request.headers.get(YOYUZH_CLIENT_ID_HEADER.toLowerCase()), resolveYoyuzhClientId());
   assert.equal(request.requestBody, formData);
 
   request.triggerProgress(128, 512);

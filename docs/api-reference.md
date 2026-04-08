@@ -419,3 +419,13 @@
 
 - 根目录 `.env` 现在是本地密钥和部署参数的统一入口
 - 额外的交接背景可查看 `docs/agents/handoff.md`
+## 2026-04-08 API v2 阶段 1 补充
+
+`GET /api/v2/site/ping`
+
+说明：
+
+- 公开接口，不需要登录。
+- 当前是 v2 API 的最小边界探针，返回结构为 `{ "code": 0, "msg": "success", "data": { "status": "ok", "apiVersion": "v2" } }`。
+- v2 错误响应开始使用独立 `ApiV2ErrorCode` 范围；旧 `/api/**` 接口暂不迁移。
+- 前端访问 v2 接口时可通过 `apiV2Request()` 自动拼接 `/api/v2/**`，内部请求会携带 `X-Yoyuzh-Client-Id`。

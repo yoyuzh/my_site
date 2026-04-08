@@ -427,3 +427,8 @@ Android 壳补充说明：
 如果需要额外的交接背景，再补读：
 
 - `docs/agents/handoff.md`
+## 2026-04-08 API v2 阶段 1 补充
+
+- 后端新增 `com.yoyuzh.api.v2` 作为新版 API 的独立边界，当前只暴露公开健康检查 `GET /api/v2/site/ping`。
+- v2 边界使用独立的 `ApiV2Response`、`ApiV2ErrorCode` 和 `ApiV2ExceptionHandler`，暂不替换旧 `com.yoyuzh.common.ApiResponse`。
+- 前端 `front/src/lib/api.ts` 通过 `apiV2Request()` 访问 `/api/v2/**`，并为内部 API 请求附带稳定的 `X-Yoyuzh-Client-Id`，用于后续文件事件流和客户端事件去重。

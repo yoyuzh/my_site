@@ -1,6 +1,7 @@
 backend/target/
 data/
-storage/
+/storage/
+/backend/storage/
 node_modules/
 output/
 tmp/

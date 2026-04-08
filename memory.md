@@ -143,3 +143,8 @@
   - 网盘回收站与恢复: `backend/src/main/java/com/yoyuzh/files/FileService.java`、`backend/src/main/java/com/yoyuzh/files/FileController.java`、`backend/src/main/java/com/yoyuzh/files/StoredFile.java`、`front/src/pages/RecycleBin.tsx`、`front/src/pages/recycle-bin-state.ts`
   - 前端生产 API 基址: `front/.env.production`
   - Capacitor Android 入口与配置: `front/capacitor.config.ts`、`front/android/`
+## 2026-04-08 阶段 1 升级记录
+
+- 已按 Cloudreve 对照升级工程书落地第一阶段最小骨架：后端新增 `/api/v2/site/ping`、`ApiV2Response`、`ApiV2ErrorCode`、`ApiV2Exception` 与 v2 专用异常处理器，旧 `/api/**` 响应模型暂不替换。
+- 前端 `front/src/lib/api.ts` 新增 `X-Yoyuzh-Client-Id` 约定和 `apiV2Request()`，内部 API 请求会携带稳定 client id；外部签名上传 URL 不携带该头。
+- 修正 `.gitignore` 中 `storage/` 误忽略任意层级 `storage` 包的问题，改为只忽略仓库根 `/storage/` 和本地运行数据 `/backend/storage/`，否则 `backend/src/main/java/com/yoyuzh/files/storage/*` 会被误隐藏。

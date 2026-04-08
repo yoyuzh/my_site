@@ -31,8 +31,12 @@ interface ApiBinaryUploadRequestInit {
 const AUTH_REFRESH_PATH = '/auth/refresh';
 const DEFAULT_API_BASE_URL = '/api';
 const DEFAULT_CAPACITOR_API_ORIGIN = 'https://api.yoyuzh.xyz';
+const YOYUZH_CLIENT_ID_STORAGE_KEY = 'yoyuzh.clientId';
+
+export const YOYUZH_CLIENT_ID_HEADER = 'X-Yoyuzh-Client-Id';
 
 let refreshRequestPromise: Promise<boolean> | null = null;
+let fallbackClientId: string | null = null;
 
 export class ApiError extends Error {
   code?: number;
@@ -149,8 +153,41 @@ function normalizePath(path: string) {
   return path.startsWith('/') ? path : `/${path}`;
 }
 
+function resolveV2Path(path: string) {
+  const normalizedPath = normalizePath(path);
+  return normalizedPath.startsWith('/v2/') ? normalizedPath : `/v2${normalizedPath}`;
+}
+
 function shouldAttachPortalClientHeader(path: string) {
   return !/^https?:\/\//.test(path);
+}
+
+function shouldAttachYoyuzhClientIdHeader(path: string) {
+  return !/^https?:\/\//.test(path);
+}
+
+function createYoyuzhClientId() {
+  const randomId =
+    typeof globalThis.crypto?.randomUUID === 'function'
+      ? globalThis.crypto.randomUUID()
+      : Math.random().toString(36).slice(2);
+  return `yoyuzh-client-${randomId}`;
+}
+
+export function resolveYoyuzhClientId() {
+  if (typeof globalThis.localStorage === 'undefined') {
+    fallbackClientId ??= createYoyuzhClientId();
+    return fallbackClientId;
+  }
+
+  const storedClientId = globalThis.localStorage.getItem(YOYUZH_CLIENT_ID_STORAGE_KEY);
+  if (storedClientId) {
+    return storedClientId;
+  }
+
+  const clientId = createYoyuzhClientId();
+  globalThis.localStorage.setItem(YOYUZH_CLIENT_ID_STORAGE_KEY, clientId);
+  return clientId;
 }
 
 function shouldAttemptTokenRefresh(path: string) {
@@ -280,6 +317,9 @@ async function performRequest(path: string, init: ApiRequestInit = {}, allowRefr
   if (shouldAttachPortalClientHeader(path) && !headers.has(PORTAL_CLIENT_HEADER)) {
     headers.set(PORTAL_CLIENT_HEADER, resolvePortalClientType());
   }
+  if (shouldAttachYoyuzhClientIdHeader(path) && !headers.has(YOYUZH_CLIENT_ID_HEADER)) {
+    headers.set(YOYUZH_CLIENT_ID_HEADER, resolveYoyuzhClientId());
+  }
   if (requestBody && !(requestBody instanceof FormData) && !headers.has('Content-Type')) {
     headers.set('Content-Type', 'application/json');
   }
@@ -345,6 +385,10 @@ export async function apiRequest<T>(path: string, init?: ApiRequestInit) {
   return payload.data;
 }
 
+export function apiV2Request<T>(path: string, init?: ApiRequestInit) {
+  return apiRequest<T>(resolveV2Path(path), init);
+}
+
 function apiUploadRequestInternal<T>(path: string, init: ApiUploadRequestInit, allowRefresh: boolean): Promise<T> {
   const session = readStoredSession();
   const headers = new Headers(init.headers);
@@ -354,6 +398,9 @@ function apiUploadRequestInternal<T>(path: string, init: ApiUploadRequestInit, a
   }
   if (shouldAttachPortalClientHeader(path) && !headers.has(PORTAL_CLIENT_HEADER)) {
     headers.set(PORTAL_CLIENT_HEADER, resolvePortalClientType());
+  }
+  if (shouldAttachYoyuzhClientIdHeader(path) && !headers.has(YOYUZH_CLIENT_ID_HEADER)) {
+    headers.set(YOYUZH_CLIENT_ID_HEADER, resolveYoyuzhClientId());
   }
   if (!headers.has('Accept')) {
     headers.set('Accept', 'application/json');
