@@ -429,3 +429,15 @@
 - 当前是 v2 API 的最小边界探针，返回结构为 `{ "code": 0, "msg": "success", "data": { "status": "ok", "apiVersion": "v2" } }`。
 - v2 错误响应开始使用独立 `ApiV2ErrorCode` 范围；旧 `/api/**` 接口暂不迁移。
 - 前端访问 v2 接口时可通过 `apiV2Request()` 自动拼接 `/api/v2/**`，内部请求会携带 `X-Yoyuzh-Client-Id`。
+
+## 2026-04-08 文件实体模型二期第一小步
+
+- 本阶段只新增后端实体和迁移映射，不新增对外 API。
+- 旧 `/api/files/**`、分享、回收站、快传接口继续使用现有 DTO 和响应结构。
+- `StoredFile.primaryEntity` 与 `portal_stored_file_entity` 目前只作为兼容迁移数据，后续阶段稳定后再切换新读写路径。
+
+## 2026-04-08 文件实体模型二期第二小步
+
+- 本阶段不新增对外 API，`/api/files/**`、分享、回收站、快传导入等响应结构保持不变。
+- 后端在旧接口内部开始双写实体模型：上传完成、外部导入、分享导入和网盘复制会继续写 `FileBlob`，同时创建或复用 `FileEntity.VERSION`，并写入 `StoredFile.primaryEntity` 与 `StoredFileEntity(PRIMARY)`。
+- 下载、分享详情、回收站、ZIP 下载仍读取 `StoredFile.blob`；后续阶段稳定后再切换到 `primaryEntity` 读取。

@@ -36,6 +36,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.AdditionalMatchers.aryEq;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentCaptor.forClass;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
@@ -50,6 +51,10 @@ class FileServiceTest {
 
     @Mock
     private FileBlobRepository fileBlobRepository;
+    @Mock
+    private FileEntityRepository fileEntityRepository;
+    @Mock
+    private StoredFileEntityRepository storedFileEntityRepository;
 
     @Mock
     private FileContentStorage fileContentStorage;
@@ -102,6 +107,86 @@ class FileServiceTest {
                         && blob.getObjectKey().startsWith("blobs/")
                         && blob.getSize().equals(5L)
                         && "text/plain".equals(blob.getContentType())));
+    }
+
+    @Test
+    void shouldAttachPrimaryEntityWhenUploadingFile() {
+        User user = createUser(7L);
+        MockMultipartFile multipartFile = new MockMultipartFile(
+                "file", "notes.txt", "text/plain", "hello".getBytes());
+        when(storedFileRepository.existsByUserIdAndPathAndFilename(7L, "/docs", "notes.txt")).thenReturn(false);
+        when(fileBlobRepository.save(any(FileBlob.class))).thenAnswer(invocation -> {
+            FileBlob blob = invocation.getArgument(0);
+            blob.setId(100L);
+            return blob;
+        });
+        when(storedFileRepository.save(any(StoredFile.class))).thenAnswer(invocation -> {
+            StoredFile file = invocation.getArgument(0);
+            file.setId(10L);
+            return file;
+        });
+
+        fileService.upload(user, "/docs", multipartFile);
+
+        var savedFileCaptor = forClass(StoredFile.class);
+        verify(storedFileRepository, times(2)).save(savedFileCaptor.capture());
+        StoredFile storedFile = savedFileCaptor.getAllValues().stream()
+                .filter(file -> !file.isDirectory())
+                .findFirst()
+                .orElseThrow();
+        assertThat(storedFile.getPrimaryEntity()).isNotNull();
+        assertThat(storedFile.getPrimaryEntity().getObjectKey()).isEqualTo(storedFile.getBlob().getObjectKey());
+        assertThat(storedFile.getPrimaryEntity().getEntityType()).isEqualTo(FileEntityType.VERSION);
+        assertThat(storedFile.getPrimaryEntity().getReferenceCount()).isEqualTo(1);
+    }
+
+    @Test
+    void shouldPersistFileEntityAndRelationWhenUploadingFile() {
+        fileService = new FileService(
+                storedFileRepository,
+                fileBlobRepository,
+                fileEntityRepository,
+                storedFileEntityRepository,
+                fileContentStorage,
+                fileShareLinkRepository,
+                adminMetricsService,
+                new FileStorageProperties()
+        );
+        User user = createUser(7L);
+        MockMultipartFile multipartFile = new MockMultipartFile(
+                "file", "notes.txt", "text/plain", "hello".getBytes());
+        when(storedFileRepository.existsByUserIdAndPathAndFilename(7L, "/docs", "notes.txt")).thenReturn(false);
+        when(fileBlobRepository.save(any(FileBlob.class))).thenAnswer(invocation -> {
+            FileBlob blob = invocation.getArgument(0);
+            blob.setId(100L);
+            return blob;
+        });
+        when(fileEntityRepository.findByObjectKeyAndEntityType(org.mockito.ArgumentMatchers.anyString(), eq(FileEntityType.VERSION)))
+                .thenReturn(Optional.empty());
+        when(fileEntityRepository.save(any(FileEntity.class))).thenAnswer(invocation -> {
+            FileEntity entity = invocation.getArgument(0);
+            entity.setId(200L);
+            return entity;
+        });
+        when(storedFileRepository.save(any(StoredFile.class))).thenAnswer(invocation -> {
+            StoredFile file = invocation.getArgument(0);
+            file.setId(10L);
+            return file;
+        });
+
+        fileService.upload(user, "/docs", multipartFile);
+
+        var entityCaptor = forClass(FileEntity.class);
+        verify(fileEntityRepository).save(entityCaptor.capture());
+        assertThat(entityCaptor.getValue().getObjectKey()).startsWith("blobs/");
+        assertThat(entityCaptor.getValue().getEntityType()).isEqualTo(FileEntityType.VERSION);
+        assertThat(entityCaptor.getValue().getCreatedBy()).isSameAs(user);
+
+        var relationCaptor = forClass(StoredFileEntity.class);
+        verify(storedFileEntityRepository).save(relationCaptor.capture());
+        assertThat(relationCaptor.getValue().getStoredFile().getId()).isEqualTo(10L);
+        assertThat(relationCaptor.getValue().getFileEntity().getId()).isEqualTo(200L);
+        assertThat(relationCaptor.getValue().getEntityRole()).isEqualTo("PRIMARY");
     }
 
     @Test
@@ -323,6 +408,10 @@ class FileServiceTest {
         assertThat(response.id()).isEqualTo(20L);
         assertThat(response.path()).isEqualTo("/下载");
         assertThat(file.getBlob()).isSameAs(blob);
+        var copiedFileCaptor = forClass(StoredFile.class);
+        verify(storedFileRepository).save(copiedFileCaptor.capture());
+        assertThat(copiedFileCaptor.getValue().getPrimaryEntity()).isNotNull();
+        assertThat(copiedFileCaptor.getValue().getPrimaryEntity().getObjectKey()).isEqualTo(blob.getObjectKey());
         verify(fileContentStorage, never()).copyFile(any(), any(), any(), any());
     }
 

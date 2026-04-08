@@ -42,6 +42,10 @@ public class StoredFile {
     @JoinColumn(name = "blob_id")
     private FileBlob blob;
 
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "primary_entity_id")
+    private FileEntity primaryEntity;
+
     @Column(name = "storage_name", length = 255)
     private String legacyStorageName;
 
@@ -56,6 +60,9 @@ public class StoredFile {
 
     @Column(name = "created_at", nullable = false)
     private LocalDateTime createdAt;
+
+    @Column(name = "updated_at")
+    private LocalDateTime updatedAt;
 
     @Column(name = "deleted_at")
     private LocalDateTime deletedAt;
@@ -73,6 +80,9 @@ public class StoredFile {
     public void prePersist() {
         if (createdAt == null) {
             createdAt = LocalDateTime.now();
+        }
+        if (updatedAt == null) {
+            updatedAt = createdAt;
         }
     }
 
@@ -116,6 +126,14 @@ public class StoredFile {
         this.blob = blob;
     }
 
+    public FileEntity getPrimaryEntity() {
+        return primaryEntity;
+    }
+
+    public void setPrimaryEntity(FileEntity primaryEntity) {
+        this.primaryEntity = primaryEntity;
+    }
+
     public String getLegacyStorageName() {
         return legacyStorageName;
     }
@@ -154,6 +172,14 @@ public class StoredFile {
 
     public void setCreatedAt(LocalDateTime createdAt) {
         this.createdAt = createdAt;
+    }
+
+    public LocalDateTime getUpdatedAt() {
+        return updatedAt;
+    }
+
+    public void setUpdatedAt(LocalDateTime updatedAt) {
+        this.updatedAt = updatedAt;
     }
 
     public LocalDateTime getDeletedAt() {

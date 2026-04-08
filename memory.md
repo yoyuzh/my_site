@@ -148,3 +148,14 @@
 - 已按 Cloudreve 对照升级工程书落地第一阶段最小骨架：后端新增 `/api/v2/site/ping`、`ApiV2Response`、`ApiV2ErrorCode`、`ApiV2Exception` 与 v2 专用异常处理器，旧 `/api/**` 响应模型暂不替换。
 - 前端 `front/src/lib/api.ts` 新增 `X-Yoyuzh-Client-Id` 约定和 `apiV2Request()`，内部 API 请求会携带稳定 client id；外部签名上传 URL 不携带该头。
 - 修正 `.gitignore` 中 `storage/` 误忽略任意层级 `storage` 包的问题，改为只忽略仓库根 `/storage/` 和本地运行数据 `/backend/storage/`，否则 `backend/src/main/java/com/yoyuzh/files/storage/*` 会被误隐藏。
+
+## 2026-04-08 阶段 2 第一小步记录
+
+- 已新增文件实体模型二期的兼容表模型：`FileEntity`、`StoredFileEntity`、`FileEntityType`，并在 `StoredFile` 上新增 `primaryEntity` 与 `updatedAt`。
+- 已新增 `FileEntityBackfillService`，启动后在旧 `FileBlob` 仍保留的前提下，把已有 `StoredFile.blob` 只增量映射到 `FileEntity.VERSION` 与 `StoredFile.primaryEntity`；现有下载、复制、移动、分享、回收站读写路径暂不切换。
+- 当前阶段未删除 `FileBlob`，未切换前端，未引入上传会话二期。
+## 2026-04-08 阶段 2 第二小步记录
+
+- 文件写入路径开始双写 `FileBlob + FileEntity.VERSION`：普通代理上传、直传完成、外部文件导入、分享导入，以及网盘复制复用 blob 时，都会给新 `StoredFile` 写入 `primaryEntity` 并创建 `StoredFileEntity(PRIMARY)` 关系。
+- 当前仍不切换读取路径：下载、ZIP、分享详情、回收站等旧业务继续依赖 `StoredFile.blob`，`primaryEntity` 只作为后续版本、缩略图、转码、存储策略迁移的兼容数据。
+- 为避免新关系表阻塞现有删除和测试清理，`StoredFileEntity -> StoredFile` 使用数据库级删除级联；`FileEntity.createdBy` 删除用户时置空，保留物理实体审计数据但不阻塞用户清理。

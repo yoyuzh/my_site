@@ -51,6 +51,8 @@ public class FileService {
 
     private final StoredFileRepository storedFileRepository;
     private final FileBlobRepository fileBlobRepository;
+    private final FileEntityRepository fileEntityRepository;
+    private final StoredFileEntityRepository storedFileEntityRepository;
     private final FileContentStorage fileContentStorage;
     private final FileShareLinkRepository fileShareLinkRepository;
     private final AdminMetricsService adminMetricsService;
@@ -63,15 +65,19 @@ public class FileService {
     @Autowired
     public FileService(StoredFileRepository storedFileRepository,
                        FileBlobRepository fileBlobRepository,
+                       FileEntityRepository fileEntityRepository,
+                       StoredFileEntityRepository storedFileEntityRepository,
                        FileContentStorage fileContentStorage,
                        FileShareLinkRepository fileShareLinkRepository,
                        AdminMetricsService adminMetricsService,
                        FileStorageProperties properties) {
-        this(storedFileRepository, fileBlobRepository, fileContentStorage, fileShareLinkRepository, adminMetricsService, properties, Clock.systemUTC());
+        this(storedFileRepository, fileBlobRepository, fileEntityRepository, storedFileEntityRepository, fileContentStorage, fileShareLinkRepository, adminMetricsService, properties, Clock.systemUTC());
     }
 
     FileService(StoredFileRepository storedFileRepository,
                 FileBlobRepository fileBlobRepository,
+                FileEntityRepository fileEntityRepository,
+                StoredFileEntityRepository storedFileEntityRepository,
                 FileContentStorage fileContentStorage,
                 FileShareLinkRepository fileShareLinkRepository,
                 AdminMetricsService adminMetricsService,
@@ -79,6 +85,8 @@ public class FileService {
                 Clock clock) {
         this.storedFileRepository = storedFileRepository;
         this.fileBlobRepository = fileBlobRepository;
+        this.fileEntityRepository = fileEntityRepository;
+        this.storedFileEntityRepository = storedFileEntityRepository;
         this.fileContentStorage = fileContentStorage;
         this.fileShareLinkRepository = fileShareLinkRepository;
         this.adminMetricsService = adminMetricsService;
@@ -91,6 +99,25 @@ public class FileService {
                 : null;
         this.packageDownloadTtlSeconds = Math.max(1, properties.getS3().getPackageDownloadTtlSeconds());
         this.clock = clock;
+    }
+
+    FileService(StoredFileRepository storedFileRepository,
+                FileBlobRepository fileBlobRepository,
+                FileContentStorage fileContentStorage,
+                FileShareLinkRepository fileShareLinkRepository,
+                AdminMetricsService adminMetricsService,
+                FileStorageProperties properties) {
+        this(storedFileRepository, fileBlobRepository, null, null, fileContentStorage, fileShareLinkRepository, adminMetricsService, properties, Clock.systemUTC());
+    }
+
+    FileService(StoredFileRepository storedFileRepository,
+                FileBlobRepository fileBlobRepository,
+                FileContentStorage fileContentStorage,
+                FileShareLinkRepository fileShareLinkRepository,
+                AdminMetricsService adminMetricsService,
+                FileStorageProperties properties,
+                Clock clock) {
+        this(storedFileRepository, fileBlobRepository, null, null, fileContentStorage, fileShareLinkRepository, adminMetricsService, properties, clock);
     }
 
     @Transactional
@@ -349,7 +376,7 @@ public class FileService {
 
         if (!storedFile.isDirectory()) {
             ensureWithinStorageQuota(user, storedFile.getSize());
-            return toResponse(storedFileRepository.save(copyStoredFile(storedFile, user, normalizedTargetPath)));
+            return toResponse(saveCopiedStoredFile(copyStoredFile(storedFile, user, normalizedTargetPath), user));
         }
 
         String oldLogicalPath = buildLogicalPath(storedFile);
@@ -385,7 +412,7 @@ public class FileService {
 
         StoredFile savedRoot = null;
         for (StoredFile copiedEntry : copiedEntries) {
-            StoredFile savedEntry = storedFileRepository.save(copiedEntry);
+            StoredFile savedEntry = saveCopiedStoredFile(copiedEntry, user);
             if (savedRoot == null) {
                 savedRoot = savedEntry;
             }
@@ -685,7 +712,52 @@ public class FileService {
         storedFile.setSize(size);
         storedFile.setDirectory(false);
         storedFile.setBlob(blob);
-        return toResponse(storedFileRepository.save(storedFile));
+        FileEntity primaryEntity = createOrReferencePrimaryEntity(user, blob);
+        storedFile.setPrimaryEntity(primaryEntity);
+        StoredFile savedFile = storedFileRepository.save(storedFile);
+        savePrimaryEntityRelation(savedFile, primaryEntity);
+        return toResponse(savedFile);
+    }
+
+    private FileEntity createOrReferencePrimaryEntity(User user, FileBlob blob) {
+        if (fileEntityRepository == null) {
+            return createTransientPrimaryEntity(user, blob);
+        }
+
+        Optional<FileEntity> existingEntity = fileEntityRepository.findByObjectKeyAndEntityType(
+                blob.getObjectKey(),
+                FileEntityType.VERSION
+        );
+        if (existingEntity.isPresent()) {
+            FileEntity entity = existingEntity.get();
+            entity.setReferenceCount(entity.getReferenceCount() + 1);
+            return fileEntityRepository.save(entity);
+        }
+
+        return fileEntityRepository.save(createTransientPrimaryEntity(user, blob));
+    }
+
+    private FileEntity createTransientPrimaryEntity(User user, FileBlob blob) {
+        FileEntity entity = new FileEntity();
+        entity.setObjectKey(blob.getObjectKey());
+        entity.setContentType(blob.getContentType());
+        entity.setSize(blob.getSize());
+        entity.setEntityType(FileEntityType.VERSION);
+        entity.setReferenceCount(1);
+        entity.setCreatedBy(user);
+        return entity;
+    }
+
+    private void savePrimaryEntityRelation(StoredFile storedFile, FileEntity primaryEntity) {
+        if (storedFileEntityRepository == null) {
+            return;
+        }
+
+        StoredFileEntity relation = new StoredFileEntity();
+        relation.setStoredFile(storedFile);
+        relation.setFileEntity(primaryEntity);
+        relation.setEntityRole("PRIMARY");
+        storedFileEntityRepository.save(relation);
     }
 
     private FileShareLink getShareLink(String token) {
@@ -959,6 +1031,17 @@ public class FileService {
         copiedFile.setDirectory(source.isDirectory());
         copiedFile.setBlob(source.getBlob());
         return copiedFile;
+    }
+
+    private StoredFile saveCopiedStoredFile(StoredFile copiedFile, User owner) {
+        if (!copiedFile.isDirectory() && copiedFile.getBlob() != null && copiedFile.getPrimaryEntity() == null) {
+            copiedFile.setPrimaryEntity(createOrReferencePrimaryEntity(owner, copiedFile.getBlob()));
+        }
+        StoredFile savedFile = storedFileRepository.save(copiedFile);
+        if (!savedFile.isDirectory() && savedFile.getPrimaryEntity() != null) {
+            savePrimaryEntityRelation(savedFile, savedFile.getPrimaryEntity());
+        }
+        return savedFile;
     }
 
     private String buildZipEntryName(String rootDirectoryName, String rootLogicalPath, StoredFile storedFile) {

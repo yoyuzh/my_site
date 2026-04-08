@@ -432,3 +432,16 @@ Android 壳补充说明：
 - 后端新增 `com.yoyuzh.api.v2` 作为新版 API 的独立边界，当前只暴露公开健康检查 `GET /api/v2/site/ping`。
 - v2 边界使用独立的 `ApiV2Response`、`ApiV2ErrorCode` 和 `ApiV2ExceptionHandler`，暂不替换旧 `com.yoyuzh.common.ApiResponse`。
 - 前端 `front/src/lib/api.ts` 通过 `apiV2Request()` 访问 `/api/v2/**`，并为内部 API 请求附带稳定的 `X-Yoyuzh-Client-Id`，用于后续文件事件流和客户端事件去重。
+
+## 2026-04-08 文件实体模型二期第一小步
+
+- `StoredFile` 仍是用户可见文件/目录元数据的主模型，现阶段继续保留 `blob_id` 读取路径。
+- 新增 `FileEntity` 作为更通用的物理实体模型，当前先从 `FileBlob` 回填 `VERSION` 类型实体；后续版本、缩略图、转码、头像等派生对象会挂到同一实体体系。
+- 新增 `StoredFileEntity` 作为逻辑文件和物理/派生实体的关系表；当前只写入 `PRIMARY` 关系，不切换旧业务读写。
+- `FileEntityBackfillService` 在 `FileBlobBackfillService` 之后运行，只处理 `blob` 已存在但 `primaryEntity` 为空的普通文件，保证重复启动不会重复迁移已完成行。
+
+## 2026-04-08 文件实体模型二期第二小步
+
+- 文件写入路径已经从“只写 `FileBlob`”扩展为“继续写 `FileBlob`，同时写 `FileEntity.VERSION` 和 `StoredFileEntity(PRIMARY)`”。覆盖普通上传、直传完成、外部导入、分享导入和网盘复制。
+- `StoredFile.blob` 仍是当前生产读取路径；`StoredFile.primaryEntity` 与关系表暂时只作为兼容迁移数据，不影响旧 `/api/files/**` DTO 和前端调用。
+- `portal_stored_file_entity.stored_file_id` 随 `portal_file` 删除级联清理；`portal_file_entity.created_by` 在用户删除时置空，避免实体审计关系阻塞用户清理。

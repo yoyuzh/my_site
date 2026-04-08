@@ -123,4 +123,7 @@ public interface StoredFileRepository extends JpaRepository<StoredFile, Long> {
     Optional<StoredFile> findDetailedById(@Param("id") Long id);
 
     List<StoredFile> findAllByDirectoryFalseAndBlobIsNull();
+
+    @EntityGraph(attributePaths = {"user", "blob"})
+    List<StoredFile> findAllByDirectoryFalseAndBlobIsNotNullAndPrimaryEntityIsNull();
 }
