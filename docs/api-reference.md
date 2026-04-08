@@ -441,3 +441,4 @@
 - 本阶段不新增对外 API，`/api/files/**`、分享、回收站、快传导入等响应结构保持不变。
 - 后端在旧接口内部开始双写实体模型：上传完成、外部导入、分享导入和网盘复制会继续写 `FileBlob`，同时创建或复用 `FileEntity.VERSION`，并写入 `StoredFile.primaryEntity` 与 `StoredFileEntity(PRIMARY)`。
 - 下载、分享详情、回收站、ZIP 下载仍读取 `StoredFile.blob`；后续阶段稳定后再切换到 `primaryEntity` 读取。
+- 2026-04-08 阶段 3 第一小步 API 补充：新增受保护的 v2 上传会话骨架接口，`POST /api/v2/files/upload-sessions` 创建会话，`GET /api/v2/files/upload-sessions/{sessionId}` 查询当前用户自己的会话，`DELETE /api/v2/files/upload-sessions/{sessionId}` 取消会话。当前响应只返回 `sessionId`、`objectKey`、路径、文件名、状态、分片大小、分片数量和时间字段；实际文件内容仍走旧上传链路，尚未开放 v2 分片上传/完成接口。

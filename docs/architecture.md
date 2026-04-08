@@ -445,3 +445,4 @@ Android 壳补充说明：
 - 文件写入路径已经从“只写 `FileBlob`”扩展为“继续写 `FileBlob`，同时写 `FileEntity.VERSION` 和 `StoredFileEntity(PRIMARY)`”。覆盖普通上传、直传完成、外部导入、分享导入和网盘复制。
 - `StoredFile.blob` 仍是当前生产读取路径；`StoredFile.primaryEntity` 与关系表暂时只作为兼容迁移数据，不影响旧 `/api/files/**` DTO 和前端调用。
 - `portal_stored_file_entity.stored_file_id` 随 `portal_file` 删除级联清理；`portal_file_entity.created_by` 在用户删除时置空，避免实体审计关系阻塞用户清理。
+- 2026-04-08 阶段 3 第一小步补充：后端新增上传会话二期最小骨架。`UploadSession` 记录用户、目标路径、文件名、对象键、分片大小、分片数量、状态、过期时间和已上传分片占位 JSON；`/api/v2/files/upload-sessions` 目前只提供创建、查询、取消会话，不承接实际分片内容上传，也不替换旧 `/api/files/upload/**` 生产链路。

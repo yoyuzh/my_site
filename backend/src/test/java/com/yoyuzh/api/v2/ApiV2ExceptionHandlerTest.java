@@ -1,5 +1,7 @@
 package com.yoyuzh.api.v2;
 
+import com.yoyuzh.common.BusinessException;
+import com.yoyuzh.common.ErrorCode;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -31,6 +33,19 @@ class ApiV2ExceptionHandlerTest {
         assertThat(response.getBody()).isNotNull();
         assertThat(response.getBody().code()).isEqualTo(ApiV2ErrorCode.INTERNAL_ERROR.getCode());
         assertThat(response.getBody().msg()).isEqualTo("服务器内部错误");
+        assertThat(response.getBody().data()).isNull();
+    }
+
+    @Test
+    void shouldMapLegacyBusinessExceptionToV2Envelope() {
+        ResponseEntity<ApiV2Response<Void>> response = handler.handleBusinessException(
+                new BusinessException(ErrorCode.UNKNOWN, "duplicate target")
+        );
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(response.getBody()).isNotNull();
+        assertThat(response.getBody().code()).isEqualTo(ApiV2ErrorCode.BAD_REQUEST.getCode());
+        assertThat(response.getBody().msg()).isEqualTo("duplicate target");
         assertThat(response.getBody().data()).isNull();
     }
 }

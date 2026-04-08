@@ -54,6 +54,8 @@ public class SecurityConfig {
                         .permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/v2/site/ping")
                         .permitAll()
+                        .requestMatchers("/api/v2/files/**")
+                        .authenticated()
                         .requestMatchers("/api/transfer/**")
                         .permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/files/share-links/*")
