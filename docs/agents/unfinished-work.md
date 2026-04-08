@@ -20,10 +20,12 @@
 
 - `docs/superpowers/plans/2026-04-09-frontend-redesign-generation-spec.md`
 
-这份文档是下一步前端重构的主输入。核心目标是解决文件页放不下新增能力的问题：
+这份文档是下一步前端重构的主输入。它已经扩展为全站前端界面说明书，不只是网盘页。核心目标是解决文件页放不下新增能力的问题，同时统一桌面端、管理台、公开页和移动端的界面结构：
 
 - 桌面端改为“目录 Rail + 主文件工作区 + 可折叠 Inspector”
 - 移动端改为“顶部路径栏 + 文件列表 + 搜索/任务/操作底部 sheet”
+- 桌面端覆盖登录、总览、网盘、回收站、快传、公开分享、游戏、游戏播放器、管理台
+- 移动端覆盖登录、总览、网盘、回收站、快传、公开分享，并明确游戏和管理台当前路由状态
 - 不改后端接口语义
 - 不改上传、缓存、SSE、搜索和任务 helper 的业务语义
 - 不做 landing page
@@ -34,20 +36,36 @@
 
 ## 下一步优先级
 
-### P0：先做前端文件页重构
+### P0：先做全站前端界面重构，文件页优先
 
 入口：
 
+- `front/src/App.tsx`
+- `front/src/MobileApp.tsx`
+- `front/src/components/layout/Layout.tsx`
+- `front/src/mobile-components/MobileLayout.tsx`
 - `front/src/pages/Files.tsx`
 - `front/src/mobile-pages/MobileFiles.tsx`
+- `front/src/pages/Login.tsx`
+- `front/src/pages/Overview.tsx`
+- `front/src/pages/RecycleBin.tsx`
+- `front/src/pages/Transfer.tsx`
+- `front/src/pages/FileShare.tsx`
+- `front/src/pages/Games.tsx`
+- `front/src/pages/GamePlayer.tsx`
+- `front/src/admin/*`
+- `front/src/mobile-pages/*`
 
 建议顺序：
 
-1. 先拆组件，不改视觉。
-2. 抽状态 hook：目录、搜索、后台任务、弹层。
-3. 桌面端替换为目录 Rail + 主列表 + Inspector。
-4. 移动端补搜索 sheet、任务 sheet、分组 action sheet。
-5. 最后统一圆角、间距、长文本截断和可访问性。
+1. 先核对桌面、移动、公开页、管理台路由清单。
+2. 先拆文件页组件，不改视觉。
+3. 抽状态 hook：目录、搜索、后台任务、弹层。
+4. 桌面端文件页替换为目录 Rail + 主列表 + Inspector。
+5. 桌面其他页面统一布局：登录、总览、回收站、快传、公开分享、游戏、管理台。
+6. 移动端补搜索 sheet、任务 sheet、分组 action sheet。
+7. 移动其他页面统一布局：登录、总览、快传、公开分享、回收站、游戏/管理台状态。
+8. 最后统一圆角、间距、长文本截断和可访问性。
 
 必须保留：
 

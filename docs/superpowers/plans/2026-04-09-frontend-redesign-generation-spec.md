@@ -2,15 +2,42 @@
 
 ## 目标
 
-当前文件页已经同时承载目录树、文件列表、搜索结果、选中文件详情、后台任务、上传入口、回收站入口、分享/移动/复制/重命名/删除等操作。继续把新能力横向堆在一个页面里会导致桌面端宽度不足、移动端操作层级混乱。
+当前前端已经同时承载登录、总览、网盘、回收站、快传、公开分享、游戏、管理台和 Android WebView 移动端壳。文件页的问题最明显：目录树、文件列表、搜索结果、选中文件详情、后台任务、上传入口、回收站入口、分享/移动/复制/重命名/删除等操作已经挤在同一层级；但如果只重做文件页，其他页面仍会在后续功能继续增加时出现同类拥挤和风格割裂。
 
-本说明书用于指导下一轮前端重设计：保留现有业务能力和 API 调用，不改后端语义，重排信息架构和组件边界，让页面能继续容纳搜索、事件刷新、后台任务、媒体信息、分享二期、后续压缩/解压任务等能力。
+本说明书用于指导下一轮全站前端重设计：保留现有业务能力和 API 调用，不改后端语义，重排桌面端、管理台、公开页和移动端的信息架构和组件边界，让页面能继续容纳搜索、事件刷新、后台任务、媒体信息、分享二期、后续压缩/解压任务等能力。
 
 ## 适用范围
 
-- 主入口：`front/src/pages/Files.tsx`
-- 移动端入口：`front/src/mobile-pages/MobileFiles.tsx`
-- 全局壳：`front/src/components/layout/Layout.tsx`
+- 桌面入口：`front/src/App.tsx`
+- 移动端入口：`front/src/MobileApp.tsx`
+- 桌面全局壳：`front/src/components/layout/Layout.tsx`
+- 移动端全局壳：`front/src/mobile-components/MobileLayout.tsx`
+- 桌面页面：
+  - `front/src/pages/Login.tsx`
+  - `front/src/pages/Overview.tsx`
+  - `front/src/pages/Files.tsx`
+  - `front/src/pages/RecycleBin.tsx`
+  - `front/src/pages/Transfer.tsx`
+  - `front/src/pages/TransferReceive.tsx`
+  - `front/src/pages/FileShare.tsx`
+  - `front/src/pages/Games.tsx`
+  - `front/src/pages/GamePlayer.tsx`
+- 移动端页面：
+  - `front/src/mobile-pages/MobileLogin.tsx`
+  - `front/src/mobile-pages/MobileOverview.tsx`
+  - `front/src/mobile-pages/MobileFiles.tsx`
+  - `front/src/mobile-pages/MobileTransfer.tsx`
+  - `front/src/mobile-pages/MobileFileShare.tsx`
+  - `front/src/mobile-pages/MobileGames.tsx`
+  - `front/src/mobile-pages/GamePlayerMobile.tsx`
+- 当前移动端复用桌面页：
+  - `front/src/pages/RecycleBin.tsx`
+- 管理台页面：
+  - `front/src/admin/AdminApp.tsx`
+  - `front/src/admin/dashboard.tsx`
+  - `front/src/admin/users-list.tsx`
+  - `front/src/admin/files-list.tsx`
+  - `front/src/admin/storage-policies-list.tsx`
 - 共享组件：`front/src/components/ui/*`
 - 文件页共享逻辑：`front/src/pages/files-*.ts`
 - 新增能力 helper：
@@ -23,8 +50,34 @@
 - 后端接口和数据模型
 - 认证与会话策略
 - 上传底层队列语义
-- 快传页面主流程
-- 管理台独立路由
+- 快传页面主流程的协议语义
+- 管理台权限边界
+
+## 全站页面清单
+
+### 桌面端
+
+- 登录：`/login`，文件 `front/src/pages/Login.tsx`
+- 总览：`/overview`，文件 `front/src/pages/Overview.tsx`
+- 网盘：`/files`，文件 `front/src/pages/Files.tsx`
+- 回收站：`/recycle-bin`，文件 `front/src/pages/RecycleBin.tsx`
+- 快传：`/transfer`，文件 `front/src/pages/Transfer.tsx`
+- 公开快传兼容入口：`PUBLIC_TRANSFER_ROUTE` / `LEGACY_PUBLIC_TRANSFER_ROUTE`，文件 `front/src/pages/Transfer.tsx`
+- 公开分享：`${FILE_SHARE_ROUTE_PREFIX}/:token`，文件 `front/src/pages/FileShare.tsx`
+- 游戏列表：`/games`，文件 `front/src/pages/Games.tsx`
+- 游戏播放器：`/games/:gameId`，文件 `front/src/pages/GamePlayer.tsx`
+- 管理台：`/admin/*`，文件 `front/src/admin/AdminApp.tsx` 及 `front/src/admin/*`
+
+### 移动端
+
+- 登录：`/login`，文件 `front/src/mobile-pages/MobileLogin.tsx`
+- 总览：`/overview`，文件 `front/src/mobile-pages/MobileOverview.tsx`
+- 网盘：`/files`，文件 `front/src/mobile-pages/MobileFiles.tsx`
+- 回收站：`/recycle-bin`，当前复用 `front/src/pages/RecycleBin.tsx`，后续应补移动专用或响应式版本
+- 快传：`/transfer`，文件 `front/src/mobile-pages/MobileTransfer.tsx`
+- 公开分享：`${FILE_SHARE_ROUTE_PREFIX}/:token`，文件 `front/src/mobile-pages/MobileFileShare.tsx`
+- 游戏：当前 `MobileApp.tsx` 把 `/games` 和 `/games/:gameId` 重定向到 `/overview`；仓库已有 `front/src/mobile-pages/MobileGames.tsx` 和 `front/src/mobile-pages/GamePlayerMobile.tsx`，后续应决定是否重新接入
+- 管理台：当前移动端 `/admin/*` 重定向到 `/overview` 或 `/login`；本轮可以只设计“不可用说明/跳转桌面端”的移动态，不要求完整移动管理台
 
 ## 产品定位
 
@@ -50,7 +103,7 @@
 9. 大于 50 条的文件列表要预留虚拟列表或 `content-visibility: auto` 的实现位置。
 10. 不用 JS 测量做基础布局，优先 CSS grid / flex。
 
-## 桌面端目标布局
+## 桌面端文件页目标布局
 
 桌面端采用“四区一抽屉”：
 
@@ -132,7 +185,128 @@
 - 任务列表不要常驻占用主工作区；只在 Inspector 的 `任务` Tab 或右上角任务抽屉中出现。
 - `删除` 用危险色并二次确认；不要放在主按钮位置。
 
-## 移动端目标布局
+## 桌面端其他页面目标布局
+
+全站桌面端要统一为“应用壳 + 页面工作区”的产品形态。不要让每个页面各自发明背景、卡片、按钮和间距。
+
+### 桌面全局 Layout
+
+目标文件：
+
+- `front/src/components/layout/Layout.tsx`
+
+生成要求：
+
+- 保留当前主导航：总览、网盘、快传、游戏、后台。
+- 侧边导航宽度、账号菜单、上传进度面板要和新文件页的 Rail / Inspector 不冲突。
+- 主内容区统一使用 `main` 语义标签，并预留 `min-w-0`。
+- 全局上传进度面板继续存在，但不要遮挡文件页 Inspector、移动端 sheet 或管理台表格操作。
+- 桌面端页面内容最大宽度由页面类型决定：工作台类全宽，表单类居中，公开页自适应。
+
+### 登录页
+
+目标文件：
+
+- `front/src/pages/Login.tsx`
+
+生成要求：
+
+- 登录页可以保留独立视觉，但不要做营销落地页。
+- 第一屏只做登录、注册入口、直达快传入口。
+- 表单字段必须有 label、自动完成属性和清晰错误提示。
+- 邀请码、密码策略、匿名快传入口不能被装饰内容挤到屏幕外。
+- 移动端登录页要与 `MobileLogin.tsx` 同源设计，不要另起一套颜色。
+
+### 总览页
+
+目标文件：
+
+- `front/src/pages/Overview.tsx`
+
+生成要求：
+
+- 总览页是“最近状态 + 快捷入口”，不是宣传页。
+- 上方显示账号/存储/快传/Android APK 状态等核心摘要。
+- 中间放最近文件、最近快传或最近任务的轻量列表；没有数据时显示可执行空状态。
+- APK 下载入口保留，但不要做成大 hero。
+- 快捷入口使用紧凑按钮组，避免大卡片占满第一屏。
+
+### 回收站页
+
+目标文件：
+
+- `front/src/pages/RecycleBin.tsx`
+
+生成要求：
+
+- 桌面端复用文件列表视觉，重点显示原路径、删除时间、预计清理时间。
+- 恢复和永久清理类操作必须二次确认。
+- 从文件页进入时保持“回收站是文件系统的一个特殊区”的感知，不要像独立产品页。
+- 当前移动端也复用该文件，后续要补响应式或移动专用版本，保证 390px 下表格不横向溢出。
+
+### 快传页
+
+目标文件：
+
+- `front/src/pages/Transfer.tsx`
+- `front/src/pages/TransferReceive.tsx`
+
+生成要求：
+
+- 保留在线快传、离线快传、我的离线快传记录和接收流程。
+- 发送、接收、历史记录使用 Tab 或分段控件，不要同时铺满页面。
+- 传输中的文件列表和连接状态优先展示；二维码、分享链接、取件码进入结果区或弹层。
+- 匿名用户可用的能力和登录后能力要视觉区分，但不要用大段说明文案。
+- WebRTC 连接状态、失败重试、TURN 未配置风险要有短提示，不要遮挡主要操作。
+
+### 公开分享页
+
+目标文件：
+
+- `front/src/pages/FileShare.tsx`
+
+生成要求：
+
+- 公开分享页不使用主站登录态工作台布局，但视觉 token 要一致。
+- 核心信息是分享名、文件列表、过期/权限状态、导入/下载操作。
+- 后续分享二期要容纳密码输入、过期提示、次数限制、是否允许导入、是否允许下载。
+- 密码输入态必须紧凑，错误提示靠近输入框。
+- 未登录导入时，引导登录但不要阻断下载能力，具体取决于后端返回权限。
+
+### 游戏页
+
+目标文件：
+
+- `front/src/pages/Games.tsx`
+- `front/src/pages/GamePlayer.tsx`
+
+生成要求：
+
+- 游戏列表是应用内工具入口，不要做营销 hero。
+- 游戏卡片只展示名称、状态、进入按钮和必要描述。
+- 播放器页要让游戏 iframe / canvas 占据主体，不要被全局装饰挤压。
+- 退出按钮、友情链接、播放器状态放在顶部紧凑工具条。
+- 游戏体验页不强行复用文件页 Inspector。
+
+### 管理台
+
+目标文件：
+
+- `front/src/admin/AdminApp.tsx`
+- `front/src/admin/dashboard.tsx`
+- `front/src/admin/users-list.tsx`
+- `front/src/admin/files-list.tsx`
+- `front/src/admin/storage-policies-list.tsx`
+
+生成要求：
+
+- 管理台可以更像数据后台，但颜色、字体、按钮和表格密度要和主站一致。
+- Dashboard 只保留关键指标、请求趋势、最近 7 天上线记录和存储策略摘要。
+- 用户列表、文件列表、存储策略列表统一表格密度、分页、空状态、错误状态。
+- 表格列过多时优先使用列隐藏、详情抽屉或横向滚动容器，不要压缩到不可读。
+- 管理台移动端当前不完整，先给 `/admin/*` 移动路由设计“请使用桌面端管理台”的可读状态，而不是硬跳转造成困惑。
+
+## 移动端文件页目标布局
 
 移动端采用“列表优先 + 底部动作层”：
 
@@ -161,12 +335,126 @@
 - 触控目标最小 44x44px。
 - 移动端避免自动聚焦输入框，防止键盘遮挡。
 
+## 移动端其他页面目标布局
+
+移动端要以 `MobileLayout` 为统一底座，使用底部导航、顶部轻量标题栏和 sheet 交互。不要把桌面端三栏布局直接缩小。
+
+### 移动端全局 Layout
+
+目标文件：
+
+- `front/src/mobile-components/MobileLayout.tsx`
+
+生成要求：
+
+- 底部导航只放一级入口：总览、网盘、快传、账号或更多。
+- 顶部区域只显示当前页面必要标题和 1-2 个操作按钮。
+- 所有 sheet、drawer、modal 要考虑 safe area bottom。
+- 避免页面级横向滚动。
+
+### 移动端登录页
+
+目标文件：
+
+- `front/src/mobile-pages/MobileLogin.tsx`
+
+生成要求：
+
+- 表单优先，登录/注册/直达快传在一屏内可达。
+- 不自动聚焦输入框。
+- 错误提示靠近字段或提交按钮。
+- 邀请码输入、密码策略提示和匿名快传入口不能折叠到不可见位置。
+
+### 移动端总览页
+
+目标文件：
+
+- `front/src/mobile-pages/MobileOverview.tsx`
+
+生成要求：
+
+- 用纵向摘要流：存储状态、最近文件、快传入口、Android 更新入口。
+- 每个区块高度要克制，第一屏至少能看到第二个区块开头。
+- APK 检查更新入口只在 Capacitor 壳内突出；Web 移动端保持普通下载入口。
+- 最近项列表最多显示 3-5 条，其余进入对应页面。
+
+### 移动端快传页
+
+目标文件：
+
+- `front/src/mobile-pages/MobileTransfer.tsx`
+
+生成要求：
+
+- 发送、接收、离线记录使用顶部分段控件或底部 sheet，不要三块同时展开。
+- 文件选择、取件码、二维码、分享链接分阶段展示。
+- 传输状态要固定在当前流程顶部或底部，不要随长列表滚走。
+- 匿名用户可用能力必须清楚，但文案要短。
+
+### 移动端公开分享页
+
+目标文件：
+
+- `front/src/mobile-pages/MobileFileShare.tsx`
+
+生成要求：
+
+- 文件名、分享状态、下载/导入按钮必须在 390px 宽度下可读。
+- 密码输入、过期提示、次数限制提示用紧凑状态条。
+- 文件列表长时使用单列行，不使用桌面表格。
+- 下载和导入作为底部固定操作区或文件行内操作，不能同时堆满顶部。
+
+### 移动端回收站
+
+目标文件：
+
+- 当前：`front/src/pages/RecycleBin.tsx`
+- 建议新增：`front/src/mobile-pages/MobileRecycleBin.tsx`
+
+生成要求：
+
+- 若继续复用桌面 `RecycleBin`，必须保证小屏无横向溢出。
+- 更推荐新增移动专用页：单列回收条目、底部确认 sheet、恢复按钮固定在条目操作区。
+- 删除时间和清理时间可以折叠进次要信息，不抢文件名空间。
+
+### 移动端游戏
+
+目标文件：
+
+- 当前仓库已有 `front/src/mobile-pages/MobileGames.tsx`
+- 当前仓库已有 `front/src/mobile-pages/GamePlayerMobile.tsx`
+- 当前路由尚未接入，`MobileApp.tsx` 会把 `/games` 与 `/games/:gameId` 重定向到 `/overview`
+
+生成要求：
+
+- 如果重新接入移动游戏页，先做可用的游戏列表和全屏播放器，不做复杂介绍页。
+- 播放器页只保留退出、标题、必要链接；游戏区域必须占据主体。
+- 如果本轮不接入，移动端总览可以显示“游戏请在桌面端打开”的轻提示，但不要出现死入口。
+
+### 移动端管理台
+
+当前状态：
+
+- `MobileApp.tsx` 将 `/admin/*` 重定向到 `/overview` 或 `/login`
+
+生成要求：
+
+- 本轮不要求完整移动管理台。
+- 若要改善体验，可以新增一个移动端不可用说明页：说明管理台需要桌面端，提供返回总览按钮。
+- 不要把桌面管理台表格硬塞进移动端。
+
 ## 组件拆分要求
 
-不要继续让 `Files.tsx` 膨胀。生成时先拆组件，再改布局。
+不要继续让 `Files.tsx` 膨胀，也不要在其他页面复制新的巨型组件。生成时先拆组件，再改布局。
 
 建议文件：
 
+- `front/src/components/layout/AppPageShell.tsx`
+- `front/src/components/layout/PageToolbar.tsx`
+- `front/src/components/layout/ResponsiveSheet.tsx`
+- `front/src/components/ui/StatusBadge.tsx`
+- `front/src/components/ui/EmptyState.tsx`
+- `front/src/components/ui/ConfirmDialog.tsx`
 - `front/src/pages/files/FilesPage.tsx`
 - `front/src/pages/files/FilesToolbar.tsx`
 - `front/src/pages/files/FilesDirectoryRail.tsx`
@@ -181,11 +469,21 @@
 - `front/src/mobile-pages/files/MobileFilesSearchSheet.tsx`
 - `front/src/mobile-pages/files/MobileFilesTaskSheet.tsx`
 - `front/src/mobile-pages/files/MobileFileActionSheet.tsx`
+- `front/src/mobile-pages/MobileRecycleBin.tsx`
+- `front/src/mobile-pages/MobileAdminUnavailable.tsx`
+- `front/src/mobile-pages/games/MobileGamesPage.tsx`
+- `front/src/mobile-pages/games/GamePlayerMobilePage.tsx`
+- `front/src/pages/transfer/TransferPage.tsx`
+- `front/src/pages/transfer/TransferModeTabs.tsx`
+- `front/src/pages/share/FileSharePage.tsx`
+- `front/src/admin/components/AdminTableShell.tsx`
+- `front/src/admin/components/AdminMetricGrid.tsx`
 
 兼容策略：
 
 - `front/src/pages/Files.tsx` 可保留为 re-export 或薄入口。
 - `front/src/mobile-pages/MobileFiles.tsx` 可保留为 re-export 或薄入口。
+- 其他桌面页面和移动页面可逐步变成薄入口，不要求一次性完成所有页面拆分。
 - 共享逻辑继续复用 `front/src/pages/files-upload.ts`、`files-state.ts`、`files-tree.ts`、`recycle-bin-state.ts`。
 
 ## 状态管理要求
@@ -208,7 +506,7 @@
 
 ## 行为要求
 
-必须保留：
+网盘必须保留：
 
 - 当前目录加载与缓存。
 - SSE 文件事件刷新当前目录。
@@ -221,6 +519,18 @@
 - 创建媒体信息提取任务。
 - 最近后台任务查看与取消。
 
+全站必须保留：
+
+- 登录、注册、刷新登录态和退出登录。
+- 总览页的核心摘要、Android APK 下载/检查更新入口。
+- 快传在线发送、在线接收、离线发送、离线接收、我的离线快传记录。
+- 公开快传路由兼容重定向。
+- 公开分享详情、导入和后续密码校验入口。
+- 游戏列表、桌面游戏播放器、退出游戏入口和友情链接。
+- 管理台 dashboard、用户列表、文件列表、存储策略只读展示。
+- 移动端登录、总览、网盘、快传、公开分享。
+- 当前移动端游戏和管理台路由的既有重定向语义，除非本轮明确接入移动专用页面。
+
 可以改变：
 
 - 操作入口的位置。
@@ -228,6 +538,9 @@
 - 任务面板从页面常驻改为抽屉/Tab。
 - 移动端 action sheet 的分组和按钮顺序。
 - 桌面端目录树是否默认折叠。
+- 页面内部组件拆分和视觉层级。
+- 管理台表格的列密度和详情呈现方式。
+- 移动端游戏入口是否接入，但必须在文档和路由中保持一致。
 
 不能改变：
 
@@ -235,6 +548,8 @@
 - `apiRequest()` / `apiV2Request()` 的调用约定。
 - 上传完成、复制、移动、删除后的缓存刷新语义。
 - 匿名快传与登录网盘的权限边界。
+- 管理员权限判断和受保护路由边界。
+- 公开分享和公开快传的匿名访问边界。
 
 ## 视觉系统
 
@@ -301,16 +616,29 @@
 - 搜索结果为空、搜索失败、搜索中。
 - SSE 断线重连中。
 - 上传队列打开时再打开 Inspector。
+- 快传同时存在 10 个文件、二维码、分享链接和错误提示。
+- 公开分享页包含长分享名、密码输入、过期提示和多文件列表。
+- 管理台用户表/文件表列很多时不压坏布局。
+- 总览页在没有最近数据时显示可执行空状态。
+- 游戏播放器在桌面和移动端都不被全局导航挤压。
+
+页面覆盖检查：
+
+- 桌面：登录、总览、网盘、回收站、快传、公开分享、游戏列表、游戏播放器、管理台 dashboard、用户列表、文件列表、存储策略列表。
+- 移动：登录、总览、网盘、回收站、快传、公开分享，以及游戏/管理台当前重定向或不可用状态。
 
 ## 生成顺序
 
-1. 只做组件拆分，不改变视觉：把 `Files.tsx` 的目录树、列表、详情、任务面板拆出去。
-2. 抽状态 hook：目录、搜索、后台任务、弹层状态。
-3. 替换桌面布局：`FilesShell` + `DirectoryRail` + `MainPane` + `InspectorDrawer`。
-4. 替换移动布局：搜索 sheet、任务 sheet、动作 sheet 分组。
-5. 收敛视觉 token：圆角、间距、阴影、面板样式。
-6. 做响应式和长文本修复。
-7. 最后跑测试和类型检查。
+1. 做全站页面清单核对：桌面、移动、公开页、管理台都要列入验收。
+2. 只做组件拆分，不改变视觉：先拆 `Files.tsx`，再拆快传、公开分享、管理台表格壳。
+3. 抽状态 hook：目录、搜索、后台任务、弹层状态。
+4. 替换桌面文件页布局：`FilesShell` + `DirectoryRail` + `MainPane` + `InspectorDrawer`。
+5. 补桌面其他页面布局：登录、总览、回收站、快传、公开分享、游戏、管理台。
+6. 替换移动文件页布局：搜索 sheet、任务 sheet、动作 sheet 分组。
+7. 补移动其他页面布局：登录、总览、快传、公开分享、回收站、游戏/管理台状态页。
+8. 收敛视觉 token：圆角、间距、阴影、面板样式。
+9. 做响应式和长文本修复。
+10. 最后跑测试和类型检查。
 
 每一步都必须能单独通过 `npm run lint`，不要一次性大爆改。
 
@@ -334,13 +662,16 @@ mvn test
 ## 交付标准
 
 - `front/src/pages/Files.tsx` 不再是超大组件。
+- 桌面和移动端所有当前路由都有明确重设计方案，不只覆盖网盘页。
 - 桌面端文件列表不会被详情和任务面板挤到不可用。
 - 移动端新增能力都通过 sheet 进入，不堆在主列表上方。
 - 搜索、任务、详情、操作四类能力有明确入口，不互相抢空间。
+- 登录、总览、快传、公开分享、回收站、游戏、管理台的布局和视觉 token 与文件页一致。
+- 移动端登录、总览、网盘、快传、公开分享、回收站都有小屏验收；游戏和管理台至少有明确路由状态。
 - 长文本不撑破容器。
 - 图标按钮、搜索输入、弹层关闭按钮符合基础可访问性要求。
 - 既有文件能力无回归。
 
 ## 给实现代理的提示词
 
-请基于 `docs/superpowers/plans/2026-04-09-frontend-redesign-generation-spec.md` 重构前端文件页。先拆分组件和状态 hook，再调整布局。保持现有 API 语义、缓存语义和上传语义不变。桌面端实现目录 Rail + 主文件工作区 + 可折叠 Inspector；移动端实现顶部路径栏 + 文件列表 + 搜索/任务/操作底部 sheet。不要做 landing page，不要新增紫色或紫蓝渐变，不要使用卡片套卡片。每个阶段完成后运行 `cd front && npm run lint`；最终运行 `cd front && npm run test`。如果只改前端，不要运行根目录 npm 命令。
+请基于 `docs/superpowers/plans/2026-04-09-frontend-redesign-generation-spec.md` 重构全站前端界面，不要只重构网盘页。先核对桌面、移动、公开页、管理台的路由清单，再拆分组件和状态 hook。保持现有 API 语义、缓存语义、上传语义、公开访问边界和管理权限边界不变。桌面端文件页实现目录 Rail + 主文件工作区 + 可折叠 Inspector；移动端文件页实现顶部路径栏 + 文件列表 + 搜索/任务/操作底部 sheet。登录、总览、回收站、快传、公开分享、游戏和管理台要使用同一套视觉 token 与响应式规则。移动端必须覆盖登录、总览、网盘、回收站、快传、公开分享，并明确游戏和管理台当前是接入还是不可用状态。不要做 landing page，不要新增紫色或紫蓝渐变，不要使用卡片套卡片。每个阶段完成后运行 `cd front && npm run lint`；最终运行 `cd front && npm run test`。如果只改前端，不要运行根目录 npm 命令。
