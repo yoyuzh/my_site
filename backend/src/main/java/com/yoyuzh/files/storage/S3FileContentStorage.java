@@ -1,57 +1,61 @@
 package com.yoyuzh.files.storage;
 
-import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.yoyuzh.common.BusinessException;
 import com.yoyuzh.common.ErrorCode;
 import com.yoyuzh.config.FileStorageProperties;
 import org.springframework.util.StringUtils;
 import org.springframework.web.multipart.MultipartFile;
-import software.amazon.awssdk.auth.credentials.AwsSessionCredentials;
-import software.amazon.awssdk.auth.credentials.StaticCredentialsProvider;
 import software.amazon.awssdk.core.ResponseBytes;
 import software.amazon.awssdk.core.sync.RequestBody;
 import software.amazon.awssdk.http.SdkHttpMethod;
-import software.amazon.awssdk.regions.Region;
-import software.amazon.awssdk.services.s3.S3Client;
+import software.amazon.awssdk.services.s3.model.CopyObjectRequest;
 import software.amazon.awssdk.services.s3.model.DeleteObjectRequest;
 import software.amazon.awssdk.services.s3.model.GetObjectRequest;
 import software.amazon.awssdk.services.s3.model.HeadObjectRequest;
 import software.amazon.awssdk.services.s3.model.NoSuchKeyException;
 import software.amazon.awssdk.services.s3.model.PutObjectRequest;
 import software.amazon.awssdk.services.s3.model.S3Exception;
-import software.amazon.awssdk.services.s3.presigner.S3Presigner;
 import software.amazon.awssdk.services.s3.presigner.model.GetObjectPresignRequest;
 import software.amazon.awssdk.services.s3.presigner.model.PresignedGetObjectRequest;
 import software.amazon.awssdk.services.s3.presigner.model.PresignedPutObjectRequest;
 import software.amazon.awssdk.services.s3.presigner.model.PutObjectPresignRequest;
 
-import javax.crypto.Mac;
-import javax.crypto.spec.SecretKeySpec;
 import java.io.IOException;
-import java.net.URI;
 import java.net.URLEncoder;
-import java.net.http.HttpClient;
-import java.net.http.HttpRequest;
-import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
-import java.time.Instant;
 import java.util.HashMap;
-import java.util.Iterator;
+import java.util.List;
 import java.util.Map;
 
 public class S3FileContentStorage implements FileContentStorage {
 
-    private static final String DOGECLOUD_TMP_TOKEN_PATH = "/auth/tmp_token.json";
     private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
 
     private final FileStorageProperties.S3 properties;
-    private final HttpClient httpClient = HttpClient.newHttpClient();
-    private TemporaryS3Session cachedSession;
+    private final S3SessionProvider sessionProvider;
 
     public S3FileContentStorage(FileStorageProperties storageProperties) {
+        this(
+                storageProperties,
+                new DogeCloudS3SessionProvider(
+                        storageProperties.getS3(),
+                        new DogeCloudTmpTokenClient(storageProperties.getS3(), OBJECT_MAPPER)
+                )
+        );
+    }
+
+    S3FileContentStorage(FileStorageProperties storageProperties,
+                         String bucket,
+                         software.amazon.awssdk.services.s3.S3Client s3Client,
+                         software.amazon.awssdk.services.s3.presigner.S3Presigner s3Presigner) {
+        this(storageProperties, () -> new S3FileRuntimeSession(bucket, s3Client, s3Presigner));
+    }
+
+    S3FileContentStorage(FileStorageProperties storageProperties, S3SessionProvider sessionProvider) {
         this.properties = storageProperties.getS3();
+        this.sessionProvider = sessionProvider;
     }
 
     @Override
@@ -71,7 +75,9 @@ public class S3FileContentStorage implements FileContentStorage {
 
     @Override
     public byte[] readFile(Long userId, String path, String storageName) {
-        return readBlob(resolveLegacyFileObjectKey(userId, path, storageName));
+        S3FileRuntimeSession session = sessionProvider.currentSession();
+        String objectKey = resolveExistingFileObjectKey(session, userId, path, storageName);
+        return readObject(session, objectKey);
     }
 
     @Override
@@ -81,32 +87,33 @@ public class S3FileContentStorage implements FileContentStorage {
 
     @Override
     public String createDownloadUrl(Long userId, String path, String storageName, String filename) {
-        return createBlobDownloadUrl(resolveLegacyFileObjectKey(userId, path, storageName), filename);
+        S3FileRuntimeSession session = sessionProvider.currentSession();
+        String objectKey = resolveExistingFileObjectKey(session, userId, path, storageName);
+        return createDownloadUrl(session, objectKey, filename);
     }
 
     @Override
     public PreparedUpload prepareBlobUpload(String path, String filename, String objectKey, String contentType, long size) {
+        S3FileRuntimeSession session = sessionProvider.currentSession();
         PutObjectRequest.Builder requestBuilder = PutObjectRequest.builder()
-                .bucket(getSession().bucket())
+                .bucket(session.bucket())
                 .key(normalizeObjectKey(objectKey));
         if (StringUtils.hasText(contentType)) {
             requestBuilder.contentType(contentType);
         }
 
-        try (S3Presigner presigner = createPresigner()) {
-            PutObjectPresignRequest presignRequest = PutObjectPresignRequest.builder()
-                    .signatureDuration(Duration.ofSeconds(Math.max(1, properties.getTtlSeconds())))
-                    .putObjectRequest(requestBuilder.build())
-                    .build();
-            PresignedPutObjectRequest presignedRequest = presigner.presignPutObject(presignRequest);
-            return new PreparedUpload(
-                    true,
-                    presignedRequest.url().toString(),
-                    presignedRequest.httpRequest().method() == SdkHttpMethod.PUT ? "PUT" : "POST",
-                    flattenSignedHeaders(presignedRequest.signedHeaders()),
-                    objectKey
-            );
-        }
+        PutObjectPresignRequest presignRequest = PutObjectPresignRequest.builder()
+                .signatureDuration(Duration.ofSeconds(Math.max(1, properties.getTtlSeconds())))
+                .putObjectRequest(requestBuilder.build())
+                .build();
+        PresignedPutObjectRequest presignedRequest = session.s3Presigner().presignPutObject(presignRequest);
+        return new PreparedUpload(
+                true,
+                presignedRequest.url().toString(),
+                resolveUploadMethod(presignedRequest),
+                resolveUploadHeaders(presignedRequest, contentType),
+                objectKey
+        );
     }
 
     @Override
@@ -120,13 +127,11 @@ public class S3FileContentStorage implements FileContentStorage {
 
     @Override
     public void completeBlobUpload(String objectKey, String contentType, long size) {
-        try (S3Client s3Client = createClient()) {
-            s3Client.headObject(HeadObjectRequest.builder()
-                    .bucket(getSession().bucket())
-                    .key(normalizeObjectKey(objectKey))
-                    .build());
+        S3FileRuntimeSession session = sessionProvider.currentSession();
+        try {
+            ensureObjectExists(session, normalizeObjectKey(objectKey));
         } catch (NoSuchKeyException ex) {
-            throw new BusinessException(ErrorCode.FILE_NOT_FOUND, "File content does not exist");
+            throw new BusinessException(ErrorCode.FILE_NOT_FOUND, "上传文件不存在");
         } catch (S3Exception ex) {
             throw new BusinessException(ErrorCode.UNKNOWN, "File content verification failed");
         }
@@ -139,24 +144,15 @@ public class S3FileContentStorage implements FileContentStorage {
 
     @Override
     public byte[] readBlob(String objectKey) {
-        try (S3Client s3Client = createClient()) {
-            ResponseBytes<?> response = s3Client.getObjectAsBytes(GetObjectRequest.builder()
-                    .bucket(getSession().bucket())
-                    .key(normalizeObjectKey(objectKey))
-                    .build());
-            return response.asByteArray();
-        } catch (NoSuchKeyException ex) {
-            throw new BusinessException(ErrorCode.FILE_NOT_FOUND, "File content does not exist");
-        } catch (S3Exception ex) {
-            throw new BusinessException(ErrorCode.UNKNOWN, "File read failed");
-        }
+        return readObject(sessionProvider.currentSession(), normalizeObjectKey(objectKey));
     }
 
     @Override
     public void deleteBlob(String objectKey) {
-        try (S3Client s3Client = createClient()) {
-            s3Client.deleteObject(DeleteObjectRequest.builder()
-                    .bucket(getSession().bucket())
+        S3FileRuntimeSession session = sessionProvider.currentSession();
+        try {
+            session.s3Client().deleteObject(DeleteObjectRequest.builder()
+                    .bucket(session.bucket())
                     .key(normalizeObjectKey(objectKey))
                     .build());
         } catch (S3Exception ex) {
@@ -166,23 +162,7 @@ public class S3FileContentStorage implements FileContentStorage {
 
     @Override
     public String createBlobDownloadUrl(String objectKey, String filename) {
-        GetObjectRequest.Builder requestBuilder = GetObjectRequest.builder()
-                .bucket(getSession().bucket())
-                .key(normalizeObjectKey(objectKey));
-        if (StringUtils.hasText(filename)) {
-            requestBuilder.responseContentDisposition(
-                    "attachment; filename*=UTF-8''" + URLEncoder.encode(filename, StandardCharsets.UTF_8)
-            );
-        }
-
-        try (S3Presigner presigner = createPresigner()) {
-            GetObjectPresignRequest presignRequest = GetObjectPresignRequest.builder()
-                    .signatureDuration(Duration.ofSeconds(Math.max(1, properties.getTtlSeconds())))
-                    .getObjectRequest(requestBuilder.build())
-                    .build();
-            PresignedGetObjectRequest presignedRequest = presigner.presignGetObject(presignRequest);
-            return presignedRequest.url().toString();
-        }
+        return createDownloadUrl(sessionProvider.currentSession(), normalizeObjectKey(objectKey), filename);
     }
 
     @Override
@@ -191,6 +171,37 @@ public class S3FileContentStorage implements FileContentStorage {
 
     @Override
     public void ensureDirectory(Long userId, String logicalPath) {
+    }
+
+    @Override
+    public void renameFile(Long userId, String path, String oldStorageName, String newStorageName) {
+        S3FileRuntimeSession session = sessionProvider.currentSession();
+        String sourceKey = resolveExistingFileObjectKey(session, userId, path, oldStorageName);
+        String targetKey = resolveLegacyFileObjectKey(userId, path, newStorageName);
+        copyObject(session, sourceKey, targetKey);
+        deleteObject(session, sourceKey);
+    }
+
+    @Override
+    public void moveFile(Long userId, String oldPath, String storageName, String newPath) {
+        S3FileRuntimeSession session = sessionProvider.currentSession();
+        String sourceKey = resolveExistingFileObjectKey(session, userId, oldPath, storageName);
+        String targetKey = resolveLegacyFileObjectKey(userId, newPath, storageName);
+        copyObject(session, sourceKey, targetKey);
+        deleteObject(session, sourceKey);
+    }
+
+    @Override
+    public void copyFile(Long userId, String path, String storageName, String targetPath) {
+        S3FileRuntimeSession session = sessionProvider.currentSession();
+        String sourceKey = resolveExistingFileObjectKey(session, userId, path, storageName);
+        String targetKey = resolveLegacyFileObjectKey(userId, targetPath, storageName);
+        copyObject(session, sourceKey, targetKey);
+    }
+
+    @Override
+    public void storeImportedFile(Long userId, String path, String storageName, String contentType, byte[] content) {
+        storeBlob(resolveLegacyFileObjectKey(userId, path, storageName), contentType, content);
     }
 
     @Override
@@ -220,149 +231,159 @@ public class S3FileContentStorage implements FileContentStorage {
 
     @Override
     public String resolveLegacyFileObjectKey(Long userId, String path, String storageName) {
-        return "users/" + userId + "/" + normalizeRelativePath(path) + "/" + normalizeName(storageName);
+        return "users/" + userId + "/" + joinObjectKeyParts(normalizeRelativePath(path), normalizeName(storageName));
+    }
+
+    private String resolveExistingFileObjectKey(S3FileRuntimeSession session, Long userId, String path, String storageName) {
+        String currentKey = resolveLegacyFileObjectKey(userId, path, storageName);
+        try {
+            ensureObjectExists(session, currentKey);
+            return currentKey;
+        } catch (NoSuchKeyException ex) {
+            String legacyKey = userId + "/" + joinObjectKeyParts(normalizeRelativePath(path), normalizeName(storageName));
+            ensureObjectExists(session, legacyKey);
+            return legacyKey;
+        }
     }
 
     private void putObject(String objectKey, String contentType, byte[] content) {
+        S3FileRuntimeSession session = sessionProvider.currentSession();
         PutObjectRequest.Builder requestBuilder = PutObjectRequest.builder()
-                .bucket(getSession().bucket())
+                .bucket(session.bucket())
                 .key(normalizeObjectKey(objectKey));
         if (StringUtils.hasText(contentType)) {
             requestBuilder.contentType(contentType);
         }
 
-        try (S3Client s3Client = createClient()) {
-            s3Client.putObject(requestBuilder.build(), RequestBody.fromBytes(content));
+        try {
+            session.s3Client().putObject(requestBuilder.build(), RequestBody.fromBytes(content));
         } catch (S3Exception ex) {
             throw new BusinessException(ErrorCode.UNKNOWN, "File write failed");
         }
     }
 
-    private String resolveTransferObjectKey(String sessionId, String storageName) {
-        return "transfers/" + normalizeName(sessionId) + "/" + normalizeName(storageName);
-    }
-
-    private S3Client createClient() {
-        TemporaryS3Session session = getSession();
-        return S3Client.builder()
-                .endpointOverride(session.endpointUri())
-                .region(Region.of(properties.getRegion()))
-                .credentialsProvider(StaticCredentialsProvider.create(session.credentials()))
-                .build();
-    }
-
-    private S3Presigner createPresigner() {
-        TemporaryS3Session session = getSession();
-        return S3Presigner.builder()
-                .endpointOverride(session.endpointUri())
-                .region(Region.of(properties.getRegion()))
-                .credentialsProvider(StaticCredentialsProvider.create(session.credentials()))
-                .build();
-    }
-
-    private synchronized TemporaryS3Session getSession() {
-        if (cachedSession != null && cachedSession.expiresAt().isAfter(Instant.now().plusSeconds(60))) {
-            return cachedSession;
-        }
-
-        cachedSession = requestTemporaryS3Session();
-        return cachedSession;
-    }
-
-    private TemporaryS3Session requestTemporaryS3Session() {
-        requireText(properties.getApiAccessKey(), "Missing DogeCloud API access key");
-        requireText(properties.getApiSecretKey(), "Missing DogeCloud API secret key");
-        requireText(properties.getScope(), "Missing DogeCloud storage scope");
-
-        String body = "{\"channel\":\"OSS_FULL\",\"ttl\":" + Math.max(1, properties.getTtlSeconds())
-                + ",\"scopes\":[\"" + escapeJson(properties.getScope()) + "\"]}";
-        HttpRequest request = HttpRequest.newBuilder()
-                .uri(URI.create(trimTrailingSlash(properties.getApiBaseUrl()) + DOGECLOUD_TMP_TOKEN_PATH))
-                .header("Content-Type", "application/json")
-                .header("Authorization", createDogeCloudApiAuthorization(body))
-                .POST(HttpRequest.BodyPublishers.ofString(body, StandardCharsets.UTF_8))
-                .build();
-
+    private byte[] readObject(S3FileRuntimeSession session, String objectKey) {
         try {
-            HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
-            if (response.statusCode() < 200 || response.statusCode() >= 300) {
-                throw new BusinessException(ErrorCode.UNKNOWN, "DogeCloud temporary credential request failed");
-            }
-
-            JsonNode payload = OBJECT_MAPPER.readTree(response.body());
-            if (payload.path("code").asInt() != 200) {
-                throw new BusinessException(ErrorCode.UNKNOWN, "DogeCloud temporary credential request failed");
-            }
-
-            JsonNode data = payload.path("data");
-            JsonNode credentials = data.path("Credentials");
-            JsonNode bucket = selectBucket(data.path("Buckets"), extractScopeBucketName(properties.getScope()));
-            Instant expiresAt = data.hasNonNull("ExpiredAt")
-                    ? Instant.ofEpochSecond(data.path("ExpiredAt").asLong())
-                    : Instant.now().plusSeconds(Math.max(1, properties.getTtlSeconds()));
-
-            return new TemporaryS3Session(
-                    requireText(credentials.path("accessKeyId").asText(null), "Missing DogeCloud temporary access key"),
-                    requireText(credentials.path("secretAccessKey").asText(null), "Missing DogeCloud temporary secret key"),
-                    requireText(credentials.path("sessionToken").asText(null), "Missing DogeCloud temporary session token"),
-                    requireText(bucket.path("s3Bucket").asText(null), "Missing DogeCloud S3 bucket"),
-                    toEndpointUri(requireText(bucket.path("s3Endpoint").asText(null), "Missing DogeCloud S3 endpoint")),
-                    expiresAt
-            );
-        } catch (IOException ex) {
-            throw new BusinessException(ErrorCode.UNKNOWN, "DogeCloud temporary credential response is invalid");
-        } catch (InterruptedException ex) {
-            Thread.currentThread().interrupt();
-            throw new BusinessException(ErrorCode.UNKNOWN, "DogeCloud temporary credential request interrupted");
+            ResponseBytes<?> response = session.s3Client().getObjectAsBytes(GetObjectRequest.builder()
+                    .bucket(session.bucket())
+                    .key(normalizeObjectKey(objectKey))
+                    .build());
+            return response.asByteArray();
+        } catch (NoSuchKeyException ex) {
+            throw new BusinessException(ErrorCode.FILE_NOT_FOUND, "File content does not exist");
+        } catch (S3Exception ex) {
+            throw new BusinessException(ErrorCode.UNKNOWN, "File read failed");
         }
     }
 
-    private JsonNode selectBucket(JsonNode buckets, String bucketName) {
-        if (!buckets.isArray() || buckets.isEmpty()) {
-            throw new BusinessException(ErrorCode.UNKNOWN, "DogeCloud temporary credential response has no bucket");
+    private String createDownloadUrl(S3FileRuntimeSession session, String objectKey, String filename) {
+        GetObjectRequest.Builder requestBuilder = GetObjectRequest.builder()
+                .bucket(session.bucket())
+                .key(normalizeObjectKey(objectKey));
+        if (StringUtils.hasText(filename)) {
+            requestBuilder.responseContentDisposition(createContentDisposition(filename));
         }
 
-        Iterator<JsonNode> iterator = buckets.elements();
-        JsonNode first = buckets.get(0);
-        while (iterator.hasNext()) {
-            JsonNode bucket = iterator.next();
-            if (bucketName.equals(bucket.path("name").asText())) {
-                return bucket;
-            }
-        }
-        return first;
+        GetObjectPresignRequest presignRequest = GetObjectPresignRequest.builder()
+                .signatureDuration(Duration.ofSeconds(Math.max(1, properties.getTtlSeconds())))
+                .getObjectRequest(requestBuilder.build())
+                .build();
+        PresignedGetObjectRequest presignedRequest = session.s3Presigner().presignGetObject(presignRequest);
+        return presignedRequest.url().toString();
     }
 
-    private Map<String, String> flattenSignedHeaders(Map<String, java.util.List<String>> headers) {
+    private void copyObject(S3FileRuntimeSession session, String sourceKey, String targetKey) {
+        try {
+            session.s3Client().copyObject(CopyObjectRequest.builder()
+                    .sourceBucket(session.bucket())
+                    .sourceKey(normalizeObjectKey(sourceKey))
+                    .destinationBucket(session.bucket())
+                    .destinationKey(normalizeObjectKey(targetKey))
+                    .build());
+        } catch (S3Exception ex) {
+            throw new BusinessException(ErrorCode.UNKNOWN, "File copy failed");
+        }
+    }
+
+    private void deleteObject(S3FileRuntimeSession session, String objectKey) {
+        try {
+            session.s3Client().deleteObject(DeleteObjectRequest.builder()
+                    .bucket(session.bucket())
+                    .key(normalizeObjectKey(objectKey))
+                    .build());
+        } catch (S3Exception ex) {
+            throw new BusinessException(ErrorCode.UNKNOWN, "File delete failed");
+        }
+    }
+
+    private void ensureObjectExists(S3FileRuntimeSession session, String objectKey) {
+        session.s3Client().headObject(HeadObjectRequest.builder()
+                .bucket(session.bucket())
+                .key(normalizeObjectKey(objectKey))
+                .build());
+    }
+
+    private String resolveUploadMethod(PresignedPutObjectRequest presignedRequest) {
+        if (presignedRequest.httpRequest() == null) {
+            return "PUT";
+        }
+        return presignedRequest.httpRequest().method() == SdkHttpMethod.PUT ? "PUT" : "POST";
+    }
+
+    private Map<String, String> resolveUploadHeaders(PresignedPutObjectRequest presignedRequest, String contentType) {
+        Map<String, String> headers = flattenSignedHeaders(presignedRequest.signedHeaders());
+        if (StringUtils.hasText(contentType)) {
+            headers.put("Content-Type", contentType);
+        }
+        return headers;
+    }
+
+    private Map<String, String> flattenSignedHeaders(Map<String, List<String>> signedHeaders) {
         Map<String, String> flattened = new HashMap<>();
-        headers.forEach((key, values) -> {
-            if (!values.isEmpty()) {
+        if (signedHeaders == null) {
+            return flattened;
+        }
+        signedHeaders.forEach((key, values) -> {
+            if (values != null && !values.isEmpty()) {
                 flattened.put(key, String.join(",", values));
             }
         });
         return flattened;
     }
 
-    private String createDogeCloudApiAuthorization(String body) {
-        return "TOKEN " + properties.getApiAccessKey() + ":" + hmacSha1Hex(
-                properties.getApiSecretKey(),
-                DOGECLOUD_TMP_TOKEN_PATH + "\n" + body
-        );
+    private String createContentDisposition(String filename) {
+        return "attachment; filename=\"" + createAsciiFallbackFilename(filename)
+                + "\"; filename*=UTF-8''" + URLEncoder.encode(filename, StandardCharsets.UTF_8).replace("+", "%20");
     }
 
-    private String hmacSha1Hex(String secret, String value) {
-        try {
-            Mac mac = Mac.getInstance("HmacSHA1");
-            mac.init(new SecretKeySpec(secret.getBytes(StandardCharsets.UTF_8), "HmacSHA1"));
-            byte[] digest = mac.doFinal(value.getBytes(StandardCharsets.UTF_8));
-            StringBuilder result = new StringBuilder(digest.length * 2);
-            for (byte item : digest) {
-                result.append(String.format("%02x", item));
+    private String createAsciiFallbackFilename(String filename) {
+        String fallback = "download";
+        int dotIndex = filename.lastIndexOf('.');
+        if (dotIndex > 0 && dotIndex < filename.length() - 1) {
+            String extension = filename.substring(dotIndex);
+            if (isSafeAsciiToken(extension)) {
+                fallback += extension;
             }
-            return result.toString();
-        } catch (Exception ex) {
-            throw new BusinessException(ErrorCode.UNKNOWN, "DogeCloud authorization signing failed");
         }
+        return fallback;
+    }
+
+    private boolean isSafeAsciiToken(String value) {
+        for (int index = 0; index < value.length(); index++) {
+            char current = value.charAt(index);
+            if (current < 33 || current > 126 || current == '"' || current == '\\' || current == ';') {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private String resolveTransferObjectKey(String sessionId, String storageName) {
+        return "transfers/" + normalizeName(sessionId) + "/" + normalizeName(storageName);
+    }
+
+    private String joinObjectKeyParts(String path, String storageName) {
+        return StringUtils.hasText(path) ? path + "/" + storageName : storageName;
     }
 
     private String normalizeObjectKey(String objectKey) {
@@ -393,45 +414,5 @@ public class S3FileContentStorage implements FileContentStorage {
             throw new BusinessException(ErrorCode.UNKNOWN, "Invalid storage filename");
         }
         return cleaned;
-    }
-
-    private String extractScopeBucketName(String scope) {
-        int separatorIndex = scope.indexOf(':');
-        return separatorIndex >= 0 ? scope.substring(0, separatorIndex) : scope;
-    }
-
-    private URI toEndpointUri(String endpoint) {
-        return URI.create(endpoint.startsWith("http://") || endpoint.startsWith("https://")
-                ? endpoint
-                : "https://" + endpoint);
-    }
-
-    private String trimTrailingSlash(String value) {
-        return value.replaceAll("/+$", "");
-    }
-
-    private String escapeJson(String value) {
-        return value.replace("\\", "\\\\").replace("\"", "\\\"");
-    }
-
-    private String requireText(String value, String message) {
-        if (!StringUtils.hasText(value)) {
-            throw new BusinessException(ErrorCode.UNKNOWN, message);
-        }
-        return value;
-    }
-
-    private record TemporaryS3Session(
-            String accessKeyId,
-            String secretAccessKey,
-            String sessionToken,
-            String bucket,
-            URI endpointUri,
-            Instant expiresAt
-    ) {
-
-        AwsSessionCredentials credentials() {
-            return AwsSessionCredentials.create(accessKeyId, secretAccessKey, sessionToken);
-        }
     }
 }
