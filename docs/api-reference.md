@@ -457,3 +457,110 @@
 - 2026-04-08 阶段 3 第三小步 API 补充：新增 `PUT /api/v2/files/upload-sessions/{sessionId}/parts/{partIndex}`，请求体为 `{ "etag": "...", "size": 8388608 }`，用于记录当前用户上传会话的 part 元数据并返回 v2 会话响应。该接口会校验 part 范围和会话状态，当前只更新 `uploadedPartsJson`，不接收或合并真实文件分片内容。
 - 2026-04-08 阶段 3 第四小步 API 补充：本小步没有新增对外 API。后端新增上传会话过期清理任务，只处理未完成且已过期的会话，并把它们标记为 `EXPIRED`；已完成会话和旧 `/api/files/**` 上传接口响应不变。
 - 2026-04-08 阶段 4 第一小步 API 补充：本小步没有新增存储策略管理 API。v2 上传会话响应新增 `storagePolicyId`，用于标识该会话绑定的默认存储策略；当前该字段只服务后续 multipart/多策略迁移，旧 `/api/files/**` 上传下载接口响应不变。
+
+## 2026-04-08 阶段 5 文件搜索第一小步
+
+`GET /api/v2/files/search`
+
+说明：
+
+- 需要登录，且只返回当前用户自己的未删除文件或目录。
+- 返回 v2 envelope，`data` 结构复用 `PageResponse<FileMetadataResponse>`：`items`、`total`、`page`、`size`。
+- 支持查询参数：`name`、`type`、`sizeGte`、`sizeLte`、`createdGte`、`createdLte`、`updatedGte`、`updatedLte`、`page`、`size`。
+- `type` 支持 `file`、`directory`、`folder`、`all`；时间参数使用 ISO 日期时间格式，例如 `2026-04-08T12:00:00`。
+- 当前搜索只基于 `StoredFile` 固定字段，不启用标签或 metadata 条件过滤；旧 `/api/files/list` 与上传下载分享接口保持不变。
+
+## 2026-04-08 阶段 5 文件搜索第二小步
+
+- 前端通过 `front/src/lib/file-search.ts` 接入 `GET /api/v2/files/search`，该 helper 会拼接 `name`、`type`、`sizeGte/sizeLte`、`createdGte/createdLte`、`updatedGte/updatedLte`、`page`、`size`，并复用 `apiV2Request()` 的生产端点、认证与 client id 头。
+- `front/src/pages/Files.tsx` 的桌面端文件页新增独立搜索视图，搜索结果不写入 `getFilesListCacheKey(...)`，清空搜索后回到当前目录列表；移动端搜索尚未接入。
+
+## 2026-04-08 阶段 5 分享二期后端最小骨架
+
+`POST /api/v2/shares`
+
+需要登录。
+
+- 为当前用户自己的非目录文件创建分享。
+- 请求字段：`fileId`，以及可选的 `password`、`expiresAt`、`maxDownloads`、`allowImport`、`allowDownload`、`shareName`。
+- 密码只保存 hash，不在响应中返回。
+
+`GET /api/v2/shares/{token}`
+
+公开访问。
+
+- 返回分享摘要。
+- 如果分享设置了密码，在校验前不返回 `file` 详情。
+
+`POST /api/v2/shares/{token}/verify-password`
+
+公开访问。
+
+- 校验分享密码，成功后返回可读分享摘要。
+- 响应永不返回 `passwordHash`。
+
+`POST /api/v2/shares/{token}/import`
+
+需要登录。
+
+- 把分享文件导入当前用户网盘。
+- 分享过期、密码错误或未提供、`allowImport=false`、`maxDownloads` 已耗尽时拒绝导入。
+
+`GET /api/v2/shares/mine`
+
+需要登录。
+
+- 分页列出当前用户创建的分享。
+
+`DELETE /api/v2/shares/{id}`
+
+需要登录。
+
+- 只删除当前用户自己的分享。
+
+- 旧 `/api/files/share-links/**` 接口保留兼容；当前 `allowDownload` 已落库并返回，但还没有独立 v2 下载路由消费它。
+
+## 2026-04-08 阶段 5 文件事件流最小闭环
+
+`GET /api/v2/files/events?path=/`
+
+说明：
+- 需要登录，返回 `text/event-stream`
+- 请求头支持 `X-Yoyuzh-Client-Id`
+- 首次连接会先推送一个轻量 `READY` 事件
+- 事件写入 `FileEvent` 表，字段包含 `userId`、`eventType`、`fileId`、`fromPath`、`toPath`、`clientId`、`payloadJson`、`createdAt`
+- 当前后端已做同用户广播、路径前缀过滤和同 `clientId` 自身事件抑制
+- 前端通过 `front/src/lib/file-events.ts` 以 fetch stream 订阅该 SSE，复用鉴权与 `X-Yoyuzh-Client-Id` 请求头；桌面 `Files` 与移动 `MobileFiles` 收到变更事件后会失效当前目录缓存并刷新当前目录列表
+
+## 2026-04-08 阶段 6 任务框架与 worker 后端最小骨架
+
+`GET /api/v2/tasks`
+
+需要登录。分页列出当前用户自己的后台任务。
+
+`GET /api/v2/tasks/{id}`
+
+需要登录。只返回当前用户自己的任务详情。
+
+`DELETE /api/v2/tasks/{id}`
+
+需要登录。取消当前用户自己的任务，`QUEUED` / `RUNNING` 会转为 `CANCELLED` 并写入 `finishedAt`，终态任务保持原样。
+
+`POST /api/v2/tasks/archive`
+
+需要登录。创建 `ARCHIVE` 类型的 `QUEUED` 任务；`fileId` 必须属于当前用户且未删除，`path` 必须匹配服务端派生逻辑路径，暂允许文件和目录；当前 worker 只做 no-op 占位完成，不执行真实压缩。
+
+`POST /api/v2/tasks/extract`
+
+需要登录。创建 `EXTRACT` 类型的 `QUEUED` 任务；`fileId` 必须属于当前用户且未删除，`path` 必须匹配服务端派生逻辑路径，并拒绝目录和非压缩包类文件；当前 worker 只做 no-op 占位完成，不执行真实解压。
+
+`POST /api/v2/tasks/media-metadata`
+
+需要登录。创建 `MEDIA_META` 类型的 `QUEUED` 任务；`fileId` 必须属于当前用户且未删除，`path` 必须匹配服务端派生逻辑路径，并拒绝目录和非媒体类文件；worker 会重新按 `userId + fileId` 加载文件，写入 `media:contentType`、`media:size`，对 ImageIO 可识别图片额外写 `media:width` 和 `media:height`。当前仍不做缩略图、视频时长或前端任务面板。
+
+补充说明：
+
+- worker 会定时领取少量 `QUEUED` 任务并切换为 `RUNNING`，完成后标记 `COMPLETED`，异常时标记 `FAILED` 并写入 `errorMessage`。
+- 已取消或其他终态任务不会被重新执行。
+- 创建成功后的任务 state 使用服务端文件信息，至少包含 `fileId`、`path`、`filename`、`directory`、`contentType`、`size`。
+- 桌面端 `Files` 页面会拉取最近 10 条任务、提供 `QUEUED/RUNNING` 取消按钮，并可为当前选中文件创建 `MEDIA_META` 任务；移动端与 archive/extract 的前端入口暂未接入。

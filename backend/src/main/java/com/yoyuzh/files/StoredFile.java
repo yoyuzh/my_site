@@ -11,6 +11,7 @@ import jakarta.persistence.Index;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.PrePersist;
+import jakarta.persistence.PreUpdate;
 import jakarta.persistence.Table;
 
 import java.time.LocalDateTime;
@@ -84,6 +85,11 @@ public class StoredFile {
         if (updatedAt == null) {
             updatedAt = createdAt;
         }
+    }
+
+    @PreUpdate
+    public void preUpdate() {
+        updatedAt = LocalDateTime.now();
     }
 
     public Long getId() {

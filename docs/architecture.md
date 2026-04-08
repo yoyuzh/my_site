@@ -453,3 +453,37 @@ Android 壳补充说明：
 - 2026-04-08 `files/storage` 合并补充：S3 存储实现拆出多吉云临时密钥客户端与运行期会话提供器。`S3FileContentStorage` 现在通过 `S3SessionProvider.currentSession()` 获取当前 bucket、`S3Client` 和 `S3Presigner`，避免每次操作重复内联多吉云 token 解析逻辑；测试环境可直接注入 mock S3 client/presigner。该改动没有引入 multipart，仍是单对象 PUT/HEAD/GET/COPY/DELETE 路径。
 - 2026-04-08 阶段 4 第二小步补充：`FileService` 在创建新的 `FileEntity.VERSION` 时会通过 `StoragePolicyService.ensureDefaultPolicy()` 写入默认 `storagePolicyId`；`FileEntityBackfillService` 对历史 `FileBlob` 回填新实体时也写入同一默认策略。复用已有实体时保持原策略字段不变，只增加引用计数，避免在兼容迁移阶段覆盖历史数据。
 - 2026-04-08 阶段 4 第三小步补充：管理台新增只读存储策略列表。`AdminController` 暴露 `GET /api/admin/storage-policies`，`AdminService` 通过白名单 DTO 返回策略基础字段和结构化 `StoragePolicyCapabilities`；前端 `react-admin` 新增 `storagePolicies` 资源展示能力矩阵。该能力只做配置可视化，不改变旧上传下载路径，不暴露凭证，不启用策略编辑或 multipart。
+
+## 2026-04-08 阶段 5 文件搜索第一小步
+
+- 后端新增 `FileMetadata` 与 `FileMetadataRepository`，作为后续标签、缩略图状态、媒体属性和自定义属性的统一扩展表骨架。当前阶段只建表与仓储入口，不迁移现有回收站字段，也不改变旧 `/api/files/**` DTO。
+- 后端新增 `FileSearchService` 与 `GET /api/v2/files/search`，按当前登录用户查询未删除的 `StoredFile`，支持文件名、文件/目录类型、大小、创建时间、更新时间和分页过滤。
+- 搜索结果复用现有 `FileMetadataResponse`，因此旧网盘列表、下载、分享、回收站和上传链路不受影响；前端用户侧搜索 UI 和 metadata/tag 过滤留到后续小步接入。
+
+## 2026-04-08 阶段 5 文件搜索第二小步
+
+- 前端桌面端新增独立搜索模式：`front/src/lib/file-search.ts` 复用 `apiV2Request('/files/search', ...)`，并在 `front/src/lib/file-search.test.ts` 覆盖参数编码、空参数跳过和 v2 数据解包。
+- `front/src/pages/Files.tsx` 同时保留目录视图和搜索结果视图，搜索结果不写入 `getFilesListCacheKey(...)`，也不影响原有目录缓存和上传主链路；移动端文件页暂未接入搜索。
+
+## 2026-04-08 阶段 5 分享二期后端最小骨架
+
+- 旧分享仍保留在 `/api/files/share-links/**`，用于兼容当前前端公开分享页和旧导入路径。
+- 新 v2 分享位于 `com.yoyuzh.api.v2.shares` 与 `ShareV2Service`；`FileShareLink` 新增 `passwordHash`、`expiresAt`、`maxDownloads`、`downloadCount`、`viewCount`、`allowImport`、`allowDownload`、`shareName` 策略字段。
+- 公开端点仅包括 `GET /api/v2/shares/{token}` 与 `POST /api/v2/shares/{token}/verify-password`；创建、导入、我的分享列表和删除仍需要登录。
+- 密码分享在校验前隐藏 `file` 详情；v2 导入会在复用旧导入落库链路前校验过期时间、密码、`allowImport` 和 `maxDownloads`。当前 `allowDownload` 只落库和返回，尚未接入独立 v2 下载路由。
+
+## 2026-04-08 阶段 5 文件事件流最小闭环
+
+- 后端新增 `FileEvent` / `FileEventType` / `FileEventRepository` / `FileEventService`，并暴露受保护的 `GET /api/v2/files/events` SSE 入口。
+- 当前事件流以用户为广播边界，支持 `path` 前缀过滤和 `X-Yoyuzh-Client-Id` 自身事件抑制；首次连接会收到 `READY` 事件。
+- `FileService` 只在上传、导入、复制、移动、重命名、删除、恢复这些核心变更点记录最小事件。
+- 前端新增 `front/src/lib/file-events.ts`，通过 fetch stream 复用鉴权和 `X-Yoyuzh-Client-Id` 请求头，不直接使用原生 `EventSource`；桌面 `Files` 与移动 `MobileFiles` 已在当前目录订阅事件，收到变更后失效当前目录缓存并刷新列表。
+
+## 2026-04-08 阶段 6 任务框架与 worker 后端最小骨架
+
+- 后端新增 `BackgroundTask` / `BackgroundTaskType` / `BackgroundTaskStatus` / `BackgroundTaskRepository` / `BackgroundTaskService`，用于承载后续压缩、解压、缩略图、媒体元数据和清理类后台工作。
+- 新增受保护的 `/api/v2/tasks/**`：`GET /api/v2/tasks`、`GET /api/v2/tasks/{id}`、`DELETE /api/v2/tasks/{id}`，以及 `POST /api/v2/tasks/archive`、`POST /api/v2/tasks/extract`、`POST /api/v2/tasks/media-metadata` 占位创建接口。
+- 任务创建入口集中在 `BackgroundTaskService` 校验 `StoredFile`：`fileId` 必须属于当前用户且未删除，请求 `path` 必须匹配由 `StoredFile.path + filename` 派生的真实逻辑路径；`ARCHIVE` 暂允许文件和目录，`EXTRACT` 仅允许压缩包类文件，`MEDIA_META` 仅允许媒体类文件。任务 public/private state 使用服务端派生的 `fileId`、`path`、`filename`、`directory`、`contentType`、`size`。
+- 当前实现新增了 worker 最小调度：定时扫描少量 `QUEUED` 任务，通过状态条件更新完成 claim，`MEDIA_META` 任务会进入独立 handler 写入基础媒体元数据与图片宽高，其余任务类型执行 no-op handler 后标记 `COMPLETED`；handler 异常会标记 `FAILED` 并记录错误原因，已取消任务不会被领取。
+- 当前仍不包含真实压缩、解压、缩略图、媒体元数据解析、重试/恢复策略或前端队列展示。
+- 桌面端 `front/src/pages/Files.tsx` 已接入最近 10 条后台任务查看与取消入口，并可为当前选中文件创建 `MEDIA_META` 任务；移动端与 archive/extract 的前端入口仍未接入。

@@ -27,8 +27,9 @@ import { ApiError, apiBinaryUploadRequest, apiDownload, apiRequest, apiUploadReq
 import { copyFileToNetdiskPath } from '@/src/lib/file-copy';
 import { moveFileToNetdiskPath } from '@/src/lib/file-move';
 import { resolveStoredFileType, type FileTypeKind } from '@/src/lib/file-type';
-import { readCachedValue, writeCachedValue } from '@/src/lib/cache';
+import { readCachedValue, removeCachedValue, writeCachedValue } from '@/src/lib/cache';
 import { createFileShareLink, getCurrentFileShareUrl } from '@/src/lib/file-share';
+import { subscribeFileEvents } from '@/src/lib/file-events';
 import { ellipsizeFileName } from '@/src/lib/file-name';
 import { getFilesLastPathCacheKey, getFilesListCacheKey } from '@/src/lib/page-cache';
 import type { DownloadUrlResponse, FileMetadata, InitiateUploadResponse, PageResponse } from '@/src/lib/types';
@@ -191,6 +192,22 @@ export default function MobileFiles() {
       directoryInputRef.current.setAttribute('directory', '');
     }
   }, []);
+
+  useEffect(() => {
+    const subscription = subscribeFileEvents({
+      path: toBackendPath(currentPath),
+      onFileEvent: () => {
+        const activePath = currentPathRef.current;
+        removeCachedValue(getFilesListCacheKey(toBackendPath(activePath)));
+        loadCurrentPath(activePath).catch(() => undefined);
+      },
+      onError: () => undefined,
+    });
+
+    return () => {
+      subscription.close();
+    };
+  }, [currentPath]);
 
   const handleBreadcrumbClick = (index: number) => {
     setCurrentPath(currentPath.slice(0, index + 1));

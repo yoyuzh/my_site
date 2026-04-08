@@ -4,6 +4,16 @@ $root = Split-Path -Parent $PSScriptRoot
 $mavenExe = 'mvn.cmd'
 $out = Join-Path $root 'backend-dev.out.log'
 $err = Join-Path $root 'backend-dev.err.log'
+$devJwtSecret = $env:APP_JWT_SECRET
+$devDatasourceUrl = $env:SPRING_DATASOURCE_URL
+
+if ([string]::IsNullOrWhiteSpace($devJwtSecret)) {
+    $devJwtSecret = 'local-dev-jwt-secret-2026-04-09-yoyuzh-portal-very-long'
+}
+
+if ([string]::IsNullOrWhiteSpace($devDatasourceUrl)) {
+    $devDatasourceUrl = 'jdbc:h2:mem:yoyuzh_portal_dev;MODE=MySQL;DB_CLOSE_DELAY=-1'
+}
 
 if (Test-Path $out) {
     Remove-Item $out -Force
@@ -13,8 +23,8 @@ if (Test-Path $err) {
 }
 
 $proc = Start-Process `
-    -FilePath $mavenExe `
-    -ArgumentList 'spring-boot:run', '-Dspring-boot.run.profiles=dev' `
+    -FilePath 'cmd.exe' `
+    -ArgumentList '/c', "set `"APP_JWT_SECRET=$devJwtSecret`" && set `"SPRING_DATASOURCE_URL=$devDatasourceUrl`" && $mavenExe spring-boot:run -Dspring-boot.run.profiles=dev" `
     -WorkingDirectory (Join-Path $root 'backend') `
     -PassThru `
     -RedirectStandardOutput $out `

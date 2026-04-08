@@ -12,9 +12,9 @@ if (Test-Path $frontendLogErr) {
 }
 
 $proc = Start-Process `
-    -FilePath 'cmd.exe' `
-    -ArgumentList '/c', 'npm run dev -- --host 127.0.0.1 --port 4173' `
-    -WorkingDirectory (Join-Path $root 'vue') `
+    -FilePath 'npm.cmd' `
+    -ArgumentList 'run', 'dev' `
+    -WorkingDirectory (Join-Path $root 'front') `
     -PassThru `
     -RedirectStandardOutput $frontendLogOut `
     -RedirectStandardError $frontendLogErr
@@ -22,10 +22,10 @@ $proc = Start-Process `
 Start-Sleep -Seconds 6
 
 try {
-    $resp = Invoke-WebRequest -Uri 'http://127.0.0.1:4173' -UseBasicParsing -TimeoutSec 5
+    $resp = Invoke-WebRequest -Uri 'http://127.0.0.1:3000' -UseBasicParsing -TimeoutSec 5
     Write-Output "PID=$($proc.Id)"
     Write-Output "STATUS=$($resp.StatusCode)"
-    Write-Output 'URL=http://127.0.0.1:4173'
+    Write-Output 'URL=http://127.0.0.1:3000'
 }
 catch {
     Write-Output "PID=$($proc.Id)"

@@ -29,8 +29,16 @@ import { ApiError, apiBinaryUploadRequest, apiDownload, apiRequest, apiUploadReq
 import { copyFileToNetdiskPath } from '@/src/lib/file-copy';
 import { moveFileToNetdiskPath } from '@/src/lib/file-move';
 import { resolveStoredFileType, type FileTypeKind } from '@/src/lib/file-type';
-import { readCachedValue, writeCachedValue } from '@/src/lib/cache';
+import { readCachedValue, removeCachedValue, writeCachedValue } from '@/src/lib/cache';
+import {
+  cancelBackgroundTask,
+  createMediaMetadataTask,
+  listBackgroundTasks,
+  type BackgroundTask,
+} from '@/src/lib/background-tasks';
 import { createFileShareLink, getCurrentFileShareUrl } from '@/src/lib/file-share';
+import { subscribeFileEvents } from '@/src/lib/file-events';
+import { searchFiles } from '@/src/lib/file-search';
 import { ellipsizeFileName } from '@/src/lib/file-name';
 import { getFilesLastPathCacheKey, getFilesListCacheKey } from '@/src/lib/page-cache';
 import type { DownloadUrlResponse, FileMetadata, InitiateUploadResponse, PageResponse } from '@/src/lib/types';
@@ -86,6 +94,10 @@ function sleep(ms: number) {
 
 function toBackendPath(pathParts: string[]) {
   return toDirectoryPath(pathParts);
+}
+
+function splitBackendPath(path: string) {
+  return path.split('/').filter(Boolean);
 }
 
 function DirectoryTreeItem({
@@ -221,6 +233,18 @@ export default function Files() {
   const [renameError, setRenameError] = useState('');
   const [isRenaming, setIsRenaming] = useState(false);
   const [shareStatus, setShareStatus] = useState('');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchAppliedQuery, setSearchAppliedQuery] = useState('');
+  const [searchResults, setSearchResults] = useState<FileMetadata[] | null>(null);
+  const [searchLoading, setSearchLoading] = useState(false);
+  const [searchError, setSearchError] = useState('');
+  const [selectedSearchFile, setSelectedSearchFile] = useState<FileMetadata | null>(null);
+  const searchRequestIdRef = useRef(0);
+  const [backgroundTasks, setBackgroundTasks] = useState<BackgroundTask[]>([]);
+  const [backgroundTasksLoading, setBackgroundTasksLoading] = useState(false);
+  const [backgroundTasksError, setBackgroundTasksError] = useState('');
+  const [backgroundTaskNotice, setBackgroundTaskNotice] = useState<{ kind: 'success' | 'error'; message: string } | null>(null);
+  const [backgroundTaskActionId, setBackgroundTaskActionId] = useState<number | null>(null);
 
   const recordDirectoryChildren = (pathParts: string[], items: FileMetadata[]) => {
     setDirectoryChildren((previous) => {
@@ -337,10 +361,45 @@ export default function Files() {
     directoryInputRef.current.setAttribute('directory', '');
   }, []);
 
-  const handleSidebarClick = (pathParts: string[]) => {
+  useEffect(() => {
+    const subscription = subscribeFileEvents({
+      path: toBackendPath(currentPath),
+      onFileEvent: () => {
+        const activePath = currentPathRef.current;
+        removeCachedValue(getFilesListCacheKey(toBackendPath(activePath)));
+        loadCurrentPath(activePath).catch(() => undefined);
+      },
+      onError: () => undefined,
+    });
+
+    return () => {
+      subscription.close();
+    };
+  }, [currentPath]);
+
+  useEffect(() => {
+    void loadBackgroundTasks();
+  }, []);
+
+  const clearSearchState = () => {
+    searchRequestIdRef.current += 1;
+    setSearchQuery('');
+    setSearchAppliedQuery('');
+    setSearchResults(null);
+    setSearchLoading(false);
+    setSearchError('');
+    setSelectedSearchFile(null);
+  };
+
+  const handleNavigateToPath = (pathParts: string[]) => {
+    clearSearchState();
     setCurrentPath(pathParts);
     setSelectedFile(null);
     setActiveDropdown(null);
+  };
+
+  const handleSidebarClick = (pathParts: string[]) => {
+    handleNavigateToPath(pathParts);
   };
 
   const handleDirectoryToggle = async (pathParts: string[]) => {
@@ -377,15 +436,125 @@ export default function Files() {
 
   const handleFolderDoubleClick = (file: UiFile) => {
     if (file.type === 'folder') {
-      setCurrentPath([...currentPath, file.name]);
-      setSelectedFile(null);
+      handleNavigateToPath([...currentPath, file.name]);
     }
   };
 
   const handleBreadcrumbClick = (index: number) => {
-    setCurrentPath(currentPath.slice(0, index + 1));
+    handleNavigateToPath(currentPath.slice(0, index + 1));
+  };
+
+  const handleSearchSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+
+    const nextQuery = searchQuery.trim();
+    if (!nextQuery) {
+      clearSearchState();
+      return;
+    }
+
+    const requestId = searchRequestIdRef.current + 1;
+    searchRequestIdRef.current = requestId;
+    setSearchAppliedQuery(nextQuery);
+    setSearchLoading(true);
+    setSearchError('');
+    setSearchResults(null);
+    setSelectedSearchFile(null);
     setSelectedFile(null);
     setActiveDropdown(null);
+
+    try {
+      const response = await searchFiles({
+        name: nextQuery,
+        type: 'all',
+        page: 0,
+        size: 100,
+      });
+
+      if (searchRequestIdRef.current !== requestId) {
+        return;
+      }
+
+      setSearchResults(response.items);
+    } catch (error) {
+      if (searchRequestIdRef.current !== requestId) {
+        return;
+      }
+
+      setSearchResults([]);
+      setSearchError(error instanceof Error ? error.message : '搜索失败');
+    } finally {
+      if (searchRequestIdRef.current === requestId) {
+        setSearchLoading(false);
+      }
+    }
+  };
+
+  const loadBackgroundTasks = async () => {
+    setBackgroundTasksLoading(true);
+    setBackgroundTasksError('');
+
+    try {
+      const response = await listBackgroundTasks({ page: 0, size: 10 });
+      setBackgroundTasks(response.items);
+    } catch (error) {
+      setBackgroundTasksError(error instanceof Error ? error.message : '获取后台任务失败');
+    } finally {
+      setBackgroundTasksLoading(false);
+    }
+  };
+
+  const handleCreateMediaMetadataTask = async () => {
+    if (!selectedFile || selectedFile.type === 'folder') {
+      return;
+    }
+
+    const taskPath = currentPath.length === 0 ? `/${selectedFile.name}` : `${toBackendPath(currentPath)}/${selectedFile.name}`;
+    const correlationId = `media-meta:${selectedFile.id}:${Date.now()}`;
+
+    setBackgroundTaskNotice(null);
+    setBackgroundTaskActionId(selectedFile.id);
+
+    try {
+      await createMediaMetadataTask({
+        fileId: selectedFile.id,
+        path: taskPath,
+        correlationId,
+      });
+      setBackgroundTaskNotice({
+        kind: 'success',
+        message: '已创建媒体信息提取任务，可在右侧后台任务面板查看状态。',
+      });
+      await loadBackgroundTasks();
+    } catch (error) {
+      setBackgroundTaskNotice({
+        kind: 'error',
+        message: error instanceof Error ? error.message : '创建媒体信息提取任务失败',
+      });
+    } finally {
+      setBackgroundTaskActionId(null);
+    }
+  };
+
+  const handleCancelBackgroundTask = async (taskId: number) => {
+    setBackgroundTaskNotice(null);
+    setBackgroundTaskActionId(taskId);
+
+    try {
+      await cancelBackgroundTask(taskId);
+      setBackgroundTaskNotice({
+        kind: 'success',
+        message: `已取消任务 ${taskId}，后台列表已刷新。`,
+      });
+      await loadBackgroundTasks();
+    } catch (error) {
+      setBackgroundTaskNotice({
+        kind: 'error',
+        message: error instanceof Error ? error.message : '取消任务失败',
+      });
+    } finally {
+      setBackgroundTaskActionId(null);
+    }
   };
 
   const openRenameModal = (file: UiFile) => {
@@ -753,6 +922,7 @@ export default function Files() {
   };
 
   const directoryTree = buildDirectoryTree(directoryChildren, currentPath, expandedDirectories);
+  const isSearchActive = searchAppliedQuery.trim().length > 0;
 
   return (
     <div className="flex flex-col lg:flex-row gap-6 h-[calc(100vh-8rem)]">
@@ -857,8 +1027,174 @@ export default function Files() {
           </div>
         </div>
 
+        <form className="border-b border-white/10 p-4 pt-0" onSubmit={handleSearchSubmit}>
+          <div className="mt-3 flex flex-col gap-2 md:flex-row">
+            <Input
+              value={searchQuery}
+              onChange={(event) => setSearchQuery(event.target.value)}
+              placeholder="按文件名搜索"
+              className="h-10 border-white/10 bg-black/20 text-white placeholder:text-slate-500 focus-visible:ring-[#336EFF]"
+            />
+            <div className="flex gap-2">
+              <Button type="submit" className="shrink-0" disabled={searchLoading}>
+                {searchLoading ? '搜索中...' : '搜索'}
+              </Button>
+              {isSearchActive ? (
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="shrink-0 border-white/10 text-slate-300 hover:bg-white/10"
+                  onClick={() => {
+                    clearSearchState();
+                  }}
+                >
+                  清空
+                </Button>
+              ) : null}
+            </div>
+          </div>
+          {searchError ? <p className="mt-2 text-sm text-red-400">{searchError}</p> : null}
+        </form>
+
         {/* File List */}
-        <div className="flex-1 overflow-y-auto p-4">
+        {isSearchActive ? (
+          <div className="flex-1 overflow-y-auto p-4">
+            {searchLoading ? (
+              <div className="flex flex-col items-center justify-center space-y-3 py-12 text-slate-500">
+                <Folder className="h-12 w-12 opacity-20" />
+                <p className="text-sm">搜索中...</p>
+              </div>
+            ) : (searchResults?.length ?? 0) === 0 ? (
+              <div className="flex flex-col items-center justify-center space-y-3 py-12 text-slate-500">
+                <Folder className="h-12 w-12 opacity-20" />
+                <p className="text-sm">未找到匹配项</p>
+              </div>
+            ) : viewMode === 'list' ? (
+              <table className="w-full table-fixed border-collapse text-left">
+                <thead>
+                  <tr className="border-b border-white/5 text-xs font-semibold uppercase tracking-wider text-slate-500">
+                    <th className="w-[40%] pb-3 pl-4 font-medium">名称</th>
+                    <th className="hidden w-[26%] pb-3 font-medium md:table-cell">位置</th>
+                    <th className="hidden w-[20%] pb-3 font-medium lg:table-cell">修改时间</th>
+                    <th className="w-[10%] pb-3 font-medium">大小</th>
+                    <th className="w-[4%] pb-3"></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {searchResults?.map((file) => {
+                    const uiFile = toUiFile(file);
+                    const selected = selectedSearchFile?.id === file.id;
+
+                    return (
+                      <tr
+                        key={file.id}
+                        onClick={() => setSelectedSearchFile(file)}
+                        onDoubleClick={() => {
+                          if (file.directory) {
+                            handleNavigateToPath(splitBackendPath(file.path));
+                          }
+                        }}
+                        className={cn(
+                          'group cursor-pointer border-b border-white/5 transition-colors last:border-0',
+                          selected ? 'bg-[#336EFF]/10' : 'hover:bg-white/[0.02]',
+                        )}
+                      >
+                        <td className="max-w-0 py-3 pl-4">
+                          <div className="flex min-w-0 items-center gap-3">
+                            <FileTypeIcon type={uiFile.type} size="sm" />
+                            <div className="min-w-0">
+                              <span
+                                className={cn('block truncate text-sm font-medium', selected ? 'text-[#336EFF]' : 'text-slate-200')}
+                                title={uiFile.name}
+                              >
+                                {ellipsizeFileName(uiFile.name, 48)}
+                              </span>
+                              <span className="hidden truncate text-xs text-slate-500 md:block" title={file.path}>
+                                {file.path}
+                              </span>
+                            </div>
+                          </div>
+                        </td>
+                        <td className="hidden py-3 text-sm text-slate-400 md:table-cell">{file.path}</td>
+                        <td className="hidden py-3 text-sm text-slate-400 lg:table-cell">{uiFile.modified}</td>
+                        <td className="py-3 font-mono text-sm text-slate-400">{uiFile.size}</td>
+                        <td className="py-3 pr-4 text-right">
+                          <FileActionMenu
+                            file={uiFile}
+                            activeDropdown={activeDropdown}
+                            onToggle={(fileId) => setActiveDropdown((previous) => (previous === fileId ? null : fileId))}
+                            onDownload={handleDownload}
+                            onShare={handleShare}
+                            onMove={(targetFile) => openTargetActionModal(targetFile, 'move')}
+                            onCopy={(targetFile) => openTargetActionModal(targetFile, 'copy')}
+                            onRename={openRenameModal}
+                            onDelete={openDeleteModal}
+                            onClose={() => setActiveDropdown(null)}
+                            allowMutatingActions={false}
+                          />
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            ) : (
+              <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
+                {searchResults?.map((file) => {
+                  const uiFile = toUiFile(file);
+                  const selected = selectedSearchFile?.id === file.id;
+
+                  return (
+                    <div
+                      key={file.id}
+                      onClick={() => setSelectedSearchFile(file)}
+                      onDoubleClick={() => {
+                        if (file.directory) {
+                          handleNavigateToPath(splitBackendPath(file.path));
+                        }
+                      }}
+                      className={cn(
+                        'group relative flex cursor-pointer flex-col items-center rounded-xl border p-4 transition-all',
+                        selected
+                          ? 'border-[#336EFF]/30 bg-[#336EFF]/10'
+                          : 'border-white/5 bg-white/[0.02] hover:border-white/10 hover:bg-white/[0.04]',
+                      )}
+                    >
+                      <div className="absolute right-2 top-2">
+                        <FileActionMenu
+                          file={uiFile}
+                          activeDropdown={activeDropdown}
+                          onToggle={(fileId) => setActiveDropdown((previous) => (previous === fileId ? null : fileId))}
+                          onDownload={handleDownload}
+                          onShare={handleShare}
+                          onMove={(targetFile) => openTargetActionModal(targetFile, 'move')}
+                          onCopy={(targetFile) => openTargetActionModal(targetFile, 'copy')}
+                          onRename={openRenameModal}
+                          onDelete={openDeleteModal}
+                          onClose={() => setActiveDropdown(null)}
+                          allowMutatingActions={false}
+                        />
+                      </div>
+
+                      <FileTypeIcon type={uiFile.type} size="lg" className="mb-3 transition-transform duration-200 group-hover:scale-[1.03]" />
+
+                      <span className={cn('w-full truncate px-2 text-center text-sm font-medium', selected ? 'text-[#336EFF]' : 'text-slate-200')}>
+                        {ellipsizeFileName(uiFile.name, 24)}
+                      </span>
+                      <span className={cn('mt-1 inline-flex rounded-full px-2 py-1 text-[11px] font-medium', getFileTypeTheme(uiFile.type).badgeClassName)}>
+                        {uiFile.typeLabel}
+                      </span>
+                      <span className="mt-2 text-xs text-slate-500">
+                        {uiFile.type === 'folder' ? uiFile.modified : uiFile.size}
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        ) : null}
+        <div className={cn('flex-1 overflow-y-auto p-4', isSearchActive ? 'hidden' : '')}>
           {currentFiles.length === 0 ? (
             <div className="flex flex-col items-center justify-center space-y-3 py-12 text-slate-500">
               <Folder className="w-12 h-12 opacity-20" />
@@ -989,13 +1325,13 @@ export default function Files() {
         </div>
       </Card>
 
-      {/* Right Sidebar (Details) */}
-      {selectedFile && (
-        <motion.div
-          initial={{ opacity: 0, x: 20 }}
-          animate={{ opacity: 1, x: 0 }}
-          className="w-full lg:w-72 shrink-0"
-        >
+      {/* Right Sidebar (Details + Tasks) */}
+      <motion.div
+        initial={{ opacity: 0, x: 20 }}
+        animate={{ opacity: 1, x: 0 }}
+        className="w-full lg:w-72 shrink-0 space-y-4"
+      >
+        {selectedFile && (
           <Card className="h-full">
             <CardHeader className="pb-4 border-b border-white/10">
               <CardTitle className="text-base">详细信息</CardTitle>
@@ -1031,6 +1367,17 @@ export default function Files() {
                   <Button variant="outline" className="w-full gap-2 bg-white/5 border-white/10 hover:bg-white/10" onClick={() => openTargetActionModal(selectedFile, 'copy')}>
                     <Copy className="w-4 h-4" /> 复制到
                   </Button>
+                  {selectedFile.type !== 'folder' ? (
+                    <Button
+                      variant="outline"
+                      className="col-span-2 w-full gap-2 border-white/10 bg-white/5 hover:bg-white/10"
+                      onClick={() => void handleCreateMediaMetadataTask()}
+                      disabled={backgroundTaskActionId === selectedFile.id}
+                    >
+                      <RotateCcw className={cn('w-4 h-4', backgroundTaskActionId === selectedFile.id ? 'animate-spin' : '')} />
+                      {backgroundTaskActionId === selectedFile.id ? '创建中...' : '提取媒体信息'}
+                    </Button>
+                  ) : null}
                   <Button
                     variant="outline"
                     className="w-full gap-2 border-red-500/20 bg-red-500/5 text-red-400 hover:bg-red-500/10 hover:text-red-300"
@@ -1062,8 +1409,97 @@ export default function Files() {
               </div>
             </CardContent>
           </Card>
-        </motion.div>
-      )}
+        )}
+
+        <Card>
+          <CardHeader className="border-b border-white/10 pb-4">
+            <div className="flex items-center justify-between gap-3">
+              <CardTitle className="text-base">后台任务</CardTitle>
+              <button
+                type="button"
+                className="flex h-8 w-8 items-center justify-center rounded-md text-slate-400 transition-colors hover:bg-white/10 hover:text-white"
+                onClick={() => void loadBackgroundTasks()}
+                aria-label="刷新后台任务"
+              >
+                <RotateCcw className={cn('h-4 w-4', backgroundTasksLoading ? 'animate-spin' : '')} />
+              </button>
+            </div>
+          </CardHeader>
+          <CardContent className="space-y-3 p-4">
+            {backgroundTaskNotice ? (
+              <div
+                className={cn(
+                  'rounded-xl border px-3 py-2 text-xs leading-relaxed',
+                  backgroundTaskNotice.kind === 'error'
+                    ? 'border-red-500/20 bg-red-500/10 text-red-200'
+                    : 'border-emerald-500/20 bg-emerald-500/10 text-emerald-200',
+                )}
+                aria-live="polite"
+              >
+                {backgroundTaskNotice.message}
+              </div>
+            ) : null}
+            {backgroundTasksError ? (
+              <div className="rounded-xl border border-red-500/20 bg-red-500/10 px-3 py-2 text-xs text-red-200">
+                {backgroundTasksError}
+              </div>
+            ) : null}
+            {backgroundTasksLoading ? (
+              <div className="rounded-xl border border-white/10 bg-white/[0.02] px-3 py-4 text-sm text-slate-400">
+                加载最近任务中...
+              </div>
+            ) : backgroundTasks.length === 0 ? (
+              <div className="rounded-xl border border-white/10 bg-white/[0.02] px-3 py-4 text-sm text-slate-400">
+                暂无后台任务
+              </div>
+            ) : (
+              <div className="max-h-[32rem] space-y-3 overflow-y-auto pr-1">
+                {backgroundTasks.map((task) => {
+                  const canCancel = task.status === 'QUEUED' || task.status === 'RUNNING';
+                  return (
+                    <div key={task.id} className="rounded-xl border border-white/10 bg-white/[0.03] p-3">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <p className="truncate text-sm font-medium text-white">{getBackgroundTaskTypeLabel(task.type)}</p>
+                          <p className={cn('text-xs', getBackgroundTaskStatusClassName(task.status))}>
+                            {getBackgroundTaskStatusLabel(task.status)}
+                          </p>
+                        </div>
+                        {canCancel ? (
+                          <Button
+                            type="button"
+                            variant="outline"
+                            className="shrink-0 border-white/10 bg-white/5 px-3 text-xs text-slate-200 hover:bg-white/10"
+                            onClick={() => void handleCancelBackgroundTask(task.id)}
+                            disabled={backgroundTaskActionId === task.id}
+                          >
+                            {backgroundTaskActionId === task.id ? '取消中...' : '取消'}
+                          </Button>
+                        ) : null}
+                      </div>
+                      <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
+                        <div className="min-w-0">
+                          <p className="text-slate-500">创建时间</p>
+                          <p className="truncate text-slate-300">{formatTaskDateTime(task.createdAt)}</p>
+                        </div>
+                        <div className="min-w-0">
+                          <p className="text-slate-500">完成时间</p>
+                          <p className="truncate text-slate-300">{task.finishedAt ? formatTaskDateTime(task.finishedAt) : '未完成'}</p>
+                        </div>
+                      </div>
+                      {task.errorMessage ? (
+                        <div className="mt-3 break-words rounded-lg border border-red-500/20 bg-red-500/10 px-2 py-1 text-xs leading-relaxed text-red-200">
+                          {task.errorMessage}
+                        </div>
+                      ) : null}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      </motion.div>
 
       <AnimatePresence>
         {renameModalOpen && (
@@ -1221,6 +1657,51 @@ function DetailItem({ label, value }: { label: string; value: string }) {
   );
 }
 
+function formatTaskDateTime(value: string) {
+  return formatDateTime(value);
+}
+
+function getBackgroundTaskTypeLabel(type: BackgroundTask['type']) {
+  switch (type) {
+    case 'ARCHIVE':
+      return '压缩任务';
+    case 'EXTRACT':
+      return '解压任务';
+    case 'MEDIA_META':
+      return '媒体信息提取任务';
+  }
+}
+
+function getBackgroundTaskStatusLabel(status: BackgroundTask['status']) {
+  switch (status) {
+    case 'QUEUED':
+      return '排队中';
+    case 'RUNNING':
+      return '执行中';
+    case 'COMPLETED':
+      return '已完成';
+    case 'FAILED':
+      return '已失败';
+    case 'CANCELLED':
+      return '已取消';
+  }
+}
+
+function getBackgroundTaskStatusClassName(status: BackgroundTask['status']) {
+  switch (status) {
+    case 'QUEUED':
+      return 'text-amber-300';
+    case 'RUNNING':
+      return 'text-sky-300';
+    case 'COMPLETED':
+      return 'text-emerald-300';
+    case 'FAILED':
+      return 'text-red-300';
+    case 'CANCELLED':
+      return 'text-slate-400';
+  }
+}
+
 function FileActionMenu({
   file,
   activeDropdown,
@@ -1232,6 +1713,7 @@ function FileActionMenu({
   onRename,
   onDelete,
   onClose,
+  allowMutatingActions = true,
 }: {
   file: UiFile;
   activeDropdown: number | null;
@@ -1243,6 +1725,7 @@ function FileActionMenu({
   onRename: (file: UiFile) => void;
   onDelete: (file: UiFile) => void;
   onClose: () => void;
+  allowMutatingActions?: boolean;
 }) {
   return (
     <div className="relative inline-block text-left">
@@ -1295,46 +1778,50 @@ function FileActionMenu({
                 <Share2 className="w-4 h-4" /> 分享链接
               </button>
             ) : null}
-            <button
-              onClick={(event) => {
-                event.stopPropagation();
-                onMove(file);
-                onClose();
-              }}
-              className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-slate-300 transition-colors hover:bg-white/10 hover:text-white"
-            >
-              <Folder className="w-4 h-4" /> 移动
-            </button>
-            <button
-              onClick={(event) => {
-                event.stopPropagation();
-                onCopy(file);
-                onClose();
-              }}
-              className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-slate-300 transition-colors hover:bg-white/10 hover:text-white"
-            >
-              <Copy className="w-4 h-4" /> 复制到
-            </button>
-            <button
-              onClick={(event) => {
-                event.stopPropagation();
-                onRename(file);
-                onClose();
-              }}
-              className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-slate-300 transition-colors hover:bg-white/10 hover:text-white"
-            >
-              <Edit2 className="w-4 h-4" /> 重命名
-            </button>
-            <button
-              onClick={(event) => {
-                event.stopPropagation();
-                onDelete(file);
-                onClose();
-              }}
-              className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-red-400 transition-colors hover:bg-red-500/10 hover:text-red-300"
-            >
-              <Trash2 className="w-4 h-4" /> 删除
-            </button>
+            {allowMutatingActions ? (
+              <>
+                <button
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    onMove(file);
+                    onClose();
+                  }}
+                  className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-slate-300 transition-colors hover:bg-white/10 hover:text-white"
+                >
+                  <Folder className="w-4 h-4" /> 移动
+                </button>
+                <button
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    onCopy(file);
+                    onClose();
+                  }}
+                  className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-slate-300 transition-colors hover:bg-white/10 hover:text-white"
+                >
+                  <Copy className="w-4 h-4" /> 复制到
+                </button>
+                <button
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    onRename(file);
+                    onClose();
+                  }}
+                  className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-slate-300 transition-colors hover:bg-white/10 hover:text-white"
+                >
+                  <Edit2 className="w-4 h-4" /> 重命名
+                </button>
+                <button
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    onDelete(file);
+                    onClose();
+                  }}
+                  className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-red-400 transition-colors hover:bg-red-500/10 hover:text-red-300"
+                >
+                  <Trash2 className="w-4 h-4" /> 删除
+                </button>
+              </>
+            ) : null}
           </motion.div>
         )}
       </AnimatePresence>

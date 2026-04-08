@@ -7,6 +7,7 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 
@@ -57,6 +58,35 @@ public interface StoredFileRepository extends JpaRepository<StoredFile, Long> {
     Page<StoredFile> findByUserIdAndPathOrderByDirectoryDescCreatedAtDesc(@Param("userId") Long userId,
                                                                           @Param("path") String path,
                                                                           Pageable pageable);
+
+    @EntityGraph(attributePaths = "blob")
+    @Query("""
+            select f from StoredFile f
+            where f.user.id = :userId
+              and f.deletedAt is null
+              and (:name is null or :name = '' or lower(f.filename) like lower(concat('%', :name, '%')))
+              and (:directory is null or f.directory = :directory)
+              and (:sizeGte is null or f.size >= :sizeGte)
+              and (:sizeLte is null or f.size <= :sizeLte)
+              and (:createdGte is null or f.createdAt >= :createdGte)
+              and (:createdLte is null or f.createdAt <= :createdLte)
+              and (:updatedGte is null or coalesce(f.updatedAt, f.createdAt) >= :updatedGte)
+              and (:updatedLte is null or coalesce(f.updatedAt, f.createdAt) <= :updatedLte)
+            order by f.directory desc, coalesce(f.updatedAt, f.createdAt) desc, f.createdAt desc
+            """)
+    Page<StoredFile> searchUserFiles(@Param("userId") Long userId,
+                                     @Param("name") String name,
+                                     @Param("directory") Boolean directory,
+                                     @Param("sizeGte") Long sizeGte,
+                                     @Param("sizeLte") Long sizeLte,
+                                     @Param("createdGte") LocalDateTime createdGte,
+                                     @Param("createdLte") LocalDateTime createdLte,
+                                     @Param("updatedGte") LocalDateTime updatedGte,
+                                     @Param("updatedLte") LocalDateTime updatedLte,
+                                     Pageable pageable);
+
+    @EntityGraph(attributePaths = {"user", "blob"})
+    Optional<StoredFile> findByIdAndUserIdAndDeletedAtIsNull(Long id, Long userId);
 
     @EntityGraph(attributePaths = "blob")
     @Query("""

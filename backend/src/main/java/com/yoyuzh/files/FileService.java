@@ -62,6 +62,8 @@ public class FileService {
     private final String packageDownloadSecret;
     private final long packageDownloadTtlSeconds;
     private final Clock clock;
+    @Autowired(required = false)
+    private FileEventService fileEventService;
 
     @Autowired
     public FileService(StoredFileRepository storedFileRepository,
@@ -246,6 +248,7 @@ public class FileService {
     @Transactional
     public void delete(User user, Long fileId) {
         StoredFile storedFile = getOwnedActiveFile(user, fileId, "删除");
+        String fromPath = buildLogicalPath(storedFile);
         List<StoredFile> filesToRecycle = new ArrayList<>();
         filesToRecycle.add(storedFile);
         if (storedFile.isDirectory()) {
@@ -254,11 +257,14 @@ public class FileService {
             filesToRecycle.addAll(descendants);
         }
         moveToRecycleBin(filesToRecycle, storedFile.getId());
+        recordFileEvent(user, FileEventType.DELETED, storedFile, fromPath, buildLogicalPath(storedFile));
     }
 
     @Transactional
     public FileMetadataResponse restoreFromRecycleBin(User user, Long fileId) {
         StoredFile recycleRoot = getOwnedRecycleRootFile(user, fileId);
+        String fromPath = buildLogicalPath(recycleRoot);
+        String toPath = buildTargetLogicalPath(requireRecycleOriginalPath(recycleRoot), recycleRoot.getFilename());
         List<StoredFile> recycleGroupItems = loadRecycleGroupItems(recycleRoot);
         long additionalBytes = recycleGroupItems.stream()
                 .filter(item -> !item.isDirectory())
@@ -276,6 +282,7 @@ public class FileService {
             item.setRecycleRoot(false);
         }
         storedFileRepository.saveAll(recycleGroupItems);
+        recordFileEvent(user, FileEventType.RESTORED, recycleRoot, fromPath, toPath);
         return toResponse(recycleRoot);
     }
 
@@ -297,6 +304,7 @@ public class FileService {
     @Transactional
     public FileMetadataResponse rename(User user, Long fileId, String nextFilename) {
         StoredFile storedFile = getOwnedActiveFile(user, fileId, "重命名");
+        String fromPath = buildLogicalPath(storedFile);
         String sanitizedFilename = normalizeLeafName(nextFilename);
         if (sanitizedFilename.equals(storedFile.getFilename())) {
             return toResponse(storedFile);
@@ -326,12 +334,15 @@ public class FileService {
         }
 
         storedFile.setFilename(sanitizedFilename);
-        return toResponse(storedFileRepository.save(storedFile));
+        FileMetadataResponse response = toResponse(storedFileRepository.save(storedFile));
+        recordFileEvent(user, FileEventType.RENAMED, storedFile, fromPath, buildLogicalPath(storedFile));
+        return response;
     }
 
     @Transactional
     public FileMetadataResponse move(User user, Long fileId, String nextPath) {
         StoredFile storedFile = getOwnedActiveFile(user, fileId, "移动");
+        String fromPath = buildLogicalPath(storedFile);
         String normalizedTargetPath = normalizeDirectoryPath(nextPath);
         if (normalizedTargetPath.equals(storedFile.getPath())) {
             return toResponse(storedFile);
@@ -366,7 +377,9 @@ public class FileService {
         }
 
         storedFile.setPath(normalizedTargetPath);
-        return toResponse(storedFileRepository.save(storedFile));
+        FileMetadataResponse response = toResponse(storedFileRepository.save(storedFile));
+        recordFileEvent(user, FileEventType.MOVED, storedFile, fromPath, buildLogicalPath(storedFile));
+        return response;
     }
 
     @Transactional
@@ -720,6 +733,7 @@ public class FileService {
         storedFile.setPrimaryEntity(primaryEntity);
         StoredFile savedFile = storedFileRepository.save(storedFile);
         savePrimaryEntityRelation(savedFile, primaryEntity);
+        recordFileEvent(user, FileEventType.CREATED, savedFile, null, buildLogicalPath(savedFile));
         return toResponse(savedFile);
     }
 
@@ -1053,6 +1067,7 @@ public class FileService {
         if (!savedFile.isDirectory() && savedFile.getPrimaryEntity() != null) {
             savePrimaryEntityRelation(savedFile, savedFile.getPrimaryEntity());
         }
+        recordFileEvent(owner, FileEventType.CREATED, savedFile, null, buildLogicalPath(savedFile));
         return savedFile;
     }
 
@@ -1091,6 +1106,32 @@ public class FileService {
         zipOutputStream.putNextEntry(new ZipEntry(entryName));
         zipOutputStream.write(content);
         zipOutputStream.closeEntry();
+    }
+
+    private void recordFileEvent(User user,
+                                 FileEventType eventType,
+                                 StoredFile storedFile,
+                                 String fromPath,
+                                 String toPath) {
+        if (fileEventService == null || storedFile == null || storedFile.getId() == null) {
+            return;
+        }
+
+        Map<String, Object> payload = new HashMap<>();
+        payload.put("action", eventType.name());
+        payload.put("fileId", storedFile.getId());
+        payload.put("filename", storedFile.getFilename());
+        payload.put("path", storedFile.getPath());
+        payload.put("directory", storedFile.isDirectory());
+        payload.put("contentType", storedFile.getContentType());
+        payload.put("size", storedFile.getSize());
+        if (fromPath != null) {
+            payload.put("fromPath", fromPath);
+        }
+        if (toPath != null) {
+            payload.put("toPath", toPath);
+        }
+        fileEventService.record(user, eventType, storedFile.getId(), fromPath, toPath, payload);
     }
 
     private String normalizeLeafName(String filename) {

@@ -628,11 +628,13 @@ export function apiBinaryUploadRequest(path: string, init: ApiBinaryUploadReques
   });
 }
 
-export async function apiDownload(path: string) {
+export async function apiDownload(path: string, init: ApiRequestInit = {}) {
+  const headers = new Headers(init.headers);
+  headers.set('Accept', '*/*');
+
   const response = await performRequest(path, {
-    headers: {
-      Accept: '*/*',
-    },
+    ...init,
+    headers,
   });
 
   if (!response.ok) {
