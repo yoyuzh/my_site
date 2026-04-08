@@ -26,6 +26,8 @@ class FileEntityBackfillServiceTest {
     private FileEntityRepository fileEntityRepository;
     @Mock
     private StoredFileEntityRepository storedFileEntityRepository;
+    @Mock
+    private StoragePolicyService storagePolicyService;
 
     private FileEntityBackfillService backfillService;
 
@@ -34,7 +36,8 @@ class FileEntityBackfillServiceTest {
         backfillService = new FileEntityBackfillService(
                 storedFileRepository,
                 fileEntityRepository,
-                storedFileEntityRepository
+                storedFileEntityRepository,
+                storagePolicyService
         );
     }
 
@@ -50,6 +53,7 @@ class FileEntityBackfillServiceTest {
             entity.setId(100L);
             return entity;
         });
+        when(storagePolicyService.ensureDefaultPolicy()).thenReturn(createDefaultStoragePolicy());
 
         backfillService.backfillPrimaryEntities();
 
@@ -57,6 +61,7 @@ class FileEntityBackfillServiceTest {
         assertThat(storedFile.getPrimaryEntity().getObjectKey()).isEqualTo("blobs/blob-20");
         assertThat(storedFile.getPrimaryEntity().getEntityType()).isEqualTo(FileEntityType.VERSION);
         assertThat(storedFile.getPrimaryEntity().getReferenceCount()).isEqualTo(1);
+        assertThat(storedFile.getPrimaryEntity().getStoragePolicyId()).isEqualTo(42L);
         verify(fileEntityRepository).save(any(FileEntity.class));
         verify(storedFileRepository).save(storedFile);
         verify(storedFileEntityRepository).save(any(StoredFileEntity.class));
@@ -110,5 +115,17 @@ class FileEntityBackfillServiceTest {
         blob.setSize(5L);
         blob.setCreatedAt(LocalDateTime.now());
         return blob;
+    }
+
+    private StoragePolicy createDefaultStoragePolicy() {
+        StoragePolicy policy = new StoragePolicy();
+        policy.setId(42L);
+        policy.setName("Default Local Storage");
+        policy.setType(StoragePolicyType.LOCAL);
+        policy.setCredentialMode(StoragePolicyCredentialMode.NONE);
+        policy.setMaxSizeBytes(500L * 1024 * 1024);
+        policy.setEnabled(true);
+        policy.setDefaultPolicy(true);
+        return policy;
     }
 }

@@ -63,6 +63,8 @@ class FileServiceTest {
     private FileShareLinkRepository fileShareLinkRepository;
     @Mock
     private AdminMetricsService adminMetricsService;
+    @Mock
+    private StoragePolicyService storagePolicyService;
 
     private FileService fileService;
 
@@ -150,6 +152,7 @@ class FileServiceTest {
                 fileContentStorage,
                 fileShareLinkRepository,
                 adminMetricsService,
+                storagePolicyService,
                 new FileStorageProperties()
         );
         User user = createUser(7L);
@@ -168,6 +171,7 @@ class FileServiceTest {
             entity.setId(200L);
             return entity;
         });
+        when(storagePolicyService.ensureDefaultPolicy()).thenReturn(createDefaultStoragePolicy());
         when(storedFileRepository.save(any(StoredFile.class))).thenAnswer(invocation -> {
             StoredFile file = invocation.getArgument(0);
             file.setId(10L);
@@ -181,6 +185,7 @@ class FileServiceTest {
         assertThat(entityCaptor.getValue().getObjectKey()).startsWith("blobs/");
         assertThat(entityCaptor.getValue().getEntityType()).isEqualTo(FileEntityType.VERSION);
         assertThat(entityCaptor.getValue().getCreatedBy()).isSameAs(user);
+        assertThat(entityCaptor.getValue().getStoragePolicyId()).isEqualTo(42L);
 
         var relationCaptor = forClass(StoredFileEntity.class);
         verify(storedFileEntityRepository).save(relationCaptor.capture());
@@ -827,5 +832,17 @@ class FileServiceTest {
         directory.setSize(0L);
         directory.setBlob(null);
         return directory;
+    }
+
+    private StoragePolicy createDefaultStoragePolicy() {
+        StoragePolicy policy = new StoragePolicy();
+        policy.setId(42L);
+        policy.setName("Default Local Storage");
+        policy.setType(StoragePolicyType.LOCAL);
+        policy.setCredentialMode(StoragePolicyCredentialMode.NONE);
+        policy.setMaxSizeBytes(500L * 1024 * 1024);
+        policy.setEnabled(true);
+        policy.setDefaultPolicy(true);
+        return policy;
     }
 }

@@ -18,6 +18,7 @@ public class FileEntityBackfillService implements CommandLineRunner {
     private final StoredFileRepository storedFileRepository;
     private final FileEntityRepository fileEntityRepository;
     private final StoredFileEntityRepository storedFileEntityRepository;
+    private final StoragePolicyService storagePolicyService;
 
     @Override
     @Transactional
@@ -51,6 +52,7 @@ public class FileEntityBackfillService implements CommandLineRunner {
         fileEntity.setEntityType(FileEntityType.VERSION);
         fileEntity.setReferenceCount(1);
         fileEntity.setCreatedBy(storedFile.getUser());
+        fileEntity.setStoragePolicyId(storagePolicyService.ensureDefaultPolicy().getId());
         return fileEntityRepository.save(fileEntity);
     }
 

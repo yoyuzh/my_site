@@ -56,6 +56,7 @@ public class FileService {
     private final FileContentStorage fileContentStorage;
     private final FileShareLinkRepository fileShareLinkRepository;
     private final AdminMetricsService adminMetricsService;
+    private final StoragePolicyService storagePolicyService;
     private final long maxFileSize;
     private final String packageDownloadBaseUrl;
     private final String packageDownloadSecret;
@@ -70,8 +71,9 @@ public class FileService {
                        FileContentStorage fileContentStorage,
                        FileShareLinkRepository fileShareLinkRepository,
                        AdminMetricsService adminMetricsService,
+                       StoragePolicyService storagePolicyService,
                        FileStorageProperties properties) {
-        this(storedFileRepository, fileBlobRepository, fileEntityRepository, storedFileEntityRepository, fileContentStorage, fileShareLinkRepository, adminMetricsService, properties, Clock.systemUTC());
+        this(storedFileRepository, fileBlobRepository, fileEntityRepository, storedFileEntityRepository, fileContentStorage, fileShareLinkRepository, adminMetricsService, storagePolicyService, properties, Clock.systemUTC());
     }
 
     FileService(StoredFileRepository storedFileRepository,
@@ -81,6 +83,7 @@ public class FileService {
                 FileContentStorage fileContentStorage,
                 FileShareLinkRepository fileShareLinkRepository,
                 AdminMetricsService adminMetricsService,
+                StoragePolicyService storagePolicyService,
                 FileStorageProperties properties,
                 Clock clock) {
         this.storedFileRepository = storedFileRepository;
@@ -90,6 +93,7 @@ public class FileService {
         this.fileContentStorage = fileContentStorage;
         this.fileShareLinkRepository = fileShareLinkRepository;
         this.adminMetricsService = adminMetricsService;
+        this.storagePolicyService = storagePolicyService;
         this.maxFileSize = properties.getMaxFileSize();
         this.packageDownloadBaseUrl = StringUtils.hasText(properties.getS3().getPackageDownloadBaseUrl())
                 ? properties.getS3().getPackageDownloadBaseUrl().trim()
@@ -107,7 +111,7 @@ public class FileService {
                 FileShareLinkRepository fileShareLinkRepository,
                 AdminMetricsService adminMetricsService,
                 FileStorageProperties properties) {
-        this(storedFileRepository, fileBlobRepository, null, null, fileContentStorage, fileShareLinkRepository, adminMetricsService, properties, Clock.systemUTC());
+        this(storedFileRepository, fileBlobRepository, null, null, fileContentStorage, fileShareLinkRepository, adminMetricsService, null, properties, Clock.systemUTC());
     }
 
     FileService(StoredFileRepository storedFileRepository,
@@ -117,7 +121,7 @@ public class FileService {
                 AdminMetricsService adminMetricsService,
                 FileStorageProperties properties,
                 Clock clock) {
-        this(storedFileRepository, fileBlobRepository, null, null, fileContentStorage, fileShareLinkRepository, adminMetricsService, properties, clock);
+        this(storedFileRepository, fileBlobRepository, null, null, fileContentStorage, fileShareLinkRepository, adminMetricsService, null, properties, clock);
     }
 
     @Transactional
@@ -745,7 +749,15 @@ public class FileService {
         entity.setEntityType(FileEntityType.VERSION);
         entity.setReferenceCount(1);
         entity.setCreatedBy(user);
+        entity.setStoragePolicyId(resolveDefaultStoragePolicyId());
         return entity;
+    }
+
+    private Long resolveDefaultStoragePolicyId() {
+        if (storagePolicyService == null) {
+            return null;
+        }
+        return storagePolicyService.ensureDefaultPolicy().getId();
     }
 
     private void savePrimaryEntityRelation(StoredFile storedFile, FileEntity primaryEntity) {
