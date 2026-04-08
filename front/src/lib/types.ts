@@ -72,6 +72,39 @@ export interface AdminFile {
   ownerEmail: string;
 }
 
+export type StoragePolicyType = 'LOCAL' | 'S3_COMPATIBLE';
+export type StoragePolicyCredentialMode = 'NONE' | 'STATIC' | 'DOGECLOUD_TEMP';
+
+export interface StoragePolicyCapabilities {
+  directUpload: boolean;
+  multipartUpload: boolean;
+  signedDownloadUrl: boolean;
+  serverProxyDownload: boolean;
+  thumbnailNative: boolean;
+  friendlyDownloadName: boolean;
+  requiresCors: boolean;
+  supportsInternalEndpoint: boolean;
+  maxObjectSize: number;
+}
+
+export interface AdminStoragePolicy {
+  id: number;
+  name: string;
+  type: StoragePolicyType;
+  bucketName: string | null;
+  endpoint: string | null;
+  region: string | null;
+  privateBucket: boolean;
+  prefix: string | null;
+  credentialMode: StoragePolicyCredentialMode;
+  maxSizeBytes: number;
+  capabilities: StoragePolicyCapabilities;
+  enabled: boolean;
+  defaultPolicy: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface AdminPasswordResetResponse {
   temporaryPassword: string;
 }

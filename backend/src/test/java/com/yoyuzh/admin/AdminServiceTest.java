@@ -12,6 +12,8 @@ import com.yoyuzh.files.FileBlobRepository;
 import com.yoyuzh.files.FileService;
 import com.yoyuzh.files.StoredFile;
 import com.yoyuzh.files.StoredFileRepository;
+import com.yoyuzh.files.StoragePolicyRepository;
+import com.yoyuzh.files.StoragePolicyService;
 import com.yoyuzh.transfer.OfflineTransferSessionRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -56,6 +58,10 @@ class AdminServiceTest {
     private OfflineTransferSessionRepository offlineTransferSessionRepository;
     @Mock
     private AdminMetricsService adminMetricsService;
+    @Mock
+    private StoragePolicyRepository storagePolicyRepository;
+    @Mock
+    private StoragePolicyService storagePolicyService;
 
     private AdminService adminService;
 
@@ -64,7 +70,8 @@ class AdminServiceTest {
         adminService = new AdminService(
                 userRepository, storedFileRepository, fileBlobRepository, fileService,
                 passwordEncoder, refreshTokenService, registrationInviteService,
-                offlineTransferSessionRepository, adminMetricsService);
+                offlineTransferSessionRepository, adminMetricsService,
+                storagePolicyRepository, storagePolicyService);
     }
 
     // --- getSummary ---

@@ -16,6 +16,8 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.util.List;
+
 @RestController
 @RequestMapping("/api/admin")
 @RequiredArgsConstructor
@@ -50,6 +52,11 @@ public class AdminController {
                                                               @RequestParam(defaultValue = "") String query,
                                                               @RequestParam(defaultValue = "") String ownerQuery) {
         return ApiResponse.success(adminService.listFiles(page, size, query, ownerQuery));
+    }
+
+    @GetMapping("/storage-policies")
+    public ApiResponse<List<AdminStoragePolicyResponse>> storagePolicies() {
+        return ApiResponse.success(adminService.listStoragePolicies());
     }
 
     @DeleteMapping("/files/{fileId}")

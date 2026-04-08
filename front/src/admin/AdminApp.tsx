@@ -1,11 +1,13 @@
 import FolderOutlined from '@mui/icons-material/FolderOutlined';
 import GroupsOutlined from '@mui/icons-material/GroupsOutlined';
+import StorageRounded from '@mui/icons-material/StorageRounded';
 import { Admin, Resource } from 'react-admin';
 
 import { portalAdminAuthProvider } from './auth-provider';
 import { portalAdminDataProvider } from './data-provider';
 import { PortalAdminDashboard } from './dashboard';
 import { PortalAdminFilesList } from './files-list';
+import { PortalAdminStoragePoliciesList } from './storage-policies-list';
 import { PortalAdminUsersList } from './users-list';
 
 export default function PortalAdminApp() {
@@ -32,6 +34,13 @@ export default function PortalAdminApp() {
         list={PortalAdminFilesList}
         options={{ label: '文件资源' }}
         recordRepresentation="filename"
+      />
+      <Resource
+        name="storagePolicies"
+        icon={StorageRounded}
+        list={PortalAdminStoragePoliciesList}
+        options={{ label: '存储策略' }}
+        recordRepresentation="name"
       />
     </Admin>
   );

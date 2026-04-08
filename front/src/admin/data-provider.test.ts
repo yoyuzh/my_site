@@ -6,6 +6,7 @@ import type { AdminFile, PageResponse } from '@/src/lib/types';
 import {
   buildAdminListPath,
   buildFilesListPath,
+  buildStoragePoliciesListPath,
   mapFilesListResponse,
 } from './data-provider';
 
@@ -104,5 +105,18 @@ test('buildAdminListPath rejects the removed school snapshots resource', () => {
         filter: {},
       }),
     /schoolSnapshots/,
+  );
+});
+
+test('buildStoragePoliciesListPath maps react-admin pagination to the backend storage policies list query', () => {
+  assert.equal(
+    buildStoragePoliciesListPath({
+      pagination: {
+        page: 2,
+        perPage: 10,
+      },
+      filter: {},
+    }),
+    '/admin/storage-policies?page=1&size=10',
   );
 });

@@ -13,6 +13,9 @@ import com.yoyuzh.files.FileBlobRepository;
 import com.yoyuzh.files.FileService;
 import com.yoyuzh.files.StoredFile;
 import com.yoyuzh.files.StoredFileRepository;
+import com.yoyuzh.files.StoragePolicy;
+import com.yoyuzh.files.StoragePolicyRepository;
+import com.yoyuzh.files.StoragePolicyService;
 import com.yoyuzh.transfer.OfflineTransferSessionRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
@@ -40,6 +43,8 @@ public class AdminService {
     private final RegistrationInviteService registrationInviteService;
     private final OfflineTransferSessionRepository offlineTransferSessionRepository;
     private final AdminMetricsService adminMetricsService;
+    private final StoragePolicyRepository storagePolicyRepository;
+    private final StoragePolicyService storagePolicyService;
     private final SecureRandom secureRandom = new SecureRandom();
 
     public AdminSummaryResponse getSummary() {
@@ -81,6 +86,15 @@ public class AdminService {
                 .map(this::toFileResponse)
                 .toList();
         return new PageResponse<>(items, result.getTotalElements(), page, size);
+    }
+
+    public List<AdminStoragePolicyResponse> listStoragePolicies() {
+        return storagePolicyRepository.findAll(Sort.by(Sort.Direction.DESC, "defaultPolicy")
+                        .and(Sort.by(Sort.Direction.DESC, "enabled"))
+                        .and(Sort.by(Sort.Direction.ASC, "id")))
+                .stream()
+                .map(this::toStoragePolicyResponse)
+                .toList();
     }
 
     @Transactional
@@ -177,6 +191,26 @@ public class AdminService {
                 owner.getId(),
                 owner.getUsername(),
                 owner.getEmail()
+        );
+    }
+
+    private AdminStoragePolicyResponse toStoragePolicyResponse(StoragePolicy policy) {
+        return new AdminStoragePolicyResponse(
+                policy.getId(),
+                policy.getName(),
+                policy.getType(),
+                policy.getBucketName(),
+                policy.getEndpoint(),
+                policy.getRegion(),
+                policy.isPrivateBucket(),
+                policy.getPrefix(),
+                policy.getCredentialMode(),
+                policy.getMaxSizeBytes(),
+                storagePolicyService.readCapabilities(policy),
+                policy.isEnabled(),
+                policy.isDefaultPolicy(),
+                policy.getCreatedAt(),
+                policy.getUpdatedAt()
         );
     }
 

@@ -380,6 +380,17 @@
 - `GET /api/admin/files`
 - `DELETE /api/admin/files/{fileId}`
 
+### 5.4 存储策略
+
+`GET /api/admin/storage-policies`
+
+说明：
+
+- 需要管理员登录
+- 返回当前存储策略的只读列表和结构化能力声明
+- 当前仅用于管理台查看默认策略、启用状态、存储类型和能力矩阵，不支持新增、编辑、启停或删除策略
+- `capabilities.multipartUpload` 当前仍为能力声明字段，不代表真实对象存储 multipart 已启用
+
 ## 6. 前端公开路由与接口关系
 
 前端入口在：

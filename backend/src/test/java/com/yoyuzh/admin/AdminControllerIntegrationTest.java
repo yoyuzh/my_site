@@ -321,9 +321,31 @@ class AdminControllerIntegrationTest {
     }
 
     @Test
+    @WithMockUser(username = "admin")
+    void shouldAllowConfiguredAdminToListStoragePolicies() throws Exception {
+        mockMvc.perform(get("/api/admin/storage-policies"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(0))
+                .andExpect(jsonPath("$.data.length()", greaterThanOrEqualTo(1)))
+                .andExpect(jsonPath("$.data[0].name").value("Default Local Storage"))
+                .andExpect(jsonPath("$.data[0].type").value("LOCAL"))
+                .andExpect(jsonPath("$.data[0].enabled").value(true))
+                .andExpect(jsonPath("$.data[0].defaultPolicy").value(true))
+                .andExpect(jsonPath("$.data[0].capabilities.directUpload").value(false))
+                .andExpect(jsonPath("$.data[0].capabilities.multipartUpload").value(false))
+                .andExpect(jsonPath("$.data[0].capabilities.serverProxyDownload").value(true))
+                .andExpect(jsonPath("$.data[0].capabilities.requiresCors").value(false))
+                .andExpect(jsonPath("$.data[0].maxSizeBytes").isNumber());
+    }
+
+    @Test
     @WithMockUser(username = "portal-user")
     void shouldRejectNonAdminUser() throws Exception {
         mockMvc.perform(get("/api/admin/users?page=0&size=10"))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.msg").value("没有权限访问该资源"));
+
+        mockMvc.perform(get("/api/admin/storage-policies"))
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.msg").value("没有权限访问该资源"));
     }

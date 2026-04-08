@@ -3,11 +3,13 @@ import type { DataProvider, GetListParams, GetListResult, Identifier } from 'rea
 import { apiRequest } from '@/src/lib/api';
 import type {
   AdminFile,
+  AdminStoragePolicy,
   AdminUser,
   PageResponse,
 } from '@/src/lib/types';
 
 const FILES_RESOURCE = 'files';
+const STORAGE_POLICIES_RESOURCE = 'storagePolicies';
 const USERS_RESOURCE = 'users';
 
 function createUnsupportedError(resource: string, action: string) {
@@ -15,7 +17,7 @@ function createUnsupportedError(resource: string, action: string) {
 }
 
 function ensureSupportedResource(resource: string, action: string) {
-  if (![FILES_RESOURCE, USERS_RESOURCE].includes(resource)) {
+  if (![FILES_RESOURCE, STORAGE_POLICIES_RESOURCE, USERS_RESOURCE].includes(resource)) {
     throw createUnsupportedError(resource, action);
   }
 }
@@ -54,6 +56,12 @@ export function buildFilesListPath(params: Pick<GetListParams, 'pagination' | 'f
   return `/admin/files?${search.toString()}`;
 }
 
+export function buildStoragePoliciesListPath(params: Pick<GetListParams, 'pagination' | 'filter'>) {
+  const page = Math.max(0, params.pagination.page - 1);
+  const size = Math.max(1, params.pagination.perPage);
+  return `/admin/storage-policies?page=${page}&size=${size}`;
+}
+
 export function mapFilesListResponse(
   payload: PageResponse<AdminFile>,
 ): GetListResult<AdminFile> {
@@ -83,6 +91,14 @@ export const portalAdminDataProvider: DataProvider = {
       return {
         data: payload.items,
         total: payload.total,
+      } as GetListResult;
+    }
+
+    if (resource === STORAGE_POLICIES_RESOURCE) {
+      const payload = await apiRequest<AdminStoragePolicy[]>(buildStoragePoliciesListPath(params));
+      return {
+        data: payload,
+        total: payload.length,
       } as GetListResult;
     }
 
