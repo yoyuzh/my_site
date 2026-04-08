@@ -9,6 +9,7 @@ public record UploadSessionV2Response(
         String filename,
         String contentType,
         long size,
+        Long storagePolicyId,
         String status,
         long chunkSize,
         int chunkCount,

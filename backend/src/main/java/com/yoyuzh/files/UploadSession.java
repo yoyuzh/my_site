@@ -55,6 +55,9 @@ public class UploadSession {
     @Column(name = "object_key", nullable = false, length = 512)
     private String objectKey;
 
+    @Column(name = "storage_policy_id")
+    private Long storagePolicyId;
+
     @Column(name = "chunk_size", nullable = false)
     private Long chunkSize;
 
@@ -158,6 +161,14 @@ public class UploadSession {
 
     public void setObjectKey(String objectKey) {
         this.objectKey = objectKey;
+    }
+
+    public Long getStoragePolicyId() {
+        return storagePolicyId;
+    }
+
+    public void setStoragePolicyId(Long storagePolicyId) {
+        this.storagePolicyId = storagePolicyId;
     }
 
     public Long getChunkSize() {

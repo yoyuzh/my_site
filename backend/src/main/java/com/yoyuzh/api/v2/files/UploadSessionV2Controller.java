@@ -85,6 +85,7 @@ public class UploadSessionV2Controller {
                 session.getFilename(),
                 session.getContentType(),
                 session.getSize(),
+                session.getStoragePolicyId(),
                 session.getStatus().name(),
                 session.getChunkSize(),
                 session.getChunkCount(),

@@ -37,6 +37,7 @@ public class UploadSessionService {
     private final StoredFileRepository storedFileRepository;
     private final FileService fileService;
     private final FileContentStorage fileContentStorage;
+    private final StoragePolicyService storagePolicyService;
     private final ObjectMapper objectMapper = new ObjectMapper();
     private final long maxFileSize;
     private final Clock clock;
@@ -46,20 +47,23 @@ public class UploadSessionService {
                                 StoredFileRepository storedFileRepository,
                                 FileService fileService,
                                 FileContentStorage fileContentStorage,
+                                StoragePolicyService storagePolicyService,
                                 FileStorageProperties properties) {
-        this(uploadSessionRepository, storedFileRepository, fileService, fileContentStorage, properties, Clock.systemUTC());
+        this(uploadSessionRepository, storedFileRepository, fileService, fileContentStorage, storagePolicyService, properties, Clock.systemUTC());
     }
 
     UploadSessionService(UploadSessionRepository uploadSessionRepository,
                          StoredFileRepository storedFileRepository,
                          FileService fileService,
                          FileContentStorage fileContentStorage,
+                         StoragePolicyService storagePolicyService,
                          FileStorageProperties properties,
                          Clock clock) {
         this.uploadSessionRepository = uploadSessionRepository;
         this.storedFileRepository = storedFileRepository;
         this.fileService = fileService;
         this.fileContentStorage = fileContentStorage;
+        this.storagePolicyService = storagePolicyService;
         this.maxFileSize = properties.getMaxFileSize();
         this.clock = clock;
     }
@@ -78,6 +82,7 @@ public class UploadSessionService {
         session.setContentType(command.contentType());
         session.setSize(command.size());
         session.setObjectKey(createBlobObjectKey());
+        session.setStoragePolicyId(storagePolicyService.ensureDefaultPolicy().getId());
         session.setChunkSize(DEFAULT_CHUNK_SIZE);
         session.setChunkCount(calculateChunkCount(command.size(), DEFAULT_CHUNK_SIZE));
         session.setUploadedPartsJson("[]");

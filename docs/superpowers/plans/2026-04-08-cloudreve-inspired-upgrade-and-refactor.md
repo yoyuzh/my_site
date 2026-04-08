@@ -483,6 +483,7 @@ WebDAV 是很有价值但不应太早做的工程。必须等文件模型、权�
 - 管理后台只读列表。
 - 文件写入策略 ID。
 - 能力矩阵展示。
+- 2026-04-08 追加评估：不建议在阶段 3 末尾直接把 v2 上传会话接入真实对象存储 multipart。当前仓库的 `FileContentStorage` 只有单对象 PUT/校验/删除抽象，`UploadSession` 还没有 `multipartUploadId` 和 abort 语义；S3 multipart 未完成分片需要显式 abort，不能只靠 `deleteBlob(objectKey)` 清理。先完成本阶段的存储策略与能力声明，把 `multipartUpload`、`directUpload`、`signedDownloadUrl`、`requiresCors` 等能力落库，再按启用策略实现 S3 multipart。
 
 ### 阶段 5：搜索、分享、事件流
 
@@ -550,4 +551,3 @@ WebDAV 是很有价值但不应太早做的工程。必须等文件模型、权�
 - Cloudreve Storage Policy Comparison：https://docs.cloudreve.org/en/usage/storage/
 - Cloudreve Search Types：https://docs.cloudreve.org/en/usage/search/
 - Cloudreve 源码关键路径：`routers/router.go`、`pkg/filemanager/driver/handler.go`、`ent/schema/file.go`、`ent/schema/entity.go`、`ent/schema/metadata.go`、`ent/schema/policy.go`、`ent/schema/task.go`、`ent/schema/share.go`
-

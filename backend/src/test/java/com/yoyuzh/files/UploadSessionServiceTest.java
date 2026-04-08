@@ -37,6 +37,8 @@ class UploadSessionServiceTest {
     private FileService fileService;
     @Mock
     private FileContentStorage fileContentStorage;
+    @Mock
+    private StoragePolicyService storagePolicyService;
 
     private UploadSessionService uploadSessionService;
 
@@ -49,6 +51,7 @@ class UploadSessionServiceTest {
                 storedFileRepository,
                 fileService,
                 fileContentStorage,
+                storagePolicyService,
                 properties,
                 Clock.fixed(Instant.parse("2026-04-08T06:00:00Z"), ZoneOffset.UTC)
         );
@@ -58,6 +61,7 @@ class UploadSessionServiceTest {
     void shouldCreateUploadSessionWithoutChangingLegacyUploadPath() {
         User user = createUser(7L);
         when(storedFileRepository.existsByUserIdAndPathAndFilename(7L, "/docs", "movie.mp4")).thenReturn(false);
+        when(storagePolicyService.ensureDefaultPolicy()).thenReturn(createDefaultStoragePolicy());
         when(uploadSessionRepository.save(any(UploadSession.class))).thenAnswer(invocation -> {
             UploadSession session = invocation.getArgument(0);
             session.setId(100L);
@@ -72,6 +76,7 @@ class UploadSessionServiceTest {
         assertThat(session.getSessionId()).isNotBlank();
         assertThat(session.getObjectKey()).startsWith("blobs/");
         assertThat(session.getStatus()).isEqualTo(UploadSessionStatus.CREATED);
+        assertThat(session.getStoragePolicyId()).isEqualTo(42L);
         assertThat(session.getChunkSize()).isEqualTo(8L * 1024 * 1024);
         assertThat(session.getChunkCount()).isEqualTo(3);
         assertThat(session.getExpiresAt()).isEqualTo(LocalDateTime.of(2026, 4, 9, 6, 0));
@@ -212,6 +217,16 @@ class UploadSessionServiceTest {
         user.setPasswordHash("encoded");
         user.setCreatedAt(LocalDateTime.now());
         return user;
+    }
+
+    private StoragePolicy createDefaultStoragePolicy() {
+        StoragePolicy policy = new StoragePolicy();
+        policy.setId(42L);
+        policy.setName("Default S3 Compatible Storage");
+        policy.setType(StoragePolicyType.S3_COMPATIBLE);
+        policy.setEnabled(true);
+        policy.setDefaultPolicy(true);
+        return policy;
     }
 
     private UploadSession createSession(User user) {
