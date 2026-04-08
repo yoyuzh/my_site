@@ -53,6 +53,13 @@ public class UploadSessionV2Controller {
         return ApiV2Response.success(toResponse(uploadSessionService.cancelOwnedSession(user, sessionId)));
     }
 
+    @PostMapping("/{sessionId}/complete")
+    public ApiV2Response<UploadSessionV2Response> completeSession(@AuthenticationPrincipal UserDetails userDetails,
+                                                                  @PathVariable String sessionId) {
+        User user = userDetailsService.loadDomainUser(userDetails.getUsername());
+        return ApiV2Response.success(toResponse(uploadSessionService.completeOwnedSession(user, sessionId)));
+    }
+
     private UploadSessionV2Response toResponse(UploadSession session) {
         return new UploadSessionV2Response(
                 session.getSessionId(),

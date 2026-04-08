@@ -446,3 +446,4 @@ Android 壳补充说明：
 - `StoredFile.blob` 仍是当前生产读取路径；`StoredFile.primaryEntity` 与关系表暂时只作为兼容迁移数据，不影响旧 `/api/files/**` DTO 和前端调用。
 - `portal_stored_file_entity.stored_file_id` 随 `portal_file` 删除级联清理；`portal_file_entity.created_by` 在用户删除时置空，避免实体审计关系阻塞用户清理。
 - 2026-04-08 阶段 3 第一小步补充：后端新增上传会话二期最小骨架。`UploadSession` 记录用户、目标路径、文件名、对象键、分片大小、分片数量、状态、过期时间和已上传分片占位 JSON；`/api/v2/files/upload-sessions` 目前只提供创建、查询、取消会话，不承接实际分片内容上传，也不替换旧 `/api/files/upload/**` 生产链路。
+- 2026-04-08 阶段 3 第二小步补充：上传会话新增完成状态机。`UploadSessionService.completeOwnedSession()` 会复用旧 `FileService.completeUpload()` 完成对象确认、目录补齐、配额/冲突校验和 `FileBlob + StoredFile + FileEntity.VERSION` 双写落库，然后把会话标记为 `COMPLETED`；失败时标记 `FAILED`，过期时标记 `EXPIRED`。当前仍没有独立 v2 分片内容写入端点。

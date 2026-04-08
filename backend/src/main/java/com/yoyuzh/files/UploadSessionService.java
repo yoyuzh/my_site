@@ -21,22 +21,26 @@ public class UploadSessionService {
 
     private final UploadSessionRepository uploadSessionRepository;
     private final StoredFileRepository storedFileRepository;
+    private final FileService fileService;
     private final long maxFileSize;
     private final Clock clock;
 
     @Autowired
     public UploadSessionService(UploadSessionRepository uploadSessionRepository,
                                 StoredFileRepository storedFileRepository,
+                                FileService fileService,
                                 FileStorageProperties properties) {
-        this(uploadSessionRepository, storedFileRepository, properties, Clock.systemUTC());
+        this(uploadSessionRepository, storedFileRepository, fileService, properties, Clock.systemUTC());
     }
 
     UploadSessionService(UploadSessionRepository uploadSessionRepository,
                          StoredFileRepository storedFileRepository,
+                         FileService fileService,
                          FileStorageProperties properties,
                          Clock clock) {
         this.uploadSessionRepository = uploadSessionRepository;
         this.storedFileRepository = storedFileRepository;
+        this.fileService = fileService;
         this.maxFileSize = properties.getMaxFileSize();
         this.clock = clock;
     }
@@ -81,6 +85,46 @@ public class UploadSessionService {
         session.setStatus(UploadSessionStatus.CANCELLED);
         session.setUpdatedAt(LocalDateTime.ofInstant(clock.instant(), clock.getZone()));
         return uploadSessionRepository.save(session);
+    }
+
+    @Transactional
+    public UploadSession completeOwnedSession(User user, String sessionId) {
+        UploadSession session = getOwnedSession(user, sessionId);
+        if (session.getStatus() == UploadSessionStatus.COMPLETED) {
+            return session;
+        }
+        if (session.getStatus() == UploadSessionStatus.CANCELLED || session.getStatus() == UploadSessionStatus.FAILED) {
+            throw new BusinessException(ErrorCode.UNKNOWN, "上传会话不能完成");
+        }
+        LocalDateTime now = LocalDateTime.ofInstant(clock.instant(), clock.getZone());
+        if (session.getExpiresAt().isBefore(now)) {
+            session.setStatus(UploadSessionStatus.EXPIRED);
+            session.setUpdatedAt(now);
+            uploadSessionRepository.save(session);
+            throw new BusinessException(ErrorCode.UNKNOWN, "上传会话已过期");
+        }
+
+        session.setStatus(UploadSessionStatus.COMPLETING);
+        session.setUpdatedAt(now);
+        uploadSessionRepository.save(session);
+
+        try {
+            fileService.completeUpload(user, new CompleteUploadRequest(
+                    session.getTargetPath(),
+                    session.getFilename(),
+                    session.getObjectKey(),
+                    session.getContentType(),
+                    session.getSize()
+            ));
+            session.setStatus(UploadSessionStatus.COMPLETED);
+            session.setUpdatedAt(now);
+            return uploadSessionRepository.save(session);
+        } catch (RuntimeException ex) {
+            session.setStatus(UploadSessionStatus.FAILED);
+            session.setUpdatedAt(now);
+            uploadSessionRepository.save(session);
+            throw ex;
+        }
     }
 
     private void validateTarget(User user, String normalizedPath, String filename, long size) {

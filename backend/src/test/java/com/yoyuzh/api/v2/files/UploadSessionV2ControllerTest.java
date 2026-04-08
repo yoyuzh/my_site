@@ -87,6 +87,22 @@ class UploadSessionV2ControllerTest {
                 .andExpect(jsonPath("$.data.status").value("CREATED"));
     }
 
+    @Test
+    void shouldCompleteUploadSessionWithV2Envelope() throws Exception {
+        User user = createUser(7L);
+        UploadSession session = createSession(user);
+        session.setStatus(UploadSessionStatus.COMPLETED);
+        when(userDetailsService.loadDomainUser("alice")).thenReturn(user);
+        when(uploadSessionService.completeOwnedSession(user, "session-1")).thenReturn(session);
+
+        mockMvc.perform(post("/api/v2/files/upload-sessions/session-1/complete")
+                        .with(user(userDetails())))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(0))
+                .andExpect(jsonPath("$.data.sessionId").value("session-1"))
+                .andExpect(jsonPath("$.data.status").value("COMPLETED"));
+    }
+
     private UserDetails userDetails() {
         return org.springframework.security.core.userdetails.User
                 .withUsername("alice")
