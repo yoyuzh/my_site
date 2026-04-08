@@ -3,6 +3,7 @@ package com.yoyuzh.files;
 import com.yoyuzh.auth.User;
 import com.yoyuzh.common.BusinessException;
 import com.yoyuzh.config.FileStorageProperties;
+import com.yoyuzh.files.storage.FileContentStorage;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -14,11 +15,13 @@ import java.time.Clock;
 import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
+import java.util.List;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.when;
 import static org.mockito.Mockito.verify;
@@ -32,6 +35,8 @@ class UploadSessionServiceTest {
     private StoredFileRepository storedFileRepository;
     @Mock
     private FileService fileService;
+    @Mock
+    private FileContentStorage fileContentStorage;
 
     private UploadSessionService uploadSessionService;
 
@@ -43,6 +48,7 @@ class UploadSessionServiceTest {
                 uploadSessionRepository,
                 storedFileRepository,
                 fileService,
+                fileContentStorage,
                 properties,
                 Clock.fixed(Instant.parse("2026-04-08T06:00:00Z"), ZoneOffset.UTC)
         );
@@ -177,6 +183,25 @@ class UploadSessionServiceTest {
                 3,
                 new UploadSessionPartCommand("etag-3", 1L)
         )).isInstanceOf(BusinessException.class);
+    }
+
+    @Test
+    void shouldExpireUnfinishedSessionsAndDeleteTemporaryBlobs() {
+        User user = createUser(7L);
+        UploadSession session = createSession(user);
+        session.setStatus(UploadSessionStatus.UPLOADING);
+        session.setObjectKey("blobs/expired-session");
+        session.setExpiresAt(LocalDateTime.of(2026, 4, 8, 5, 0));
+        when(uploadSessionRepository.findByStatusInAndExpiresAtBefore(anyList(), eq(LocalDateTime.of(2026, 4, 8, 6, 0))))
+                .thenReturn(List.of(session));
+
+        int expiredCount = uploadSessionService.pruneExpiredSessions();
+
+        assertThat(expiredCount).isEqualTo(1);
+        assertThat(session.getStatus()).isEqualTo(UploadSessionStatus.EXPIRED);
+        assertThat(session.getUpdatedAt()).isEqualTo(LocalDateTime.of(2026, 4, 8, 6, 0));
+        verify(fileContentStorage).deleteBlob("blobs/expired-session");
+        verify(uploadSessionRepository).saveAll(List.of(session));
     }
 
     private User createUser(Long id) {

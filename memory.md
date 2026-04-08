@@ -162,3 +162,4 @@
 - 2026-04-08 阶段 3 第一小步：新增后端上传会话二期最小骨架，包含 `UploadSession`、`UploadSessionStatus`、`UploadSessionRepository`、`UploadSessionService`，以及受保护的 `/api/v2/files/upload-sessions` 创建、查询、取消接口；旧 `/api/files/upload/**` 上传链路暂不切换，前端上传队列暂不改动。
 - 2026-04-08 阶段 3 第二小步：新增 `POST /api/v2/files/upload-sessions/{sessionId}/complete`，v2 上传会话可从 `CREATED` 进入 `COMPLETING` 并复用旧 `FileService.completeUpload()` 完成 `FileBlob + StoredFile + FileEntity.VERSION` 落库，成功后标记 `COMPLETED`；取消、失败、过期会话不能完成。实际分片内容上传和前端上传队列仍未切换。
 - 2026-04-08 阶段 3 第三小步：新增 `PUT /api/v2/files/upload-sessions/{sessionId}/parts/{partIndex}`，用于记录当前用户上传会话的 part 元数据到 `uploadedPartsJson`，并把会话状态从 `CREATED` 推进到 `UPLOADING`；该接口只记录 `etag/size` 等状态，不承担真正的对象存储分片内容写入或合并。
+- 2026-04-08 阶段 3 第四小步：`UploadSessionService` 新增定时过期清理，按小时扫描 `CREATED/UPLOADING/COMPLETING` 且已过期的会话，尝试删除对应临时 `blobs/...` 对象，并把会话标记为 `EXPIRED`；`COMPLETED/CANCELLED/FAILED/EXPIRED` 不在本轮清理范围内。

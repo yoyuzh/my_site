@@ -6,7 +6,9 @@ import com.yoyuzh.auth.User;
 import com.yoyuzh.common.BusinessException;
 import com.yoyuzh.common.ErrorCode;
 import com.yoyuzh.config.FileStorageProperties;
+import com.yoyuzh.files.storage.FileContentStorage;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
@@ -23,12 +25,18 @@ public class UploadSessionService {
 
     private static final long DEFAULT_CHUNK_SIZE = 8L * 1024 * 1024;
     private static final long SESSION_TTL_HOURS = 24;
+    private static final List<UploadSessionStatus> EXPIRABLE_STATUSES = List.of(
+            UploadSessionStatus.CREATED,
+            UploadSessionStatus.UPLOADING,
+            UploadSessionStatus.COMPLETING
+    );
     private static final TypeReference<List<UploadedPart>> UPLOADED_PARTS_TYPE = new TypeReference<>() {
     };
 
     private final UploadSessionRepository uploadSessionRepository;
     private final StoredFileRepository storedFileRepository;
     private final FileService fileService;
+    private final FileContentStorage fileContentStorage;
     private final ObjectMapper objectMapper = new ObjectMapper();
     private final long maxFileSize;
     private final Clock clock;
@@ -37,18 +45,21 @@ public class UploadSessionService {
     public UploadSessionService(UploadSessionRepository uploadSessionRepository,
                                 StoredFileRepository storedFileRepository,
                                 FileService fileService,
+                                FileContentStorage fileContentStorage,
                                 FileStorageProperties properties) {
-        this(uploadSessionRepository, storedFileRepository, fileService, properties, Clock.systemUTC());
+        this(uploadSessionRepository, storedFileRepository, fileService, fileContentStorage, properties, Clock.systemUTC());
     }
 
     UploadSessionService(UploadSessionRepository uploadSessionRepository,
                          StoredFileRepository storedFileRepository,
                          FileService fileService,
+                         FileContentStorage fileContentStorage,
                          FileStorageProperties properties,
                          Clock clock) {
         this.uploadSessionRepository = uploadSessionRepository;
         this.storedFileRepository = storedFileRepository;
         this.fileService = fileService;
+        this.fileContentStorage = fileContentStorage;
         this.maxFileSize = properties.getMaxFileSize();
         this.clock = clock;
     }
@@ -164,6 +175,29 @@ public class UploadSessionService {
             uploadSessionRepository.save(session);
             throw ex;
         }
+    }
+
+    @Scheduled(fixedDelay = 60 * 60 * 1000L)
+    @Transactional
+    public int pruneExpiredSessions() {
+        LocalDateTime now = LocalDateTime.ofInstant(clock.instant(), clock.getZone());
+        List<UploadSession> expiredSessions = uploadSessionRepository.findByStatusInAndExpiresAtBefore(
+                EXPIRABLE_STATUSES,
+                now
+        );
+        for (UploadSession session : expiredSessions) {
+            try {
+                fileContentStorage.deleteBlob(session.getObjectKey());
+            } catch (RuntimeException ignored) {
+                // Expiration is authoritative in the database even if remote object cleanup fails.
+            }
+            session.setStatus(UploadSessionStatus.EXPIRED);
+            session.setUpdatedAt(now);
+        }
+        if (!expiredSessions.isEmpty()) {
+            uploadSessionRepository.saveAll(expiredSessions);
+        }
+        return expiredSessions.size();
     }
 
     private void validateTarget(User user, String normalizedPath, String filename, long size) {

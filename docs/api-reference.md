@@ -444,3 +444,4 @@
 - 2026-04-08 阶段 3 第一小步 API 补充：新增受保护的 v2 上传会话骨架接口，`POST /api/v2/files/upload-sessions` 创建会话，`GET /api/v2/files/upload-sessions/{sessionId}` 查询当前用户自己的会话，`DELETE /api/v2/files/upload-sessions/{sessionId}` 取消会话。当前响应只返回 `sessionId`、`objectKey`、路径、文件名、状态、分片大小、分片数量和时间字段；实际文件内容仍走旧上传链路，尚未开放 v2 分片上传/完成接口。
 - 2026-04-08 阶段 3 第二小步 API 补充：新增 `POST /api/v2/files/upload-sessions/{sessionId}/complete`，用于把当前用户自己的上传会话提交完成。该接口当前不接收请求体，会复用会话里的 `objectKey/path/filename/contentType/size` 调用旧上传完成落库链路，成功后返回 `COMPLETED` 状态的 v2 会话响应；分片内容上传端点仍未开放。
 - 2026-04-08 阶段 3 第三小步 API 补充：新增 `PUT /api/v2/files/upload-sessions/{sessionId}/parts/{partIndex}`，请求体为 `{ "etag": "...", "size": 8388608 }`，用于记录当前用户上传会话的 part 元数据并返回 v2 会话响应。该接口会校验 part 范围和会话状态，当前只更新 `uploadedPartsJson`，不接收或合并真实文件分片内容。
+- 2026-04-08 阶段 3 第四小步 API 补充：本小步没有新增对外 API。后端新增上传会话过期清理任务，只处理未完成且已过期的会话，并把它们标记为 `EXPIRED`；已完成会话和旧 `/api/files/**` 上传接口响应不变。
