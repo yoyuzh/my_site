@@ -27,6 +27,7 @@ import static org.mockito.Mockito.when;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -101,6 +102,29 @@ class UploadSessionV2ControllerTest {
                 .andExpect(jsonPath("$.code").value(0))
                 .andExpect(jsonPath("$.data.sessionId").value("session-1"))
                 .andExpect(jsonPath("$.data.status").value("COMPLETED"));
+    }
+
+    @Test
+    void shouldRecordUploadSessionPartWithV2Envelope() throws Exception {
+        User user = createUser(7L);
+        UploadSession session = createSession(user);
+        session.setStatus(UploadSessionStatus.UPLOADING);
+        when(userDetailsService.loadDomainUser("alice")).thenReturn(user);
+        when(uploadSessionService.recordUploadedPart(eq(user), eq("session-1"), eq(1), any())).thenReturn(session);
+
+        mockMvc.perform(put("/api/v2/files/upload-sessions/session-1/parts/1")
+                        .with(user(userDetails()))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "etag": "etag-1",
+                                  "size": 8388608
+                                }
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(0))
+                .andExpect(jsonPath("$.data.sessionId").value("session-1"))
+                .andExpect(jsonPath("$.data.status").value("UPLOADING"));
     }
 
     private UserDetails userDetails() {

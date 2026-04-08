@@ -1,5 +1,7 @@
 package com.yoyuzh.files;
 
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.yoyuzh.auth.User;
 import com.yoyuzh.common.BusinessException;
 import com.yoyuzh.common.ErrorCode;
@@ -11,6 +13,9 @@ import org.springframework.util.StringUtils;
 
 import java.time.Clock;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.List;
 import java.util.UUID;
 
 @Service
@@ -18,10 +23,13 @@ public class UploadSessionService {
 
     private static final long DEFAULT_CHUNK_SIZE = 8L * 1024 * 1024;
     private static final long SESSION_TTL_HOURS = 24;
+    private static final TypeReference<List<UploadedPart>> UPLOADED_PARTS_TYPE = new TypeReference<>() {
+    };
 
     private final UploadSessionRepository uploadSessionRepository;
     private final StoredFileRepository storedFileRepository;
     private final FileService fileService;
+    private final ObjectMapper objectMapper = new ObjectMapper();
     private final long maxFileSize;
     private final Clock clock;
 
@@ -88,6 +96,37 @@ public class UploadSessionService {
     }
 
     @Transactional
+    public UploadSession recordUploadedPart(User user,
+                                            String sessionId,
+                                            int partIndex,
+                                            UploadSessionPartCommand command) {
+        UploadSession session = getOwnedSession(user, sessionId);
+        LocalDateTime now = LocalDateTime.ofInstant(clock.instant(), clock.getZone());
+        ensureSessionCanReceivePart(session, now);
+        if (partIndex < 0 || partIndex >= session.getChunkCount()) {
+            throw new BusinessException(ErrorCode.UNKNOWN, "分片序号不合法");
+        }
+        if (!StringUtils.hasText(command.etag())) {
+            throw new BusinessException(ErrorCode.UNKNOWN, "分片标识不能为空");
+        }
+        if (command.size() < 0) {
+            throw new BusinessException(ErrorCode.UNKNOWN, "分片大小不合法");
+        }
+
+        List<UploadedPart> uploadedParts = new ArrayList<>(readUploadedParts(session));
+        uploadedParts.removeIf(part -> part.partIndex() == partIndex);
+        uploadedParts.add(new UploadedPart(partIndex, command.etag(), command.size(), now.toString()));
+        uploadedParts.sort(Comparator.comparingInt(UploadedPart::partIndex));
+
+        session.setUploadedPartsJson(writeUploadedParts(uploadedParts));
+        if (session.getStatus() == UploadSessionStatus.CREATED) {
+            session.setStatus(UploadSessionStatus.UPLOADING);
+        }
+        session.setUpdatedAt(now);
+        return uploadSessionRepository.save(session);
+    }
+
+    @Transactional
     public UploadSession completeOwnedSession(User user, String sessionId) {
         UploadSession session = getOwnedSession(user, sessionId);
         if (session.getStatus() == UploadSessionStatus.COMPLETED) {
@@ -139,6 +178,43 @@ public class UploadSessionService {
         if (user.getStorageQuotaBytes() >= 0 && usedBytes + size > user.getStorageQuotaBytes()) {
             throw new BusinessException(ErrorCode.UNKNOWN, "存储空间不足");
         }
+    }
+
+    private void ensureSessionCanReceivePart(UploadSession session, LocalDateTime now) {
+        if (session.getStatus() == UploadSessionStatus.CANCELLED
+                || session.getStatus() == UploadSessionStatus.FAILED
+                || session.getStatus() == UploadSessionStatus.COMPLETING
+                || session.getStatus() == UploadSessionStatus.COMPLETED) {
+            throw new BusinessException(ErrorCode.UNKNOWN, "上传会话不能继续上传分片");
+        }
+        if (session.getExpiresAt().isBefore(now)) {
+            session.setStatus(UploadSessionStatus.EXPIRED);
+            session.setUpdatedAt(now);
+            uploadSessionRepository.save(session);
+            throw new BusinessException(ErrorCode.UNKNOWN, "上传会话已过期");
+        }
+    }
+
+    private List<UploadedPart> readUploadedParts(UploadSession session) {
+        if (!StringUtils.hasText(session.getUploadedPartsJson())) {
+            return List.of();
+        }
+        try {
+            return objectMapper.readValue(session.getUploadedPartsJson(), UPLOADED_PARTS_TYPE);
+        } catch (Exception ex) {
+            throw new BusinessException(ErrorCode.UNKNOWN, "上传会话分片状态不合法");
+        }
+    }
+
+    private String writeUploadedParts(List<UploadedPart> uploadedParts) {
+        try {
+            return objectMapper.writeValueAsString(uploadedParts);
+        } catch (Exception ex) {
+            throw new BusinessException(ErrorCode.UNKNOWN, "上传会话分片状态写入失败");
+        }
+    }
+
+    private record UploadedPart(int partIndex, String etag, long size, String uploadedAt) {
     }
 
     private int calculateChunkCount(long size, long chunkSize) {

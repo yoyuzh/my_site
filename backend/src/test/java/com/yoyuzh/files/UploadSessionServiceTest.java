@@ -130,6 +130,55 @@ class UploadSessionServiceTest {
                 .isInstanceOf(BusinessException.class);
     }
 
+    @Test
+    void shouldRecordUploadedPartAndMoveSessionToUploading() {
+        User user = createUser(7L);
+        UploadSession session = createSession(user);
+        session.setChunkCount(3);
+        when(uploadSessionRepository.findBySessionIdAndUserId("session-1", 7L))
+                .thenReturn(Optional.of(session));
+        when(uploadSessionRepository.save(any(UploadSession.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        UploadSession result = uploadSessionService.recordUploadedPart(
+                user,
+                "session-1",
+                1,
+                new UploadSessionPartCommand("etag-1", 8L * 1024 * 1024)
+        );
+
+        assertThat(result.getStatus()).isEqualTo(UploadSessionStatus.UPLOADING);
+        assertThat(result.getUploadedPartsJson()).contains("\"partIndex\":1");
+        assertThat(result.getUploadedPartsJson()).contains("\"etag\":\"etag-1\"");
+        assertThat(result.getUploadedPartsJson()).contains("\"size\":8388608");
+
+        UploadSession secondResult = uploadSessionService.recordUploadedPart(
+                user,
+                "session-1",
+                2,
+                new UploadSessionPartCommand("etag-2", 4L)
+        );
+
+        assertThat(secondResult.getUploadedPartsJson()).contains("\"partIndex\":1");
+        assertThat(secondResult.getUploadedPartsJson()).contains("\"partIndex\":2");
+        assertThat(secondResult.getUploadedPartsJson()).contains("\"etag\":\"etag-2\"");
+    }
+
+    @Test
+    void shouldRejectUploadedPartOutsideSessionRange() {
+        User user = createUser(7L);
+        UploadSession session = createSession(user);
+        session.setChunkCount(3);
+        when(uploadSessionRepository.findBySessionIdAndUserId("session-1", 7L))
+                .thenReturn(Optional.of(session));
+
+        assertThatThrownBy(() -> uploadSessionService.recordUploadedPart(
+                user,
+                "session-1",
+                3,
+                new UploadSessionPartCommand("etag-3", 1L)
+        )).isInstanceOf(BusinessException.class);
+    }
+
     private User createUser(Long id) {
         User user = new User();
         user.setId(id);
