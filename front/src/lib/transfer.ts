@@ -1,18 +1,56 @@
-import type { FileMetadata, TransferMode } from './types';
-import { apiRequest, apiUploadRequest, getApiBaseUrl } from './api';
-import { hasRelayTransferIceServer, resolveTransferIceServers } from './transfer-ice';
-import { getTransferFileRelativePath } from './transfer-protocol';
-import type {
-  LookupTransferSessionResponse,
-  PollTransferSignalsResponse,
-  TransferSessionResponse,
-} from './types';
+import { fetchApi, getApiBaseUrl } from './api';
 
-export const DEFAULT_TRANSFER_ICE_SERVERS = resolveTransferIceServers();
-export const TRANSFER_HAS_RELAY_SUPPORT = hasRelayTransferIceServer(DEFAULT_TRANSFER_ICE_SERVERS);
+export type TransferMode = 'ONLINE' | 'OFFLINE';
+
+export type TransferFilePayload = {
+  name: string;
+  relativePath: string;
+  size: number;
+  contentType: string;
+};
+
+export type TransferFileItem = TransferFilePayload & {
+  id?: string | null;
+  uploaded?: boolean | null;
+};
+
+export type TransferSessionResponse = {
+  sessionId: string;
+  pickupCode: string;
+  mode: TransferMode;
+  expiresAt: string;
+  files: TransferFileItem[];
+};
+
+export type LookupTransferSessionResponse = {
+  sessionId: string;
+  pickupCode: string;
+  mode: TransferMode;
+  expiresAt: string;
+};
+
+export function sanitizePickupCode(value: string) {
+  return value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 6);
+}
+
+export function getTransferFileRelativePath(file: File) {
+  const rawRelativePath =
+    'webkitRelativePath' in file && typeof file.webkitRelativePath === 'string' && file.webkitRelativePath
+      ? file.webkitRelativePath
+      : file.name;
+
+  const normalizedPath = rawRelativePath
+    .replaceAll('\\', '/')
+    .split('/')
+    .map((segment) => segment.trim())
+    .filter(Boolean)
+    .join('/');
+
+  return normalizedPath || file.name;
+}
 
 export function toTransferFilePayload(files: File[]) {
-  return files.map((file) => ({
+  return files.map<TransferFilePayload>((file) => ({
     name: file.name,
     relativePath: getTransferFileRelativePath(file),
     size: file.size,
@@ -21,43 +59,42 @@ export function toTransferFilePayload(files: File[]) {
 }
 
 export function createTransferSession(files: File[], mode: TransferMode) {
-  return apiRequest<TransferSessionResponse>('/transfer/sessions', {
+  return fetchApi<TransferSessionResponse>('/transfer/sessions', {
     method: 'POST',
-    body: {
+    body: JSON.stringify({
       mode,
       files: toTransferFilePayload(files),
-    },
+    }),
   });
 }
 
 export function lookupTransferSession(pickupCode: string) {
-  return apiRequest<LookupTransferSessionResponse>(
-    `/transfer/sessions/lookup?pickupCode=${encodeURIComponent(pickupCode)}`,
+  return fetchApi<LookupTransferSessionResponse>(
+    `/transfer/sessions/lookup?pickupCode=${encodeURIComponent(sanitizePickupCode(pickupCode))}`,
+    {
+      auth: false,
+    },
   );
 }
 
 export function joinTransferSession(sessionId: string) {
-  return apiRequest<TransferSessionResponse>(`/transfer/sessions/${encodeURIComponent(sessionId)}/join`, {
+  return fetchApi<TransferSessionResponse>(`/transfer/sessions/${encodeURIComponent(sessionId)}/join`, {
     method: 'POST',
+    auth: false,
   });
 }
 
 export function listMyOfflineTransferSessions() {
-  return apiRequest<TransferSessionResponse[]>('/transfer/sessions/offline/mine');
+  return fetchApi<TransferSessionResponse[]>('/transfer/sessions/offline/mine');
 }
 
-export function uploadOfflineTransferFile(
-  sessionId: string,
-  fileId: string,
-  file: File,
-  onProgress?: (progress: {loaded: number; total: number}) => void,
-) {
+export function uploadOfflineTransferFile(sessionId: string, fileId: string, file: File) {
   const body = new FormData();
   body.append('file', file);
 
-  return apiUploadRequest<void>(`/transfer/sessions/${encodeURIComponent(sessionId)}/files/${encodeURIComponent(fileId)}/content`, {
+  return fetchApi<void>(`/transfer/sessions/${encodeURIComponent(sessionId)}/files/${encodeURIComponent(fileId)}/content`, {
+    method: 'POST',
     body,
-    onProgress,
   });
 }
 
@@ -66,29 +103,11 @@ export function buildOfflineTransferDownloadUrl(sessionId: string, fileId: strin
 }
 
 export function importOfflineTransferFile(sessionId: string, fileId: string, path: string) {
-  return apiRequest<FileMetadata>(
+  return fetchApi<{ id: number; filename: string; path: string }>(
     `/transfer/sessions/${encodeURIComponent(sessionId)}/files/${encodeURIComponent(fileId)}/import`,
     {
       method: 'POST',
-      body: {
-        path,
-      },
+      body: JSON.stringify({ path }),
     },
-  );
-}
-
-export function postTransferSignal(sessionId: string, role: 'sender' | 'receiver', type: string, payload: string) {
-  return apiRequest<void>(`/transfer/sessions/${encodeURIComponent(sessionId)}/signals?role=${role}`, {
-    method: 'POST',
-    body: {
-      type,
-      payload,
-    },
-  });
-}
-
-export function pollTransferSignals(sessionId: string, role: 'sender' | 'receiver', after: number) {
-  return apiRequest<PollTransferSignalsResponse>(
-    `/transfer/sessions/${encodeURIComponent(sessionId)}/signals?role=${role}&after=${after}`,
   );
 }

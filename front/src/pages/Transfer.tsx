@@ -1,1045 +1,635 @@
-import React, { useEffect, useRef, useState } from 'react';
-import { AnimatePresence, motion } from 'motion/react';
-import {
-  CheckCircle,
-  ChevronRight,
-  Clock3,
-  Copy,
-  DownloadCloud,
-  File as FileIcon,
-  Folder,
-  FolderPlus,
-  Link as LinkIcon,
-  Loader2,
-  Monitor,
-  Plus,
-  Send,
-  Shield,
-  Smartphone,
-  Trash2,
-  UploadCloud,
-  X,
-  LogIn,
-} from 'lucide-react';
-import { useNavigate, useSearchParams } from 'react-router-dom';
-
-import { useAuth } from '@/src/auth/AuthProvider';
-import { Button } from '@/src/components/ui/button';
-import { appendTransferRelayHint } from '@/src/lib/transfer-ice';
-import { buildTransferShareUrl, getTransferRouterMode } from '@/src/lib/transfer-links';
-import {
-  createTransferFileManifest,
-  createTransferFileManifestMessage,
-  createTransferCompleteMessage,
-  createTransferFileCompleteMessage,
-  createTransferFileId,
-  createTransferFileMetaMessage,
-  type TransferFileDescriptor,
-  SIGNAL_POLL_INTERVAL_MS,
-} from '@/src/lib/transfer-protocol';
-import {
-  shouldPublishTransferProgress,
-  resolveTransferChunkSize,
-} from '@/src/lib/transfer-runtime';
-import { createTransferPeer, type TransferPeerAdapter } from '@/src/lib/transfer-peer';
-import {
-  DEFAULT_TRANSFER_ICE_SERVERS,
-  TRANSFER_HAS_RELAY_SUPPORT,
-  createTransferSession,
-  listMyOfflineTransferSessions,
-  pollTransferSignals,
-  postTransferSignal,
-  uploadOfflineTransferFile,
-} from '@/src/lib/transfer';
-import type { TransferMode, TransferSessionResponse } from '@/src/lib/types';
+import { useEffect, useMemo, useState } from 'react';
 import { cn } from '@/src/lib/utils';
-
+import { Clock3, Copy, Download, ExternalLink, FolderDown, Link as LinkIcon, RefreshCw, Send, Upload, ChevronRight } from 'lucide-react';
+import { useSearchParams } from 'react-router-dom';
+import { motion, AnimatePresence } from 'motion/react';
+import { formatBytes, formatDateTime } from '@/src/lib/format';
+import { getSession } from '@/src/lib/session';
 import {
-  buildQrImageUrl,
-  canSendTransferFiles,
-  getAvailableTransferModes,
-  formatTransferSize,
-  getOfflineTransferSessionLabel,
-  getOfflineTransferSessionSize,
-  getTransferModeSummary,
-  resolveInitialTransferTab,
-} from './transfer-state';
-import TransferReceive from './TransferReceive';
-import { AppPageShell } from '@/src/components/ui/AppPageShell';
-import { PageToolbar } from '@/src/components/ui/PageToolbar';
+  buildOfflineTransferDownloadUrl,
+  createTransferSession,
+  importOfflineTransferFile,
+  joinTransferSession,
+  listMyOfflineTransferSessions,
+  lookupTransferSession,
+  sanitizePickupCode,
+  uploadOfflineTransferFile,
+  type LookupTransferSessionResponse,
+  type TransferFileItem,
+  type TransferMode,
+  type TransferSessionResponse,
+} from '@/src/lib/transfer';
 
-type SendPhase = 'idle' | 'creating' | 'waiting' | 'connecting' | 'uploading' | 'transferring' | 'completed' | 'error';
+type TransferTab = 'send' | 'receive' | 'history';
 
-function parseJsonPayload<T>(payload: string): T | null {
-  try {
-    return JSON.parse(payload) as T;
-  } catch {
-    return null;
-  }
+function getModeLabel(mode: string) {
+  return mode === 'ONLINE' ? '在线快传' : mode === 'OFFLINE' ? '离线快传' : mode;
 }
 
-function getPhaseMessage(mode: TransferMode, phase: SendPhase, errorMessage: string) {
-  if (mode === 'OFFLINE') {
-    switch (phase) {
-      case 'creating':
-        return '正在创建离线快传会话并生成取件链接...';
-      case 'uploading':
-        return '文件正在上传到站点存储，上传完成后 7 天内都可以反复接收。';
-      case 'completed':
-        return '离线文件已上传完成，接收方现在可以多次下载或存入网盘。';
-      case 'error':
-        return errorMessage || '离线快传初始化失败，请重试。';
-      default:
-        return '拖拽文件后会生成离线取件码，并把文件上传到站点存储保留 7 天。';
+function getTransferShareUrl(pickupCode: string) {
+  const url = new URL('/transfer', window.location.origin);
+  url.searchParams.set('code', pickupCode);
+  return url.toString();
+}
+
+function findSessionFile(sourceFile: File, sessionFiles: TransferFileItem[]) {
+  return sessionFiles.find(
+    (item) =>
+      item.name === sourceFile.name &&
+      item.relativePath.replaceAll('\\', '/') === (('webkitRelativePath' in sourceFile && sourceFile.webkitRelativePath) || sourceFile.name).replaceAll('\\', '/') &&
+      item.size === sourceFile.size,
+  );
+}
+
+const container = {
+  hidden: { opacity: 0 },
+  show: {
+    opacity: 1,
+    transition: {
+      staggerChildren: 0.05
     }
   }
+};
 
-  switch (phase) {
-    case 'creating':
-      return '正在创建快传会话并准备 P2P 连接...';
-    case 'waiting':
-      return '分享链接和二维码已经生成，等待接收端打开页面并选择要接收的文件。';
-    case 'connecting':
-      return '接收端已进入页面，正在交换浏览器连接信息并同步文件清单...';
-    case 'transferring':
-      return 'P2P 直连已建立，文件正在发送到对方浏览器。';
-    case 'completed':
-      return '本次文件已发送完成，对方页面现在可以下载。';
-    case 'error':
-      return errorMessage || '快传会话初始化失败，请重试。';
-    default:
-      return '拖拽文件后会自动生成会话、二维码和公开接收页链接。';
-  }
-}
+const itemVariants = {
+  hidden: { y: 10, opacity: 0 },
+  show: { y: 0, opacity: 1 }
+};
 
 export default function Transfer() {
-  const navigate = useNavigate();
-  const { ready: authReady, session: authSession } = useAuth();
-  const [searchParams] = useSearchParams();
-  const sessionId = searchParams.get('session');
-  const isAuthenticated = Boolean(authSession?.token);
-  const allowSend = canSendTransferFiles(isAuthenticated);
-  const availableTransferModes = getAvailableTransferModes(isAuthenticated);
-  const [activeTab, setActiveTab] = useState(() => resolveInitialTransferTab(allowSend, sessionId));
-
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [activeTab, setActiveTab] = useState<TransferTab>('send');
+  const [sendMode, setSendMode] = useState<TransferMode>('OFFLINE');
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
-  const [transferMode, setTransferMode] = useState<TransferMode>('ONLINE');
-  const [session, setSession] = useState<TransferSessionResponse | null>(null);
-  const [sendPhase, setSendPhase] = useState<SendPhase>('idle');
-  const [sendProgress, setSendProgress] = useState(0);
+  const [sendLoading, setSendLoading] = useState(false);
   const [sendError, setSendError] = useState('');
-  const [copied, setCopied] = useState(false);
-  const [offlineHistory, setOfflineHistory] = useState<TransferSessionResponse[]>([]);
-  const [offlineHistoryLoading, setOfflineHistoryLoading] = useState(false);
-  const [offlineHistoryError, setOfflineHistoryError] = useState('');
-  const [selectedOfflineSession, setSelectedOfflineSession] = useState<TransferSessionResponse | null>(null);
-  const [historyCopiedSessionId, setHistoryCopiedSessionId] = useState<string | null>(null);
+  const [sendMessage, setSendMessage] = useState('');
+  const [createdSession, setCreatedSession] = useState<TransferSessionResponse | null>(null);
+  const [uploadedCount, setUploadedCount] = useState(0);
+  const [receiveCode, setReceiveCode] = useState(() => sanitizePickupCode(searchParams.get('code') ?? ''));
+  const [lookupLoading, setLookupLoading] = useState(false);
+  const [receiveError, setReceiveError] = useState('');
+  const [receiveMessage, setReceiveMessage] = useState('');
+  const [lookupResult, setLookupResult] = useState<LookupTransferSessionResponse | null>(null);
+  const [joinedSession, setJoinedSession] = useState<TransferSessionResponse | null>(null);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [historyError, setHistoryError] = useState('');
+  const [historyMessage, setHistoryMessage] = useState('');
+  const [historySessions, setHistorySessions] = useState<TransferSessionResponse[]>([]);
 
-  const fileInputRef = useRef<HTMLInputElement>(null);
-  const folderInputRef = useRef<HTMLInputElement>(null);
-  const copiedTimerRef = useRef<number | null>(null);
-  const historyCopiedTimerRef = useRef<number | null>(null);
-  const pollTimerRef = useRef<number | null>(null);
-  const peerRef = useRef<TransferPeerAdapter | null>(null);
-  const cursorRef = useRef(0);
-  const bootstrapIdRef = useRef(0);
-  const totalBytesRef = useRef(0);
-  const sentBytesRef = useRef(0);
-  const lastSendProgressPublishAtRef = useRef(0);
-  const lastPublishedSendProgressRef = useRef(0);
-  const sendingStartedRef = useRef(false);
-  const manifestRef = useRef<TransferFileDescriptor[]>([]);
+  const loggedIn = Boolean(getSession());
 
   useEffect(() => {
-    if (!folderInputRef.current) {
+    const codeFromQuery = sanitizePickupCode(searchParams.get('code') ?? '');
+    if (codeFromQuery && codeFromQuery !== receiveCode) {
+      setReceiveCode(codeFromQuery);
+    }
+  }, [searchParams]);
+
+  useEffect(() => {
+    if (activeTab !== 'history' || !loggedIn) {
       return;
     }
+    void loadHistory();
+  }, [activeTab, loggedIn]);
 
-    folderInputRef.current.setAttribute('webkitdirectory', '');
-    folderInputRef.current.setAttribute('directory', '');
+  useEffect(() => {
+    const codeFromQuery = sanitizePickupCode(searchParams.get('code') ?? '');
+    if (!codeFromQuery) {
+      return;
+    }
+    setActiveTab('receive');
+    void handleLookup(codeFromQuery);
   }, []);
 
-  useEffect(() => {
-    return () => {
-      cleanupCurrentTransfer();
-      if (copiedTimerRef.current) {
-        window.clearTimeout(copiedTimerRef.current);
-      }
-      if (historyCopiedTimerRef.current) {
-        window.clearTimeout(historyCopiedTimerRef.current);
-      }
-    };
-  }, []);
+  const transferShareUrl = useMemo(
+    () => (createdSession ? getTransferShareUrl(createdSession.pickupCode) : ''),
+    [createdSession],
+  );
 
-  useEffect(() => {
-    if (!allowSend || sessionId) {
-      setActiveTab('receive');
-    }
-  }, [allowSend, sessionId]);
-
-  useEffect(() => {
-    if (!availableTransferModes.includes(transferMode)) {
-      setTransferMode('ONLINE');
-    }
-  }, [availableTransferModes, transferMode]);
-
-  useEffect(() => {
-    if (selectedFiles.length === 0) {
-      return;
-    }
-
-    void bootstrapTransfer(selectedFiles);
-  }, [transferMode]);
-
-  useEffect(() => {
-    if (!isAuthenticated) {
-      setOfflineHistory([]);
-      setOfflineHistoryError('');
-      setSelectedOfflineSession(null);
-      return;
-    }
-
-    void loadOfflineHistory();
-  }, [isAuthenticated]);
-
-  const totalSize = selectedFiles.reduce((sum, file) => sum + file.size, 0);
-  const shareLink = session
-    ? buildTransferShareUrl(window.location.origin, session.sessionId, getTransferRouterMode())
-    : '';
-  const qrImageUrl = shareLink ? buildQrImageUrl(shareLink) : '';
-  const transferModeSummary = getTransferModeSummary(transferMode);
-  const selectedOfflineSessionShareLink = selectedOfflineSession
-    ? buildTransferShareUrl(window.location.origin, selectedOfflineSession.sessionId, getTransferRouterMode())
-    : '';
-  const selectedOfflineSessionQrImageUrl = selectedOfflineSessionShareLink
-    ? buildQrImageUrl(selectedOfflineSessionShareLink)
-    : '';
-
-  function navigateBackToLogin() {
-    const nextPath = `${window.location.pathname}${window.location.search}`;
-    navigate(`/login?next=${encodeURIComponent(nextPath)}`);
-  }
-
-  function isOfflineSessionReady(sessionToCheck: TransferSessionResponse) {
-    return sessionToCheck.files.every((file) => file.uploaded);
-  }
-
-  async function loadOfflineHistory(options?: {silent?: boolean}) {
-    if (!isAuthenticated) {
-      return;
-    }
-
-    if (!options?.silent) {
-      setOfflineHistoryLoading(true);
-    }
-    setOfflineHistoryError('');
-
+  async function loadHistory() {
+    setHistoryLoading(true);
+    setHistoryError('');
     try {
-      const sessions = await listMyOfflineTransferSessions();
-      setOfflineHistory(sessions);
-      setSelectedOfflineSession((current) => {
-        if (!current) {
-          return current;
-        }
-        return sessions.find((item) => item.sessionId === current.sessionId) ?? null;
-      });
-    } catch (error) {
-      setOfflineHistoryError(error instanceof Error ? error.message : '离线快传记录加载失败');
+      setHistorySessions(await listMyOfflineTransferSessions());
+    } catch (err) {
+      setHistoryError(err instanceof Error ? err.message : '加载记录失败');
     } finally {
-      if (!options?.silent) {
-        setOfflineHistoryLoading(false);
-      }
+      setHistoryLoading(false);
     }
   }
 
-  function cleanupCurrentTransfer() {
-    if (pollTimerRef.current) {
-      window.clearInterval(pollTimerRef.current);
-      pollTimerRef.current = null;
-    }
-
-    const peer = peerRef.current;
-    peerRef.current = null;
-    peer?.destroy();
-
-    cursorRef.current = 0;
-    lastSendProgressPublishAtRef.current = 0;
-    lastPublishedSendProgressRef.current = 0;
-    sendingStartedRef.current = false;
-  }
-
-  function publishSendProgress(nextProgress: number, options?: {force?: boolean}) {
-    const normalizedProgress = Math.max(0, Math.min(100, nextProgress));
-    const now = globalThis.performance?.now?.() ?? Date.now();
-    if (!options?.force && !shouldPublishTransferProgress({
-      nextProgress: normalizedProgress,
-      previousProgress: lastPublishedSendProgressRef.current,
-      now,
-      lastPublishedAt: lastSendProgressPublishAtRef.current,
-    })) {
+  async function handleCreateSession() {
+    if (selectedFiles.length === 0) {
+      setSendError('请先选择至少一个文件。');
       return;
     }
 
-    lastSendProgressPublishAtRef.current = now;
-    lastPublishedSendProgressRef.current = normalizedProgress;
-    setSendProgress(normalizedProgress);
-  }
-
-  function resetSenderState() {
-    cleanupCurrentTransfer();
-    setSession(null);
-    setSelectedFiles([]);
-    setSendPhase('idle');
-    publishSendProgress(0, {force: true});
+    setSendLoading(true);
     setSendError('');
-  }
+    setSendMessage('');
+    setCreatedSession(null);
+    setUploadedCount(0);
 
-  async function copyToClipboard(text: string) {
     try {
-      await navigator.clipboard.writeText(text);
-      setCopied(true);
-      if (copiedTimerRef.current) {
-        window.clearTimeout(copiedTimerRef.current);
+      const session = await createTransferSession(selectedFiles, sendMode);
+      setCreatedSession(session);
+
+      if (session.mode === 'ONLINE') {
+        setSendMessage('在线快传会话已创建。目前暂未接入浏览器直连发送。');
+        return;
       }
-      copiedTimerRef.current = window.setTimeout(() => setCopied(false), 1800);
-    } catch {
-      setCopied(false);
+
+      let completed = 0;
+      for (const file of selectedFiles) {
+        const matched = findSessionFile(file, session.files);
+        if (!matched?.id) {
+          throw new Error(`无法验证文件：${file.name}`);
+        }
+        await uploadOfflineTransferFile(session.sessionId, matched.id, file);
+        completed += 1;
+        setUploadedCount(completed);
+      }
+
+      setSendMessage('同步完成。');
+    } catch (err) {
+      setSendError(err instanceof Error ? err.message : '创建失败');
+    } finally {
+      setSendLoading(false);
     }
   }
 
-  function ensureReadyState(nextFiles: File[]) {
-    setSelectedFiles(nextFiles);
-
-    if (nextFiles.length === 0) {
-      resetSenderState();
+  async function handleLookup(code = receiveCode) {
+    const normalized = sanitizePickupCode(code);
+    if (normalized.length !== 6) {
+      setReceiveError('请输入 6 位取件码。');
       return;
     }
 
-    void bootstrapTransfer(nextFiles);
-  }
-
-  function appendFiles(files: FileList | File[]) {
-    const nextFiles = [...selectedFiles, ...Array.from(files)];
-    ensureReadyState(nextFiles);
-  }
-
-  function handleFileSelect(event: React.ChangeEvent<HTMLInputElement>) {
-    if (event.target.files?.length) {
-      appendFiles(event.target.files);
-    }
-    event.target.value = '';
-  }
-
-  function handleDragOver(event: React.DragEvent) {
-    event.preventDefault();
-  }
-
-  function handleDrop(event: React.DragEvent) {
-    event.preventDefault();
-    if (event.dataTransfer.files?.length) {
-      appendFiles(event.dataTransfer.files);
-    }
-  }
-
-  function removeFile(indexToRemove: number) {
-    ensureReadyState(selectedFiles.filter((_, index) => index !== indexToRemove));
-  }
-
-  async function bootstrapTransfer(files: File[]) {
-    const bootstrapId = bootstrapIdRef.current + 1;
-    bootstrapIdRef.current = bootstrapId;
-
-    cleanupCurrentTransfer();
-    setSendError('');
-    setSendPhase('creating');
-    publishSendProgress(0, {force: true});
-    manifestRef.current = createTransferFileManifest(files);
-    totalBytesRef.current = 0;
-    sentBytesRef.current = 0;
+    setLookupLoading(true);
+    setReceiveError('');
+    setReceiveMessage('');
+    setLookupResult(null);
+    setJoinedSession(null);
 
     try {
-      const createdSession = await createTransferSession(files, transferMode);
-      if (bootstrapIdRef.current !== bootstrapId) {
-        return;
-      }
-
-      setSession(createdSession);
-      if (createdSession.mode === 'OFFLINE') {
-        void loadOfflineHistory({silent: true});
-        await uploadOfflineFiles(createdSession, files, bootstrapId);
-        return;
-      }
-
-      setSendPhase('waiting');
-      await setupSenderPeer(createdSession, files, bootstrapId);
-    } catch (error) {
-      if (bootstrapIdRef.current !== bootstrapId) {
-        return;
-      }
-      setSendPhase('error');
-      setSendError(error instanceof Error ? error.message : '快传会话创建失败');
+      const result = await lookupTransferSession(normalized);
+      setReceiveCode(result.pickupCode);
+      setLookupResult(result);
+      setSearchParams({ code: result.pickupCode });
+    } catch (err) {
+      setReceiveError(err instanceof Error ? err.message : '查找失败');
+    } finally {
+      setLookupLoading(false);
     }
   }
 
-  async function uploadOfflineFiles(createdSession: TransferSessionResponse, files: File[], bootstrapId: number) {
-    setSendPhase('uploading');
-    totalBytesRef.current = files.reduce((sum, file) => sum + file.size, 0);
-    sentBytesRef.current = 0;
-    publishSendProgress(0, {force: true});
-
-    for (const [index, file] of files.entries()) {
-      if (bootstrapIdRef.current !== bootstrapId) {
-        return;
-      }
-
-      const sessionFile = createdSession.files[index];
-      if (!sessionFile?.id) {
-        throw new Error('离线快传文件清单不完整，请重新开始本次发送。');
-      }
-
-      let lastLoaded = 0;
-      await uploadOfflineTransferFile(createdSession.sessionId, sessionFile.id, file, ({ loaded, total }) => {
-        const delta = loaded - lastLoaded;
-        lastLoaded = loaded;
-        sentBytesRef.current += delta;
-
-        if (loaded >= total) {
-          sentBytesRef.current = Math.min(totalBytesRef.current, sentBytesRef.current);
-        }
-
-        if (totalBytesRef.current > 0) {
-          publishSendProgress(Math.min(99, Math.round((sentBytesRef.current / totalBytesRef.current) * 100)));
-        }
-      });
+  async function handleJoinSession() {
+    if (!lookupResult) {
+      return;
     }
 
-    publishSendProgress(100, {force: true});
-    setSendPhase('completed');
-    void loadOfflineHistory({silent: true});
-  }
-
-  async function setupSenderPeer(createdSession: TransferSessionResponse, files: File[], bootstrapId: number) {
-    const peer = createTransferPeer({
-      initiator: true,
-      peerOptions: {
-        config: {
-          iceServers: DEFAULT_TRANSFER_ICE_SERVERS,
-        },
-      },
-      onSignal: (payload) => {
-        void postTransferSignal(createdSession.sessionId, 'sender', 'signal', payload);
-      },
-      onConnect: () => {
-        if (bootstrapIdRef.current !== bootstrapId) {
-          return;
-        }
-        setSendPhase((current) => (current === 'transferring' || current === 'completed' ? current : 'connecting'));
-        peer.send(createTransferFileManifestMessage(manifestRef.current));
-      },
-      onData: (payload) => {
-        if (typeof payload !== 'string') {
-          return;
-        }
-
-        const message = parseJsonPayload<{type?: string; fileIds?: string[]}>(payload);
-        if (!message || message.type !== 'receive-request' || !Array.isArray(message.fileIds) || sendingStartedRef.current) {
-          return;
-        }
-
-        const requestedFiles = manifestRef.current.filter((item) => message.fileIds?.includes(item.id));
-        if (requestedFiles.length === 0) {
-          return;
-        }
-
-        sendingStartedRef.current = true;
-        totalBytesRef.current = requestedFiles.reduce((sum, file) => sum + file.size, 0);
-        sentBytesRef.current = 0;
-        publishSendProgress(0, {force: true});
-        void sendSelectedFiles(peer, files, requestedFiles, bootstrapId);
-      },
-      onError: (error) => {
-        if (bootstrapIdRef.current !== bootstrapId) {
-          return;
-        }
-        setSendPhase('error');
-        setSendError(appendTransferRelayHint(
-          error.message || '数据通道建立失败，请重新开始本次快传。',
-          TRANSFER_HAS_RELAY_SUPPORT,
-        ));
-      },
-    });
-    peerRef.current = peer;
-    startSenderPolling(createdSession.sessionId, bootstrapId);
-  }
-
-  function startSenderPolling(sessionId: string, bootstrapId: number) {
-    let polling = false;
-
-    pollTimerRef.current = window.setInterval(() => {
-      if (polling || bootstrapIdRef.current !== bootstrapId) {
-        return;
+    setLookupLoading(true);
+    setReceiveError('');
+    setReceiveMessage('');
+    try {
+      const session = await joinTransferSession(lookupResult.sessionId);
+      setJoinedSession(session);
+      if (session.mode === 'ONLINE') {
+        setReceiveMessage('在线会话已打开，等待发送方响应。');
+      } else {
+        setReceiveMessage('对象已就绪，可执行下载或导入。');
       }
-
-      polling = true;
-
-      void pollTransferSignals(sessionId, 'sender', cursorRef.current)
-        .then(async (response) => {
-          if (bootstrapIdRef.current !== bootstrapId) {
-            return;
-          }
-
-          cursorRef.current = response.nextCursor;
-
-          for (const item of response.items) {
-            if (item.type === 'peer-joined') {
-              setSendPhase((current) => (current === 'waiting' ? 'connecting' : current));
-              continue;
-            }
-
-            if (item.type === 'signal') {
-              peerRef.current?.applyRemoteSignal(item.payload);
-            }
-          }
-        })
-        .catch((error) => {
-          if (bootstrapIdRef.current !== bootstrapId) {
-            return;
-          }
-          setSendPhase('error');
-          setSendError(error instanceof Error ? error.message : '轮询连接状态失败');
-        })
-        .finally(() => {
-          polling = false;
-        });
-    }, SIGNAL_POLL_INTERVAL_MS);
-  }
-
-  async function sendSelectedFiles(
-    peer: TransferPeerAdapter,
-    files: File[],
-    requestedFiles: TransferFileDescriptor[],
-    bootstrapId: number,
-  ) {
-    setSendPhase('transferring');
-    const filesById = new Map(files.map((file) => [createTransferFileId(file), file]));
-    const chunkSize = resolveTransferChunkSize();
-
-    for (const descriptor of requestedFiles) {
-      if (bootstrapIdRef.current !== bootstrapId || !peer.connected) {
-        return;
-      }
-
-      const file = filesById.get(descriptor.id);
-      if (!file) {
-        continue;
-      }
-
-      peer.send(createTransferFileMetaMessage(descriptor));
-
-      for (let offset = 0; offset < file.size; offset += chunkSize) {
-        if (bootstrapIdRef.current !== bootstrapId || !peer.connected) {
-          return;
-        }
-
-        const chunk = await file.slice(offset, offset + chunkSize).arrayBuffer();
-        await peer.write(chunk);
-        sentBytesRef.current += chunk.byteLength;
-
-        if (totalBytesRef.current > 0) {
-          publishSendProgress(Math.min(
-            99,
-            Math.round((sentBytesRef.current / totalBytesRef.current) * 100),
-          ));
-        }
-      }
-
-      peer.send(createTransferFileCompleteMessage(descriptor.id));
+    } catch (err) {
+      setReceiveError(err instanceof Error ? err.message : '打开失败');
+    } finally {
+      setLookupLoading(false);
     }
-
-    peer.send(createTransferCompleteMessage());
-    publishSendProgress(100, {force: true});
-    setSendPhase('completed');
   }
 
-  async function copyOfflineSessionLink(sessionToCopy: TransferSessionResponse) {
-    const sessionShareLink = buildTransferShareUrl(
-      window.location.origin,
-      sessionToCopy.sessionId,
-      getTransferRouterMode(),
-    );
-    await navigator.clipboard.writeText(sessionShareLink);
-    setHistoryCopiedSessionId(sessionToCopy.sessionId);
-    if (historyCopiedTimerRef.current) {
-      window.clearTimeout(historyCopiedTimerRef.current);
+  async function handleImport(sessionId: string, fileId: string) {
+    const targetPath = window.prompt('导入到路径', '/') || '/';
+    try {
+      const saved = await importOfflineTransferFile(sessionId, fileId, targetPath);
+      setReceiveMessage(`${saved.filename} -> ${saved.path}`);
+    } catch (err) {
+      setReceiveError(err instanceof Error ? err.message : '导入失败');
     }
-    historyCopiedTimerRef.current = window.setTimeout(() => {
-      setHistoryCopiedSessionId((current) => (current === sessionToCopy.sessionId ? null : current));
-    }, 1800);
   }
+
+  async function handleHistoryImport(sessionId: string, fileId: string) {
+    const targetPath = window.prompt('导入到路径', '/') || '/';
+    try {
+      const saved = await importOfflineTransferFile(sessionId, fileId, targetPath);
+      setHistoryMessage(`${saved.filename} -> ${saved.path}`);
+    } catch (err) {
+      setHistoryError(err instanceof Error ? err.message : '导入失败');
+    }
+  }
+
+  const uploadProgressText =
+    createdSession?.mode === 'OFFLINE' && selectedFiles.length > 0
+      ? `${uploadedCount} / ${selectedFiles.length}`
+      : '-';
 
   return (
-    <AppPageShell toolbar={<PageToolbar title="文件快传" />}>
-      <div className="p-4 md:p-6 mx-auto w-full max-w-4xl">
-        <div className="glass-panel border border-white/10 rounded-3xl overflow-hidden bg-[#0f172a]/80 backdrop-blur-xl shadow-2xl">
-          {allowSend ? (
-            <div className="flex border-b border-white/10">
-              <button
-                onClick={() => setActiveTab('send')}
-                className={cn(
-                  'flex-1 py-5 text-center font-medium transition-colors relative',
-                  activeTab === 'send' ? 'text-white' : 'text-slate-400 hover:text-slate-200 hover:bg-white/5',
-                )}
-              >
-                <div className="flex items-center justify-center gap-2">
-                  <UploadCloud className="w-5 h-5" />
-                  发送文件
-                </div>
-                {activeTab === 'send' ? (
-                  <motion.div layoutId="activeTransferTab" className="absolute bottom-0 left-0 right-0 h-0.5 bg-[#336EFF]" />
-                ) : null}
-              </button>
-              <button
-                onClick={() => setActiveTab('receive')}
-                className={cn(
-                  'flex-1 py-5 text-center font-medium transition-colors relative',
-                  activeTab === 'receive' ? 'text-white' : 'text-slate-400 hover:text-slate-200 hover:bg-white/5',
-                )}
-              >
-                <div className="flex items-center justify-center gap-2">
-                  <DownloadCloud className="w-5 h-5" />
-                  接收文件
-                </div>
-                {activeTab === 'receive' ? (
-                  <motion.div layoutId="activeTransferTab" className="absolute bottom-0 left-0 right-0 h-0.5 bg-[#336EFF]" />
-                ) : null}
-              </button>
-            </div>
-          ) : null}
-
-          <div className="p-8 min-h-[420px] flex flex-col relative min-w-0">
-            {authReady && !isAuthenticated ? (
-              <div className="mb-6 flex flex-col gap-3 rounded-2xl border border-blue-400/15 bg-blue-500/10 px-4 py-4 text-sm text-blue-100 md:flex-row md:items-center md:justify-between">
-                <p className="leading-6">
-                  当前无需登录即可在线发送、在线接收和离线接收。只有发离线和把离线文件存入网盘时才需要登录。
-                </p>
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={navigateBackToLogin}
-                  className="shrink-0 border border-white/10 bg-white/10 text-white hover:bg-white/15"
-                >
-                  <LogIn className="mr-2 h-4 w-4" />
-                  返回登录
-                </Button>
-              </div>
-            ) : null}
-
-            <AnimatePresence mode="wait">
-              {activeTab === 'send' ? (
-                <motion.div
-                  key="send"
-                  initial={{ opacity: 0, x: -20 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  exit={{ opacity: 0, x: 20 }}
-                  transition={{ duration: 0.2 }}
-                  className="flex-1 flex flex-col h-full min-w-0"
-                >
-                  {availableTransferModes.length > 1 ? (
-                    <div className="mb-6 grid gap-3 md:grid-cols-2">
-                      {availableTransferModes.map((mode) => {
-                        const summary = getTransferModeSummary(mode);
-                        const active = transferMode === mode;
-
-                        return (
-                          <button
-                            key={mode}
-                            type="button"
-                            onClick={() => setTransferMode(mode)}
-                            className={cn(
-                              'rounded-2xl border p-4 text-left transition-colors',
-                              active
-                                ? 'border-blue-400/40 bg-blue-500/10'
-                                : 'border-white/10 bg-white/[0.03] hover:bg-white/[0.05]',
-                            )}
-                          >
-                            <div className="flex items-center justify-between gap-3">
-                              <p className="text-sm font-semibold text-white">{summary.title}</p>
-                              <span className={cn(
-                                'rounded-full px-2.5 py-1 text-[11px] font-medium',
-                                active ? 'bg-blue-400/15 text-blue-100' : 'bg-white/10 text-slate-300',
-                              )}>
-                                {mode === 'ONLINE' ? '一次接收' : '7 天多次'}
-                              </span>
-                            </div>
-                            <p className="mt-2 text-sm leading-6 text-slate-400">{summary.description}</p>
-                          </button>
-                        );
-                      })}
-                    </div>
-                  ) : null}
-
-                  {selectedFiles.length === 0 ? (
-                    <div
-                      className="flex-1 border-2 border-dashed border-white/10 rounded-2xl flex flex-col items-center justify-center p-10 transition-colors hover:border-[#336EFF]/50 hover:bg-[#336EFF]/5"
-                      onDragOver={handleDragOver}
-                      onDrop={handleDrop}
-                    >
-                      <div className="w-20 h-20 rounded-full bg-blue-500/10 flex items-center justify-center mb-6">
-                        <UploadCloud className="w-10 h-10 text-[#336EFF]" />
-                      </div>
-                      <h3 className="text-xl font-medium text-white mb-2">拖拽文件或文件夹到此处</h3>
-                      <p className="text-slate-400 mb-8 text-center max-w-md">
-                        {transferModeSummary.description}
-                      </p>
-                      <div className="flex flex-col sm:flex-row items-center gap-4">
-                        <Button onClick={() => fileInputRef.current?.click()} className="bg-[#336EFF] hover:bg-blue-600 text-white px-8">
-                          <FileIcon className="w-4 h-4 mr-2" />
-                          选择文件
-                        </Button>
-                        <Button
-                          onClick={() => folderInputRef.current?.click()}
-                          variant="outline"
-                          className="border-white/10 hover:bg-white/10 text-slate-300 px-8"
-                        >
-                          <Folder className="w-4 h-4 mr-2" />
-                          选择文件夹
-                        </Button>
-                      </div>
-                    </div>
-                  ) : (
-                    <div className="flex-1 flex flex-col md:flex-row gap-8">
-                      <div className="flex-1 flex flex-col items-center justify-center bg-black/20 rounded-2xl p-8 border border-white/5 relative min-w-0">
-                        <button onClick={resetSenderState} className="absolute top-4 right-4 text-slate-500 hover:text-white transition-colors" aria-label="取消发送">
-                          <X className="w-5 h-5" />
-                        </button>
-
-                        <h3 className="text-slate-400 text-sm font-medium mb-2 uppercase tracking-widest">取件码</h3>
-                        <div className="text-5xl md:text-6xl font-bold text-white tracking-[0.2em] mb-8 font-mono">
-                          {session?.pickupCode ?? '......'}
-                        </div>
-
-                        {qrImageUrl ? (
-                          <div className="bg-white p-4 rounded-2xl mb-6 shadow-[0_18px_48px_rgba(15,23,42,0.18)]">
-                            <img src={qrImageUrl} alt="快传分享二维码" className="w-44 h-44 rounded-xl" />
-                          </div>
-                        ) : null}
-
-                        <div className="w-full max-w-xs rounded-2xl border border-white/10 bg-black/30 p-3 mb-4">
-                          <div className="flex items-center gap-2 text-xs uppercase tracking-[0.24em] text-slate-500 mb-2">
-                            <LinkIcon className="w-3.5 h-3.5" />
-                            分享链接
-                          </div>
-                          <div className="text-sm text-slate-200 font-mono truncate">{shareLink || '会话创建中...'}</div>
-                        </div>
-
-                        <Button
-                          variant="outline"
-                          className="w-full max-w-xs border-white/10 hover:bg-white/10 text-slate-200"
-                          onClick={() => void copyToClipboard(shareLink)}
-                          disabled={!shareLink}
-                        >
-                          {copied ? <CheckCircle className="w-4 h-4 mr-2 text-emerald-400" /> : <Copy className="w-4 h-4 mr-2" />}
-                          {copied ? '已复制' : '复制链接'}
-                        </Button>
-                      </div>
-
-                      <div className="flex-1 flex flex-col min-w-0">
-                        <div className="flex items-center justify-between mb-4 gap-4">
-                          <div>
-                            <h3 className="text-lg font-medium text-white">待发送文件</h3>
-                            <span className="text-sm text-slate-400">{selectedFiles.length} 个项目 • {formatTransferSize(totalSize)}</span>
-                          </div>
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            className="h-8 border-white/10 hover:bg-white/10 text-slate-300 px-2 shrink-0"
-                            onClick={() => folderInputRef.current?.click()}
-                          >
-                            <FolderPlus className="w-4 h-4 mr-1" />
-                            添加文件夹
-                          </Button>
-                        </div>
-
-                        <div className="flex-1 overflow-y-auto pr-2 space-y-3 max-h-[300px] mb-4">
-                          {selectedFiles.map((file, index) => (
-                            <div key={`${file.name}-${index}`} className="flex items-center gap-3 bg-white/5 border border-white/5 rounded-xl p-3 group transition-colors hover:bg-white/10">
-                              <div className="w-10 h-10 rounded-lg bg-blue-500/10 flex items-center justify-center shrink-0">
-                                <FileIcon className="w-5 h-5 text-blue-400" />
-                              </div>
-                              <div className="flex-1 min-w-0">
-                                <p className="text-sm font-medium text-slate-200 truncate">{file.name}</p>
-                                <p className="text-xs text-slate-500">{formatTransferSize(file.size)}</p>
-                              </div>
-                              <button
-                                onClick={() => removeFile(index)}
-                                className="p-2 text-slate-500 hover:text-red-400 opacity-100 md:opacity-0 group-hover:opacity-100 transition-opacity"
-                                title="移除文件"
-                              >
-                                <Trash2 className="w-4 h-4" />
-                              </button>
-                            </div>
-                          ))}
-                        </div>
-
-                        <button
-                          onClick={() => fileInputRef.current?.click()}
-                          className="w-full flex items-center justify-center gap-2 py-4 border-2 border-dashed border-white/10 rounded-xl text-slate-400 hover:text-white hover:border-white/30 hover:bg-white/5 transition-colors mb-6 shrink-0"
-                        >
-                          <Plus className="w-5 h-5" />
-                          <span className="font-medium">添加更多文件</span>
-                        </button>
-
-                        <div className={cn(
-                          'mt-auto rounded-xl p-4 flex items-start gap-4 border',
-                          sendPhase === 'error'
-                            ? 'bg-rose-500/10 border-rose-500/20'
-                            : sendPhase === 'completed'
-                              ? 'bg-emerald-500/10 border-emerald-500/20'
-                              : 'bg-blue-500/10 border-blue-500/20',
-                        )}>
-                          {sendPhase === 'completed' ? (
-                            <CheckCircle className="w-6 h-6 text-emerald-400 shrink-0" />
-                          ) : (
-                            <Loader2 className={cn(
-                              'w-6 h-6 shrink-0',
-                              sendPhase === 'error' ? 'text-rose-400' : 'text-blue-400 animate-spin',
-                            )} />
-                          )}
-                          <div className="min-w-0">
-                            <p className={cn(
-                              'text-sm font-medium',
-                              sendPhase === 'error'
-                                ? 'text-rose-300'
-                                : sendPhase === 'completed'
-                                  ? 'text-emerald-300'
-                                  : 'text-blue-300',
-                            )}>
-                              {getPhaseMessage(transferMode, sendPhase, sendError)}
-                            </p>
-                            <p className="text-xs text-slate-400 mt-1">
-                              发送进度 {sendProgress}%{session ? ` · 会话有效期至 ${new Date(session.expiresAt).toLocaleString('zh-CN', {month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit'})}` : ''}
-                            </p>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  )}
-
-                  {isAuthenticated ? (
-                    <div className="mt-8 rounded-2xl border border-white/10 bg-white/[0.03] p-5">
-                      <div className="mb-4 flex items-center justify-between gap-4">
-                        <div>
-                          <h3 className="text-base font-semibold text-white">我的离线快传</h3>
-                          <p className="mt-1 text-sm text-slate-400">
-                            这里只保留未过期的离线快传记录，点击即可重新查看取件码和分享链接。
-                          </p>
-                        </div>
-                        <Button
-                          type="button"
-                          size="sm"
-                          variant="outline"
-                          onClick={() => void loadOfflineHistory()}
-                          className="h-8 shrink-0 border-white/10 bg-transparent px-3 text-slate-300 hover:bg-white/10"
-                        >
-                          刷新
-                        </Button>
-                      </div>
-
-                      {offlineHistoryLoading && offlineHistory.length === 0 ? (
-                        <div className="rounded-2xl border border-white/5 bg-black/10 px-4 py-10 text-center text-sm text-slate-400">
-                          正在加载离线快传记录...
-                        </div>
-                      ) : offlineHistoryError ? (
-                        <div className="rounded-2xl border border-rose-500/20 bg-rose-500/10 px-4 py-4 text-sm text-rose-200">
-                          {offlineHistoryError}
-                        </div>
-                      ) : offlineHistory.length === 0 ? (
-                        <div className="rounded-2xl border border-white/5 bg-black/10 px-4 py-10 text-center text-sm text-slate-400">
-                          你还没有发过离线快传。
-                        </div>
-                      ) : (
-                        <div className="grid gap-3">
-                          {offlineHistory.map((historySession) => {
-                            const ready = isOfflineSessionReady(historySession);
-
-                            return (
-                              <button
-                                key={historySession.sessionId}
-                                type="button"
-                                onClick={() => setSelectedOfflineSession(historySession)}
-                                className="group flex w-full items-center justify-between gap-4 rounded-2xl border border-white/8 bg-black/10 px-4 py-4 text-left transition-colors hover:border-[#336EFF]/30 hover:bg-white/[0.04]"
-                              >
-                                <div className="min-w-0 flex-1">
-                                  <div className="flex items-center gap-3">
-                                    <p className="truncate text-sm font-semibold text-white">
-                                      {getOfflineTransferSessionLabel(historySession)}
-                                    </p>
-                                    <span className={cn(
-                                      'rounded-full px-2.5 py-1 text-[11px] font-medium',
-                                      ready ? 'bg-emerald-500/15 text-emerald-200' : 'bg-amber-500/15 text-amber-100',
-                                    )}>
-                                      {ready ? '可接收' : '上传中'}
-                                    </span>
-                                  </div>
-                                  <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-slate-400">
-                                    <span>取件码 {historySession.pickupCode}</span>
-                                    <span>{historySession.files.length} 个项目</span>
-                                    <span>{getOfflineTransferSessionSize(historySession)}</span>
-                                    <span>
-                                      到期于 {new Date(historySession.expiresAt).toLocaleString('zh-CN', {
-                                        month: '2-digit',
-                                        day: '2-digit',
-                                        hour: '2-digit',
-                                        minute: '2-digit',
-                                      })}
-                                    </span>
-                                  </div>
-                                </div>
-                                <ChevronRight className="h-5 w-5 shrink-0 text-slate-500 transition-colors group-hover:text-white" />
-                              </button>
-                            );
-                          })}
-                        </div>
-                      )}
-                    </div>
-                  ) : null}
-
-                  <input type="file" multiple className="hidden" ref={fileInputRef} onChange={handleFileSelect} />
-                  <input type="file" multiple className="hidden" ref={folderInputRef} onChange={handleFileSelect} />
-                </motion.div>
-              ) : (
-                <motion.div
-                  key="receive"
-                  initial={{ opacity: 0, x: 20 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  exit={{ opacity: 0, x: -20 }}
-                  transition={{ duration: 0.2 }}
-                  className="flex-1 flex flex-col h-full min-w-0 w-full"
-                >
-                  <TransferReceive embedded />
-                </motion.div>
-              )}
-            </AnimatePresence>
-          </div>
-        </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mt-12">
-          <div className="flex items-start gap-4 p-4 rounded-2xl bg-white/[0.02] border border-white/5">
-            <div className="w-10 h-10 rounded-full bg-blue-500/10 flex items-center justify-center shrink-0">
-              <Smartphone className="w-5 h-5 text-blue-400" />
-            </div>
-            <div>
-              <h4 className="text-sm font-medium text-slate-200 mb-1">扫码直达网页</h4>
-              <p className="text-xs text-slate-500 leading-relaxed">二维码不承载文件本身，只负责把另一台设备带到公开接收页。</p>
-            </div>
-          </div>
-          <div className="flex items-start gap-4 p-4 rounded-2xl bg-white/[0.02] border border-white/5">
-            <div className="w-10 h-10 rounded-full bg-emerald-500/10 flex items-center justify-center shrink-0">
-              <Shield className="w-5 h-5 text-emerald-400" />
-            </div>
-            <div>
-              <h4 className="text-sm font-medium text-slate-200 mb-1">浏览器 P2P 传输</h4>
-              <p className="text-xs text-slate-500 leading-relaxed">网页之间通过 WebRTC DataChannel 交换文件字节，后端只做信令和会话协调。</p>
-            </div>
-          </div>
-          <div className="flex items-start gap-4 p-4 rounded-2xl bg-white/[0.02] border border-white/5">
-            <div className="w-10 h-10 rounded-full bg-cyan-500/10 flex items-center justify-center shrink-0">
-              <Monitor className="w-5 h-5 text-cyan-400" />
-            </div>
-            <div>
-              <h4 className="text-sm font-medium text-slate-200 mb-1">在线一次性，离线可重复</h4>
-              <p className="text-xs text-slate-500 leading-relaxed">在线模式适合临时快传，离线模式会保留 7 天，接收后文件也不会立刻消失。</p>
-            </div>
-          </div>
-        </div>
+    <motion.div 
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      className="flex h-full flex-col p-8 text-gray-900 dark:text-gray-100 overflow-y-auto"
+    >
+      <div className="mb-10">
+        <h1 className="text-4xl font-black tracking-tight animate-text-reveal">即时快传</h1>
+        <p className="mt-3 text-sm font-black uppercase tracking-[0.2em] opacity-70">即时数据中转 / 安全取件通道</p>
       </div>
 
-      <AnimatePresence>
-        {selectedOfflineSession ? (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 z-[70] flex items-center justify-center bg-[#020817]/75 px-4 py-6 backdrop-blur-md"
+      <div className="mb-10 flex gap-2 p-1.5 rounded-lg glass-panel-no-hover w-fit shadow-2xl border border-white/10">
+        {([
+          ['send', '发送'],
+          ['receive', '接收'],
+          ['history', '记录'],
+        ] as const).map(([tab, label]) => (
+          <button
+            key={tab}
+            type="button"
+            onClick={() => setActiveTab(tab)}
+            className={cn(
+               "rounded-md px-8 py-3 text-[10px] font-black uppercase tracking-widest transition-all duration-300",
+               activeTab === tab 
+                ? "bg-blue-600 text-white shadow-xl scale-[1.02]" 
+                : "opacity-40 hover:opacity-100 hover:bg-white/10"
+            )}
           >
-            <motion.div
-              initial={{ opacity: 0, scale: 0.96, y: 16 }}
-              animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.96, y: 16 }}
-              transition={{ duration: 0.18 }}
-              className="relative w-full max-w-[34rem] overflow-hidden rounded-[2rem] border border-white/10 bg-[#0d1528]/95 p-8 shadow-[0_30px_120px_rgba(0,0,0,0.45)]"
+            {label}
+          </button>
+        ))}
+      </div>
+
+      <div className="flex-1 min-h-0">
+        <AnimatePresence mode="wait">
+          {activeTab === 'send' && (
+            <motion.div 
+               key="send"
+               initial={{ y: 20, opacity: 0 }}
+               animate={{ y: 0, opacity: 1 }}
+               exit={{ y: -20, opacity: 0 }}
+               className="grid gap-8 lg:grid-cols-[1.2fr_0.8fr]"
             >
-              <button
-                type="button"
-                onClick={() => setSelectedOfflineSession(null)}
-                className="absolute right-5 top-5 rounded-full p-2 text-slate-500 transition-colors hover:bg-white/5 hover:text-white"
-                aria-label="关闭离线快传详情"
-              >
-                <X className="h-7 w-7" />
-              </button>
-
-              <div className="text-center">
-                <p className="text-sm tracking-[0.3em] text-slate-400">取件码</p>
-                <div className="mt-5 font-mono text-[4.5rem] font-bold leading-none tracking-[0.32em] text-white">
-                  {selectedOfflineSession.pickupCode}
+              <section className="glass-panel-no-hover rounded-lg p-10 shadow-3xl border border-white/10">
+                <div className="mb-8">
+                  <h2 className="text-sm font-black uppercase tracking-[0.3em] opacity-70">传输配置</h2>
                 </div>
-              </div>
 
-              {selectedOfflineSessionQrImageUrl ? (
-                <div className="mx-auto mt-10 w-fit rounded-[2rem] bg-white p-5 shadow-[0_18px_60px_rgba(15,23,42,0.32)]">
-                  <img
-                    src={selectedOfflineSessionQrImageUrl}
-                    alt="离线快传二维码"
-                    className="h-64 w-64 rounded-2xl"
+                <div className="mb-10 flex gap-4">
+                  {([
+                    ['OFFLINE', '离线快传'],
+                    ['ONLINE', '在线快传'],
+                  ] as const).map(([mode, label]) => (
+                    <button
+                      key={mode}
+                      type="button"
+                      onClick={() => setSendMode(mode)}
+                      className={cn(
+                        "rounded-lg px-6 py-2.5 text-[10px] font-black uppercase tracking-widest transition-all border",
+                        sendMode === mode 
+                          ? "bg-blue-600/10 border-blue-500/40 text-blue-500 shadow-inner" 
+                          : "border-white/10 opacity-30 hover:opacity-100 hover:bg-white/5"
+                      )}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+
+                <label className="mb-10 flex cursor-pointer flex-col items-center justify-center rounded-lg border-2 border-dashed border-white/10 bg-white/5 px-10 py-20 text-center transition-all hover:border-blue-500/40 hover:bg-blue-500/5 group border-white/10">
+                  <Upload className="mb-6 h-12 w-12 text-blue-500 opacity-40 group-hover:opacity-100 group-hover:scale-110 transition-all" />
+                  <div className="text-[11px] font-black uppercase tracking-[0.2em]">选择要发送的文件</div>
+                  <div className="mt-3 text-xs font-bold opacity-80 dark:opacity-90 uppercase tracking-widest">支持多文件，大小受系统限制</div>
+                  <input
+                    type="file"
+                    multiple
+                    className="hidden"
+                    onChange={(event) => {
+                      setSelectedFiles(Array.from(event.target.files ?? []));
+                    }}
+                  />
+                </label>
+
+                {selectedFiles.length > 0 && (
+                  <div className="mb-10 rounded-lg bg-black/20 p-6 border border-white/10">
+                    <div className="mb-4 text-xs font-black uppercase tracking-[0.3em] opacity-70">已选择文件（{selectedFiles.length}）</div>
+                    <div className="space-y-3 max-h-64 overflow-y-auto pr-2 custom-scrollbar">
+                      {selectedFiles.map((file) => (
+                        <div key={`${file.name}-${file.size}`} className="flex items-center justify-between gap-4 p-3 rounded bg-white/5 border border-white/5">
+                          <span className="truncate text-[11px] font-black uppercase tracking-tight">{file.name}</span>
+                          <span className="shrink-0 text-sm font-bold opacity-80 dark:opacity-90">{formatBytes(file.size)}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {sendError && <div className="mb-8 rounded-lg bg-red-500/10 border border-red-500/20 px-6 py-4 text-[10px] text-red-600 font-black uppercase tracking-widest backdrop-blur-md">{sendError}</div>}
+                {sendMessage && <div className="mb-8 rounded-lg bg-green-500/10 border border-green-500/20 px-6 py-4 text-[10px] text-green-600 font-black uppercase tracking-widest backdrop-blur-md">{sendMessage}</div>}
+
+                <button
+                  type="button"
+                  onClick={() => void handleCreateSession()}
+                  disabled={sendLoading || selectedFiles.length === 0}
+                  className="w-full inline-flex items-center justify-center gap-4 rounded-lg bg-blue-600 px-8 py-5 text-[11px] font-black uppercase tracking-[0.3em] text-white shadow-2xl hover:bg-blue-500 hover:scale-[1.01] transition-all disabled:opacity-30 disabled:hover:scale-100"
+                >
+                  {sendLoading ? <RefreshCw className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+                  {sendLoading ? '处理中...' : '创建会话'}
+                </button>
+              </section>
+
+              <aside className="glass-panel-no-hover rounded-lg p-10 shadow-3xl border border-white/10 h-fit">
+                <div className="mb-8">
+                  <h2 className="text-sm font-black uppercase tracking-[0.3em] opacity-70">会话信息</h2>
+                </div>
+                {createdSession ? (
+                  <div className="space-y-10">
+                    <div className="rounded-lg bg-blue-600/5 dark:bg-blue-600/10 border border-blue-500/20 p-10 text-center">
+                      <div className="text-[9px] font-black text-blue-500 uppercase tracking-[0.4em] mb-4">取件码</div>
+                      <div className="text-5xl font-black tracking-[0.3em] text-blue-500 ml-[0.3em] drop-shadow-xl">{createdSession.pickupCode}</div>
+                    </div>
+                    
+                    <div className="space-y-5 p-6 rounded-lg bg-white/5 border border-white/10 text-[10px] font-black uppercase tracking-widest">
+                      <div className="flex justify-between border-b border-white/5 pb-3">
+                        <span className="opacity-80 dark:opacity-90">模式</span>
+                        <span>{getModeLabel(createdSession.mode)}</span>
+                      </div>
+                      <div className="flex justify-between border-b border-white/5 pb-3">
+                        <span className="opacity-80 dark:opacity-90">过期</span>
+                        <span className="text-amber-500">{formatDateTime(createdSession.expiresAt).split(' ')[0]}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="opacity-80 dark:opacity-90">进度</span>
+                        <span className="text-blue-500">{uploadProgressText}</span>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 gap-3">
+                      <button
+                        type="button"
+                        onClick={() => { navigator.clipboard.writeText(createdSession.pickupCode); window.alert('取件码已复制'); }}
+                        className="flex items-center justify-center gap-3 rounded-lg glass-panel border-white/10 p-4 text-[9px] font-black uppercase tracking-[0.2em] hover:bg-white/40 transition-all"
+                      >
+                        <Copy className="h-4 w-4" /> 复制取件码
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => { navigator.clipboard.writeText(transferShareUrl); window.alert('链接已复制'); }}
+                        className="flex items-center justify-center gap-3 rounded-lg glass-panel border-white/10 p-4 text-[9px] font-black uppercase tracking-[0.2em] hover:bg-white/40 transition-all"
+                      >
+                        <LinkIcon className="h-4 w-4" /> 复制链接
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="py-20 text-center">
+                    <div className="mb-6 inline-flex p-6 rounded-lg bg-white/5 opacity-10">
+                      <Copy className="h-10 w-10" />
+                    </div>
+                    <p className="text-sm font-black uppercase tracking-widest opacity-70">等待会话创建<br/>创建后可查看</p>
+                  </div>
+                )}
+              </aside>
+            </motion.div>
+          )}
+
+          {activeTab === 'receive' && (
+            <motion.div 
+               key="receive"
+               initial={{ y: 20, opacity: 0 }}
+               animate={{ y: 0, opacity: 1 }}
+               exit={{ y: -20, opacity: 0 }}
+               className="grid gap-8 lg:grid-cols-[0.8fr_1.2fr]"
+            >
+              <section className="glass-panel-no-hover rounded-lg p-10 shadow-3xl border border-white/10 h-fit">
+                <div className="mb-8">
+                  <h2 className="text-sm font-black uppercase tracking-[0.3em] opacity-70">接收会话</h2>
+                </div>
+
+                <div className="relative mb-8">
+                  <input
+                    value={receiveCode}
+                    onChange={(event) => setReceiveCode(sanitizePickupCode(event.target.value))}
+                    onKeyDown={(event) => { if (event.key === 'Enter') void handleLookup(); }}
+                    placeholder="000000"
+                    className="w-full rounded-lg glass-panel bg-black/40 p-8 text-center text-5xl font-black tracking-[0.5em] outline-none border border-white/10 focus:border-blue-500/50 focus:ring-4 focus:ring-blue-500/10 placeholder:opacity-10 transition-all duration-500 text-blue-500"
                   />
                 </div>
-              ) : null}
+                
+                <button
+                  type="button"
+                  onClick={() => void handleLookup()}
+                  disabled={lookupLoading}
+                  className="w-full rounded-lg bg-blue-600 p-5 text-[11px] font-black uppercase tracking-[0.3em] text-white shadow-2xl hover:bg-blue-500 transition-all disabled:opacity-30"
+                >
+                  {lookupLoading ? <RefreshCw className="h-4 w-4 animate-spin inline mr-3" /> : null}
+                  查询取件码
+                </button>
 
-              <div className="mt-8 rounded-[1.7rem] border border-white/10 bg-[#0a1122] px-5 py-4">
-                <div className="mb-3 flex items-center gap-2 text-xs uppercase tracking-[0.24em] text-slate-500">
-                  <LinkIcon className="h-4 w-4" />
-                  分享链接
+                {receiveError && <div className="mt-8 rounded-lg bg-red-500/10 border border-red-500/20 px-6 py-4 text-[10px] text-red-600 font-black uppercase tracking-widest backdrop-blur-md">{receiveError}</div>}
+                {receiveMessage && <div className="mt-8 rounded-lg bg-green-500/10 border border-green-500/20 px-6 py-4 text-[10px] text-green-600 font-black uppercase tracking-widest backdrop-blur-md">{receiveMessage}</div>}
+
+                {lookupResult && (
+                  <div className="mt-10 p-8 rounded-lg bg-blue-600/5 border border-blue-500/20">
+                    <div className="flex items-center gap-5 mb-6">
+                      <div className="p-4 rounded-lg bg-blue-600 text-white font-black text-2xl tracking-[0.2em]">
+                        {lookupResult.pickupCode}
+                      </div>
+                      <div>
+                        <div className="text-[10px] font-black uppercase tracking-widest text-blue-500">已找到会话</div>
+                        <div className="text-xs font-bold opacity-80 dark:opacity-90 uppercase tracking-widest">{getModeLabel(lookupResult.mode)}</div>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => void handleJoinSession()}
+                      disabled={lookupLoading}
+                      className="w-full rounded-lg glass-panel border-white/10 p-4 text-[10px] font-black uppercase tracking-widest hover:bg-blue-600 hover:text-white transition-all"
+                    >
+                      加入会话
+                    </button>
+                  </div>
+                )}
+              </section>
+
+              <section className="glass-panel-no-hover rounded-lg p-10 shadow-3xl border border-white/10">
+                <div className="mb-8">
+                  <h2 className="text-sm font-black uppercase tracking-[0.3em] opacity-70">文件列表</h2>
                 </div>
-                <div className="truncate text-[1.05rem] text-slate-100">
-                  {selectedOfflineSessionShareLink}
-                </div>
-              </div>
-
-              <Button
-                type="button"
-                variant="outline"
-                className="mt-5 h-16 w-full rounded-[1.35rem] border-white/10 bg-transparent text-xl text-white hover:bg-white/5"
-                onClick={() => void copyOfflineSessionLink(selectedOfflineSession)}
-              >
-                <Copy className="mr-3 h-6 w-6" />
-                {historyCopiedSessionId === selectedOfflineSession.sessionId ? '已复制链接' : '复制链接'}
-              </Button>
-
-              <div className="mt-6 flex flex-wrap items-center gap-x-4 gap-y-2 text-sm text-slate-400">
-                <span>{getOfflineTransferSessionLabel(selectedOfflineSession)}</span>
-                <span>{selectedOfflineSession.files.length} 个项目</span>
-                <span>{getOfflineTransferSessionSize(selectedOfflineSession)}</span>
-                <span className={cn(
-                  isOfflineSessionReady(selectedOfflineSession) ? 'text-emerald-300' : 'text-amber-200',
-                )}>
-                  {isOfflineSessionReady(selectedOfflineSession) ? '文件已就绪，可重复接收' : '文件仍在上传中'}
-                </span>
-              </div>
-
-              <div className="mt-3 flex items-center gap-2 text-sm text-slate-500">
-                <Clock3 className="h-4 w-4" />
-                有效期至 {new Date(selectedOfflineSession.expiresAt).toLocaleString('zh-CN', {
-                  year: 'numeric',
-                  month: '2-digit',
-                  day: '2-digit',
-                  hour: '2-digit',
-                  minute: '2-digit',
-                })}
-              </div>
+                {joinedSession ? (
+                  joinedSession.mode === 'OFFLINE' ? (
+                    <div className="space-y-4">
+                      {joinedSession.files.map((file) => (
+                        <div key={`${file.id}-${file.size}`} className="p-6 rounded-lg bg-white/5 border border-white/10 hover:bg-white/10 transition-all group">
+                          <div className="flex flex-wrap items-center justify-between gap-6">
+                            <div className="min-w-0 flex-1">
+                              <div className="truncate text-lg font-black uppercase tracking-tight group-hover:text-blue-500 transition-colors">{file.name}</div>
+                              <div className="mt-1 truncate text-xs font-bold opacity-80 dark:opacity-90 uppercase tracking-widest">{file.relativePath}</div>
+                              <div className="mt-2 text-[10px] font-black text-blue-500 flex items-center gap-1">
+                                <span className="opacity-40 font-black">大小：</span>{formatBytes(file.size)}
+                              </div>
+                            </div>
+                            <div className="flex gap-2">
+                              {file.id && (
+                                <a
+                                  href={buildOfflineTransferDownloadUrl(joinedSession.sessionId, file.id)}
+                                  className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-5 py-3 text-[10px] font-black uppercase tracking-widest text-white hover:bg-blue-500 shadow-xl transition-all"
+                                >
+                                  <Download className="h-4 w-4" /> 下载
+                                </a>
+                              )}
+                              {loggedIn && file.id && (
+                                <button
+                                  type="button"
+                                  onClick={() => void handleImport(joinedSession.sessionId, file.id!)}
+                                  className="inline-flex items-center gap-2 rounded-lg glass-panel border-white/10 px-5 py-3 text-[10px] font-black uppercase tracking-widest hover:bg-white/40 transition-all"
+                                >
+                                  <FolderDown className="h-4 w-4" /> 导入网盘
+                                </button>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="py-32 text-center rounded-lg bg-amber-500/5 border border-amber-500/10 px-10">
+                      <RefreshCw className="h-12 w-12 text-amber-500 mx-auto mb-6 opacity-30 animate-spin-slow" />
+                      <h3 className="text-[11px] font-black uppercase tracking-[0.3em] text-amber-500">等待发送方在线</h3>
+                      <p className="mt-4 text-[10px] font-bold opacity-40 uppercase tracking-widest leading-relaxed">在线快传需要发送方保持在线</p>
+                    </div>
+                  )
+                ) : (
+                  <div className="py-40 text-center">
+                    <div className="mb-8 inline-flex p-6 rounded-lg bg-white/5 opacity-10">
+                      <FolderDown className="h-10 w-10" />
+                    </div>
+                    <p className="text-sm font-black uppercase tracking-widest opacity-70">暂无会话<br/>输入取件码后查询</p>
+                  </div>
+                )}
+              </section>
             </motion.div>
-          </motion.div>
-        ) : null}
-      </AnimatePresence>
-    </AppPageShell>
+          )}
+
+          {activeTab === 'history' && (
+            <motion.div 
+               key="history"
+               initial={{ y: 20, opacity: 0 }}
+               animate={{ y: 0, opacity: 1 }}
+               exit={{ y: -20, opacity: 0 }}
+               className="glass-panel-no-hover rounded-lg p-10 shadow-3xl border border-white/10"
+            >
+              <div className="mb-10 flex items-center justify-between">
+                <div>
+                  <h2 className="text-sm font-black uppercase tracking-[0.3em] opacity-70">离线快传记录</h2>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => void loadHistory()}
+                  disabled={!loggedIn || historyLoading}
+                  className="flex items-center gap-3 rounded-lg glass-panel border-white/10 px-6 py-3 text-[10px] font-black uppercase tracking-widest hover:bg-white/40 transition-all border-white/10 disabled:opacity-20"
+                >
+                  <RefreshCw className={cn("h-4 w-4", historyLoading && "animate-spin")} />
+                  刷新记录
+                </button>
+              </div>
+
+              {!loggedIn ? (
+                <div className="py-32 text-center">
+                  <p className="text-sm font-black uppercase tracking-[0.3em] opacity-70">登录后可查看记录</p>
+                </div>
+              ) : historyLoading && historySessions.length === 0 ? (
+                <div className="py-32 text-center text-sm font-black uppercase tracking-widest opacity-70">加载中...</div>
+              ) : historySessions.length === 0 ? (
+                <div className="py-32 text-center text-sm font-black uppercase tracking-widest opacity-70">暂无记录</div>
+              ) : (
+                <motion.div 
+                  variants={container}
+                  initial="hidden"
+                  animate="show"
+                  className="grid gap-8"
+                >
+                  {historyError && <div className="rounded-lg bg-red-500/10 border border-red-500/20 px-6 py-4 text-xs text-red-600 font-bold">{historyError}</div>}
+                  {historyMessage && <div className="rounded-lg bg-green-500/10 border border-green-500/30 px-6 py-4 text-xs text-green-600 font-bold">{historyMessage}</div>}
+                  {historySessions.map((session) => (
+                    <motion.div key={session.sessionId} variants={itemVariants} className="p-8 rounded-lg bg-white/5 border border-white/10 hover:border-blue-500/30 transition-all group">
+                      <div className="mb-8 flex flex-wrap items-center justify-between gap-6">
+                        <div className="flex items-center gap-6">
+                          <div className="p-5 rounded-lg bg-blue-600 text-white font-black text-3xl tracking-[0.3em] shadow-xl">
+                            {session.pickupCode}
+                          </div>
+                          <div>
+                            <div className="flex items-center gap-2 text-[10px] font-black text-amber-500 mb-2 uppercase tracking-widest">
+                              <Clock3 className="h-4 w-4" />
+                              过期时间：{formatDateTime(session.expiresAt).split(' ')[0]}
+                            </div>
+                            <div className="text-xs font-bold opacity-80 dark:opacity-90 uppercase tracking-[0.2em]">文件数：{session.files.length}</div>
+                          </div>
+                        </div>
+                        <div className="flex gap-2">
+                          <button
+                            type="button"
+                            onClick={() => { navigator.clipboard.writeText(session.pickupCode); window.alert('取件码已复制'); }}
+                            className="p-3.5 rounded-lg glass-panel hover:bg-blue-600 hover:text-white transition-all border border-white/10 shadow-sm"
+                            title="复制取件码"
+                          >
+                            <Copy className="h-4 w-4" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => { navigator.clipboard.writeText(getTransferShareUrl(session.pickupCode)); window.alert('链接已复制'); }}
+                            className="p-3.5 rounded-lg glass-panel hover:bg-blue-600 hover:text-white transition-all border border-white/10 shadow-sm"
+                            title="复制链接"
+                          >
+                            <LinkIcon className="h-4 w-4" />
+                          </button>
+                        </div>
+                      </div>
+                      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                        {session.files.map((file) => (
+                          <div key={`${file.id}-${file.size}`} className="p-5 rounded-lg bg-black/40 border border-white/5 group/file">
+                            <div className="truncate text-[11px] font-black uppercase tracking-tight mb-4 group-hover/file:text-blue-500 transition-colors">{file.name}</div>
+                            <div className="flex items-center justify-between gap-3 border-t border-white/5 pt-3">
+                              <span className="text-xs font-bold opacity-80 dark:opacity-90 uppercase">{formatBytes(file.size)}</span>
+                              <div className="flex gap-2">
+                                {file.id && (
+                                  <a
+                                    href={buildOfflineTransferDownloadUrl(session.sessionId, file.id)}
+                                    className="p-2 rounded-lg hover:bg-blue-600/20 text-blue-500 transition-colors"
+                                    title="下载"
+                                  >
+                                    <Download className="h-4 w-4" />
+                                  </a>
+                                )}
+                                {file.id && (
+                                  <button
+                                    type="button"
+                                    onClick={() => void handleHistoryImport(session.sessionId, file.id!)}
+                                    className="p-2 rounded-lg hover:bg-white/10 text-gray-700 dark:text-gray-100 opacity-80 hover:opacity-100 transition-all"
+                                    title="导入网盘"
+                                  >
+                                    <FolderDown className="h-4 w-4" />
+                                  </button>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </motion.div>
+                  ))}
+                </motion.div>
+              )}
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </div>
+    </motion.div>
   );
 }

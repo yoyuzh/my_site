@@ -1,7 +1,0 @@
-<?xml version='1.0' encoding='utf-8'?>
-<resources>
-    <string name="app_name">YOYUZH</string>
-    <string name="title_activity_main">YOYUZH</string>
-    <string name="package_name">xyz.yoyuzh.portal</string>
-    <string name="custom_url_scheme">xyz.yoyuzh.portal</string>
-</resources>

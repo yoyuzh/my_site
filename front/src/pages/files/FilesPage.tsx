@@ -1,425 +1,402 @@
-import React, { useRef, useState, useEffect } from 'react';
-import { AnimatePresence, motion } from 'motion/react';
-import { Edit2, X, Trash2 } from 'lucide-react';
-import { Input } from '@/src/components/ui/input';
-import { Button } from '@/src/components/ui/button';
-import { NetdiskPathPickerModal } from '@/src/components/ui/NetdiskPathPickerModal';
-import { ApiError, apiDownload, apiRequest } from '@/src/lib/api';
-import { copyFileToNetdiskPath } from '@/src/lib/file-copy';
-import { moveFileToNetdiskPath } from '@/src/lib/file-move';
-import { createFileShareLink, getCurrentFileShareUrl } from '@/src/lib/file-share';
-import { uploadFileToNetdiskViaSession } from '@/src/lib/upload-session';
-import { getNextAvailableName, getActionErrorMessage, removeUiFile, replaceUiFile, syncSelectedFile, clearSelectionIfDeleted } from '../files-state';
-import {
-  buildUploadProgressSnapshot,
-  cancelUploadTask,
-  createUploadMeasurement,
-  createUploadTasks,
-  completeUploadTask,
-  failUploadTask,
-  prepareUploadTaskForCompletion,
-  prepareFolderUploadEntries,
-  prepareUploadFile,
-  shouldUploadEntriesSequentially,
-  type PendingUploadEntry,
-  type UploadMeasurement,
-  type UploadTask,
-} from '../files-upload';
-import {
-  registerFilesUploadTaskCanceler,
-  replaceFilesUploads,
-  setFilesUploadPanelOpen,
-  unregisterFilesUploadTaskCanceler,
-  updateFilesUploadTask,
-} from '../files-upload-store';
-import { buildDirectoryTree } from '../files-tree';
-import { RECYCLE_BIN_RETENTION_DAYS } from '../recycle-bin-state';
-import type { FileMetadata } from '@/src/lib/types';
-import { toUiFile, type UiFile } from './file-types';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { ChevronRight, Copy, Download, FolderPlus, HardDrive, Move, RefreshCw, Search, Share2, Trash2, Upload } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import { motion, AnimatePresence } from 'motion/react';
+import { createMediaMetadataTask } from '@/src/lib/background-tasks';
+import { copyFile, createDirectory, deleteFile, getDownloadUrl, listFiles, moveFile, renameFile, searchFiles, type FileItem } from '@/src/lib/files';
+import { formatBytes, formatDateTime } from '@/src/lib/format';
+import { buildSharePublicUrl, createShare } from '@/src/lib/shares-v2';
+import { uploadFileWithSession } from '@/src/lib/upload-session';
+import { cn } from '@/src/lib/utils';
 
-import { useFilesDirectoryState, splitBackendPath, toBackendPath } from './useFilesDirectoryState';
-import { useFilesSearchState } from './useFilesSearchState';
-import { useBackgroundTasksState } from './useBackgroundTasksState';
-import { useFilesOverlayState } from './useFilesOverlayState';
-
-import { FilesDirectoryRail } from './FilesDirectoryRail';
-import { FilesMainPane } from './FilesMainPane';
-import { FilesInspector } from './FilesInspector';
-import { FilesTaskPanel } from './FilesTaskPanel';
-import { FilesToolbar } from './FilesToolbar';
-import { AppPageShell } from '@/src/components/ui/AppPageShell';
-
-function sleep(ms: number) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
+function joinPath(basePath: string, name: string) {
+  if (basePath === '/') {
+    return `/${name}`;
+  }
+  return `${basePath}/${name}`;
 }
 
-export function FilesPage() {
-  const directoryState = useFilesDirectoryState();
-  const searchState = useFilesSearchState();
-  const tasksState = useBackgroundTasksState();
-  const overlayState = useFilesOverlayState();
+function splitPath(path: string) {
+  return path.split('/').filter(Boolean);
+}
 
-  const fileInputRef = useRef<HTMLInputElement | null>(null);
-  const directoryInputRef = useRef<HTMLInputElement | null>(null);
-  const uploadMeasurementsRef = useRef(new Map<string, UploadMeasurement>());
-  const [viewMode, setViewMode] = useState<'list' | 'grid'>('list');
-  const [shareStatus, setShareStatus] = useState('');
-  const [selectedFile, setSelectedFile] = useState<UiFile | null>(null);
+function isPathExpanded(currentPath: string, candidatePath: string) {
+  return currentPath === candidatePath || currentPath.startsWith(`${candidatePath}/`);
+}
+
+const container = {
+  hidden: { opacity: 0 },
+  show: {
+    opacity: 1,
+    transition: {
+      staggerChildren: 0.03
+    }
+  }
+};
+
+const itemVariants = {
+  hidden: { y: 10, opacity: 0 },
+  show: { y: 0, opacity: 1 }
+};
+
+export default function FilesPage() {
+  const navigate = useNavigate();
+  const uploadInputRef = useRef<HTMLInputElement | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [path, setPath] = useState('/');
+  const [query, setQuery] = useState('');
+  const [files, setFiles] = useState<FileItem[]>([]);
+  const [selectedFile, setSelectedFile] = useState<FileItem | null>(null);
+  const [directoryTree, setDirectoryTree] = useState<Record<string, FileItem[]>>({});
+
+  async function loadFiles(nextPath = path, nextQuery = query) {
+    setError('');
+    try {
+      const result = nextQuery.trim()
+        ? await searchFiles(nextQuery.trim(), 0, 100)
+        : await listFiles(nextPath, 0, 100);
+      setFiles(result.items);
+      if (!nextQuery.trim()) {
+        setDirectoryTree((current) => ({
+          ...current,
+          [nextPath]: result.items.filter((item) => item.directory),
+        }));
+      }
+      setSelectedFile((current) => result.items.find((item) => item.id === current?.id) ?? null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '加载文件失败');
+    } finally {
+      setLoading(false);
+    }
+  }
 
   useEffect(() => {
-    if (directoryInputRef.current) {
-      directoryInputRef.current.setAttribute('webkitdirectory', '');
-      directoryInputRef.current.setAttribute('directory', '');
-    }
-    void tasksState.loadBackgroundTasks();
-  }, [tasksState.loadBackgroundTasks]);
+    void loadFiles();
+  }, [path]);
 
-  const handleNavigateToPath = (pathParts: string[]) => {
-    searchState.clearSearchState();
-    directoryState.setCurrentPath(pathParts);
-    setSelectedFile(null);
-    overlayState.setActiveDropdown(null);
-  };
+  const breadcrumbs = useMemo(() => splitPath(path), [path]);
 
-  const directoryTree = buildDirectoryTree(directoryState.directoryChildren, directoryState.currentPath, directoryState.expandedDirectories);
+  function renderTreeNodes(basePath: string) {
+    const directories = directoryTree[basePath] ?? [];
 
-  const handleDownload = async (targetFile: UiFile | null = selectedFile) => {
-    if (!targetFile) return;
+    return directories.map((item) => {
+      const nodePath = joinPath(basePath, item.filename);
+      const expanded = isPathExpanded(path, nodePath);
 
-    if (targetFile.type === 'folder') {
-      const response = await apiDownload(`/files/download/${targetFile.id}`);
-      const blob = await response.blob();
-      const url = window.URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = `${targetFile.name}.zip`;
-      link.click();
-      window.URL.revokeObjectURL(url);
-      return;
-    }
-
-    try {
-      const response = await apiRequest<{url: string}>(`/files/download/${targetFile.id}/url`);
-      const url = response.url;
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = targetFile.name;
-      link.rel = 'noreferrer';
-      link.target = '_blank';
-      link.click();
-      return;
-    } catch (error) {
-      if (!(error instanceof ApiError && error.status === 404)) {
-        throw error;
-      }
-    }
-
-    const response = await apiDownload(`/files/download/${targetFile.id}`);
-    const blob = await response.blob();
-    const url = window.URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = targetFile.name;
-    link.click();
-    window.URL.revokeObjectURL(url);
-  };
-
-  const handleShare = async (targetFile: UiFile) => {
-    try {
-      const response = await createFileShareLink(targetFile.id);
-      const shareUrl = getCurrentFileShareUrl(response.token);
-      try {
-        await navigator.clipboard.writeText(shareUrl);
-        setShareStatus('分享链接已复制到剪贴板');
-      } catch {
-        setShareStatus(`分享链接：${shareUrl}`);
-      }
-    } catch (error) {
-      setShareStatus(error instanceof Error ? error.message : '创建分享链接失败');
-    }
-  };
-
-  const runUploadEntries = async (entries: PendingUploadEntry[]) => {
-    if (entries.length === 0) return;
-
-    setFilesUploadPanelOpen(true);
-    uploadMeasurementsRef.current.clear();
-    const batchTasks = createUploadTasks(entries);
-    replaceFilesUploads(batchTasks);
-
-    const runSingleUpload = async (
-      {file: uploadFile, pathParts: uploadPathParts}: PendingUploadEntry,
-      uploadTask: UploadTask,
-    ) => {
-      const uploadPath = toBackendPath(uploadPathParts);
-      const startedAt = Date.now();
-      const uploadAbortController = new AbortController();
-      registerFilesUploadTaskCanceler(uploadTask.id, () => uploadAbortController.abort());
-      uploadMeasurementsRef.current.set(uploadTask.id, createUploadMeasurement(startedAt));
-
-      try {
-        const updateProgress = ({loaded, total}: {loaded: number; total: number}) => {
-          const snapshot = buildUploadProgressSnapshot({
-            loaded, total, now: Date.now(), previous: uploadMeasurementsRef.current.get(uploadTask.id),
-          });
-          uploadMeasurementsRef.current.set(uploadTask.id, snapshot.measurement);
-          updateFilesUploadTask(uploadTask.id, (task) => ({
-            ...task, progress: snapshot.progress, speed: snapshot.speed,
-          }));
-        };
-
-        const uploadedFile = await uploadFileToNetdiskViaSession(uploadFile, uploadPath, {
-          onProgress: updateProgress,
-          signal: uploadAbortController.signal,
-        });
-
-        updateFilesUploadTask(uploadTask.id, (task) => prepareUploadTaskForCompletion(task));
-        await sleep(120);
-        updateFilesUploadTask(uploadTask.id, (task) => completeUploadTask(task));
-        return uploadedFile;
-      } catch (error) {
-        if (uploadAbortController.signal.aborted) {
-          updateFilesUploadTask(uploadTask.id, (task) => cancelUploadTask(task));
-          return null;
-        }
-        updateFilesUploadTask(uploadTask.id, (task) => failUploadTask(task, error instanceof Error && error.message ? error.message : '上传失败没查到原因'));
-        return null;
-      } finally {
-        uploadMeasurementsRef.current.delete(uploadTask.id);
-        unregisterFilesUploadTaskCanceler(uploadTask.id);
-      }
-    };
-
-    const results = shouldUploadEntriesSequentially(entries)
-      ? await entries.reduce<Promise<Array<Awaited<ReturnType<typeof runSingleUpload>>>>>(async (prev, entry, i) => [...await prev, await runSingleUpload(entry, batchTasks[i])], Promise.resolve([]))
-      : await Promise.all(entries.map((entry, index) => runSingleUpload(entry, batchTasks[index])));
-
-    if (results.some(Boolean)) {
-      await directoryState.loadCurrentPath(directoryState.currentPath).catch(() => undefined);
-    }
-  };
-
-  const handleRename = async () => {
-    if (!overlayState.fileToRename || !overlayState.newFileName.trim() || overlayState.isRenaming) return;
-    overlayState.setIsRenaming(true);
-    overlayState.setRenameError('');
-
-    try {
-      const renamedFile = await apiRequest<FileMetadata>(`/files/${overlayState.fileToRename.id}/rename`, {
-        method: 'PATCH', body: { filename: overlayState.newFileName.trim() },
-      });
-      const nextUiFile = toUiFile(renamedFile);
-      directoryState.setCurrentFiles((prev) => replaceUiFile(prev, nextUiFile));
-      setSelectedFile((prev) => syncSelectedFile(prev, nextUiFile));
-      overlayState.setRenameModalOpen(false);
-      overlayState.setFileToRename(null);
-      overlayState.setNewFileName('');
-      await directoryState.loadCurrentPath(directoryState.currentPath).catch(() => undefined);
-    } catch (error) {
-      overlayState.setRenameError(getActionErrorMessage(error, '重命名失败'));
-    } finally {
-      overlayState.setIsRenaming(false);
-    }
-  };
-
-  const handleDelete = async () => {
-    if (!overlayState.fileToDelete) return;
-    await apiRequest(`/files/${overlayState.fileToDelete.id}`, { method: 'DELETE' });
-    directoryState.setCurrentFiles((prev) => removeUiFile(prev, overlayState.fileToDelete!.id));
-    setSelectedFile((prev) => clearSelectionIfDeleted(prev, overlayState.fileToDelete!.id));
-    overlayState.setDeleteModalOpen(false);
-    overlayState.setFileToDelete(null);
-    await directoryState.loadCurrentPath(directoryState.currentPath).catch(() => undefined);
-  };
-
-  const handleMoveToPath = async (path: string) => {
-    if (!overlayState.targetActionFile || !overlayState.targetAction) return;
-    if (overlayState.targetAction === 'move') {
-      await moveFileToNetdiskPath(overlayState.targetActionFile.id, path);
-      setSelectedFile((prev) => clearSelectionIfDeleted(prev, overlayState.targetActionFile!.id));
-    } else {
-      await copyFileToNetdiskPath(overlayState.targetActionFile.id, path);
-    }
-    overlayState.setTargetAction(null);
-    overlayState.setTargetActionFile(null);
-    await directoryState.loadCurrentPath(directoryState.currentPath).catch(() => undefined);
-  };
-
-  const handleFileChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
-    const files = event.target.files ? (Array.from(event.target.files) as File[]) : [];
-    event.target.value = '';
-    if (files.length === 0) return;
-    const reservedNames = new Set<string>(directoryState.currentFiles.map((file) => file.name));
-    const entries: PendingUploadEntry[] = files.map((file) => {
-      const preparedUpload = prepareUploadFile(file, reservedNames);
-      reservedNames.add(preparedUpload.file.name);
-      return { file: preparedUpload.file, pathParts: [...directoryState.currentPath], source: 'file', noticeMessage: preparedUpload.noticeMessage };
+      return (
+        <div key={item.id} className="space-y-1">
+          <button
+            type="button"
+            onClick={() => setPath(nodePath)}
+            className={cn(
+               "group flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm font-black uppercase tracking-wider transition-all",
+               path === nodePath 
+                ? "bg-blue-600/10 text-blue-600 dark:text-blue-400 shadow-sm border border-blue-500/20" 
+                : "text-gray-700 dark:text-gray-200 hover:bg-white/30 dark:hover:bg-white/5"
+            )}
+          >
+            <ChevronRight className={cn("h-3.5 w-3.5 opacity-40 transition-transform", expanded && "rotate-90")} />
+            <span className="truncate">{item.filename}</span>
+          </button>
+          {expanded && directoryTree[nodePath]?.length ? (
+            <div className="ml-4 border-l border-white/10 pl-2">
+              {renderTreeNodes(nodePath)}
+            </div>
+          ) : null}
+        </div>
+      );
     });
-    await runUploadEntries(entries);
-  };
-
-  const handleFolderChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
-    const files = event.target.files ? (Array.from(event.target.files) as File[]) : [];
-    event.target.value = '';
-    if (files.length === 0) return;
-    const entries = prepareFolderUploadEntries(files, [...directoryState.currentPath], directoryState.currentFiles.map((f) => f.name));
-    await runUploadEntries(entries);
-  };
-
-  const handleCreateFolder = async () => {
-    const folderName = window.prompt('请输入新文件夹名称');
-    if (!folderName?.trim()) return;
-    const nextFolderName = getNextAvailableName(folderName.trim(), new Set(directoryState.currentFiles.filter((f) => f.type === 'folder').map((f) => f.name)));
-    const basePath = toBackendPath(directoryState.currentPath).replace(/\/$/, '');
-    const fullPath = `${basePath}/${nextFolderName}` || '/';
-    await apiRequest('/files/mkdir', { method: 'POST', body: new URLSearchParams({ path: fullPath.startsWith('/') ? fullPath : `/${fullPath}` }), headers: { 'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8' } });
-    await directoryState.loadCurrentPath(directoryState.currentPath).catch(() => undefined);
-  };
-
-  const toolbar = (
-    <FilesToolbar
-      currentPath={directoryState.currentPath}
-      shareStatus={shareStatus}
-      viewMode={viewMode}
-      onNavigateToRoot={() => handleNavigateToPath([])}
-      onBreadcrumbClick={(index) => handleNavigateToPath(directoryState.currentPath.slice(0, index + 1))}
-      onViewModeChange={setViewMode}
-      onUploadClick={() => fileInputRef.current?.click()}
-      onUploadFolderClick={() => directoryInputRef.current?.click()}
-      onCreateFolder={handleCreateFolder}
-      fileInputRef={fileInputRef}
-      directoryInputRef={directoryInputRef}
-      onFileChange={handleFileChange}
-      onFolderChange={handleFolderChange}
-    />
-  );
-
-  const rail = (
-    <div className="h-full p-4 pl-0 pr-0">
-      <FilesDirectoryRail 
-        currentPath={directoryState.currentPath}
-        directoryTree={directoryTree}
-        onNavigateToPath={handleNavigateToPath}
-        onDirectoryToggle={directoryState.handleDirectoryToggle}
-      />
-    </div>
-  );
-
-  const inspector = (
-    <div className="h-full space-y-4 p-4 pr-0">
-      {selectedFile && (
-        <FilesInspector 
-          selectedFile={selectedFile}
-          currentPath={directoryState.currentPath}
-          shareStatus={shareStatus}
-          backgroundTaskActionId={tasksState.backgroundTaskActionId}
-          onShare={handleShare}
-          onRename={overlayState.openRenameModal}
-          onMove={(f) => overlayState.openTargetActionModal(f, 'move')}
-          onCopy={(f) => overlayState.openTargetActionModal(f, 'copy')}
-          onCreateMediaMetadataTask={() => tasksState.handleCreateMediaMetadataTask(selectedFile.id, selectedFile.name, selectedFile.type === 'folder', directoryState.currentPath)}
-          onDelete={overlayState.openDeleteModal}
-          onFolderDoubleClick={(f) => f.type === 'folder' && handleNavigateToPath([...directoryState.currentPath, f.name])}
-          onDownload={handleDownload}
-        />
-      )}
-      <FilesTaskPanel 
-        backgroundTasks={tasksState.backgroundTasks}
-        backgroundTasksLoading={tasksState.backgroundTasksLoading}
-        backgroundTasksError={tasksState.backgroundTasksError}
-        backgroundTaskNotice={tasksState.backgroundTaskNotice}
-        backgroundTaskActionId={tasksState.backgroundTaskActionId}
-        onRefresh={tasksState.loadBackgroundTasks}
-        onCancelTask={tasksState.handleCancelBackgroundTask}
-      />
-    </div>
-  );
+  }
 
   return (
-    <AppPageShell toolbar={toolbar} rail={rail} inspector={inspector}>
-      <FilesMainPane 
-        currentPath={directoryState.currentPath}
-        currentFiles={directoryState.currentFiles}
-        shareStatus={shareStatus}
-        viewMode={viewMode}
-        isSearchActive={searchState.isSearchActive}
-        searchQuery={searchState.searchQuery}
-        searchLoading={searchState.searchLoading}
-        searchError={searchState.searchError}
-        searchResults={searchState.searchResults}
-        selectedSearchFile={searchState.selectedSearchFile}
-        selectedFile={selectedFile}
-        activeDropdown={overlayState.activeDropdown}
-        onViewModeChange={setViewMode}
-        onSearchQueryChange={searchState.setSearchQuery}
-        onSearchSubmit={searchState.handleSearchSubmit}
-        onClearSearch={searchState.clearSearchState}
-        onFileClick={(f) => setSelectedFile(f)}
-        onFileDoubleClick={(f) => f.type === 'folder' && handleNavigateToPath([...directoryState.currentPath, f.name])}
-        onSearchFileClick={(f) => searchState.setSelectedSearchFile(f)}
-        onSearchFileDoubleClick={(f) => f.directory && handleNavigateToPath(splitBackendPath(f.path))}
-        onToggleDropdown={(id) => overlayState.setActiveDropdown(overlayState.activeDropdown === id ? null : id)}
-        onDownload={handleDownload}
-        onShare={handleShare}
-        onMove={(f) => overlayState.openTargetActionModal(f, 'move')}
-        onCopy={(f) => overlayState.openTargetActionModal(f, 'copy')}
-        onRename={overlayState.openRenameModal}
-        onDelete={overlayState.openDeleteModal}
-        onCloseDropdown={() => overlayState.setActiveDropdown(null)}
-      />
+    <motion.div 
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      className="flex gap-6 h-full w-full p-8 overflow-hidden text-gray-900 dark:text-gray-100"
+    >
+      <aside className="hidden lg:flex w-72 flex-col flex-shrink-0 glass-panel-no-hover rounded-lg overflow-hidden shadow-2xl border-white/10">
+        <div className="border-b border-white/10 px-6 py-6">
+          <h2 className="text-[10px] font-black uppercase tracking-[0.3em] opacity-40">目录结构</h2>
+        </div>
+        <div className="flex-1 space-y-1.5 overflow-y-auto p-4 custom-scrollbar">
+          <button
+            type="button"
+            onClick={() => setPath('/')}
+            className={cn(
+              "flex w-full items-center gap-2 rounded-lg px-3 py-2.5 text-sm font-black uppercase tracking-wider transition-all",
+              path === '/' ? "bg-blue-600/10 text-blue-600 dark:text-blue-400 shadow-sm border border-blue-500/20" : "text-gray-700 dark:text-gray-200 hover:bg-white/30 dark:hover:bg-white/5"
+            )}
+          >
+            <HardDrive className="h-4 w-4" />
+            根目录
+          </button>
+          {renderTreeNodes('/')}
+        </div>
+        <div className="border-t border-white/10 p-4">
+          <button
+            type="button"
+            onClick={() => navigate('/recycle-bin')}
+            className="flex w-full items-center gap-2 rounded-lg px-3 py-3 text-sm font-black uppercase tracking-widest text-gray-700 dark:text-gray-200 hover:text-red-500 hover:bg-red-500/5 transition-all"
+          >
+            <Trash2 className="h-4 w-4" />
+            回收站
+          </button>
+        </div>
+      </aside>
 
-      <AnimatePresence>
-        {overlayState.renameModalOpen && (
-          <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm">
-            <motion.div initial={{ opacity: 0, scale: 0.95, y: 20 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: 0.95, y: 20 }} className="w-full max-w-sm overflow-hidden rounded-xl border border-white/10 bg-[#0f172a] shadow-2xl">
-              <div className="flex items-center justify-between border-b border-white/10 bg-white/5 p-4">
-                <h3 className="flex items-center gap-2 text-lg font-semibold text-white"><Edit2 className="w-5 h-5 text-[#336EFF]" /> 重命名</h3>
-                <button onClick={() => { overlayState.setRenameModalOpen(false); overlayState.setFileToRename(null); overlayState.setRenameError(''); }} className="rounded-md p-1 text-slate-400 transition-colors hover:bg-white/10 hover:text-white"><X className="w-5 h-5" /></button>
+      <div className="flex min-w-0 flex-1 flex-col glass-panel-no-hover rounded-lg shadow-2xl overflow-hidden border-white/10">
+        <div className="border-b border-white/10 bg-white/5 dark:bg-black/20">
+          <div className="flex flex-col gap-6 px-8 py-6">
+            <div className="flex flex-wrap items-center justify-between gap-6">
+              <div className="flex flex-wrap items-center text-[11px] font-black uppercase tracking-widest">
+                <button type="button" onClick={() => setPath('/')} className="opacity-40 hover:opacity-100 transition-opacity">
+                  文件系统
+                </button>
+                {breadcrumbs.map((segment, index) => {
+                  const target = `/${breadcrumbs.slice(0, index + 1).join('/')}`;
+                  return (
+                    <div key={target} className="flex items-center">
+                      <ChevronRight className="mx-2 h-3 w-3 opacity-20" />
+                      <button type="button" onClick={() => setPath(target)} className="opacity-40 hover:opacity-100 transition-opacity">
+                        {segment}
+                      </button>
+                    </div>
+                  );
+                })}
               </div>
-              <div className="space-y-5 p-5">
-                <div className="space-y-2">
-                  <label className="text-sm font-medium text-slate-300">新名称</label>
-                  <Input value={overlayState.newFileName} onChange={(e) => overlayState.setNewFileName(e.target.value)} className="bg-black/20 border-white/10 text-white focus-visible:ring-[#336EFF]" autoFocus disabled={overlayState.isRenaming} onKeyDown={(e) => { if (e.key === 'Enter' && !overlayState.isRenaming) void handleRename(); }} />
-                </div>
-                {overlayState.renameError && <div className="rounded-xl border border-red-500/20 bg-red-500/10 p-3 text-sm text-red-400">{overlayState.renameError}</div>}
-                <div className="flex justify-end gap-3 pt-2">
-                  <Button variant="outline" onClick={() => { overlayState.setRenameModalOpen(false); overlayState.setFileToRename(null); overlayState.setRenameError(''); }} disabled={overlayState.isRenaming} className="border-white/10 text-slate-300 hover:bg-white/10">取消</Button>
-                  <Button variant="default" onClick={() => void handleRename()} disabled={overlayState.isRenaming}>{overlayState.isRenaming ? '重命名中...' : '确定'}</Button>
-                </div>
+              <div className="relative w-full max-w-sm group">
+                <Search className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 opacity-70 group-focus-within:opacity-100 text-blue-500 transition-opacity" />
+                <input
+                  value={query}
+                  onChange={(event) => setQuery(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter') {
+                      setLoading(true);
+                      void loadFiles(path, event.currentTarget.value);
+                    }
+                  }}
+                  placeholder="搜索文件..."
+                  className="w-full rounded-lg glass-panel bg-white/20 dark:bg-black/40 py-3 pl-11 pr-5 outline-none focus:ring-4 focus:ring-blue-500/10 border-white/10 focus:border-blue-500/50 transition-all text-sm font-black uppercase tracking-widest placeholder:opacity-50"
+                />
               </div>
-            </motion.div>
-          </div>
-        )}
-        {overlayState.deleteModalOpen && (
-          <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm">
-            <motion.div initial={{ opacity: 0, scale: 0.95, y: 20 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: 0.95, y: 20 }} className="w-full max-w-sm overflow-hidden rounded-xl border border-white/10 bg-[#0f172a] shadow-2xl">
-              <div className="flex items-center justify-between border-b border-white/10 bg-white/5 p-4">
-                <h3 className="flex items-center gap-2 text-lg font-semibold text-white"><Trash2 className="w-5 h-5 text-red-500" /> 确认删除</h3>
-                <button onClick={() => { overlayState.setDeleteModalOpen(false); overlayState.setFileToDelete(null); }} className="rounded-md p-1 text-slate-400 transition-colors hover:bg-white/10 hover:text-white"><X className="w-5 h-5" /></button>
-              </div>
-              <div className="space-y-5 p-5">
-                <p className="text-sm leading-relaxed text-slate-300">确定要将 <span className="rounded bg-white/10 px-1 py-0.5 font-medium text-white">{overlayState.fileToDelete?.name}</span> 移入回收站吗？文件会保留 {RECYCLE_BIN_RETENTION_DAYS} 天，期间可以恢复。</p>
-                <div className="flex justify-end gap-3 pt-2">
-                  <Button variant="outline" onClick={() => { overlayState.setDeleteModalOpen(false); overlayState.setFileToDelete(null); }} className="border-white/10 text-slate-300 hover:bg-white/10">取消</Button>
-                  <Button variant="outline" className="border-red-500/30 bg-red-500 text-white hover:bg-red-600" onClick={() => void handleDelete()}>移入回收站</Button>
-                </div>
-              </div>
-            </motion.div>
-          </div>
-        )}
-      </AnimatePresence>
+            </div>
 
-      <NetdiskPathPickerModal
-        isOpen={Boolean(overlayState.targetActionFile && overlayState.targetAction)}
-        title={overlayState.targetAction === 'copy' ? '选择复制目标' : '选择移动目标'}
-        description={overlayState.targetAction === 'copy' ? '选择要把当前文件或文件夹复制到哪个目录。' : '选择要把当前文件或文件夹移动到哪个目录。'}
-        initialPath={toBackendPath(directoryState.currentPath)}
-        confirmLabel={overlayState.targetAction === 'copy' ? '复制到这里' : '移动到这里'}
-        onClose={() => { overlayState.setTargetAction(null); overlayState.setTargetActionFile(null); }}
-        onConfirm={handleMoveToPath}
-      />
-    </AppPageShell>
+            <div className="flex flex-wrap items-center gap-3">
+              <input
+                ref={uploadInputRef}
+                type="file"
+                className="hidden"
+                onChange={async (event) => {
+                  const file = event.target.files?.[0];
+                  if (!file) return;
+                  setLoading(true);
+                  try {
+                    await uploadFileWithSession(file, path);
+                    await loadFiles();
+                  } catch (err) {
+                    setError(err instanceof Error ? err.message : '上传失败');
+                    setLoading(false);
+                  } finally {
+                    event.target.value = '';
+                  }
+                }}
+              />
+              <button
+                type="button"
+                onClick={() => uploadInputRef.current?.click()}
+                className="flex items-center gap-2 rounded-lg bg-blue-600 px-6 py-2.5 text-sm font-black uppercase tracking-widest text-white shadow-xl hover:bg-blue-500 hover:scale-[1.02] active:scale-[0.98] transition-all"
+              >
+                <Upload className="h-4 w-4" />
+                上传文件
+              </button>
+              <button
+                type="button"
+                onClick={async () => {
+                  const name = window.prompt('请输入文件夹名称');
+                  if (!name) return;
+                  setLoading(true);
+                  try {
+                    await createDirectory(joinPath(path, name));
+                    await loadFiles();
+                  } catch (err) {
+                    setError(err instanceof Error ? err.message : '创建失败');
+                    setLoading(false);
+                  }
+                }}
+                className="flex items-center gap-2 rounded-lg glass-panel border-white/10 px-6 py-2.5 text-sm font-black uppercase tracking-widest text-gray-700 dark:text-gray-200 hover:bg-white/40 transition-all"
+              >
+                <FolderPlus className="h-4 w-4" />
+                新建文件夹
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setLoading(true);
+                  void loadFiles();
+                }}
+                className="flex items-center gap-2 rounded-lg glass-panel border-white/10 px-6 py-2.5 text-sm font-black uppercase tracking-widest text-gray-700 dark:text-gray-200 hover:bg-white/40 transition-all border-white/10"
+              >
+                <RefreshCw className={cn("h-4 w-4", loading && "animate-spin")} />
+                刷新
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <div className="flex min-h-0 flex-1 relative z-10">
+          <div className="min-w-0 flex-1 overflow-y-auto p-8 custom-scrollbar">
+            {error ? <div className="mb-6 rounded-lg bg-red-500/10 border border-red-500/20 px-6 py-4 text-xs text-red-600 dark:text-red-400 font-bold backdrop-blur-md">{error}</div> : null}
+            {loading ? (
+              <div className="rounded-lg glass-panel border-white/10 px-4 py-24 text-center text-[10px] font-black uppercase tracking-[0.3em] opacity-40">加载中...</div>
+            ) : (
+              <div className="overflow-hidden rounded-lg glass-panel border-white/10 shadow-2xl relative shadow-blue-500/5">
+                <table className="min-w-full divide-y divide-white/10">
+                  <thead className="bg-white/10 dark:bg-black/40">
+                    <tr>
+                      <th className="px-8 py-5 text-left text-[9px] font-black uppercase tracking-[0.2em] opacity-40">名称</th>
+                      <th className="px-8 py-5 text-left text-[9px] font-black uppercase tracking-[0.2em] opacity-40">路径</th>
+                      <th className="px-8 py-5 text-left text-[9px] font-black uppercase tracking-[0.2em] opacity-40">大小</th>
+                      <th className="px-8 py-5 text-left text-[9px] font-black uppercase tracking-[0.2em] opacity-40">创建时间</th>
+                    </tr>
+                  </thead>
+                  <motion.tbody 
+                    variants={container}
+                    initial="hidden"
+                    animate="show"
+                    className="divide-y divide-white/10 dark:divide-white/5"
+                  >
+                    {files.map((file) => (
+                      <motion.tr
+                        key={file.id}
+                        variants={itemVariants}
+                        onClick={() => setSelectedFile(file)}
+                        onDoubleClick={() => {
+                          if (file.directory) {
+                            setPath(joinPath(file.path, file.filename));
+                          }
+                        }}
+                        className={cn(
+                          "cursor-pointer transition-all hover:bg-white/10 dark:hover:bg-white/5 group",
+                          selectedFile?.id === file.id ? "bg-white/15 dark:bg-black/40 shadow-inner" : ""
+                        )}
+                      >
+                        <td className="px-8 py-5 text-[13px] font-black tracking-tight group-hover:text-blue-500 transition-colors uppercase">{file.filename}</td>
+                        <td className="px-8 py-5 text-sm font-bold opacity-80 dark:opacity-90 tracking-tight uppercase">{file.path}</td>
+                        <td className="px-8 py-5 text-[10px] font-black opacity-50 tracking-tighter">{file.directory ? '目录' : formatBytes(file.size)}</td>
+                        <td className="px-8 py-5 text-sm font-bold opacity-80 dark:opacity-90 tracking-tighter uppercase">{formatDateTime(file.createdAt)}</td>
+                      </motion.tr>
+                    ))}
+                    {files.length === 0 ? (
+                      <tr>
+                        <td colSpan={4} className="px-8 py-24 text-center text-sm font-black uppercase tracking-widest opacity-70">
+                          {query.trim() ? '没有匹配文件' : '当前目录为空'}
+                        </td>
+                      </tr>
+                    ) : null}
+                  </motion.tbody>
+                </table>
+              </div>
+            )}
+          </div>
+
+          <AnimatePresence mode="wait">
+            {selectedFile && (
+              <motion.aside 
+                initial={{ x: 300, opacity: 0 }}
+                animate={{ x: 0, opacity: 1 }}
+                exit={{ x: 300, opacity: 0 }}
+                className="hidden xl:flex w-96 flex-shrink-0 flex-col glass-panel-no-hover rounded-lg overflow-hidden shadow-2xl border-white/10 m-8 ml-0"
+              >
+                <div className="flex-1 overflow-y-auto p-8 space-y-10 custom-scrollbar">
+                  <div>
+                    <div className="text-sm font-black uppercase tracking-[0.3em] opacity-70 mb-2">文件信息</div>
+                    <h2 className="text-2xl font-black text-gray-900 group-hover:text-blue-500 uppercase tracking-tighter break-all">{selectedFile.filename}</h2>
+                    <div className="mt-3 text-sm font-bold opacity-80 dark:opacity-90 bg-white/5 rounded px-2 py-1 inline-block uppercase tracking-tight">{selectedFile.path}</div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-6">
+                    <div>
+                      <div className="text-xs font-black uppercase tracking-widest opacity-70 mb-1">类型</div>
+                      <div className="text-xs font-black uppercase">{selectedFile.directory ? '目录' : selectedFile.contentType || '文件'}</div>
+                    </div>
+                    <div>
+                      <div className="text-xs font-black uppercase tracking-widest opacity-70 mb-1">大小</div>
+                      <div className="text-xs font-black">{selectedFile.directory ? '-' : formatBytes(selectedFile.size)}</div>
+                    </div>
+                  </div>
+
+                  <div>
+                    <div className="text-xs font-black uppercase tracking-widest opacity-70 mb-2">操作</div>
+                    <div className="space-y-2">
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          const result = await getDownloadUrl(selectedFile.id);
+                          window.open(result.url, '_blank', 'noopener,noreferrer');
+                        }}
+                        className="flex w-full items-center gap-3 rounded-lg glass-panel border-white/10 px-4 py-4 text-sm font-black uppercase tracking-[0.2em] text-gray-700 dark:text-gray-200 hover:bg-blue-600 hover:text-white transition-all group"
+                      >
+                        <Download className="h-4 w-4 group-hover:scale-110 transition-transform" />
+                        下载
+                      </button>
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          const result = await createShare({ fileId: selectedFile.id });
+                          await navigator.clipboard.writeText(buildSharePublicUrl(result.token));
+                          window.alert('分享链接已复制');
+                        }}
+                        className="flex w-full items-center gap-3 rounded-lg glass-panel border-white/10 px-4 py-4 text-sm font-black uppercase tracking-[0.2em] text-gray-700 dark:text-gray-200 hover:bg-white/40 transition-all border-white/10"
+                      >
+                        <Share2 className="h-4 w-4" />
+                        创建分享
+                      </button>
+                      
+                      <div className="grid grid-cols-2 gap-2">
+                        <button
+                          type="button"
+                          onClick={async () => {
+                            const nextName = window.prompt('请输入新名称', selectedFile.filename);
+                            if (nextName) { await renameFile(selectedFile.id, nextName); await loadFiles(); }
+                          }}
+                          className="flex items-center justify-center gap-2 rounded-lg glass-panel border-white/10 p-4 text-xs font-black uppercase tracking-widest hover:bg-white/40 transition-all"
+                        >
+                          重命名
+                        </button>
+                        <button
+                          type="button"
+                          onClick={async () => {
+                            const targetPath = window.prompt('请输入目标路径', selectedFile.path);
+                            if (targetPath) { await moveFile(selectedFile.id, targetPath); await loadFiles(); }
+                          }}
+                          className="flex items-center justify-center gap-2 rounded-lg glass-panel border-white/10 p-4 text-xs font-black uppercase tracking-widest hover:bg-white/40 transition-all"
+                        >
+                          移动
+                        </button>
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          if (!window.confirm(`确认删除 ${selectedFile.filename} 吗？`)) return;
+                          await deleteFile(selectedFile.id);
+                          await loadFiles();
+                        }}
+                        className="flex w-full items-center gap-3 rounded-lg glass-panel border-white/10 px-4 py-4 text-sm font-black uppercase tracking-[0.2em] text-red-500 hover:bg-red-500 hover:text-white transition-all border-red-500/20"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                        删除
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </motion.aside>
+            )}
+          </AnimatePresence>
+        </div>
+      </div>
+    </motion.div>
   );
 }
-
-export default FilesPage;

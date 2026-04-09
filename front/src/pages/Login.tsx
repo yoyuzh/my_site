@@ -1,456 +1,249 @@
-import React, { useState } from 'react';
-import { useNavigate, useSearchParams } from 'react-router-dom';
-import { motion, AnimatePresence } from 'motion/react';
-import { LogIn, User, Lock, UserPlus, Mail, ArrowLeft, Phone, Send } from 'lucide-react';
-
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/src/components/ui/card';
-import { Button } from '@/src/components/ui/button';
-import { Input } from '@/src/components/ui/input';
-import { apiRequest, ApiError } from '@/src/lib/api';
-import { getPostLoginRedirectPath } from '@/src/lib/file-share';
+import { useState, type FormEvent } from 'react';
+import { Moon, Sun } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import { motion } from 'motion/react';
+import { useTheme } from '@/src/components/ThemeProvider';
+import { devLogin, login, register } from '@/src/lib/auth';
 import { cn } from '@/src/lib/utils';
-import { createSession, markPostLoginPending, saveStoredSession } from '@/src/lib/session';
-import type { AuthResponse } from '@/src/lib/types';
-import { buildRegisterPayload, validateRegisterForm } from './login-state';
 
-const DEV_LOGIN_ENABLED = import.meta.env.DEV || import.meta.env.VITE_ENABLE_DEV_LOGIN === 'true';
+type LoginFormState = {
+  username: string;
+  password: string;
+};
 
-function BlurRevealTitle({ text }: { text: string }) {
-  return (
-    <span className="inline-flex flex-wrap">
-      {Array.from(text).map((char, index) => (
-        <motion.span
-          key={`${char}-${index}`}
-          initial={{ opacity: 0, y: 18, filter: 'blur(18px)' }}
-          animate={{ opacity: 1, y: 0, filter: 'blur(0px)' }}
-          transition={{
-            duration: 0.7,
-            ease: 'easeOut',
-            delay: 0.08 + index * 0.06,
-          }}
-          className="inline-block will-change-transform"
-        >
-          {char === ' ' ? '\u00A0' : char}
-        </motion.span>
-      ))}
-    </span>
-  );
-}
+type RegisterFormState = {
+  username: string;
+  email: string;
+  phoneNumber: string;
+  password: string;
+  confirmPassword: string;
+  inviteCode: string;
+};
+
+const emptyRegisterForm: RegisterFormState = {
+  username: '',
+  email: '',
+  phoneNumber: '',
+  password: '',
+  confirmPassword: '',
+  inviteCode: '',
+};
 
 export default function Login() {
   const navigate = useNavigate();
-  const [searchParams] = useSearchParams();
   const [isLogin, setIsLogin] = useState(true);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-  const [username, setUsername] = useState('');
-  const [password, setPassword] = useState('');
-  const [registerUsername, setRegisterUsername] = useState('');
-  const [registerEmail, setRegisterEmail] = useState('');
-  const [registerPhoneNumber, setRegisterPhoneNumber] = useState('');
-  const [registerPassword, setRegisterPassword] = useState('');
-  const [registerConfirmPassword, setRegisterConfirmPassword] = useState('');
-  const [registerInviteCode, setRegisterInviteCode] = useState('');
+  const [loginForm, setLoginForm] = useState<LoginFormState>({ username: '', password: '' });
+  const [registerForm, setRegisterForm] = useState<RegisterFormState>(emptyRegisterForm);
 
-  function switchMode(nextIsLogin: boolean) {
-    setIsLogin(nextIsLogin);
-    setError('');
-    setLoading(false);
-  }
-
-  async function handleLoginSubmit(e: React.FormEvent) {
-    e.preventDefault();
+  async function handleLoginSubmit(event: FormEvent) {
+    event.preventDefault();
     setLoading(true);
     setError('');
-
     try {
-      let auth: AuthResponse;
-
-      try {
-        auth = await apiRequest<AuthResponse>('/auth/login', {
-          method: 'POST',
-          body: { username, password },
-        });
-      } catch (requestError) {
-        if (
-          DEV_LOGIN_ENABLED &&
-          username.trim() &&
-          requestError instanceof ApiError &&
-          requestError.status === 401
-        ) {
-          auth = await apiRequest<AuthResponse>(
-            `/auth/dev-login?username=${encodeURIComponent(username.trim())}`,
-            { method: 'POST' }
-          );
-        } else {
-          throw requestError;
-        }
-      }
-
-      saveStoredSession(createSession(auth));
-      markPostLoginPending();
+      const session = await login(loginForm);
+      navigate(session.user.role === 'ADMIN' ? '/admin/dashboard' : '/overview');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '登录失败');
+    } finally {
       setLoading(false);
-      navigate(getPostLoginRedirectPath(searchParams.get('next')));
-    } catch (requestError) {
-      setLoading(false);
-      setError(requestError instanceof Error ? requestError.message : '登录失败，请稍后重试');
     }
   }
 
-  async function handleRegisterSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    const validationMessage = validateRegisterForm({
-      username: registerUsername,
-      email: registerEmail,
-      phoneNumber: registerPhoneNumber,
-      password: registerPassword,
-      confirmPassword: registerConfirmPassword,
-      inviteCode: registerInviteCode,
-    });
-    if (validationMessage) {
-      setError(validationMessage);
-      return;
-    }
-
+  async function handleRegisterSubmit(event: FormEvent) {
+    event.preventDefault();
     setLoading(true);
     setError('');
-
     try {
-      const auth = await apiRequest<AuthResponse>('/auth/register', {
-        method: 'POST',
-        body: buildRegisterPayload({
-          username: registerUsername,
-          email: registerEmail,
-          phoneNumber: registerPhoneNumber,
-          password: registerPassword,
-          confirmPassword: registerConfirmPassword,
-          inviteCode: registerInviteCode,
-        }),
-      });
-
-      saveStoredSession(createSession(auth));
-      markPostLoginPending();
+      const session = await register(registerForm);
+      navigate(session.user.role === 'ADMIN' ? '/admin/dashboard' : '/overview');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '注册失败');
+    } finally {
       setLoading(false);
-      navigate(getPostLoginRedirectPath(searchParams.get('next')));
-    } catch (requestError) {
-      setLoading(false);
-      setError(requestError instanceof Error ? requestError.message : '注册失败，请稍后重试');
     }
   }
+
+  async function handleDevLogin(username: string) {
+    setLoading(true);
+    setError('');
+    try {
+      const session = await devLogin(username);
+      navigate(session.user.role === 'ADMIN' ? '/admin/dashboard' : '/overview');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '开发登录失败');
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  const { theme, setTheme } = useTheme();
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-[#07101D] relative overflow-hidden">
-      <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-[#336EFF] rounded-full mix-blend-screen filter blur-[128px] opacity-20 animate-pulse" />
-      <div className="absolute bottom-1/4 right-1/4 w-96 h-96 bg-purple-600 rounded-full mix-blend-screen filter blur-[128px] opacity-20" />
-
-      <div className="container mx-auto px-4 relative z-10 flex items-center w-full min-h-[600px]">
-        <AnimatePresence>
-          {isLogin && (
-            <motion.div
-              key="brand-info"
-              initial={{ opacity: 0, x: -50 }}
-              animate={{ opacity: 1, x: 0 }}
-              exit={{ opacity: 0, x: -50 }}
-              transition={{ duration: 0.5, ease: 'easeOut' }}
-              className="absolute left-4 lg:left-8 xl:left-12 w-1/2 max-w-lg hidden lg:flex flex-col space-y-6"
-            >
-              <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full glass-panel border-white/10 w-fit">
-                <span className="w-2 h-2 rounded-full bg-[#336EFF] animate-pulse" />
-                <span className="text-sm text-slate-300 font-medium tracking-wide">优立云盘</span>
-              </div>
-
-              <div className="space-y-2">
-                <h2 className="text-xl text-[#336EFF] font-bold tracking-[0.3em]">YOULI CLOUD</h2>
-                <motion.div
-                  initial={{ opacity: 0, y: 18, scale: 0.985 }}
-                  animate={{ opacity: 1, y: 0, scale: 1 }}
-                  transition={{ duration: 0.65, ease: 'easeOut', delay: 0.05 }}
-                  className="relative inline-flex w-fit max-w-fit self-start overflow-hidden rounded-[2rem] border border-white/15 bg-white/8 px-7 py-5 shadow-[0_20px_70px_rgba(9,18,36,0.38)] backdrop-blur-3xl"
-                >
-                  <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(135deg,rgba(255,255,255,0.22),rgba(255,255,255,0.04)_45%,rgba(51,110,255,0.12))]" />
-                  <div className="pointer-events-none absolute inset-x-6 top-0 h-px bg-white/45" />
-                  <h1 className="relative text-center text-5xl font-bold text-white leading-none md:text-6xl">
-                    <BlurRevealTitle text="优立云盘" />
-                  </h1>
-                </motion.div>
-              </div>
-
-              <p className="text-lg text-slate-400 leading-relaxed">
-                欢迎来到优立云盘。在这里，你可以集中管理个人网盘文件、使用跨设备快传能力，以及体验轻量级小游戏。
-              </p>
-            </motion.div>
-          )}
-        </AnimatePresence>
-
-        <motion.div
-          layout
-          transition={{ type: 'spring', stiffness: 200, damping: 25 }}
-          className={cn(
-            'w-full max-w-md z-10',
-            isLogin ? 'ml-auto lg:mr-8 xl:mr-12' : 'mx-auto'
-          )}
+    <motion.div 
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      className="min-h-screen bg-aurora flex flex-col justify-center py-12 px-6 lg:px-8 relative overflow-hidden"
+    >
+      {/* Theme Toggle Top Right */}
+      <motion.div 
+        initial={{ y: -20, opacity: 0 }}
+        animate={{ y: 0, opacity: 1 }}
+        transition={{ delay: 0.5 }}
+        className="absolute top-6 right-6"
+      >
+        <button 
+          onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
+          className="p-3 rounded-lg glass-panel-no-hover hover:bg-white/40 dark:hover:bg-black/40 transition-all shadow-lg"
         >
-          <Card className="border-white/10 backdrop-blur-2xl bg-white/5 shadow-2xl overflow-hidden">
-            <AnimatePresence mode="wait">
-              {isLogin ? (
-                <motion.div
-                  key="login-form"
-                  initial={{ opacity: 0, x: 20 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  exit={{ opacity: 0, x: -20 }}
-                  transition={{ duration: 0.3 }}
-                >
-                  <CardHeader className="space-y-1 pb-8">
-                    <CardTitle className="text-2xl font-bold text-white flex items-center gap-2">
-                      <LogIn className="w-6 h-6 text-[#336EFF]" />
-                      登录
-                    </CardTitle>
-                    <CardDescription className="text-slate-400">
-                      请输入您的账号和密码以继续
-                    </CardDescription>
-                  </CardHeader>
-                  <CardContent>
-                    <form onSubmit={handleLoginSubmit} className="space-y-6">
-                      <div className="space-y-4">
-                        <div className="space-y-2">
-                          <label className="text-sm font-medium text-slate-300 ml-1">用户名</label>
-                          <div className="relative">
-                            <User className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-500" />
-                            <Input
-                              type="text"
-                              placeholder="账号 / 用户名 / 学号"
-                              className="pl-10 bg-black/20 border-white/10 focus-visible:ring-[#336EFF]"
-                              value={username}
-                              onChange={(event) => setUsername(event.target.value)}
-                              required
-                            />
-                          </div>
-                        </div>
-                        <div className="space-y-2">
-                          <label className="text-sm font-medium text-slate-300 ml-1">密码</label>
-                          <div className="relative">
-                            <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-500" />
-                            <Input
-                              type="password"
-                              placeholder="••••••••"
-                              className="pl-10 bg-black/20 border-white/10 focus-visible:ring-[#336EFF]"
-                              value={password}
-                              onChange={(event) => setPassword(event.target.value)}
-                              required
-                            />
-                          </div>
-                        </div>
-                      </div>
+          {theme === 'dark' ? <Sun className="w-5 h-5 text-yellow-300" /> : <Moon className="w-5 h-5 text-gray-700" />}
+        </button>
+      </motion.div>
 
-                      {error && (
-                        <div className="p-3 rounded-xl bg-red-500/10 border border-red-500/20 text-red-400 text-sm">
-                          {error}
-                        </div>
-                      )}
+      <div className="sm:mx-auto sm:w-full sm:max-w-md relative z-10">
+        <motion.div 
+          layout
+          initial={{ y: 20, opacity: 0 }}
+          animate={{ y: 0, opacity: 1 }}
+          transition={{ duration: 0.6, ease: "easeOut" }}
+          className="glass-panel-no-hover py-12 px-8 shadow-2xl rounded-lg sm:px-12 border-white/20 dark:border-white/10"
+        >
+          <div className="mb-10 text-center">
+            <motion.h2 
+              className="text-4xl font-black tracking-tight animate-text-reveal"
+              style={{ background: 'linear-gradient(to right, currentColor, #3b82f6)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}
+            >
+              云盘门户
+            </motion.h2>
+            <motion.p 
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 0.6 }}
+              transition={{ delay: 0.4 }}
+              className="mt-3 text-sm font-bold uppercase tracking-widest"
+            >
+              {isLogin ? '登录认证' : '创建账号'}
+            </motion.p>
+          </div>
 
-                      <div className="space-y-4">
-                        <Button
-                          type="submit"
-                          className="w-full h-12 text-base font-semibold"
-                          disabled={loading}
-                        >
-                          {loading ? (
-                            <span className="flex items-center gap-2">
-                              <span className="w-4 h-4 border-2 border-white/20 border-t-white rounded-full animate-spin" />
-                              登录中...
-                            </span>
-                          ) : (
-                            '进入系统'
-                          )}
-                        </Button>
-                        <Button
-                          type="button"
-                          variant="outline"
-                          className="w-full h-12 border-white/10 bg-white/[0.03] text-slate-200 hover:bg-white/10"
-                          onClick={() => navigate('/transfer')}
-                        >
-                          <Send className="mr-2 h-4 w-4" />
-                          直接进入快传
-                        </Button>
-                        <p className="text-center text-xs text-slate-500">
-                          无需登录，仅支持在线发送和在线接收
-                        </p>
-                        <div className="text-center">
-                          <button
-                            type="button"
-                            onClick={() => switchMode(false)}
-                            className="text-sm text-slate-400 hover:text-[#336EFF] transition-colors"
-                          >
-                            还没有账号？立即注册
-                          </button>
-                        </div>
-                      </div>
-                    </form>
-                  </CardContent>
+          {error ? (
+            <motion.div 
+              initial={{ height: 0, opacity: 0 }}
+              animate={{ height: 'auto', opacity: 1 }}
+              className="mb-6 rounded-lg bg-red-500/10 px-4 py-3 text-[13px] text-red-600 dark:text-red-400 font-bold border border-red-500/20 backdrop-blur-md overflow-hidden"
+            >
+              {error}
+            </motion.div>
+          ) : null}
+
+          <motion.div layout>
+            {isLogin ? (
+              <form className="space-y-4" onSubmit={handleLoginSubmit}>
+                <motion.div initial={{ x: -10, opacity: 0 }} animate={{ x: 0, opacity: 1 }} transition={{ delay: 0.1 }}>
+                  <input
+                    placeholder="用户名"
+                    value={loginForm.username}
+                    onChange={(event) => setLoginForm((current) => ({ ...current, username: event.target.value }))}
+                    className="w-full px-5 py-4 bg-white/10 dark:bg-black/20 border border-white/10 dark:border-white/5 rounded-lg placeholder-white/30 text-base focus:outline-none focus:ring-2 focus:ring-blue-500/50 transition-all font-bold tracking-wide"
+                    required
+                  />
                 </motion.div>
-              ) : (
-                <motion.div
-                  key="register-form"
-                  initial={{ opacity: 0, x: 20 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  exit={{ opacity: 0, x: -20 }}
-                  transition={{ duration: 0.3 }}
-                >
-                  <CardHeader className="space-y-1 pb-8">
-                    <div className="flex items-center justify-between">
-                      <CardTitle className="text-2xl font-bold text-white flex items-center gap-2">
-                        <UserPlus className="w-6 h-6 text-[#336EFF]" />
-                        注册账号
-                      </CardTitle>
-                      <button
-                        type="button"
-                        onClick={() => switchMode(true)}
-                        className="p-2 rounded-full hover:bg-white/5 text-slate-400 transition-colors"
-                      >
-                        <ArrowLeft className="w-5 h-5" />
-                      </button>
-                    </div>
-                    <CardDescription className="text-slate-400">
-                      创建一个新账号以开启您的门户体验
-                    </CardDescription>
-                  </CardHeader>
-                  <CardContent>
-                    <form onSubmit={handleRegisterSubmit} className="space-y-6">
-                      <div className="space-y-4">
-                        <div className="space-y-2">
-                          <label className="text-sm font-medium text-slate-300 ml-1">用户名</label>
-                          <div className="relative">
-                            <User className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-500" />
-                            <Input
-                              type="text"
-                              placeholder="设置您的用户名"
-                              className="pl-10 bg-black/20 border-white/10 focus-visible:ring-[#336EFF]"
-                              value={registerUsername}
-                              onChange={(event) => setRegisterUsername(event.target.value)}
-                              required
-                              minLength={3}
-                              maxLength={64}
-                            />
-                          </div>
-                        </div>
-                        <div className="space-y-2">
-                          <label className="text-sm font-medium text-slate-300 ml-1">邮箱</label>
-                          <div className="relative">
-                            <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-500" />
-                            <Input
-                              type="email"
-                              placeholder="your@email.com"
-                              className="pl-10 bg-black/20 border-white/10 focus-visible:ring-[#336EFF]"
-                              value={registerEmail}
-                              onChange={(event) => setRegisterEmail(event.target.value)}
-                              required
-                            />
-                          </div>
-                        </div>
-                        <div className="space-y-2">
-                          <label className="text-sm font-medium text-slate-300 ml-1">手机号</label>
-                          <div className="relative">
-                            <Phone className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-500" />
-                            <Input
-                              type="tel"
-                              placeholder="请输入11位手机号"
-                              className="pl-10 bg-black/20 border-white/10 focus-visible:ring-[#336EFF]"
-                              value={registerPhoneNumber}
-                              onChange={(event) => setRegisterPhoneNumber(event.target.value)}
-                              required
-                            />
-                          </div>
-                        </div>
-                        <div className="space-y-2">
-                          <label className="text-sm font-medium text-slate-300 ml-1">密码</label>
-                          <div className="relative">
-                            <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-500" />
-                            <Input
-                              type="password"
-                              placeholder="设置您的密码"
-                              className="pl-10 bg-black/20 border-white/10 focus-visible:ring-[#336EFF]"
-                              value={registerPassword}
-                              onChange={(event) => setRegisterPassword(event.target.value)}
-                              required
-                              minLength={8}
-                              maxLength={64}
-                            />
-                          </div>
-                          <p className="text-xs text-slate-500 ml-1">
-                            至少 8 位，并包含大写字母。
-                          </p>
-                        </div>
-                        <div className="space-y-2">
-                          <label className="text-sm font-medium text-slate-300 ml-1">确认密码</label>
-                          <div className="relative">
-                            <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-500" />
-                            <Input
-                              type="password"
-                              placeholder="请再次输入密码"
-                              className="pl-10 bg-black/20 border-white/10 focus-visible:ring-[#336EFF]"
-                              value={registerConfirmPassword}
-                              onChange={(event) => setRegisterConfirmPassword(event.target.value)}
-                              required
-                              minLength={8}
-                              maxLength={64}
-                            />
-                          </div>
-                        </div>
-                        <div className="space-y-2">
-                          <label className="text-sm font-medium text-slate-300 ml-1">邀请码</label>
-                          <div className="relative">
-                            <UserPlus className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-500" />
-                            <Input
-                              type="text"
-                              placeholder="请输入邀请码"
-                              className="pl-10 bg-black/20 border-white/10 focus-visible:ring-[#336EFF]"
-                              value={registerInviteCode}
-                              onChange={(event) => setRegisterInviteCode(event.target.value)}
-                              required
-                            />
-                          </div>
-                        </div>
-                      </div>
-
-                      {error && (
-                        <div className="p-3 rounded-xl bg-red-500/10 border border-red-500/20 text-red-400 text-sm">
-                          {error}
-                        </div>
-                      )}
-
-                      <div className="space-y-4">
-                        <Button
-                          type="submit"
-                          className="w-full h-12 text-base font-semibold"
-                          disabled={loading}
-                        >
-                          {loading ? (
-                            <span className="flex items-center gap-2">
-                              <span className="w-4 h-4 border-2 border-white/20 border-t-white rounded-full animate-spin" />
-                              注册中...
-                            </span>
-                          ) : (
-                            '创建账号'
-                          )}
-                        </Button>
-                        <div className="text-center">
-                          <button
-                            type="button"
-                            onClick={() => switchMode(true)}
-                            className="text-sm text-slate-400 hover:text-[#336EFF] transition-colors"
-                          >
-                            已有账号？返回登录
-                          </button>
-                        </div>
-                      </div>
-                    </form>
-                  </CardContent>
+                <motion.div initial={{ x: -10, opacity: 0 }} animate={{ x: 0, opacity: 1 }} transition={{ delay: 0.2 }}>
+                  <input
+                    type="password"
+                    placeholder="密码"
+                    value={loginForm.password}
+                    onChange={(event) => setLoginForm((current) => ({ ...current, password: event.target.value }))}
+                    className="w-full px-5 py-4 bg-white/10 dark:bg-black/20 border border-white/10 dark:border-white/5 rounded-lg placeholder-white/30 text-base focus:outline-none focus:ring-2 focus:ring-blue-500/50 transition-all font-bold tracking-wide"
+                    required
+                  />
                 </motion.div>
-              )}
-            </AnimatePresence>
-          </Card>
+                <motion.button
+                  whileHover={{ scale: 1.02 }}
+                  whileTap={{ scale: 0.98 }}
+                  type="submit"
+                  disabled={loading}
+                  className="w-full flex justify-center mt-6 py-4 px-4 rounded-lg shadow-lg text-sm font-black uppercase tracking-widest text-white bg-blue-600 hover:bg-blue-500 transition-all disabled:opacity-50"
+                >
+                  {loading ? '处理中...' : '登录'}
+                </motion.button>
+              </form>
+            ) : (
+              <form className="space-y-4" onSubmit={handleRegisterSubmit}>
+                {[
+                  { name: 'username', placeholder: '用户名', type: 'text' },
+                  { name: 'email', placeholder: '邮箱地址', type: 'email' },
+                  { name: 'phoneNumber', placeholder: '手机号', type: 'text' },
+                  { name: 'inviteCode', placeholder: '邀请码', type: 'text' },
+                  { name: 'password', placeholder: '密码', type: 'password' },
+                  { name: 'confirmPassword', placeholder: '确认密码', type: 'password' },
+                ].map((field, idx) => (
+                  <motion.div 
+                    key={field.name}
+                    initial={{ x: -10, opacity: 0 }} 
+                    animate={{ x: 0, opacity: 1 }} 
+                    transition={{ delay: idx * 0.05 }}
+                  >
+                    <input
+                      type={field.type}
+                      placeholder={field.placeholder}
+                      value={registerForm[field.name as keyof RegisterFormState]}
+                      onChange={(event) => setRegisterForm((current) => ({ ...current, [field.name]: event.target.value }))}
+                      className="w-full px-5 py-3.5 bg-white/10 dark:bg-black/20 border border-white/10 dark:border-white/5 rounded-lg placeholder-white/20 text-base focus:outline-none focus:ring-2 focus:ring-blue-500/50 transition-all font-bold tracking-wide"
+                      required
+                    />
+                  </motion.div>
+                ))}
+                <motion.button
+                  whileHover={{ scale: 1.02 }}
+                  whileTap={{ scale: 0.98 }}
+                  type="submit"
+                  disabled={loading}
+                  className="w-full flex justify-center mt-6 py-4 px-4 rounded-lg shadow-lg text-sm font-black uppercase tracking-widest text-white bg-blue-600 hover:bg-blue-500 transition-all disabled:opacity-50"
+                >
+                  {loading ? '创建中...' : '注册账号'}
+                </motion.button>
+              </form>
+            )}
+          </motion.div>
+
+          <div className="mt-8 space-y-4">
+            <button
+              type="button"
+              onClick={() => setIsLogin((current) => !current)}
+              className="w-full py-4 text-sm font-black uppercase tracking-widest opacity-70 hover:opacity-100 transition-opacity"
+            >
+              {isLogin ? '还没有账号？去注册' : '已有账号？去登录'}
+            </button>
+
+            <button
+              type="button"
+              onClick={() => navigate('/transfer')}
+              className="w-full py-4 rounded-lg glass-panel border border-white/10 text-sm font-black uppercase tracking-widest text-blue-600 dark:text-blue-400 hover:bg-white/20 transition-all"
+            >
+              直接进入快传
+            </button>
+            
+            <div className="flex justify-center gap-8 pt-4 border-t border-white/10">
+              <button 
+                onClick={() => handleDevLogin('demo')}
+                disabled={loading}
+                className="text-sm font-black uppercase tracking-widest text-blue-500 hover:text-blue-400 transition-colors disabled:opacity-50"
+              >
+                开发账号
+              </button>
+              <button 
+                onClick={() => handleDevLogin('admin')}
+                disabled={loading}
+                className="text-sm font-black uppercase tracking-widest text-purple-500 hover:text-purple-400 transition-colors disabled:opacity-50"
+              >
+                管理员账号
+              </button>
+            </div>
+          </div>
         </motion.div>
       </div>
-    </div>
+    </motion.div>
   );
 }

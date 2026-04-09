@@ -1,662 +1,192 @@
-import type { AuthResponse } from './types';
-import { PORTAL_CLIENT_HEADER, resolvePortalClientType } from './app-shell';
-import { clearStoredSession, createSession, readStoredSession, saveStoredSession } from './session';
+import { clearSession, getSession, setSession, type PortalSession } from './session';
 
-interface ApiEnvelope<T> {
+const CLIENT_HEADER = 'X-Yoyuzh-Client';
+const CLIENT_ID_HEADER = 'X-Yoyuzh-Client-Id';
+const CLIENT_TYPE = 'desktop';
+
+type ApiEnvelope<T> = {
   code: number;
   msg: string;
   data: T;
-}
-
-interface ApiRequestInit extends Omit<RequestInit, 'body'> {
-  body?: unknown;
-}
-
-interface ApiUploadRequestInit {
-  body: FormData;
-  headers?: HeadersInit;
-  method?: 'POST' | 'PUT' | 'PATCH';
-  onProgress?: (progress: {loaded: number; total: number}) => void;
-  signal?: AbortSignal;
-}
-
-interface ApiBinaryUploadRequestInit {
-  body: Blob;
-  headers?: HeadersInit;
-  method?: 'PUT' | 'POST';
-  onProgress?: (progress: {loaded: number; total: number}) => void;
-  responseHeaders?: string[];
-  signal?: AbortSignal;
-}
-
-export interface ApiBinaryUploadResponse {
-  status: number;
-  headers: Record<string, string>;
-}
-
-const AUTH_REFRESH_PATH = '/auth/refresh';
-const DEFAULT_API_BASE_URL = '/api';
-const DEFAULT_CAPACITOR_API_ORIGIN = 'https://api.yoyuzh.xyz';
-const YOYUZH_CLIENT_ID_STORAGE_KEY = 'yoyuzh.clientId';
-
-export const YOYUZH_CLIENT_ID_HEADER = 'X-Yoyuzh-Client-Id';
-
-let refreshRequestPromise: Promise<boolean> | null = null;
-let fallbackClientId: string | null = null;
+};
 
 export class ApiError extends Error {
-  code?: number;
   status: number;
-  isNetworkError: boolean;
+  code: number;
 
-  constructor(message: string, status = 500, code?: number) {
+  constructor(message: string, status: number, code = -1) {
     super(message);
     this.name = 'ApiError';
     this.status = status;
     this.code = code;
-    this.isNetworkError = status === 0;
   }
 }
 
-function isNetworkFailure(error: unknown) {
-  return error instanceof TypeError || error instanceof DOMException;
+export type FetchApiOptions = RequestInit & {
+  auth?: boolean;
+  rawResponse?: boolean;
+  retryOnAuthFailure?: boolean;
+};
+
+export function getApiBaseUrl() {
+  return '/api';
 }
 
-function sleep(ms: number) {
-  return new Promise((resolve) => {
-    setTimeout(resolve, ms);
-  });
+export function getClientId() {
+  const storageKey = 'portal-client-id';
+  const existing = window.localStorage.getItem(storageKey);
+  if (existing) {
+    return existing;
+  }
+
+  const generated = `web-${crypto.randomUUID()}`;
+  window.localStorage.setItem(storageKey, generated);
+  return generated;
 }
 
-function getRetryDelayMs(attempt: number) {
-  const schedule = [500, 1200, 2200];
-  return schedule[Math.min(attempt, schedule.length - 1)];
+function buildUrl(endpoint: string) {
+  if (/^https?:\/\//.test(endpoint)) {
+    return endpoint;
+  }
+  if (endpoint.startsWith('/api/')) {
+    return endpoint;
+  }
+  if (endpoint.startsWith('/')) {
+    return `${getApiBaseUrl()}${endpoint}`;
+  }
+  return `${getApiBaseUrl()}/${endpoint}`;
 }
 
-function getMaxRetryAttempts(path: string, init: ApiRequestInit = {}) {
-  const method = (init.method || 'GET').toUpperCase();
-
-  if (method === 'POST' && path === '/auth/login') {
-    return 1;
-  }
-
-  if (method === 'PATCH' && /^\/files\/\d+\/rename$/.test(path)) {
-    return 0;
-  }
-
-  if (method === 'GET' || method === 'HEAD' || method === 'OPTIONS') {
-    return 2;
-  }
-
-  return -1;
-}
-
-function getRetryDelayForRequest(path: string, init: ApiRequestInit = {}, attempt: number) {
-  const method = (init.method || 'GET').toUpperCase();
-
-  if (method === 'POST' && path === '/auth/login') {
-    const loginSchedule = [350, 800];
-    return loginSchedule[Math.min(attempt, loginSchedule.length - 1)];
-  }
-
-  return getRetryDelayMs(attempt);
-}
-
-function resolveRuntimeLocation() {
-  if (typeof globalThis.location !== 'undefined') {
-    return globalThis.location;
-  }
-
-  if (typeof window !== 'undefined') {
-    return window.location;
-  }
-
-  return null;
-}
-
-function isCapacitorLocalhostOrigin(location: Location | URL | null) {
-  if (!location) {
-    return false;
-  }
-
-  const protocol = location.protocol || '';
-  const hostname = location.hostname || '';
-  const port = location.port || '';
-
-  if (protocol === 'capacitor:') {
+function looksLikeQuestionMarks(message: string | null | undefined) {
+  if (!message) {
     return true;
   }
 
-  const isLocalhostHost = hostname === 'localhost' || hostname === '127.0.0.1';
-  const isCapacitorLocalScheme = protocol === 'http:' || protocol === 'https:';
-
-  return isCapacitorLocalScheme && isLocalhostHost && port === '';
+  const trimmed = message.trim();
+  return trimmed.length === 0 || /^[?锛焆]+$/.test(trimmed);
 }
 
-export function getApiBaseUrl() {
-  const configuredBaseUrl = import.meta.env?.VITE_API_BASE_URL?.replace(/\/$/, '');
-  if (configuredBaseUrl) {
-    return configuredBaseUrl;
+function resolveFriendlyMessage(code: number, status: number, message: string) {
+  if ((code === 1001 || status === 401) && looksLikeQuestionMarks(message)) {
+    return '未登录或登录已过期，请先登录。';
   }
-
-  if (isCapacitorLocalhostOrigin(resolveRuntimeLocation())) {
-    return `${DEFAULT_CAPACITOR_API_ORIGIN}${DEFAULT_API_BASE_URL}`;
+  if ((code === 1002 || status === 403) && looksLikeQuestionMarks(message)) {
+    return '没有权限访问该页面。';
   }
-
-  return DEFAULT_API_BASE_URL;
+  if (looksLikeQuestionMarks(message)) {
+    return `请求失败（HTTP ${status}）`;
+  }
+  return message;
 }
 
-function resolveUrl(path: string) {
-  if (/^https?:\/\//.test(path)) {
-    return path;
-  }
-
-  const normalizedPath = path.startsWith('/') ? path : `/${path}`;
-  return `${getApiBaseUrl()}${normalizedPath}`;
-}
-
-function normalizePath(path: string) {
-  return path.startsWith('/') ? path : `/${path}`;
-}
-
-function resolveV2Path(path: string) {
-  const normalizedPath = normalizePath(path);
-  return normalizedPath.startsWith('/v2/') ? normalizedPath : `/v2${normalizedPath}`;
-}
-
-function shouldAttachPortalClientHeader(path: string) {
-  return !/^https?:\/\//.test(path);
-}
-
-function shouldAttachYoyuzhClientIdHeader(path: string) {
-  return !/^https?:\/\//.test(path);
-}
-
-function createYoyuzhClientId() {
-  const randomId =
-    typeof globalThis.crypto?.randomUUID === 'function'
-      ? globalThis.crypto.randomUUID()
-      : Math.random().toString(36).slice(2);
-  return `yoyuzh-client-${randomId}`;
-}
-
-export function resolveYoyuzhClientId() {
-  if (typeof globalThis.localStorage === 'undefined') {
-    fallbackClientId ??= createYoyuzhClientId();
-    return fallbackClientId;
-  }
-
-  const storedClientId = globalThis.localStorage.getItem(YOYUZH_CLIENT_ID_STORAGE_KEY);
-  if (storedClientId) {
-    return storedClientId;
-  }
-
-  const clientId = createYoyuzhClientId();
-  globalThis.localStorage.setItem(YOYUZH_CLIENT_ID_STORAGE_KEY, clientId);
-  return clientId;
-}
-
-function shouldAttemptTokenRefresh(path: string) {
-  const normalizedPath = normalizePath(path);
-  return ![
-    '/auth/login',
-    '/auth/register',
-    '/auth/dev-login',
-    AUTH_REFRESH_PATH,
-  ].includes(normalizedPath);
-}
-
-function buildRequestBody(body: ApiRequestInit['body']) {
-  if (body == null) {
-    return undefined;
-  }
-
-  if (
-    body instanceof FormData ||
-    body instanceof Blob ||
-    body instanceof URLSearchParams ||
-    typeof body === 'string' ||
-    body instanceof ArrayBuffer
-  ) {
-    return body;
-  }
-
-  return JSON.stringify(body);
-}
-
-async function refreshAccessToken() {
-  const currentSession = readStoredSession();
-  if (!currentSession?.refreshToken) {
-    clearStoredSession();
-    return false;
-  }
-
-  if (refreshRequestPromise) {
-    return refreshRequestPromise;
-  }
-
-  refreshRequestPromise = (async () => {
-    try {
-      const headers = new Headers({
-        Accept: 'application/json',
-        'Content-Type': 'application/json',
-      });
-      headers.set(PORTAL_CLIENT_HEADER, resolvePortalClientType());
-
-      const response = await fetch(resolveUrl(AUTH_REFRESH_PATH), {
-        method: 'POST',
-        headers,
-        body: JSON.stringify({
-          refreshToken: currentSession.refreshToken,
-        }),
-      });
-      const contentType = response.headers.get('content-type') || '';
-      if (!response.ok || !contentType.includes('application/json')) {
-        clearStoredSession();
-        return false;
-      }
-
-      const payload = (await response.json()) as ApiEnvelope<AuthResponse>;
-      if (payload.code !== 0 || !payload.data) {
-        clearStoredSession();
-        return false;
-      }
-
-      saveStoredSession({
-        ...currentSession,
-        ...createSession(payload.data),
-        user: payload.data.user ?? currentSession.user,
-      });
-      return true;
-    } catch {
-      clearStoredSession();
-      return false;
-    } finally {
-      refreshRequestPromise = null;
-    }
-  })();
-
-  return refreshRequestPromise;
-}
-
-async function parseApiError(response: Response) {
-  const contentType = response.headers.get('content-type') || '';
-  if (!contentType.includes('application/json')) {
-    return new ApiError(`请求失败 (${response.status})`, response.status);
-  }
-
-  const payload = (await response.json()) as ApiEnvelope<null>;
-  return new ApiError(payload.msg || `请求失败 (${response.status})`, response.status, payload.code);
-}
-
-export function toNetworkApiError(error: unknown) {
-  const fallbackMessage = '网络连接异常，请稍后重试';
-  const message = error instanceof Error && error.message ? error.message : fallbackMessage;
-  return new ApiError(message === 'Failed to fetch' ? fallbackMessage : message, 0);
-}
-
-function toUploadAbortApiError() {
-  return new ApiError('上传已取消', 0);
-}
-
-export function shouldRetryRequest(
-  path: string,
-  init: ApiRequestInit = {},
-  error: unknown,
-  attempt: number,
-) {
-  if (!isNetworkFailure(error)) {
-    return false;
-  }
-
-  return attempt <= getMaxRetryAttempts(path, init);
-}
-
-async function performRequest(path: string, init: ApiRequestInit = {}, allowRefresh = true): Promise<Response> {
-  const session = readStoredSession();
-  const headers = new Headers(init.headers);
-  const requestBody = buildRequestBody(init.body);
-
-  if (session?.token) {
-    headers.set('Authorization', `Bearer ${session.token}`);
-  }
-  if (shouldAttachPortalClientHeader(path) && !headers.has(PORTAL_CLIENT_HEADER)) {
-    headers.set(PORTAL_CLIENT_HEADER, resolvePortalClientType());
-  }
-  if (shouldAttachYoyuzhClientIdHeader(path) && !headers.has(YOYUZH_CLIENT_ID_HEADER)) {
-    headers.set(YOYUZH_CLIENT_ID_HEADER, resolveYoyuzhClientId());
-  }
-  if (requestBody && !(requestBody instanceof FormData) && !headers.has('Content-Type')) {
-    headers.set('Content-Type', 'application/json');
-  }
-  if (!headers.has('Accept')) {
-    headers.set('Accept', 'application/json');
-  }
-
-  let response: Response;
-  let lastError: unknown;
-
-  for (let attempt = 0; attempt <= 3; attempt += 1) {
-    try {
-      response = await fetch(resolveUrl(path), {
-        ...init,
-        headers,
-        body: requestBody,
-      });
-      break;
-    } catch (error) {
-      lastError = error;
-      if (!shouldRetryRequest(path, init, error, attempt)) {
-        throw toNetworkApiError(error);
-      }
-
-      await sleep(getRetryDelayForRequest(path, init, attempt));
-    }
-  }
-
-  if (!response!) {
-    throw toNetworkApiError(lastError);
-  }
-
-  if (response.status === 401 && allowRefresh && shouldAttemptTokenRefresh(path)) {
-    const refreshed = await refreshAccessToken();
-    if (refreshed) {
-      return performRequest(path, init, false);
-    }
-  }
-
-  if (response.status === 401) {
-    clearStoredSession();
-  }
-
-  return response;
-}
-
-export async function apiRequest<T>(path: string, init?: ApiRequestInit) {
-  const response = await performRequest(path, init);
-  const contentType = response.headers.get('content-type') || '';
-
+async function parseResponse<T>(response: Response): Promise<T> {
+  const contentType = response.headers.get('content-type') ?? '';
   if (!contentType.includes('application/json')) {
     if (!response.ok) {
-      throw new ApiError(`请求失败 (${response.status})`, response.status);
+      throw new ApiError(`请求失败（HTTP ${response.status}）`, response.status);
     }
     return undefined as T;
   }
 
-  const payload = (await response.json()) as ApiEnvelope<T>;
-  if (!response.ok || payload.code !== 0) {
-    throw new ApiError(payload.msg || `请求失败 (${response.status})`, response.status, payload.code);
+  const payload = (await response.json()) as ApiEnvelope<T> | T;
+
+  if (
+    typeof payload === 'object' &&
+    payload !== null &&
+    'code' in payload &&
+    'msg' in payload &&
+    'data' in payload
+  ) {
+    const envelope = payload as ApiEnvelope<T>;
+    if (envelope.code !== 0) {
+      throw new ApiError(
+        resolveFriendlyMessage(envelope.code, response.status, envelope.msg),
+        response.status,
+        envelope.code,
+      );
+    }
+    return envelope.data;
   }
-
-  return payload.data;
-}
-
-export function apiV2Request<T>(path: string, init?: ApiRequestInit) {
-  return apiRequest<T>(resolveV2Path(path), init);
-}
-
-function apiUploadRequestInternal<T>(path: string, init: ApiUploadRequestInit, allowRefresh: boolean): Promise<T> {
-  const session = readStoredSession();
-  const headers = new Headers(init.headers);
-
-  if (session?.token) {
-    headers.set('Authorization', `Bearer ${session.token}`);
-  }
-  if (shouldAttachPortalClientHeader(path) && !headers.has(PORTAL_CLIENT_HEADER)) {
-    headers.set(PORTAL_CLIENT_HEADER, resolvePortalClientType());
-  }
-  if (shouldAttachYoyuzhClientIdHeader(path) && !headers.has(YOYUZH_CLIENT_ID_HEADER)) {
-    headers.set(YOYUZH_CLIENT_ID_HEADER, resolveYoyuzhClientId());
-  }
-  if (!headers.has('Accept')) {
-    headers.set('Accept', 'application/json');
-  }
-
-  return new Promise<T>((resolve, reject) => {
-    const xhr = new XMLHttpRequest();
-    let settled = false;
-
-    const detachAbortSignal = () => {
-      init.signal?.removeEventListener('abort', handleAbortSignal);
-    };
-
-    const resolveOnce = (value: T | PromiseLike<T>) => {
-      if (settled) {
-        return;
-      }
-
-      settled = true;
-      detachAbortSignal();
-      resolve(value);
-    };
-
-    const rejectOnce = (error: unknown) => {
-      if (settled) {
-        return;
-      }
-
-      settled = true;
-      detachAbortSignal();
-      reject(error);
-    };
-
-    const handleAbortSignal = () => {
-      if (settled) {
-        return;
-      }
-
-      xhr.abort();
-      rejectOnce(toUploadAbortApiError());
-    };
-
-    if (init.signal?.aborted) {
-      rejectOnce(toUploadAbortApiError());
-      return;
-    }
-
-    xhr.open(init.method || 'POST', resolveUrl(path));
-
-    headers.forEach((value, key) => {
-      xhr.setRequestHeader(key, value);
-    });
-
-    if (init.onProgress) {
-      xhr.upload.addEventListener('progress', (event) => {
-        if (!event.lengthComputable) {
-          return;
-        }
-
-        init.onProgress?.({
-          loaded: event.loaded,
-          total: event.total,
-        });
-      });
-    }
-
-    xhr.onerror = () => {
-      if (init.signal?.aborted) {
-        rejectOnce(toUploadAbortApiError());
-        return;
-      }
-
-      rejectOnce(toNetworkApiError(new TypeError('Failed to fetch')));
-    };
-
-    xhr.onabort = () => {
-      rejectOnce(toUploadAbortApiError());
-    };
-
-    xhr.onload = () => {
-      const contentType = xhr.getResponseHeader('content-type') || '';
-
-      if (xhr.status === 401 && allowRefresh && shouldAttemptTokenRefresh(path)) {
-        refreshAccessToken()
-          .then((refreshed) => {
-            if (refreshed) {
-              resolveOnce(apiUploadRequestInternal<T>(path, init, false));
-              return;
-            }
-            clearStoredSession();
-            rejectOnce(new ApiError('登录状态已失效，请重新登录', 401));
-          })
-          .catch((error) => {
-            clearStoredSession();
-            rejectOnce(error instanceof ApiError ? error : toNetworkApiError(error));
-          });
-        return;
-      }
-
-      if (!contentType.includes('application/json')) {
-        if (xhr.status >= 200 && xhr.status < 300) {
-          resolveOnce(undefined as T);
-          return;
-        }
-
-        rejectOnce(new ApiError(`请求失败 (${xhr.status})`, xhr.status));
-        return;
-      }
-
-      const payload = JSON.parse(xhr.responseText) as ApiEnvelope<T>;
-      if (xhr.status < 200 || xhr.status >= 300 || payload.code !== 0) {
-        if (xhr.status === 401) {
-          clearStoredSession();
-        }
-        rejectOnce(new ApiError(payload.msg || `请求失败 (${xhr.status})`, xhr.status, payload.code));
-        return;
-      }
-
-      resolveOnce(payload.data);
-    };
-
-    if (init.signal) {
-      init.signal.addEventListener('abort', handleAbortSignal, {once: true});
-    }
-
-    xhr.send(init.body);
-  });
-}
-
-export function apiUploadRequest<T>(path: string, init: ApiUploadRequestInit): Promise<T> {
-  return apiUploadRequestInternal<T>(path, init, true);
-}
-
-export function apiBinaryUploadRequest(path: string, init: ApiBinaryUploadRequestInit) {
-  const headers = new Headers(init.headers);
-
-  return new Promise<ApiBinaryUploadResponse>((resolve, reject) => {
-    const xhr = new XMLHttpRequest();
-    let settled = false;
-
-    const detachAbortSignal = () => {
-      init.signal?.removeEventListener('abort', handleAbortSignal);
-    };
-
-    const resolveOnce = (value: ApiBinaryUploadResponse) => {
-      if (settled) {
-        return;
-      }
-
-      settled = true;
-      detachAbortSignal();
-      resolve(value);
-    };
-
-    const rejectOnce = (error: unknown) => {
-      if (settled) {
-        return;
-      }
-
-      settled = true;
-      detachAbortSignal();
-      reject(error);
-    };
-
-    const handleAbortSignal = () => {
-      if (settled) {
-        return;
-      }
-
-      xhr.abort();
-      rejectOnce(toUploadAbortApiError());
-    };
-
-    if (init.signal?.aborted) {
-      rejectOnce(toUploadAbortApiError());
-      return;
-    }
-
-    xhr.open(init.method || 'PUT', resolveUrl(path));
-
-    headers.forEach((value, key) => {
-      xhr.setRequestHeader(key, value);
-    });
-
-    if (init.onProgress) {
-      xhr.upload.addEventListener('progress', (event) => {
-        if (!event.lengthComputable) {
-          return;
-        }
-
-        init.onProgress?.({
-          loaded: event.loaded,
-          total: event.total,
-        });
-      });
-    }
-
-    xhr.onerror = () => {
-      if (init.signal?.aborted) {
-        rejectOnce(toUploadAbortApiError());
-        return;
-      }
-
-      rejectOnce(toNetworkApiError(new TypeError('Failed to fetch')));
-    };
-
-    xhr.onabort = () => {
-      rejectOnce(toUploadAbortApiError());
-    };
-
-    xhr.onload = () => {
-      if (xhr.status >= 200 && xhr.status < 300) {
-        const responseHeaders = Object.fromEntries(
-          (init.responseHeaders ?? [])
-            .map((headerName) => {
-              const value = xhr.getResponseHeader(headerName);
-              return [headerName.toLowerCase(), value];
-            })
-            .filter((entry): entry is [string, string] => Boolean(entry[1])),
-        );
-        resolveOnce({
-          status: xhr.status,
-          headers: responseHeaders,
-        });
-        return;
-      }
-
-      rejectOnce(new ApiError(`请求失败 (${xhr.status})`, xhr.status));
-    };
-
-    if (init.signal) {
-      init.signal.addEventListener('abort', handleAbortSignal, {once: true});
-    }
-
-    xhr.send(init.body);
-  });
-}
-
-export async function apiDownload(path: string, init: ApiRequestInit = {}) {
-  const headers = new Headers(init.headers);
-  headers.set('Accept', '*/*');
-
-  const response = await performRequest(path, {
-    ...init,
-    headers,
-  });
 
   if (!response.ok) {
-    throw await parseApiError(response);
+    throw new ApiError(`请求失败（HTTP ${response.status}）`, response.status);
   }
 
-  return response;
+  return payload as T;
+}
+
+async function refreshAccessToken(session: PortalSession) {
+  const response = await fetch(buildUrl('/auth/refresh'), {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      [CLIENT_HEADER]: CLIENT_TYPE,
+      [CLIENT_ID_HEADER]: getClientId(),
+    },
+    body: JSON.stringify({ refreshToken: session.refreshToken }),
+  });
+
+  const refreshed = await parseResponse<PortalSession>(response);
+  const nextSession: PortalSession = {
+    ...session,
+    ...refreshed,
+  };
+  setSession(nextSession);
+  return nextSession;
+}
+
+export async function fetchApi<T = unknown>(endpoint: string, options: FetchApiOptions = {}) {
+  const {
+    auth = true,
+    rawResponse = false,
+    retryOnAuthFailure = true,
+    headers,
+    body,
+    ...rest
+  } = options;
+
+  const session = getSession();
+  const resolvedHeaders = new Headers(headers ?? {});
+  resolvedHeaders.set(CLIENT_HEADER, CLIENT_TYPE);
+  resolvedHeaders.set(CLIENT_ID_HEADER, getClientId());
+
+  const isFormData = typeof FormData !== 'undefined' && body instanceof FormData;
+  if (!isFormData && body != null && !resolvedHeaders.has('Content-Type')) {
+    resolvedHeaders.set('Content-Type', 'application/json');
+  }
+
+  if (auth && session?.accessToken) {
+    resolvedHeaders.set('Authorization', `Bearer ${session.accessToken}`);
+  }
+
+  const response = await fetch(buildUrl(endpoint), {
+    ...rest,
+    headers: resolvedHeaders,
+    body,
+  });
+
+  if ((response.status === 401 || response.status === 403) && auth && session?.refreshToken && retryOnAuthFailure) {
+    try {
+      const refreshed = await refreshAccessToken(session);
+      return fetchApi<T>(endpoint, {
+        ...options,
+        retryOnAuthFailure: false,
+        headers: {
+          ...(headers ?? {}),
+          Authorization: `Bearer ${refreshed.accessToken}`,
+        },
+      });
+    } catch {
+      clearSession();
+    }
+  }
+
+  if (rawResponse) {
+    if (!response.ok) {
+      throw new ApiError(`请求失败（HTTP ${response.status}）`, response.status);
+    }
+    return response as T;
+  }
+
+  return parseResponse<T>(response);
 }

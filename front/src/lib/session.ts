@@ -1,109 +1,47 @@
-import type { AuthResponse, AuthSession } from './types';
+export type PortalUser = {
+  id: number;
+  username: string;
+  displayName?: string | null;
+  email: string;
+  phoneNumber?: string | null;
+  bio?: string | null;
+  preferredLanguage?: string | null;
+  avatarUrl?: string | null;
+  role: 'USER' | 'ADMIN';
+  createdAt: string;
+  storageQuotaBytes: number;
+  maxUploadSizeBytes: number;
+};
 
-const SESSION_STORAGE_KEY = 'portal-session';
-const POST_LOGIN_PENDING_KEY = 'portal-post-login-pending';
-export const SESSION_EVENT_NAME = 'portal-session-change';
+export type PortalSession = {
+  token?: string;
+  accessToken: string;
+  refreshToken: string;
+  user: PortalUser;
+};
 
-function notifySessionChanged() {
-  if (typeof window !== 'undefined') {
-    window.dispatchEvent(new Event(SESSION_EVENT_NAME));
-  }
-}
+const SESSION_KEY = 'portal-session';
 
-function normalizeSession(value: unknown): AuthSession | null {
-  if (!value || typeof value !== 'object') {
-    return null;
-  }
-
-  const candidate = value as Partial<AuthSession> & {accessToken?: string};
-  const token = typeof candidate.token === 'string' && candidate.token.trim()
-    ? candidate.token
-    : typeof candidate.accessToken === 'string' && candidate.accessToken.trim()
-      ? candidate.accessToken
-      : null;
-
-  if (!token || !candidate.user) {
-    return null;
-  }
-
-  return {
-    token,
-    refreshToken:
-      typeof candidate.refreshToken === 'string' && candidate.refreshToken.trim()
-        ? candidate.refreshToken
-        : null,
-    user: candidate.user,
-  };
-}
-
-export function createSession(auth: AuthResponse): AuthSession {
-  return {
-    token: auth.accessToken || auth.token,
-    refreshToken: auth.refreshToken ?? null,
-    user: auth.user,
-  };
-}
-
-export function readStoredSession(): AuthSession | null {
-  if (typeof localStorage === 'undefined') {
-    return null;
-  }
-
-  const rawValue = localStorage.getItem(SESSION_STORAGE_KEY);
-  if (!rawValue) {
+export function getSession() {
+  const raw = window.localStorage.getItem(SESSION_KEY);
+  if (!raw) {
     return null;
   }
 
   try {
-    const session = normalizeSession(JSON.parse(rawValue));
-    if (!session) {
-      localStorage.removeItem(SESSION_STORAGE_KEY);
-    }
-    return session;
+    return JSON.parse(raw) as PortalSession;
   } catch {
-    localStorage.removeItem(SESSION_STORAGE_KEY);
+    window.localStorage.removeItem(SESSION_KEY);
     return null;
   }
 }
 
-export function saveStoredSession(session: AuthSession) {
-  if (typeof localStorage === 'undefined') {
-    return;
-  }
-
-  localStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(session));
-  notifySessionChanged();
+export function setSession(session: PortalSession) {
+  window.localStorage.setItem(SESSION_KEY, JSON.stringify(session));
+  window.dispatchEvent(new CustomEvent('portal-session-changed', { detail: session }));
 }
 
-export function clearStoredSession() {
-  if (typeof localStorage === 'undefined') {
-    return;
-  }
-
-  localStorage.removeItem(SESSION_STORAGE_KEY);
-  notifySessionChanged();
-}
-
-export function markPostLoginPending() {
-  if (typeof sessionStorage === 'undefined') {
-    return;
-  }
-
-  sessionStorage.setItem(POST_LOGIN_PENDING_KEY, String(Date.now()));
-}
-
-export function hasPostLoginPending() {
-  if (typeof sessionStorage === 'undefined') {
-    return false;
-  }
-
-  return sessionStorage.getItem(POST_LOGIN_PENDING_KEY) != null;
-}
-
-export function clearPostLoginPending() {
-  if (typeof sessionStorage === 'undefined') {
-    return;
-  }
-
-  sessionStorage.removeItem(POST_LOGIN_PENDING_KEY);
+export function clearSession() {
+  window.localStorage.removeItem(SESSION_KEY);
+  window.dispatchEvent(new CustomEvent('portal-session-changed', { detail: null }));
 }
