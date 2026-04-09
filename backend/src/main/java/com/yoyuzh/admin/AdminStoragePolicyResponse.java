@@ -1,8 +1,8 @@
 package com.yoyuzh.admin;
 
-import com.yoyuzh.files.StoragePolicyCapabilities;
-import com.yoyuzh.files.StoragePolicyCredentialMode;
-import com.yoyuzh.files.StoragePolicyType;
+import com.yoyuzh.files.policy.StoragePolicyCapabilities;
+import com.yoyuzh.files.policy.StoragePolicyCredentialMode;
+import com.yoyuzh.files.policy.StoragePolicyType;
 
 import java.time.LocalDateTime;
 

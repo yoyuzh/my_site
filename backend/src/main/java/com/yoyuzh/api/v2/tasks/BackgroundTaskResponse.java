@@ -1,7 +1,7 @@
 package com.yoyuzh.api.v2.tasks;
 
-import com.yoyuzh.files.BackgroundTaskStatus;
-import com.yoyuzh.files.BackgroundTaskType;
+import com.yoyuzh.files.tasks.BackgroundTaskStatus;
+import com.yoyuzh.files.tasks.BackgroundTaskType;
 
 import java.time.LocalDateTime;
 

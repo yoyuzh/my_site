@@ -1,7 +1,7 @@
 package com.yoyuzh.auth;
 
-import com.yoyuzh.files.FileService;
-import com.yoyuzh.files.StoredFileRepository;
+import com.yoyuzh.files.core.FileService;
+import com.yoyuzh.files.core.StoredFileRepository;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;

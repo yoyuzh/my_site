@@ -1,7 +1,7 @@
 package com.yoyuzh.auth;
 
-import com.yoyuzh.files.FileService;
-import com.yoyuzh.files.StoredFileRepository;
+import com.yoyuzh.files.core.FileService;
+import com.yoyuzh.files.core.StoredFileRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.boot.CommandLineRunner;
 import org.springframework.context.annotation.Profile;

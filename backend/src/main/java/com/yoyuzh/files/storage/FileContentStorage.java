@@ -48,6 +48,26 @@ public interface FileContentStorage {
 
     void deleteBlob(String objectKey);
 
+    default String createMultipartUpload(String objectKey, String contentType) {
+        throw new UnsupportedOperationException("Multipart upload is not supported by this storage");
+    }
+
+    default PreparedUpload prepareMultipartPartUpload(String objectKey,
+                                                      String uploadId,
+                                                      int partNumber,
+                                                      String contentType,
+                                                      long size) {
+        throw new UnsupportedOperationException("Multipart upload is not supported by this storage");
+    }
+
+    default void completeMultipartUpload(String objectKey, String uploadId, java.util.List<MultipartCompletedPart> parts) {
+        throw new UnsupportedOperationException("Multipart upload is not supported by this storage");
+    }
+
+    default void abortMultipartUpload(String objectKey, String uploadId) {
+        throw new UnsupportedOperationException("Multipart upload is not supported by this storage");
+    }
+
     String createBlobDownloadUrl(String objectKey, String filename);
 
     void createDirectory(Long userId, String logicalPath);

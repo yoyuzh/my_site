@@ -3,10 +3,11 @@ package com.yoyuzh.api.v2.files;
 import com.yoyuzh.api.v2.ApiV2Response;
 import com.yoyuzh.auth.CustomUserDetailsService;
 import com.yoyuzh.auth.User;
-import com.yoyuzh.files.UploadSession;
-import com.yoyuzh.files.UploadSessionCreateCommand;
-import com.yoyuzh.files.UploadSessionPartCommand;
-import com.yoyuzh.files.UploadSessionService;
+import com.yoyuzh.files.upload.UploadSession;
+import com.yoyuzh.files.upload.UploadSessionCreateCommand;
+import com.yoyuzh.files.upload.UploadSessionPartCommand;
+import com.yoyuzh.files.upload.UploadSessionService;
+import com.yoyuzh.files.storage.PreparedUpload;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
@@ -77,10 +78,26 @@ public class UploadSessionV2Controller {
         return ApiV2Response.success(toResponse(session));
     }
 
+    @GetMapping("/{sessionId}/parts/{partIndex}/prepare")
+    public ApiV2Response<PreparedUploadV2Response> preparePartUpload(@AuthenticationPrincipal UserDetails userDetails,
+                                                                     @PathVariable String sessionId,
+                                                                     @PathVariable int partIndex) {
+        User user = userDetailsService.loadDomainUser(userDetails.getUsername());
+        PreparedUpload preparedUpload = uploadSessionService.prepareOwnedPartUpload(user, sessionId, partIndex);
+        return ApiV2Response.success(new PreparedUploadV2Response(
+                preparedUpload.direct(),
+                preparedUpload.uploadUrl(),
+                preparedUpload.method(),
+                preparedUpload.headers(),
+                preparedUpload.storageName()
+        ));
+    }
+
     private UploadSessionV2Response toResponse(UploadSession session) {
         return new UploadSessionV2Response(
                 session.getSessionId(),
                 session.getObjectKey(),
+                session.getMultipartUploadId() != null,
                 session.getTargetPath(),
                 session.getFilename(),
                 session.getContentType(),

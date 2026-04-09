@@ -4,12 +4,12 @@ import com.jayway.jsonpath.JsonPath;
 import com.yoyuzh.PortalBackendApplication;
 import com.yoyuzh.auth.User;
 import com.yoyuzh.auth.UserRepository;
-import com.yoyuzh.files.FileBlob;
-import com.yoyuzh.files.FileBlobRepository;
-import com.yoyuzh.files.FileShareLink;
-import com.yoyuzh.files.FileShareLinkRepository;
-import com.yoyuzh.files.StoredFile;
-import com.yoyuzh.files.StoredFileRepository;
+import com.yoyuzh.files.core.FileBlob;
+import com.yoyuzh.files.core.FileBlobRepository;
+import com.yoyuzh.files.share.FileShareLink;
+import com.yoyuzh.files.share.FileShareLinkRepository;
+import com.yoyuzh.files.core.StoredFile;
+import com.yoyuzh.files.core.StoredFileRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -30,6 +30,8 @@ import static org.springframework.security.test.web.servlet.request.SecurityMock
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -270,6 +272,120 @@ class ShareV2ControllerIntegrationTest {
                                   "path": "/download"
                                 }
                                 """))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.code").value(2404));
+    }
+
+    @Test
+    void shouldDownloadSharedFileAndCountQuota() throws Exception {
+        String createResponse = mockMvc.perform(post("/api/v2/shares")
+                        .with(user("alice"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "fileId": %d,
+                                  "maxDownloads": 1,
+                                  "allowDownload": true
+                                }
+                                """.formatted(sharedFileId)))
+                .andExpect(status().isOk())
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+        String token = JsonPath.read(createResponse, "$.data.token");
+
+        mockMvc.perform(get("/api/v2/shares/{token}", token)
+                        .with(anonymous())
+                        .param("download", "1"))
+                .andExpect(status().isOk())
+                .andExpect(header().string("Content-Disposition", "attachment; filename*=UTF-8''notes.txt"))
+                .andExpect(content().contentType("text/plain"))
+                .andExpect(content().bytes("hello".getBytes(StandardCharsets.UTF_8)));
+
+        mockMvc.perform(get("/api/v2/shares/{token}", token)
+                        .with(anonymous())
+                        .param("download", "1"))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value(2403));
+
+        mockMvc.perform(get("/api/v2/shares/{token}", token).with(anonymous()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.downloadCount").value(1));
+    }
+
+    @Test
+    void shouldRejectDownloadWhenSharePolicyBlocksIt() throws Exception {
+        String passwordResponse = mockMvc.perform(post("/api/v2/shares")
+                        .with(user("alice"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "fileId": %d,
+                                  "password": "Share123",
+                                  "allowDownload": true
+                                }
+                                """.formatted(sharedFileId)))
+                .andExpect(status().isOk())
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+        String passwordToken = JsonPath.read(passwordResponse, "$.data.token");
+
+        mockMvc.perform(get("/api/v2/shares/{token}", passwordToken)
+                        .with(anonymous())
+                        .param("download", "1"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value(2400));
+
+        mockMvc.perform(get("/api/v2/shares/{token}", passwordToken)
+                        .with(anonymous())
+                        .param("download", "1")
+                        .param("password", "Share123"))
+                .andExpect(status().isOk())
+                .andExpect(content().bytes("hello".getBytes(StandardCharsets.UTF_8)));
+
+        String disabledResponse = mockMvc.perform(post("/api/v2/shares")
+                        .with(user("alice"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "fileId": %d,
+                                  "allowDownload": false
+                                }
+                                """.formatted(sharedFileId)))
+                .andExpect(status().isOk())
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+        String disabledToken = JsonPath.read(disabledResponse, "$.data.token");
+
+        mockMvc.perform(get("/api/v2/shares/{token}", disabledToken)
+                        .with(anonymous())
+                        .param("download", "1"))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value(2403));
+
+        String expiredResponse = mockMvc.perform(post("/api/v2/shares")
+                        .with(user("alice"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "fileId": %d,
+                                  "allowDownload": true
+                                }
+                                """.formatted(sharedFileId)))
+                .andExpect(status().isOk())
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+        String expiredToken = JsonPath.read(expiredResponse, "$.data.token");
+        FileShareLink expiredShare = fileShareLinkRepository.findByToken(expiredToken).orElseThrow();
+        expiredShare.setExpiresAt(LocalDateTime.now().minusMinutes(1));
+        fileShareLinkRepository.save(expiredShare);
+
+        mockMvc.perform(get("/api/v2/shares/{token}", expiredToken)
+                        .with(anonymous())
+                        .param("download", "1"))
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.code").value(2404));
     }

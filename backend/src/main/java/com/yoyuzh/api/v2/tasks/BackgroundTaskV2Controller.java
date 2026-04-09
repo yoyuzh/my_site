@@ -4,9 +4,9 @@ import com.yoyuzh.api.v2.ApiV2Response;
 import com.yoyuzh.auth.CustomUserDetailsService;
 import com.yoyuzh.auth.User;
 import com.yoyuzh.common.PageResponse;
-import com.yoyuzh.files.BackgroundTask;
-import com.yoyuzh.files.BackgroundTaskService;
-import com.yoyuzh.files.BackgroundTaskType;
+import com.yoyuzh.files.tasks.BackgroundTask;
+import com.yoyuzh.files.tasks.BackgroundTaskService;
+import com.yoyuzh.files.tasks.BackgroundTaskType;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
@@ -61,6 +61,13 @@ public class BackgroundTaskV2Controller {
                                                         @PathVariable Long id) {
         User user = userDetailsService.loadDomainUser(userDetails.getUsername());
         return ApiV2Response.success(toResponse(backgroundTaskService.cancelOwnedTask(user, id)));
+    }
+
+    @PostMapping("/{id}/retry")
+    public ApiV2Response<BackgroundTaskResponse> retry(@AuthenticationPrincipal UserDetails userDetails,
+                                                       @PathVariable Long id) {
+        User user = userDetailsService.loadDomainUser(userDetails.getUsername());
+        return ApiV2Response.success(toResponse(backgroundTaskService.retryOwnedTask(user, id)));
     }
 
     @PostMapping("/archive")

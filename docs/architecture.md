@@ -74,7 +74,14 @@
 后端包结构：
 
 - `com.yoyuzh.auth`
-- `com.yoyuzh.files`
+- `com.yoyuzh.files.core`
+- `com.yoyuzh.files.upload`
+- `com.yoyuzh.files.share`
+- `com.yoyuzh.files.search`
+- `com.yoyuzh.files.events`
+- `com.yoyuzh.files.tasks`
+- `com.yoyuzh.files.storage`
+- `com.yoyuzh.files.policy`
 - `com.yoyuzh.transfer`
 - `com.yoyuzh.admin`
 - `com.yoyuzh.config`
@@ -124,8 +131,15 @@
 
 核心文件：
 
-- `backend/src/main/java/com/yoyuzh/files/FileController.java`
-- `backend/src/main/java/com/yoyuzh/files/FileService.java`
+- `backend/src/main/java/com/yoyuzh/files/core/FileController.java`
+- `backend/src/main/java/com/yoyuzh/files/core/FileService.java`
+- `backend/src/main/java/com/yoyuzh/files/upload/UploadSessionService.java`
+- `backend/src/main/java/com/yoyuzh/files/share/ShareV2Service.java`
+- `backend/src/main/java/com/yoyuzh/files/search/FileSearchService.java`
+- `backend/src/main/java/com/yoyuzh/files/events/FileEventService.java`
+- `backend/src/main/java/com/yoyuzh/files/tasks/BackgroundTaskService.java`
+- `backend/src/main/java/com/yoyuzh/files/policy/StoragePolicyService.java`
+- `backend/src/main/java/com/yoyuzh/api/v2/files/UploadSessionV2Controller.java`
 - `backend/src/main/java/com/yoyuzh/files/storage/*`
 - `front/src/pages/Files.tsx`
 
@@ -140,6 +154,7 @@
 
 关键实现说明：
 
+- `com.yoyuzh.files` 已按职责拆成 `core/upload/share/search/events/tasks/storage/policy` 八个子包，控制器路径、数据库表结构、接口路径和前端调用方式保持不变；这次调整只做包重组与引用修正，不改业务语义
 - 文件元数据在数据库
 - 文件内容通过独立 `FileBlob` 实体映射到底层对象；`StoredFile` 只负责用户、目录、文件名、路径、分享关系等逻辑元数据
 - 新文件的物理对象 key 使用全局 `blobs/...` 命名，不再把 `userId/path` 编进对象 key
@@ -151,6 +166,7 @@
 - 定时清理任务会删除超过 10 天的回收站条目；只有当某个 `FileBlob` 的最后一个逻辑引用随之消失时，才真正删除底层对象
 - 应用启动时会把旧 `portal_file.storage_name` 行自动回填到新的 `blob_id` 引用，保证存量数据能继续读取
 - 当前线上网盘文件存储已切到多吉云对象存储，后端先通过多吉云临时密钥 API 换取短期 S3 会话，再访问底层 COS 兼容桶
+- v2 上传会话后端现已支持按存储策略能力走真实 multipart：默认 S3 策略会在创建会话时初始化 `multipartUploadId`，分片上传通过预签名 `UploadPart` 直传对象存储，完成时先提交 multipart complete，再复用旧 `FileService.completeUpload()` 落库；本地策略仍保持 `multipartUpload=false`
 - 前端会缓存目录列表和最后访问路径
 - 桌面网盘页在左侧树状目录栏底部固定展示回收站入口；移动端在网盘页顶部提供回收站入口；两端共用独立 `RecycleBin` 页面调用 `/api/files/recycle-bin` 与恢复接口
 
@@ -446,13 +462,14 @@ Android 壳补充说明：
 - `StoredFile.blob` 仍是当前生产读取路径；`StoredFile.primaryEntity` 与关系表暂时只作为兼容迁移数据，不影响旧 `/api/files/**` DTO 和前端调用。
 - `portal_stored_file_entity.stored_file_id` 随 `portal_file` 删除级联清理；`portal_file_entity.created_by` 在用户删除时置空，避免实体审计关系阻塞用户清理。
 - 2026-04-08 阶段 3 第一小步补充：后端新增上传会话二期最小骨架。`UploadSession` 记录用户、目标路径、文件名、对象键、分片大小、分片数量、状态、过期时间和已上传分片占位 JSON；`/api/v2/files/upload-sessions` 目前只提供创建、查询、取消会话，不承接实际分片内容上传，也不替换旧 `/api/files/upload/**` 生产链路。
-- 2026-04-08 阶段 3 第二小步补充：上传会话新增完成状态机。`UploadSessionService.completeOwnedSession()` 会复用旧 `FileService.completeUpload()` 完成对象确认、目录补齐、配额/冲突校验和 `FileBlob + StoredFile + FileEntity.VERSION` 双写落库，然后把会话标记为 `COMPLETED`；失败时标记 `FAILED`，过期时标记 `EXPIRED`。当前仍没有独立 v2 分片内容写入端点。
+- 2026-04-08 阶段 3 第二小步补充：上传会话新增完成状态机。`UploadSessionService.completeOwnedSession()` 会复用旧 `FileService.completeUpload()` 完成对象确认、目录补齐、配额/冲突校验和 `FileBlob + StoredFile + FileEntity.VERSION` 双写落库，然后把会话标记为 `COMPLETED`；失败时标记 `FAILED`，过期时标记 `EXPIRED`。当时仍没有独立 v2 分片内容写入端点。
 - 2026-04-08 阶段 3 第三小步补充：上传会话新增 part 状态记录。`UploadSessionService.recordUploadedPart()` 会校验会话归属、状态、过期时间和 part 范围，把 `etag/size/uploadedAt` 写入 `uploadedPartsJson`，并将新会话推进到 `UPLOADING`。当前实现是会话状态跟踪，不是跨存储驱动的分片内容写入/合并实现。
 - 2026-04-08 阶段 3 第四小步补充：上传会话新增定时过期清理。`UploadSessionService.pruneExpiredSessions()` 每小时扫描未完成且已过期的 `CREATED/UPLOADING/COMPLETING` 会话，尝试删除 `objectKey` 对应的临时 blob，然后标记为 `EXPIRED`。已完成文件不参与清理，避免误删已经落库的生产对象。
-- 2026-04-08 阶段 4 第一小步补充：后端新增存储策略骨架。`StoragePolicyService` 作为 `CommandLineRunner` 在启动时确保存在默认策略，并把当前 `FileStorageProperties` 映射为 `LOCAL` 或 `S3_COMPATIBLE` 策略及 `StoragePolicyCapabilities` JSON；当前能力声明中 `multipartUpload=false`，用于明确真实对象存储分片写入/合并还没有启用。`UploadSession.storagePolicyId` 开始记录默认策略 ID，但 `FileContentStorage` 仍保持单对象上传/校验抽象，旧 `/api/files/**` 生产路径不切换。
-- 2026-04-08 `files/storage` 合并补充：S3 存储实现拆出多吉云临时密钥客户端与运行期会话提供器。`S3FileContentStorage` 现在通过 `S3SessionProvider.currentSession()` 获取当前 bucket、`S3Client` 和 `S3Presigner`，避免每次操作重复内联多吉云 token 解析逻辑；测试环境可直接注入 mock S3 client/presigner。该改动没有引入 multipart，仍是单对象 PUT/HEAD/GET/COPY/DELETE 路径。
+- 2026-04-08 阶段 4 第一小步补充：后端新增存储策略骨架。`StoragePolicyService` 作为 `CommandLineRunner` 在启动时确保存在默认策略，并把当前 `FileStorageProperties` 映射为 `LOCAL` 或 `S3_COMPATIBLE` 策略及 `StoragePolicyCapabilities` JSON；当时能力声明里的 `multipartUpload=false` 用于明确真实对象存储分片写入/合并还没有启用。`UploadSession.storagePolicyId` 开始记录默认策略 ID，但旧 `/api/files/**` 生产路径当时仍不切换。
+- 2026-04-08 `files/storage` 合并补充：S3 存储实现拆出多吉云临时密钥客户端与运行期会话提供器。`S3FileContentStorage` 现在通过 `S3SessionProvider.currentSession()` 获取当前 bucket、`S3Client` 和 `S3Presigner`，避免每次操作重复内联多吉云 token 解析逻辑；测试环境可直接注入 mock S3 client/presigner。当时该改动还没有引入 multipart，仍是单对象 PUT/HEAD/GET/COPY/DELETE 路径。
 - 2026-04-08 阶段 4 第二小步补充：`FileService` 在创建新的 `FileEntity.VERSION` 时会通过 `StoragePolicyService.ensureDefaultPolicy()` 写入默认 `storagePolicyId`；`FileEntityBackfillService` 对历史 `FileBlob` 回填新实体时也写入同一默认策略。复用已有实体时保持原策略字段不变，只增加引用计数，避免在兼容迁移阶段覆盖历史数据。
-- 2026-04-08 阶段 4 第三小步补充：管理台新增只读存储策略列表。`AdminController` 暴露 `GET /api/admin/storage-policies`，`AdminService` 通过白名单 DTO 返回策略基础字段和结构化 `StoragePolicyCapabilities`；前端 `react-admin` 新增 `storagePolicies` 资源展示能力矩阵。该能力只做配置可视化，不改变旧上传下载路径，不暴露凭证，不启用策略编辑或 multipart。
+- 2026-04-08 阶段 4 第三小步补充：管理台新增只读存储策略列表。`AdminController` 暴露 `GET /api/admin/storage-policies`，`AdminService` 通过白名单 DTO 返回策略基础字段和结构化 `StoragePolicyCapabilities`；前端 `react-admin` 新增 `storagePolicies` 资源展示能力矩阵。该能力只做配置可视化，不改变旧上传下载路径，也不暴露凭证或提供策略编辑能力。
+- 2026-04-09 上传会话二期补充：`FileContentStorage` 抽象已新增 `createMultipartUpload/prepareMultipartPartUpload/completeMultipartUpload/abortMultipartUpload`；`S3FileContentStorage` 基于预签名 `UploadPart` 与 S3 `Complete/AbortMultipartUpload` 实现真实 multipart。`UploadSession` 新增 `multipartUploadId`，`UploadSessionService.createSession()` 会在默认策略声明 `multipartUpload=true` 时初始化 uploadId，并通过 `GET /api/v2/files/upload-sessions/{sessionId}/parts/{partIndex}/prepare` 返回单分片直传地址。会话完成时先按 `uploadedPartsJson` 提交 multipart complete，再复用旧上传完成链路落库；过期清理则改为优先 abort 未完成 multipart。
 
 ## 2026-04-08 阶段 5 文件搜索第一小步
 
@@ -469,8 +486,8 @@ Android 壳补充说明：
 
 - 旧分享仍保留在 `/api/files/share-links/**`，用于兼容当前前端公开分享页和旧导入路径。
 - 新 v2 分享位于 `com.yoyuzh.api.v2.shares` 与 `ShareV2Service`；`FileShareLink` 新增 `passwordHash`、`expiresAt`、`maxDownloads`、`downloadCount`、`viewCount`、`allowImport`、`allowDownload`、`shareName` 策略字段。
-- 公开端点仅包括 `GET /api/v2/shares/{token}` 与 `POST /api/v2/shares/{token}/verify-password`；创建、导入、我的分享列表和删除仍需要登录。
-- 密码分享在校验前隐藏 `file` 详情；v2 导入会在复用旧导入落库链路前校验过期时间、密码、`allowImport` 和 `maxDownloads`。当前 `allowDownload` 只落库和返回，尚未接入独立 v2 下载路由。
+- 公开端点包括 `GET /api/v2/shares/{token}`、`POST /api/v2/shares/{token}/verify-password`，以及 `GET /api/v2/shares/{token}?download=1`；创建、导入、我的分享列表和删除仍需要登录。
+- 密码分享在校验前隐藏 `file` 详情；v2 导入会在复用旧导入落库链路前校验过期时间、密码、`allowImport` 和 `maxDownloads`。v2 下载也会统一校验过期时间、密码、`allowDownload` 和 `maxDownloads`，成功后复用现有文件下载链路并递增 `downloadCount`。
 
 ## 2026-04-08 阶段 5 文件事件流最小闭环
 
@@ -482,8 +499,14 @@ Android 壳补充说明：
 ## 2026-04-08 阶段 6 任务框架与 worker 后端最小骨架
 
 - 后端新增 `BackgroundTask` / `BackgroundTaskType` / `BackgroundTaskStatus` / `BackgroundTaskRepository` / `BackgroundTaskService`，用于承载后续压缩、解压、缩略图、媒体元数据和清理类后台工作。
-- 新增受保护的 `/api/v2/tasks/**`：`GET /api/v2/tasks`、`GET /api/v2/tasks/{id}`、`DELETE /api/v2/tasks/{id}`，以及 `POST /api/v2/tasks/archive`、`POST /api/v2/tasks/extract`、`POST /api/v2/tasks/media-metadata` 占位创建接口。
-- 任务创建入口集中在 `BackgroundTaskService` 校验 `StoredFile`：`fileId` 必须属于当前用户且未删除，请求 `path` 必须匹配由 `StoredFile.path + filename` 派生的真实逻辑路径；`ARCHIVE` 暂允许文件和目录，`EXTRACT` 仅允许压缩包类文件，`MEDIA_META` 仅允许媒体类文件。任务 public/private state 使用服务端派生的 `fileId`、`path`、`filename`、`directory`、`contentType`、`size`。
-- 当前实现新增了 worker 最小调度：定时扫描少量 `QUEUED` 任务，通过状态条件更新完成 claim，`MEDIA_META` 任务会进入独立 handler 写入基础媒体元数据与图片宽高，其余任务类型执行 no-op handler 后标记 `COMPLETED`；handler 异常会标记 `FAILED` 并记录错误原因，已取消任务不会被领取。
-- 当前仍不包含真实压缩、解压、缩略图、媒体元数据解析、重试/恢复策略或前端队列展示。
+- 新增受保护的 `/api/v2/tasks/**`：`GET /api/v2/tasks`、`GET /api/v2/tasks/{id}`、`DELETE /api/v2/tasks/{id}`、`POST /api/v2/tasks/{id}/retry`，以及 `POST /api/v2/tasks/archive`、`POST /api/v2/tasks/extract`、`POST /api/v2/tasks/media-metadata` 创建接口。
+- 任务创建入口集中在 `BackgroundTaskService` 校验 `StoredFile`：`fileId` 必须属于当前用户且未删除，请求 `path` 必须匹配由 `StoredFile.path + filename` 派生的真实逻辑路径；`ARCHIVE` 允许文件和目录，`EXTRACT` 当前只允许 zip-compatible 文件（`.zip/.jar/.war` 或 zip/java archive 内容类型），`MEDIA_META` 仅允许媒体类文件。任务 public/private state 使用服务端派生的 `fileId`、`path`、`filename`、`directory`、`contentType`、`size`；其中 `ARCHIVE` 还会写入 `outputPath/outputFilename`，`EXTRACT` 会写入 `outputPath/outputDirectoryName`。
+- 当前实现新增了 worker 调度与多实例 lease：定时先回收 lease 已过期的 `RUNNING` 任务，再扫描少量 `QUEUED` 任务，通过状态条件更新完成 claim，并写入持久化 `leaseOwner/leaseExpiresAt/heartbeatAt` 与公开 `workerOwner/heartbeatAt/leaseExpiresAt/startedAt`。运行中所有 progress/完成/失败更新都要求 owner 匹配，丢失 lease 的旧 worker 不会覆盖新状态。
+- `MEDIA_META` 任务会进入独立 handler 写入基础媒体元数据与图片宽高，并在公开 state 写入 `metadataStage`；`ARCHIVE` 任务会调用 `FileService.buildArchiveBytes(...)` 生成 zip 并回写同级目录；`EXTRACT` 任务会读取 zip-compatible 归档、剥离共享根目录或把单文件直接恢复到父目录，再通过 `FileService.importExternalFilesAtomically(...)` 做预检、批量导入和失败 blob 清理。
+- `BackgroundTaskService` 还会在 `publicStateJson` 里统一维护最小进度阶段 `phase`：创建时是 `queued`，claim 后进入 `running`，worker 开始执行时按任务类型细化成 `archiving` / `extracting` / `extracting-metadata`，完成/失败/取消时再收口为 `completed` / `failed` / `cancelled`。
+- `ARCHIVE` 与 `EXTRACT` 任务现在会在运行和完成阶段暴露真实条目计数：`processedFileCount/totalFileCount`、`processedDirectoryCount/totalDirectoryCount`，并基于真实总量计算 `progressPercent`。其中 `ARCHIVE` 按实际写入 zip entry 推进，`EXTRACT` 按实际创建目录和导入文件推进；`MEDIA_META` 则暴露阶段型 `metadataStage`。
+- 当前 `POST /api/v2/tasks/{id}/retry` 已支持最小手动重试：只有 `FAILED` 任务可以被当前用户重置回 `QUEUED`，并清空 `finishedAt/errorMessage`，按 `privateStateJson` 重建公开 state，同时把 `attemptCount` 重置回 0。
+- `BackgroundTaskStartupRecovery` 现在只会在服务启动完成后回收 lease 已过期或历史上缺少 lease 的 `RUNNING` 任务，恢复时按 `privateStateJson` 重建公开 state；不会再无条件重排所有 `RUNNING` 任务。
+- worker 现在会按失败分类和任务类型做自动重试：失败会归到 `UNSUPPORTED_INPUT`、`DATA_STATE`、`TRANSIENT_INFRASTRUCTURE`、`RATE_LIMITED`、`UNKNOWN`；其中 `ARCHIVE` 默认最多 4 次、`EXTRACT` 最多 3 次、`MEDIA_META` 最多 2 次，公开 state 会暴露 `attemptCount/maxAttempts/retryScheduled/nextRetryAt/retryDelaySeconds/lastFailureMessage/lastFailureAt/failureCategory`。
+- 当前仍不包含非 zip 解压格式、缩略图/视频时长任务，以及 archive/extract 的前端入口。
 - 桌面端 `front/src/pages/Files.tsx` 已接入最近 10 条后台任务查看与取消入口，并可为当前选中文件创建 `MEDIA_META` 任务；移动端与 archive/extract 的前端入口仍未接入。

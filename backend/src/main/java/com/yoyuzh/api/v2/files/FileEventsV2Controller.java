@@ -2,7 +2,7 @@ package com.yoyuzh.api.v2.files;
 
 import com.yoyuzh.auth.CustomUserDetailsService;
 import com.yoyuzh.auth.User;
-import com.yoyuzh.files.FileEventService;
+import com.yoyuzh.files.events.FileEventService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.core.userdetails.UserDetails;

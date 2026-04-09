@@ -2,9 +2,9 @@ package com.yoyuzh.api.v2.files;
 
 import com.yoyuzh.auth.CustomUserDetailsService;
 import com.yoyuzh.auth.User;
-import com.yoyuzh.files.UploadSession;
-import com.yoyuzh.files.UploadSessionService;
-import com.yoyuzh.files.UploadSessionStatus;
+import com.yoyuzh.files.upload.UploadSession;
+import com.yoyuzh.files.upload.UploadSessionService;
+import com.yoyuzh.files.upload.UploadSessionStatus;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.MediaType;
@@ -19,6 +19,7 @@ import org.springframework.web.method.support.HandlerMethodArgumentResolver;
 import org.springframework.web.method.support.ModelAndViewContainer;
 
 import java.time.LocalDateTime;
+import java.util.Map;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
@@ -69,6 +70,7 @@ class UploadSessionV2ControllerTest {
                 .andExpect(jsonPath("$.data.sessionId").value("session-1"))
                 .andExpect(jsonPath("$.data.objectKey").value("blobs/session-1"))
                 .andExpect(jsonPath("$.data.status").value("CREATED"))
+                .andExpect(jsonPath("$.data.multipartUpload").value(true))
                 .andExpect(jsonPath("$.data.chunkSize").value(8388608))
                 .andExpect(jsonPath("$.data.chunkCount").value(3));
     }
@@ -85,7 +87,8 @@ class UploadSessionV2ControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value(0))
                 .andExpect(jsonPath("$.data.sessionId").value("session-1"))
-                .andExpect(jsonPath("$.data.status").value("CREATED"));
+                .andExpect(jsonPath("$.data.status").value("CREATED"))
+                .andExpect(jsonPath("$.data.multipartUpload").value(true));
     }
 
     @Test
@@ -125,6 +128,29 @@ class UploadSessionV2ControllerTest {
                 .andExpect(jsonPath("$.code").value(0))
                 .andExpect(jsonPath("$.data.sessionId").value("session-1"))
                 .andExpect(jsonPath("$.data.status").value("UPLOADING"));
+    }
+
+    @Test
+    void shouldPrepareMultipartPartUploadWithV2Envelope() throws Exception {
+        User user = createUser(7L);
+        when(userDetailsService.loadDomainUser("alice")).thenReturn(user);
+        when(uploadSessionService.prepareOwnedPartUpload(user, "session-1", 1))
+                .thenReturn(new com.yoyuzh.files.storage.PreparedUpload(
+                        true,
+                        "https://upload.example.com/session-1/part-2",
+                        "PUT",
+                        Map.of("Content-Type", "video/mp4"),
+                        "blobs/session-1"
+                ));
+
+        mockMvc.perform(get("/api/v2/files/upload-sessions/session-1/parts/1/prepare")
+                        .with(user(userDetails())))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(0))
+                .andExpect(jsonPath("$.data.direct").value(true))
+                .andExpect(jsonPath("$.data.uploadUrl").value("https://upload.example.com/session-1/part-2"))
+                .andExpect(jsonPath("$.data.method").value("PUT"))
+                .andExpect(jsonPath("$.data.headers['Content-Type']").value("video/mp4"));
     }
 
     private UserDetails userDetails() {
@@ -172,6 +198,7 @@ class UploadSessionV2ControllerTest {
         session.setContentType("video/mp4");
         session.setSize(20L * 1024 * 1024);
         session.setObjectKey("blobs/session-1");
+        session.setMultipartUploadId("upload-123");
         session.setChunkSize(8L * 1024 * 1024);
         session.setChunkCount(3);
         session.setStatus(UploadSessionStatus.CREATED);

@@ -39,7 +39,7 @@ class AuthSingleDeviceIntegrationTest {
     private UserRepository userRepository;
 
     @Autowired
-    private com.yoyuzh.files.StoredFileRepository storedFileRepository;
+    private com.yoyuzh.files.core.StoredFileRepository storedFileRepository;
 
     @Autowired
     private RefreshTokenRepository refreshTokenRepository;

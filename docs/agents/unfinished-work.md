@@ -4,15 +4,35 @@
 
 本文只记录当前还没有完全收口的工作，方便后续窗口快速接上。新会话仍必须先读 `memory.md`、`docs/architecture.md`、`docs/api-reference.md`，再读本文。
 
+## 当前 files 后端结构
+
+`backend/src/main/java/com/yoyuzh/files` 已完成一次只改结构、不改语义的包清理，当前按职责拆为：
+
+- `com.yoyuzh.files.core`
+- `com.yoyuzh.files.upload`
+- `com.yoyuzh.files.share`
+- `com.yoyuzh.files.search`
+- `com.yoyuzh.files.events`
+- `com.yoyuzh.files.tasks`
+- `com.yoyuzh.files.storage`
+- `com.yoyuzh.files.policy`
+
+注意：
+
+- 旧的 API 路径、数据库表/字段、响应结构、前端调用方式都没改
+- 后续做 files 相关工作时，先按上面职责分区找类，不要再默认去平铺的 `com.yoyuzh.files.*` 根包下找
+- `FileService` 仍然是当前 files 子系统最重的协调类，后续若继续做结构优化，应优先评估它和 `FileController` 是否值得继续按用例拆分
+
 ## 当前 Git 状态
 
 - 当前分支：`dev`
 - 已推送到：`gitea/dev`
 - 最近已推送提交：`977eb60 feat(files): add v2 task and metadata workflows`
-- 当前未提交文件：
-  - `docs/superpowers/plans/2026-04-09-frontend-redesign-generation-spec.md`
+- 当前 worktree 不是干净状态：除本次后端 multipart / 后台任务相关文件外，还混有前端重构中的改动与若干新增文件；提交前先用 `git status` 逐项确认，不要批量回滚
 - 当前未跟踪但不要默认处理：
   - `.claude/`
+  - `docs/superpowers/plans/2026-04-09-multi-user-platform-upgrade-phase-2.md`
+  - 前端重构过程中新增的 `front/src/components/ui/*`、`front/src/mobile-pages/*`、`front/src/pages/files/*` 等文件
 
 ## 已写好的前端重设计说明书
 
@@ -90,22 +110,24 @@ npm run test
 
 不要在仓库根目录运行 `npm` 命令。
 
-### P1：阶段 6 后台任务继续真实化
+### P1：阶段 6 后台任务继续收口
 
 当前状态：
 
 - `/api/v2/tasks/**` 后端骨架已落地
 - worker 会领取 `QUEUED` 任务并切换状态
 - `MEDIA_META` 已有最小真实 handler，会写入基础媒体 metadata 和图片宽高
-- `ARCHIVE` / `EXTRACT` 仍是 no-op handler
+- `ARCHIVE` 已有真实 handler：会派生 `outputPath/outputFilename`，生成 zip 并回写同级目录
+- `EXTRACT` 已有真实 handler：当前只支持 zip-compatible 归档，会派生 `outputPath/outputDirectoryName`，剥离共享根目录，并在批量导入失败时清理已写入 blob
+- `/api/v2/tasks/**` 已有最小 progress 字段：`publicStateJson.phase` 会经历 `queued -> running -> archiving/extracting/extracting-metadata -> completed/failed/cancelled`
+- `ARCHIVE/EXTRACT` 还会暴露真实计数字段：`processedFileCount/totalFileCount`、`processedDirectoryCount/totalDirectoryCount` 与真实 `progressPercent`
+- 后台任务已有按任务类型区分的自动重试：`ARCHIVE` 默认最多 4 次、`EXTRACT` 最多 3 次、`MEDIA_META` 最多 2 次；失败会归类为 `UNSUPPORTED_INPUT/DATA_STATE/TRANSIENT_INFRASTRUCTURE/RATE_LIMITED/UNKNOWN`，自动重试时会写入 `retryScheduled/nextRetryAt/retryDelaySeconds/lastFailureMessage/lastFailureAt/failureCategory`
+- `/api/v2/tasks/{id}/retry` 已支持最小手动重试：仅 `FAILED` 任务可由当前用户重置回 `QUEUED`，并清空 `finishedAt/errorMessage`
+- worker 已有 heartbeat 与多实例 lease：运行中会暴露 `workerOwner/heartbeatAt/leaseExpiresAt/startedAt`，服务启动和调度前都只回收 lease 已过期的 `RUNNING` 任务
+- `BackgroundTaskV2ControllerIntegrationTest` 已补 worker 驱动的 archive/extract 完成态与 extract 失败态端到端覆盖
 
 后续未完成：
 
-- 真实压缩任务
-- 真实解压任务
-- 任务重试策略
-- 服务重启后的 `RUNNING` 任务恢复策略
-- 更完整的任务进度字段
 - 前端任务面板自动轮询或 SSE 化
 - 移动端任务入口
 
@@ -115,11 +137,10 @@ npm run test
 
 - v2 分享后端骨架已落地
 - 支持密码、过期时间、导入开关、下载次数相关字段、我的分享、删除
-- `allowDownload` 已落库并返回
+- `allowDownload` 已接入 `GET /api/v2/shares/{token}?download=1`，会校验密码、过期、下载开关和下载次数并递增 `downloadCount`
 
 后续未完成：
 
-- 独立 v2 下载路由消费 `allowDownload`
 - 前端分享二期设置界面
 - 公开分享页的密码输入与过期/次数提示体验
 
@@ -127,14 +148,15 @@ npm run test
 
 当前状态：
 
-- v2 upload session 创建、查询、取消、complete、part metadata 和过期清理骨架已落地
-- 当前只记录会话和 part metadata，不做真实对象存储 multipart
+- v2 upload session 后端已补齐创建、查询、取消、prepare-part、record-part、complete 和过期清理
+- `FileContentStorage` 已新增 multipart 抽象；`S3FileContentStorage` 已实现 create/upload-part/complete/abort
+- 默认 S3 存储策略现在会声明 `multipartUpload=true`；创建会话时会生成 `multipartUploadId`，v2 响应会返回 `multipartUpload`
+- `GET /api/v2/files/upload-sessions/{sessionId}/parts/{partIndex}/prepare` 已可返回单分片直传地址；`POST /complete` 会先提交 multipart complete，再复用旧 `FileService.completeUpload()` 落库
+- 过期清理已从普通 `deleteBlob` 升级为对未完成 multipart 执行 abort
+- 前端上传队列仍未切到 v2 upload session
 
 后续未完成：
 
-- 在 `FileContentStorage` 抽象层补 multipart 能力语义
-- S3 multipart 的 create/upload-part/complete/abort
-- 过期清理从普通 `deleteBlob` 升级为可 abort 未完成 multipart
 - 前端上传队列切到 v2 session
 
 ### P2：存储策略继续推进
@@ -149,8 +171,7 @@ npm run test
 
 - 管理台新增/编辑/停用策略
 - 多策略迁移任务
-- 按策略能力决定上传路径
-- 真正启用 multipart 能力
+- 按策略能力决定上传路径与前端上传策略
 
 ## 当前本地运行状态
 

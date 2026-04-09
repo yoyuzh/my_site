@@ -177,7 +177,7 @@
 
 控制器：
 
-- `backend/src/main/java/com/yoyuzh/files/FileController.java`
+- `backend/src/main/java/com/yoyuzh/files/core/FileController.java`
 
 ### 3.1 上传相关
 
@@ -245,6 +245,25 @@
 - 公开访客可查看分享详情
 - 登录用户可将分享内容导入自己的网盘
 - 普通文件导入时会新建自己的 `StoredFile` 并复用源 `FileBlob`，不会再次写入物理文件
+
+### 3.6 v2 上传会话
+
+- `POST /api/v2/files/upload-sessions`
+- `GET /api/v2/files/upload-sessions/{sessionId}`
+- `DELETE /api/v2/files/upload-sessions/{sessionId}`
+- `GET /api/v2/files/upload-sessions/{sessionId}/parts/{partIndex}/prepare`
+- `PUT /api/v2/files/upload-sessions/{sessionId}/parts/{partIndex}`
+- `POST /api/v2/files/upload-sessions/{sessionId}/complete`
+
+说明：
+
+- 需要登录，只允许操作当前用户自己的上传会话
+- 会话响应返回 `sessionId`、`objectKey`、`multipartUpload`、`path`、`filename`、`contentType`、`size`、`storagePolicyId`、`status`、`chunkSize`、`chunkCount`、`expiresAt`、`createdAt`、`updatedAt`
+- 默认 S3 存储策略下，创建会话时会立即初始化 multipart upload，并把 `multipartUpload=true` 返回给客户端；本地策略仍会返回 `multipartUpload=false`
+- `GET /parts/{partIndex}/prepare` 会返回当前分片的直传信息：`direct`、`uploadUrl`、`method`、`headers`、`storageName`
+- `PUT /parts/{partIndex}` 请求体仍为 `{ "etag": "...", "size": 8388608 }`，只负责记录 part 元数据，不直接接收字节流
+- `POST /complete` 会先按已记录的 part 元数据提交 multipart complete，再复用旧上传完成链路写入 `FileBlob + StoredFile + FileEntity.VERSION`
+- 后端每小时清理过期且未完成的会话；若会话已绑定 multipart upload，会优先向对象存储发送 abort
 
 ## 4. 快传模块
 
@@ -389,7 +408,7 @@
 - 需要管理员登录
 - 返回当前存储策略的只读列表和结构化能力声明
 - 当前仅用于管理台查看默认策略、启用状态、存储类型和能力矩阵，不支持新增、编辑、启停或删除策略
-- `capabilities.multipartUpload` 当前仍为能力声明字段，不代表真实对象存储 multipart 已启用
+- `capabilities.multipartUpload` 现在会反映默认策略是否支持 v2 上传会话 multipart；当前默认 S3 策略为 `true`，本地策略为 `false`
 
 ## 6. 前端公开路由与接口关系
 
@@ -452,11 +471,11 @@
 - 本阶段不新增对外 API，`/api/files/**`、分享、回收站、快传导入等响应结构保持不变。
 - 后端在旧接口内部开始双写实体模型：上传完成、外部导入、分享导入和网盘复制会继续写 `FileBlob`，同时创建或复用 `FileEntity.VERSION`，并写入 `StoredFile.primaryEntity` 与 `StoredFileEntity(PRIMARY)`。
 - 下载、分享详情、回收站、ZIP 下载仍读取 `StoredFile.blob`；后续阶段稳定后再切换到 `primaryEntity` 读取。
-- 2026-04-08 阶段 3 第一小步 API 补充：新增受保护的 v2 上传会话骨架接口，`POST /api/v2/files/upload-sessions` 创建会话，`GET /api/v2/files/upload-sessions/{sessionId}` 查询当前用户自己的会话，`DELETE /api/v2/files/upload-sessions/{sessionId}` 取消会话。当前响应只返回 `sessionId`、`objectKey`、路径、文件名、状态、分片大小、分片数量和时间字段；实际文件内容仍走旧上传链路，尚未开放 v2 分片上传/完成接口。
-- 2026-04-08 阶段 3 第二小步 API 补充：新增 `POST /api/v2/files/upload-sessions/{sessionId}/complete`，用于把当前用户自己的上传会话提交完成。该接口当前不接收请求体，会复用会话里的 `objectKey/path/filename/contentType/size` 调用旧上传完成落库链路，成功后返回 `COMPLETED` 状态的 v2 会话响应；分片内容上传端点仍未开放。
-- 2026-04-08 阶段 3 第三小步 API 补充：新增 `PUT /api/v2/files/upload-sessions/{sessionId}/parts/{partIndex}`，请求体为 `{ "etag": "...", "size": 8388608 }`，用于记录当前用户上传会话的 part 元数据并返回 v2 会话响应。该接口会校验 part 范围和会话状态，当前只更新 `uploadedPartsJson`，不接收或合并真实文件分片内容。
-- 2026-04-08 阶段 3 第四小步 API 补充：本小步没有新增对外 API。后端新增上传会话过期清理任务，只处理未完成且已过期的会话，并把它们标记为 `EXPIRED`；已完成会话和旧 `/api/files/**` 上传接口响应不变。
-- 2026-04-08 阶段 4 第一小步 API 补充：本小步没有新增存储策略管理 API。v2 上传会话响应新增 `storagePolicyId`，用于标识该会话绑定的默认存储策略；当前该字段只服务后续 multipart/多策略迁移，旧 `/api/files/**` 上传下载接口响应不变。
+- 2026-04-08 阶段 3 第一小步 API 补充：新增受保护的 v2 上传会话接口族，`POST /api/v2/files/upload-sessions` 创建会话，`GET /api/v2/files/upload-sessions/{sessionId}` 查询当前用户自己的会话，`DELETE /api/v2/files/upload-sessions/{sessionId}` 取消会话。当前响应会返回 `sessionId`、`objectKey`、`multipartUpload`、路径、文件名、状态、分片大小、分片数量和时间字段。
+- 2026-04-08 阶段 3 第二小步 API 补充：`POST /api/v2/files/upload-sessions/{sessionId}/complete` 用于把当前用户自己的上传会话提交完成。当前默认 S3 策略下，该接口会先完成 multipart 合并，再复用旧上传完成链路落库，成功后返回 `COMPLETED` 状态的 v2 会话响应。
+- 2026-04-08 阶段 3 第三小步 API 补充：`PUT /api/v2/files/upload-sessions/{sessionId}/parts/{partIndex}` 请求体为 `{ "etag": "...", "size": 8388608 }`，用于记录当前用户上传会话的 part 元数据并返回 v2 会话响应；`GET /api/v2/files/upload-sessions/{sessionId}/parts/{partIndex}/prepare` 则返回该分片的直传地址和请求头。字节流仍直接上传到对象存储，不经过后端转发。
+- 2026-04-08 阶段 3 第四小步 API 补充：本小步没有新增额外资源类型。后端新增上传会话过期清理任务，只处理未完成且已过期的会话，并把它们标记为 `EXPIRED`；若会话绑定了 multipart upload，还会在清理时发起 abort。
+- 2026-04-08 阶段 4 第一小步 API 补充：本小步没有新增存储策略管理 API。v2 上传会话响应新增 `storagePolicyId`，用于标识该会话绑定的默认存储策略；该字段现在也用于区分会话是否应按策略能力走 multipart 上传。
 
 ## 2026-04-08 阶段 5 文件搜索第一小步
 
@@ -546,13 +565,26 @@
 
 需要登录。取消当前用户自己的任务，`QUEUED` / `RUNNING` 会转为 `CANCELLED` 并写入 `finishedAt`，终态任务保持原样。
 
+`POST /api/v2/tasks/{id}/retry`
+
+需要登录。仅允许当前用户重试自己处于 `FAILED` 的后台任务。
+
+补充说明：
+
+- 成功后任务状态会重置为 `QUEUED`
+- `finishedAt` 与 `errorMessage` 会被清空
+- `publicStateJson.phase` 会重置为 `queued`
+- `publicStateJson.attemptCount` 会重置为 `0`
+- 公开 state 会按服务端保存的 `privateStateJson` 重建，因此失败执行时写入的瞬时字段不会保留
+- 非 `FAILED` 任务调用会返回 `400`
+
 `POST /api/v2/tasks/archive`
 
-需要登录。创建 `ARCHIVE` 类型的 `QUEUED` 任务；`fileId` 必须属于当前用户且未删除，`path` 必须匹配服务端派生逻辑路径，暂允许文件和目录；当前 worker 只做 no-op 占位完成，不执行真实压缩。
+需要登录。创建 `ARCHIVE` 类型的 `QUEUED` 任务；`fileId` 必须属于当前用户且未删除，`path` 必须匹配服务端派生逻辑路径，暂允许文件和目录；当前 worker 会生成 zip 并把归档结果回写到原文件同级目录。
 
 `POST /api/v2/tasks/extract`
 
-需要登录。创建 `EXTRACT` 类型的 `QUEUED` 任务；`fileId` 必须属于当前用户且未删除，`path` 必须匹配服务端派生逻辑路径，并拒绝目录和非压缩包类文件；当前 worker 只做 no-op 占位完成，不执行真实解压。
+需要登录。创建 `EXTRACT` 类型的 `QUEUED` 任务；`fileId` 必须属于当前用户且未删除，`path` 必须匹配服务端派生逻辑路径，并拒绝目录和非压缩包类文件；当前 worker 只支持 zip-compatible 归档，会剥离共享根目录，并把解压结果恢复到原文件父目录。
 
 `POST /api/v2/tasks/media-metadata`
 
@@ -561,6 +593,12 @@
 补充说明：
 
 - worker 会定时领取少量 `QUEUED` 任务并切换为 `RUNNING`，完成后标记 `COMPLETED`，异常时标记 `FAILED` 并写入 `errorMessage`。
+- `publicStateJson.phase` 当前会经历 `queued -> running -> archiving/extracting/extracting-metadata -> completed/failed/cancelled` 这样的最小阶段流转。
+- `publicStateJson` 还会暴露 `attemptCount/maxAttempts`；当前默认预算为 `ARCHIVE=4`、`EXTRACT=3`、`MEDIA_META=2`。
+- 任务进入 `RUNNING` 后，`publicStateJson` 会额外暴露 `workerOwner/heartbeatAt/leaseExpiresAt/startedAt`，用于描述当前 worker 的 lease 和 heartbeat；终态或重排回队列后会移除运行态 owner/lease 字段。
+- `ARCHIVE/EXTRACT` 任务还会在 `publicStateJson` 里暴露 `processedFileCount/totalFileCount`、`processedDirectoryCount/totalDirectoryCount` 与真实 `progressPercent`；`MEDIA_META` 会额外暴露 `metadataStage`。
+- 当 worker 命中失败时，任务会按失败分类写入 `failureCategory`。`TRANSIENT_INFRASTRUCTURE`、`RATE_LIMITED` 与部分 `UNKNOWN` 失败会按任务类型退避自动重排回 `QUEUED`，并在 `publicStateJson` 写入 `retryScheduled=true`、`nextRetryAt`、`retryDelaySeconds`、`lastFailureMessage`、`lastFailureAt`；`UNSUPPORTED_INPUT` 与 `DATA_STATE` 这类确定性失败不会自动重试。
 - 已取消或其他终态任务不会被重新执行。
+- 服务重启后，只有 lease 已过期或历史上没有 lease 的 `RUNNING` 任务会在启动完成时被重置回 `QUEUED`，避免多实例下误抢仍在运行的 worker。
 - 创建成功后的任务 state 使用服务端文件信息，至少包含 `fileId`、`path`、`filename`、`directory`、`contentType`、`size`。
 - 桌面端 `Files` 页面会拉取最近 10 条任务、提供 `QUEUED/RUNNING` 取消按钮，并可为当前选中文件创建 `MEDIA_META` 任务；移动端与 archive/extract 的前端入口暂未接入。

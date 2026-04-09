@@ -9,22 +9,31 @@ import org.springframework.web.multipart.MultipartFile;
 import software.amazon.awssdk.core.ResponseBytes;
 import software.amazon.awssdk.core.sync.RequestBody;
 import software.amazon.awssdk.http.SdkHttpMethod;
+import software.amazon.awssdk.services.s3.model.AbortMultipartUploadRequest;
+import software.amazon.awssdk.services.s3.model.CompleteMultipartUploadRequest;
+import software.amazon.awssdk.services.s3.model.CompletedMultipartUpload;
+import software.amazon.awssdk.services.s3.model.CompletedPart;
 import software.amazon.awssdk.services.s3.model.CopyObjectRequest;
+import software.amazon.awssdk.services.s3.model.CreateMultipartUploadRequest;
 import software.amazon.awssdk.services.s3.model.DeleteObjectRequest;
 import software.amazon.awssdk.services.s3.model.GetObjectRequest;
 import software.amazon.awssdk.services.s3.model.HeadObjectRequest;
 import software.amazon.awssdk.services.s3.model.NoSuchKeyException;
 import software.amazon.awssdk.services.s3.model.PutObjectRequest;
 import software.amazon.awssdk.services.s3.model.S3Exception;
+import software.amazon.awssdk.services.s3.model.UploadPartRequest;
+import software.amazon.awssdk.services.s3.presigner.model.PresignedUploadPartRequest;
 import software.amazon.awssdk.services.s3.presigner.model.GetObjectPresignRequest;
 import software.amazon.awssdk.services.s3.presigner.model.PresignedGetObjectRequest;
 import software.amazon.awssdk.services.s3.presigner.model.PresignedPutObjectRequest;
 import software.amazon.awssdk.services.s3.presigner.model.PutObjectPresignRequest;
+import software.amazon.awssdk.services.s3.presigner.model.UploadPartPresignRequest;
 
 import java.io.IOException;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -157,6 +166,90 @@ public class S3FileContentStorage implements FileContentStorage {
                     .build());
         } catch (S3Exception ex) {
             throw new BusinessException(ErrorCode.UNKNOWN, "File delete failed");
+        }
+    }
+
+    @Override
+    public String createMultipartUpload(String objectKey, String contentType) {
+        S3FileRuntimeSession session = sessionProvider.currentSession();
+        CreateMultipartUploadRequest.Builder requestBuilder = CreateMultipartUploadRequest.builder()
+                .bucket(session.bucket())
+                .key(normalizeObjectKey(objectKey));
+        if (StringUtils.hasText(contentType)) {
+            requestBuilder.contentType(contentType);
+        }
+        try {
+            return session.s3Client().createMultipartUpload(requestBuilder.build()).uploadId();
+        } catch (S3Exception ex) {
+            throw new BusinessException(ErrorCode.UNKNOWN, "Multipart upload init failed");
+        }
+    }
+
+    @Override
+    public PreparedUpload prepareMultipartPartUpload(String objectKey,
+                                                     String uploadId,
+                                                     int partNumber,
+                                                     String contentType,
+                                                     long size) {
+        S3FileRuntimeSession session = sessionProvider.currentSession();
+        UploadPartRequest uploadPartRequest = UploadPartRequest.builder()
+                .bucket(session.bucket())
+                .key(normalizeObjectKey(objectKey))
+                .uploadId(uploadId)
+                .partNumber(partNumber)
+                .contentLength(size)
+                .build();
+        UploadPartPresignRequest presignRequest = UploadPartPresignRequest.builder()
+                .signatureDuration(Duration.ofSeconds(Math.max(1, properties.getTtlSeconds())))
+                .uploadPartRequest(uploadPartRequest)
+                .build();
+        PresignedUploadPartRequest presignedRequest = session.s3Presigner().presignUploadPart(presignRequest);
+        Map<String, String> headers = flattenSignedHeaders(presignedRequest.signedHeaders());
+        if (StringUtils.hasText(contentType)) {
+            headers.put("Content-Type", contentType);
+        }
+        return new PreparedUpload(
+                true,
+                presignedRequest.url().toString(),
+                resolveUploadMethod(presignedRequest),
+                headers,
+                objectKey
+        );
+    }
+
+    @Override
+    public void completeMultipartUpload(String objectKey, String uploadId, List<MultipartCompletedPart> parts) {
+        S3FileRuntimeSession session = sessionProvider.currentSession();
+        List<CompletedPart> completedParts = parts.stream()
+                .sorted(Comparator.comparingInt(MultipartCompletedPart::partNumber))
+                .map(part -> CompletedPart.builder()
+                        .partNumber(part.partNumber())
+                        .eTag(part.etag())
+                        .build())
+                .toList();
+        try {
+            session.s3Client().completeMultipartUpload(CompleteMultipartUploadRequest.builder()
+                    .bucket(session.bucket())
+                    .key(normalizeObjectKey(objectKey))
+                    .uploadId(uploadId)
+                    .multipartUpload(CompletedMultipartUpload.builder().parts(completedParts).build())
+                    .build());
+        } catch (S3Exception ex) {
+            throw new BusinessException(ErrorCode.UNKNOWN, "Multipart upload complete failed");
+        }
+    }
+
+    @Override
+    public void abortMultipartUpload(String objectKey, String uploadId) {
+        S3FileRuntimeSession session = sessionProvider.currentSession();
+        try {
+            session.s3Client().abortMultipartUpload(AbortMultipartUploadRequest.builder()
+                    .bucket(session.bucket())
+                    .key(normalizeObjectKey(objectKey))
+                    .uploadId(uploadId)
+                    .build());
+        } catch (S3Exception ex) {
+            throw new BusinessException(ErrorCode.UNKNOWN, "Multipart upload abort failed");
         }
     }
 
@@ -328,6 +421,13 @@ public class S3FileContentStorage implements FileContentStorage {
             return "PUT";
         }
         return presignedRequest.httpRequest().method() == SdkHttpMethod.PUT ? "PUT" : "POST";
+    }
+
+    private String resolveUploadMethod(PresignedUploadPartRequest presignedRequest) {
+        if (presignedRequest.httpRequest() == null) {
+            return "PUT";
+        }
+        return presignedRequest.httpRequest().method() == SdkHttpMethod.PUT ? "PUT" : presignedRequest.httpRequest().method().name();
     }
 
     private Map<String, String> resolveUploadHeaders(PresignedPutObjectRequest presignedRequest, String contentType) {

@@ -5,6 +5,7 @@ import java.time.LocalDateTime;
 public record UploadSessionV2Response(
         String sessionId,
         String objectKey,
+        boolean multipartUpload,
         String path,
         String filename,
         String contentType,

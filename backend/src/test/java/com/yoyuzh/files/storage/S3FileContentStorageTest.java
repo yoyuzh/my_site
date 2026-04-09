@@ -11,7 +11,13 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import software.amazon.awssdk.core.ResponseBytes;
 import software.amazon.awssdk.core.sync.RequestBody;
 import software.amazon.awssdk.services.s3.S3Client;
+import software.amazon.awssdk.services.s3.model.AbortMultipartUploadRequest;
+import software.amazon.awssdk.services.s3.model.CompleteMultipartUploadRequest;
+import software.amazon.awssdk.services.s3.model.CompleteMultipartUploadResponse;
+import software.amazon.awssdk.services.s3.model.CompletedPart;
 import software.amazon.awssdk.services.s3.model.CopyObjectRequest;
+import software.amazon.awssdk.services.s3.model.CreateMultipartUploadRequest;
+import software.amazon.awssdk.services.s3.model.CreateMultipartUploadResponse;
 import software.amazon.awssdk.services.s3.model.DeleteObjectRequest;
 import software.amazon.awssdk.services.s3.model.GetObjectRequest;
 import software.amazon.awssdk.services.s3.model.GetObjectResponse;
@@ -24,9 +30,12 @@ import software.amazon.awssdk.services.s3.presigner.S3Presigner;
 import software.amazon.awssdk.services.s3.presigner.model.GetObjectPresignRequest;
 import software.amazon.awssdk.services.s3.presigner.model.PresignedGetObjectRequest;
 import software.amazon.awssdk.services.s3.presigner.model.PresignedPutObjectRequest;
+import software.amazon.awssdk.services.s3.presigner.model.PresignedUploadPartRequest;
 import software.amazon.awssdk.services.s3.presigner.model.PutObjectPresignRequest;
+import software.amazon.awssdk.services.s3.presigner.model.UploadPartPresignRequest;
 
 import java.net.URL;
+import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -158,6 +167,70 @@ class S3FileContentStorageTest {
         verify(s3Client).deleteObject(deleteCaptor.capture());
         assertThat(deleteCaptor.getValue().bucket()).isEqualTo("demo-bucket");
         assertThat(deleteCaptor.getValue().key()).isEqualTo("users/7/docs/old.txt");
+    }
+
+    @Test
+    void createMultipartUploadStartsMultipartInConfiguredBucket() {
+        when(s3Client.createMultipartUpload(any(CreateMultipartUploadRequest.class)))
+                .thenReturn(CreateMultipartUploadResponse.builder().uploadId("upload-123").build());
+
+        String uploadId = storage.createMultipartUpload("blobs/object-1", "video/mp4");
+
+        assertThat(uploadId).isEqualTo("upload-123");
+        ArgumentCaptor<CreateMultipartUploadRequest> requestCaptor = ArgumentCaptor.forClass(CreateMultipartUploadRequest.class);
+        verify(s3Client).createMultipartUpload(requestCaptor.capture());
+        assertThat(requestCaptor.getValue().bucket()).isEqualTo("demo-bucket");
+        assertThat(requestCaptor.getValue().key()).isEqualTo("blobs/object-1");
+        assertThat(requestCaptor.getValue().contentType()).isEqualTo("video/mp4");
+    }
+
+    @Test
+    void prepareMultipartPartUploadSignsUploadPartRequest() throws Exception {
+        PresignedUploadPartRequest presignedRequest = org.mockito.Mockito.mock(PresignedUploadPartRequest.class);
+        when(presignedRequest.url()).thenReturn(new URL("https://upload.example.com/blobs/object-1?partNumber=2"));
+        when(s3Presigner.presignUploadPart(any(UploadPartPresignRequest.class))).thenReturn(presignedRequest);
+
+        PreparedUpload preparedUpload = storage.prepareMultipartPartUpload("blobs/object-1", "upload-123", 2, "video/mp4", 1024L);
+
+        assertThat(preparedUpload.direct()).isTrue();
+        assertThat(preparedUpload.method()).isEqualTo("PUT");
+        assertThat(preparedUpload.uploadUrl()).contains("partNumber=2");
+        ArgumentCaptor<UploadPartPresignRequest> requestCaptor = ArgumentCaptor.forClass(UploadPartPresignRequest.class);
+        verify(s3Presigner).presignUploadPart(requestCaptor.capture());
+        assertThat(requestCaptor.getValue().uploadPartRequest().bucket()).isEqualTo("demo-bucket");
+        assertThat(requestCaptor.getValue().uploadPartRequest().key()).isEqualTo("blobs/object-1");
+        assertThat(requestCaptor.getValue().uploadPartRequest().partNumber()).isEqualTo(2);
+        assertThat(requestCaptor.getValue().uploadPartRequest().uploadId()).isEqualTo("upload-123");
+    }
+
+    @Test
+    void completeMultipartUploadSubmitsSortedCompletedParts() {
+        when(s3Client.completeMultipartUpload(any(CompleteMultipartUploadRequest.class)))
+                .thenReturn(CompleteMultipartUploadResponse.builder().build());
+
+        storage.completeMultipartUpload("blobs/object-1", "upload-123", List.of(
+                new MultipartCompletedPart(2, "etag-2"),
+                new MultipartCompletedPart(1, "etag-1")
+        ));
+
+        ArgumentCaptor<CompleteMultipartUploadRequest> requestCaptor = ArgumentCaptor.forClass(CompleteMultipartUploadRequest.class);
+        verify(s3Client).completeMultipartUpload(requestCaptor.capture());
+        assertThat(requestCaptor.getValue().bucket()).isEqualTo("demo-bucket");
+        assertThat(requestCaptor.getValue().key()).isEqualTo("blobs/object-1");
+        assertThat(requestCaptor.getValue().uploadId()).isEqualTo("upload-123");
+        assertThat(requestCaptor.getValue().multipartUpload().parts()).extracting(CompletedPart::partNumber)
+                .containsExactly(1, 2);
+    }
+
+    @Test
+    void abortMultipartUploadCancelsRemoteMultipartState() {
+        storage.abortMultipartUpload("blobs/object-1", "upload-123");
+
+        ArgumentCaptor<AbortMultipartUploadRequest> requestCaptor = ArgumentCaptor.forClass(AbortMultipartUploadRequest.class);
+        verify(s3Client).abortMultipartUpload(requestCaptor.capture());
+        assertThat(requestCaptor.getValue().bucket()).isEqualTo("demo-bucket");
+        assertThat(requestCaptor.getValue().key()).isEqualTo("blobs/object-1");
+        assertThat(requestCaptor.getValue().uploadId()).isEqualTo("upload-123");
     }
 
     @Test

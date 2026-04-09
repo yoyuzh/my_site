@@ -4,14 +4,15 @@ import com.yoyuzh.api.v2.ApiV2Response;
 import com.yoyuzh.auth.CustomUserDetailsService;
 import com.yoyuzh.auth.User;
 import com.yoyuzh.common.PageResponse;
-import com.yoyuzh.files.FileMetadataResponse;
-import com.yoyuzh.files.ShareV2Service;
+import com.yoyuzh.files.core.FileMetadataResponse;
+import com.yoyuzh.files.share.ShareV2Service;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
+import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -41,6 +42,12 @@ public class ShareV2Controller {
     @GetMapping("/{token}")
     public ApiV2Response<ShareV2Response> getShare(@PathVariable String token) {
         return ApiV2Response.success(shareV2Service.getShare(token));
+    }
+
+    @GetMapping(value = "/{token}", params = "download")
+    public ResponseEntity<?> downloadShare(@PathVariable String token,
+                                           @RequestParam(required = false) String password) {
+        return shareV2Service.downloadSharedFile(token, password);
     }
 
     @PostMapping("/{token}/verify-password")

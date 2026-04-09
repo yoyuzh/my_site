@@ -1,6 +1,6 @@
 package com.yoyuzh.api.v2.shares;
 
-import com.yoyuzh.files.FileMetadataResponse;
+import com.yoyuzh.files.core.FileMetadataResponse;
 
 import java.time.LocalDateTime;
 
