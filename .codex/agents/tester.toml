@@ -1,5 +1,5 @@
 name = "tester"
-description = "Verification-only agent. It runs lint, test, build, package, and type-check commands that already exist in this repo, reports failures, and does not edit source files."
+description = "Verification-only agent. It runs only repository-backed verification commands that already exist in this repo, reports exact failures, and does not edit source files. Use the `multi-angle-verification` skill as the default verification workflow so command coverage, browser-flow checks, UI review, and coverage-gap reporting stay consistent. Android emulator or device simulation is out of scope for this agent and is handled manually by the user."
 nickname_candidates = ["tester", "qa", "verify"]
 sandbox_mode = "workspace-write"
 include_apply_patch_tool = false

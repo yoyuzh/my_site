@@ -159,6 +159,45 @@ export interface InitiateUploadResponse {
   storageName: string;
 }
 
+export type UploadSessionUploadMode = 'PROXY' | 'DIRECT_SINGLE' | 'DIRECT_MULTIPART';
+
+export interface UploadSessionStrategy {
+  prepareUrl: string | null;
+  proxyContentUrl: string | null;
+  partPrepareUrlTemplate: string | null;
+  partRecordUrlTemplate: string | null;
+  completeUrl: string;
+  proxyFormField: string | null;
+}
+
+export interface UploadSessionResponse {
+  sessionId: string;
+  objectKey: string;
+  directUpload: boolean;
+  multipartUpload: boolean;
+  uploadMode: UploadSessionUploadMode;
+  path: string;
+  filename: string;
+  contentType: string | null;
+  size: number;
+  storagePolicyId: number | null;
+  status: string;
+  chunkSize: number;
+  chunkCount: number;
+  expiresAt: string;
+  createdAt: string;
+  updatedAt: string;
+  strategy: UploadSessionStrategy;
+}
+
+export interface PreparedUploadResponse {
+  direct: boolean;
+  uploadUrl: string;
+  method: 'POST' | 'PUT';
+  headers: Record<string, string>;
+  storageName: string;
+}
+
 export interface DownloadUrlResponse {
   url: string;
 }

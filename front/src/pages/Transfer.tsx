@@ -65,6 +65,8 @@ import {
   resolveInitialTransferTab,
 } from './transfer-state';
 import TransferReceive from './TransferReceive';
+import { AppPageShell } from '@/src/components/ui/AppPageShell';
+import { PageToolbar } from '@/src/components/ui/PageToolbar';
 
 type SendPhase = 'idle' | 'creating' | 'waiting' | 'connecting' | 'uploading' | 'transferring' | 'completed' | 'error';
 
@@ -576,16 +578,8 @@ export default function Transfer() {
   }
 
   return (
-    <div className="flex-1 py-6 md:py-10">
-      <div className="mx-auto w-full max-w-4xl">
-        <div className="text-center mb-10">
-          <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-gradient-to-br from-[#336EFF] via-blue-500 to-cyan-400 shadow-lg shadow-[#336EFF]/20 mb-6">
-            <Send className="w-8 h-8 text-white" />
-          </div>
-          <h1 className="text-3xl font-bold text-white mb-3">快传</h1>
-          <p className="text-slate-400">在线快传走浏览器 P2P 一次性传输，离线快传会把文件存到站点存储里保留 7 天，可被反复接收。</p>
-        </div>
-
+    <AppPageShell toolbar={<PageToolbar title="文件快传" />}>
+      <div className="p-4 md:p-6 mx-auto w-full max-w-4xl">
         <div className="glass-panel border border-white/10 rounded-3xl overflow-hidden bg-[#0f172a]/80 backdrop-blur-xl shadow-2xl">
           {allowSend ? (
             <div className="flex border-b border-white/10">
@@ -1046,6 +1040,6 @@ export default function Transfer() {
           </motion.div>
         ) : null}
       </AnimatePresence>
-    </div>
+    </AppPageShell>
   );
 }

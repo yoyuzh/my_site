@@ -8,6 +8,8 @@ import com.yoyuzh.common.PageResponse;
 import com.yoyuzh.config.FileStorageProperties;
 import com.yoyuzh.files.events.FileEventService;
 import com.yoyuzh.files.events.FileEventType;
+import com.yoyuzh.files.policy.StoragePolicy;
+import com.yoyuzh.files.policy.StoragePolicyCapabilities;
 import com.yoyuzh.files.policy.StoragePolicyService;
 import com.yoyuzh.files.share.CreateFileShareLinkResponse;
 import com.yoyuzh.files.share.FileShareDetailsResponse;
@@ -159,6 +161,10 @@ public class FileService {
         validateUpload(user, normalizedPath, filename, request.size());
 
         String objectKey = createBlobObjectKey();
+        StoragePolicyCapabilities capabilities = resolveDefaultStoragePolicyCapabilities();
+        if (capabilities != null && !capabilities.directUpload()) {
+            return new InitiateUploadResponse(false, "", "POST", Map.of(), objectKey);
+        }
         PreparedUpload preparedUpload = fileContentStorage.prepareBlobUpload(
                 normalizedPath,
                 filename,
@@ -856,6 +862,13 @@ public class FileService {
         return storagePolicyService.ensureDefaultPolicy().getId();
     }
 
+    private StoragePolicyCapabilities resolveDefaultStoragePolicyCapabilities() {
+        if (storagePolicyService == null) {
+            return null;
+        }
+        return storagePolicyService.readCapabilities(storagePolicyService.ensureDefaultPolicy());
+    }
+
     private void savePrimaryEntityRelation(StoredFile storedFile, FileEntity primaryEntity) {
         if (storedFileEntityRepository == null) {
             return;
@@ -927,6 +940,14 @@ public class FileService {
 
     private void validateUpload(User user, String normalizedPath, String filename, long size) {
         long effectiveMaxUploadSize = Math.min(maxFileSize, user.getMaxUploadSizeBytes());
+        StoragePolicy defaultPolicy = storagePolicyService == null ? null : storagePolicyService.ensureDefaultPolicy();
+        StoragePolicyCapabilities capabilities = defaultPolicy == null ? null : storagePolicyService.readCapabilities(defaultPolicy);
+        if (defaultPolicy != null && defaultPolicy.getMaxSizeBytes() > 0) {
+            effectiveMaxUploadSize = Math.min(effectiveMaxUploadSize, defaultPolicy.getMaxSizeBytes());
+        }
+        if (capabilities != null && capabilities.maxObjectSize() > 0) {
+            effectiveMaxUploadSize = Math.min(effectiveMaxUploadSize, capabilities.maxObjectSize());
+        }
         if (size > effectiveMaxUploadSize) {
             throw new BusinessException(ErrorCode.UNKNOWN, "文件大小超出限制");
         }

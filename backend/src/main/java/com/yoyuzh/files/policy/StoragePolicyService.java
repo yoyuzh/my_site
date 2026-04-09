@@ -1,6 +1,8 @@
 package com.yoyuzh.files.policy;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.yoyuzh.common.BusinessException;
+import com.yoyuzh.common.ErrorCode;
 import com.yoyuzh.config.FileStorageProperties;
 import lombok.RequiredArgsConstructor;
 import org.springframework.boot.CommandLineRunner;
@@ -36,6 +38,19 @@ public class StoragePolicyService implements CommandLineRunner {
         } catch (Exception ex) {
             throw new IllegalStateException("Storage policy capabilities are invalid", ex);
         }
+    }
+
+    public String writeCapabilities(StoragePolicyCapabilities capabilities) {
+        try {
+            return objectMapper.writeValueAsString(capabilities);
+        } catch (Exception ex) {
+            throw new IllegalStateException("Storage policy capabilities cannot be serialized", ex);
+        }
+    }
+
+    public StoragePolicy getRequiredPolicy(Long policyId) {
+        return storagePolicyRepository.findById(policyId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.UNKNOWN, "存储策略不存在"));
     }
 
     private StoragePolicy createDefaultPolicy() {
@@ -93,14 +108,6 @@ public class StoragePolicyService implements CommandLineRunner {
         policy.setEnabled(true);
         policy.setDefaultPolicy(true);
         return policy;
-    }
-
-    private String writeCapabilities(StoragePolicyCapabilities capabilities) {
-        try {
-            return objectMapper.writeValueAsString(capabilities);
-        } catch (Exception ex) {
-            throw new IllegalStateException("Storage policy capabilities cannot be serialized", ex);
-        }
     }
 
     private String extractScopeBucketName(String scope) {

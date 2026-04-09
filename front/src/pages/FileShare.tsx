@@ -8,6 +8,8 @@ import { Button } from '@/src/components/ui/button';
 import { getFileShareDetails, importSharedFile } from '@/src/lib/file-share';
 import { normalizeNetdiskTargetPath } from '@/src/lib/netdisk-upload';
 import type { FileMetadata, FileShareDetailsResponse } from '@/src/lib/types';
+import { AppPageShell } from '@/src/components/ui/AppPageShell';
+import { PageToolbar } from '@/src/components/ui/PageToolbar';
 
 function formatFileSize(size: number) {
   if (size <= 0) {
@@ -97,15 +99,8 @@ export default function FileShare() {
   }
 
   return (
-    <div className="min-h-screen bg-[#07101D] px-4 py-10 text-white">
-      <div className="mx-auto w-full max-w-3xl">
-        <div className="mb-10 text-center">
-          <div className="mx-auto mb-5 flex h-16 w-16 items-center justify-center rounded-2xl bg-gradient-to-br from-cyan-500 via-sky-500 to-blue-500 shadow-lg shadow-cyan-500/20">
-            <Link2 className="h-8 w-8 text-white" />
-          </div>
-          <h1 className="text-3xl font-bold">网盘分享导入</h1>
-          <p className="mt-3 text-slate-400">打开分享链接后，可以把别人分享给你的文件直接导入到自己的网盘。</p>
-        </div>
+    <AppPageShell toolbar={<PageToolbar title="网盘分享导入" />}>
+      <div className="p-4 md:p-6 mx-auto w-full max-w-3xl h-full">
 
         <div className="rounded-3xl border border-white/10 bg-[#0f172a]/80 p-8 shadow-2xl backdrop-blur-xl">
           {loading ? (
@@ -204,6 +199,6 @@ export default function FileShare() {
         onClose={() => setPathPickerOpen(false)}
         onConfirm={handleImportToPath}
       />
-    </div>
+    </AppPageShell>
   );
 }

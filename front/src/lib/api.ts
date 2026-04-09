@@ -25,7 +25,13 @@ interface ApiBinaryUploadRequestInit {
   headers?: HeadersInit;
   method?: 'PUT' | 'POST';
   onProgress?: (progress: {loaded: number; total: number}) => void;
+  responseHeaders?: string[];
   signal?: AbortSignal;
+}
+
+export interface ApiBinaryUploadResponse {
+  status: number;
+  headers: Record<string, string>;
 }
 
 const AUTH_REFRESH_PATH = '/auth/refresh';
@@ -537,7 +543,7 @@ export function apiUploadRequest<T>(path: string, init: ApiUploadRequestInit): P
 export function apiBinaryUploadRequest(path: string, init: ApiBinaryUploadRequestInit) {
   const headers = new Headers(init.headers);
 
-  return new Promise<void>((resolve, reject) => {
+  return new Promise<ApiBinaryUploadResponse>((resolve, reject) => {
     const xhr = new XMLHttpRequest();
     let settled = false;
 
@@ -545,14 +551,14 @@ export function apiBinaryUploadRequest(path: string, init: ApiBinaryUploadReques
       init.signal?.removeEventListener('abort', handleAbortSignal);
     };
 
-    const resolveOnce = () => {
+    const resolveOnce = (value: ApiBinaryUploadResponse) => {
       if (settled) {
         return;
       }
 
       settled = true;
       detachAbortSignal();
-      resolve();
+      resolve(value);
     };
 
     const rejectOnce = (error: unknown) => {
@@ -613,7 +619,18 @@ export function apiBinaryUploadRequest(path: string, init: ApiBinaryUploadReques
 
     xhr.onload = () => {
       if (xhr.status >= 200 && xhr.status < 300) {
-        resolveOnce();
+        const responseHeaders = Object.fromEntries(
+          (init.responseHeaders ?? [])
+            .map((headerName) => {
+              const value = xhr.getResponseHeader(headerName);
+              return [headerName.toLowerCase(), value];
+            })
+            .filter((entry): entry is [string, string] => Boolean(entry[1])),
+        );
+        resolveOnce({
+          status: xhr.status,
+          headers: responseHeaders,
+        });
         return;
       }
 

@@ -436,13 +436,39 @@ test('apiBinaryUploadRequest sends raw file body to signed upload url', async ()
 
   request.triggerProgress(64, 128);
   request.triggerProgress(128, 128);
+  request.responseHeaders.set('etag', '"etag-1"');
   request.respond('', 200, 'text/plain');
 
-  await uploadPromise;
+  const payload = await uploadPromise;
+  assert.deepEqual(payload, {
+    status: 200,
+    headers: {},
+  });
   assert.deepEqual(progressCalls, [
     {loaded: 64, total: 128},
     {loaded: 128, total: 128},
   ]);
+});
+
+test('apiBinaryUploadRequest returns requested response headers', async () => {
+  const uploadPromise = apiBinaryUploadRequest('https://upload.example.com/object', {
+    method: 'PUT',
+    body: new Blob(['hello-oss']),
+    responseHeaders: ['etag'],
+  });
+
+  const request = FakeXMLHttpRequest.latest;
+  assert.ok(request);
+  request.responseHeaders.set('etag', '"etag-part-2"');
+  request.respond('', 200, 'text/plain');
+
+  const payload = await uploadPromise;
+  assert.deepEqual(payload, {
+    status: 200,
+    headers: {
+      etag: '"etag-part-2"',
+    },
+  });
 });
 
 test('apiUploadRequest supports aborting a single upload task', async () => {

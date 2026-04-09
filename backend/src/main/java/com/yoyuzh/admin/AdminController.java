@@ -1,10 +1,16 @@
 package com.yoyuzh.admin;
 
+import com.yoyuzh.api.v2.tasks.BackgroundTaskResponse;
+import com.yoyuzh.auth.CustomUserDetailsService;
+import com.yoyuzh.auth.User;
 import com.yoyuzh.common.ApiResponse;
 import com.yoyuzh.common.PageResponse;
+import com.yoyuzh.files.tasks.BackgroundTask;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
@@ -25,6 +31,7 @@ import java.util.List;
 public class AdminController {
 
     private final AdminService adminService;
+    private final CustomUserDetailsService userDetailsService;
 
     @GetMapping("/summary")
     public ApiResponse<AdminSummaryResponse> summary() {
@@ -57,6 +64,34 @@ public class AdminController {
     @GetMapping("/storage-policies")
     public ApiResponse<List<AdminStoragePolicyResponse>> storagePolicies() {
         return ApiResponse.success(adminService.listStoragePolicies());
+    }
+
+    @PostMapping("/storage-policies")
+    public ApiResponse<AdminStoragePolicyResponse> createStoragePolicy(
+            @Valid @RequestBody AdminStoragePolicyUpsertRequest request) {
+        return ApiResponse.success(adminService.createStoragePolicy(request));
+    }
+
+    @PutMapping("/storage-policies/{policyId}")
+    public ApiResponse<AdminStoragePolicyResponse> updateStoragePolicy(
+            @PathVariable Long policyId,
+            @Valid @RequestBody AdminStoragePolicyUpsertRequest request) {
+        return ApiResponse.success(adminService.updateStoragePolicy(policyId, request));
+    }
+
+    @PatchMapping("/storage-policies/{policyId}/status")
+    public ApiResponse<AdminStoragePolicyResponse> updateStoragePolicyStatus(
+            @PathVariable Long policyId,
+            @Valid @RequestBody AdminStoragePolicyStatusUpdateRequest request) {
+        return ApiResponse.success(adminService.updateStoragePolicyStatus(policyId, request.enabled()));
+    }
+
+    @PostMapping("/storage-policies/migrations")
+    public ApiResponse<BackgroundTaskResponse> createStoragePolicyMigrationTask(
+            @AuthenticationPrincipal UserDetails userDetails,
+            @Valid @RequestBody AdminStoragePolicyMigrationCreateRequest request) {
+        User user = userDetailsService.loadDomainUser(userDetails.getUsername());
+        return ApiResponse.success(toTaskResponse(adminService.createStoragePolicyMigrationTask(user, request)));
     }
 
     @DeleteMapping("/files/{fileId}")
@@ -98,5 +133,20 @@ public class AdminController {
     @PostMapping("/users/{userId}/password/reset")
     public ApiResponse<AdminPasswordResetResponse> resetUserPassword(@PathVariable Long userId) {
         return ApiResponse.success(adminService.resetUserPassword(userId));
+    }
+
+    private BackgroundTaskResponse toTaskResponse(BackgroundTask task) {
+        return new BackgroundTaskResponse(
+                task.getId(),
+                task.getType(),
+                task.getStatus(),
+                task.getUserId(),
+                task.getPublicStateJson(),
+                task.getCorrelationId(),
+                task.getErrorMessage(),
+                task.getCreatedAt(),
+                task.getUpdatedAt(),
+                task.getFinishedAt()
+        );
     }
 }

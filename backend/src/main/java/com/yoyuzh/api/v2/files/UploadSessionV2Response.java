@@ -5,7 +5,9 @@ import java.time.LocalDateTime;
 public record UploadSessionV2Response(
         String sessionId,
         String objectKey,
+        boolean directUpload,
         boolean multipartUpload,
+        String uploadMode,
         String path,
         String filename,
         String contentType,
@@ -16,6 +18,7 @@ public record UploadSessionV2Response(
         int chunkCount,
         LocalDateTime expiresAt,
         LocalDateTime createdAt,
-        LocalDateTime updatedAt
+        LocalDateTime updatedAt,
+        UploadSessionV2StrategyResponse strategy
 ) {
 }

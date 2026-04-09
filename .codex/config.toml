@@ -22,7 +22,7 @@ config_file = ".codex/agents/implementer.toml"
 nickname_candidates = ["implementer", "impl", "builder"]
 
 [agents.tester]
-description = "Runs repository-backed verification commands only."
+description = "Runs repository-backed verification through the multi-angle-verification workflow, including browser and UI review when the task warrants it."
 config_file = ".codex/agents/tester.toml"
 nickname_candidates = ["tester", "qa", "verify"]
 

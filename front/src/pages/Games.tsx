@@ -7,6 +7,8 @@ import { Gamepad2, Cat, Car, ExternalLink, Play } from 'lucide-react';
 import { cn } from '@/src/lib/utils';
 import { calculateCardTilt } from './games-card-tilt';
 import { MORE_GAMES_LABEL, MORE_GAMES_URL, resolveGamePlayerPath, type GameId } from './games-links';
+import { AppPageShell } from '@/src/components/ui/AppPageShell';
+import { PageToolbar } from '@/src/components/ui/PageToolbar';
 
 const GAMES: Array<{
   id: GameId;
@@ -137,34 +139,20 @@ export default function Games() {
   const [activeTab, setActiveTab] = useState<'featured' | 'all'>('featured');
 
   return (
-    <div className="space-y-8">
-      {/* Hero Section */}
-      <motion.div 
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        className="glass-panel rounded-3xl p-8 relative overflow-hidden"
-      >
-        <div className="absolute top-0 right-0 w-64 h-64 bg-purple-500 rounded-full mix-blend-screen filter blur-[100px] opacity-20" />
-        <div className="relative z-10 space-y-4 max-w-2xl">
-          <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-white/5 border border-white/10 w-fit">
-            <Gamepad2 className="w-4 h-4 text-purple-400" />
-            <span className="text-xs text-slate-300 font-medium tracking-wide uppercase">Entertainment</span>
-          </div>
-          <h1 className="text-3xl md:text-4xl font-bold text-white tracking-tight">游戏入口</h1>
-          <p className="text-sm text-slate-400 leading-relaxed">
-            保留轻量试玩与静态资源检查入口，维持与整站一致的毛玻璃语言。在这里您可以快速启动站内集成的小游戏。
-          </p>
-          <a
-            href={MORE_GAMES_URL}
-            target="_blank"
-            rel="noreferrer"
-            className="inline-flex items-center gap-2 text-sm text-slate-300 transition-colors hover:text-white"
-          >
-            <ExternalLink className="h-4 w-4" />
-            {MORE_GAMES_LABEL}
-          </a>
-        </div>
-      </motion.div>
+    <AppPageShell
+      toolbar={
+        <PageToolbar
+          title="游戏"
+          actions={
+            <a href={MORE_GAMES_URL} target="_blank" rel="noreferrer" className="inline-flex items-center gap-2 text-sm text-slate-300 transition-colors hover:text-white">
+              <ExternalLink className="h-4 w-4" />
+              {MORE_GAMES_LABEL}
+            </a>
+          }
+        />
+      }
+    >
+      <div className="p-4 md:p-6 space-y-8 h-full">
 
       {/* Category Tabs */}
       <div className="flex bg-black/20 p-1 rounded-xl w-fit">
@@ -194,6 +182,7 @@ export default function Games() {
           <GameCard key={game.id} game={game} index={index} />
         ))}
       </div>
-    </div>
+      </div>
+    </AppPageShell>
   );
 }

@@ -3,6 +3,7 @@ package com.yoyuzh.api.v2.files;
 import com.yoyuzh.auth.CustomUserDetailsService;
 import com.yoyuzh.auth.User;
 import com.yoyuzh.files.upload.UploadSession;
+import com.yoyuzh.files.upload.UploadSessionUploadMode;
 import com.yoyuzh.files.upload.UploadSessionService;
 import com.yoyuzh.files.upload.UploadSessionStatus;
 import org.junit.jupiter.api.BeforeEach;
@@ -27,6 +28,7 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -70,7 +72,12 @@ class UploadSessionV2ControllerTest {
                 .andExpect(jsonPath("$.data.sessionId").value("session-1"))
                 .andExpect(jsonPath("$.data.objectKey").value("blobs/session-1"))
                 .andExpect(jsonPath("$.data.status").value("CREATED"))
+                .andExpect(jsonPath("$.data.directUpload").value(true))
                 .andExpect(jsonPath("$.data.multipartUpload").value(true))
+                .andExpect(jsonPath("$.data.uploadMode").value("DIRECT_MULTIPART"))
+                .andExpect(jsonPath("$.data.strategy.partPrepareUrlTemplate").value("/api/v2/files/upload-sessions/session-1/parts/{partIndex}/prepare"))
+                .andExpect(jsonPath("$.data.strategy.partRecordUrlTemplate").value("/api/v2/files/upload-sessions/session-1/parts/{partIndex}"))
+                .andExpect(jsonPath("$.data.strategy.completeUrl").value("/api/v2/files/upload-sessions/session-1/complete"))
                 .andExpect(jsonPath("$.data.chunkSize").value(8388608))
                 .andExpect(jsonPath("$.data.chunkCount").value(3));
     }
@@ -88,7 +95,76 @@ class UploadSessionV2ControllerTest {
                 .andExpect(jsonPath("$.code").value(0))
                 .andExpect(jsonPath("$.data.sessionId").value("session-1"))
                 .andExpect(jsonPath("$.data.status").value("CREATED"))
-                .andExpect(jsonPath("$.data.multipartUpload").value(true));
+                .andExpect(jsonPath("$.data.directUpload").value(true))
+                .andExpect(jsonPath("$.data.uploadMode").value("DIRECT_MULTIPART"))
+                .andExpect(jsonPath("$.data.multipartUpload").value(true))
+                .andExpect(jsonPath("$.data.strategy.partPrepareUrlTemplate").value("/api/v2/files/upload-sessions/session-1/parts/{partIndex}/prepare"))
+                .andExpect(jsonPath("$.data.strategy.partRecordUrlTemplate").value("/api/v2/files/upload-sessions/session-1/parts/{partIndex}"))
+                .andExpect(jsonPath("$.data.strategy.completeUrl").value("/api/v2/files/upload-sessions/session-1/complete"));
+    }
+
+    @Test
+    void shouldReturnDirectSingleStrategyInSessionResponse() throws Exception {
+        User user = createUser(7L);
+        UploadSession session = createSession(user);
+        session.setMultipartUploadId(null);
+        session.setChunkCount(1);
+        when(userDetailsService.loadDomainUser("alice")).thenReturn(user);
+        when(uploadSessionService.getOwnedSession(user, "session-1")).thenReturn(session);
+        when(uploadSessionService.resolveUploadMode(session)).thenReturn(UploadSessionUploadMode.DIRECT_SINGLE);
+
+        mockMvc.perform(get("/api/v2/files/upload-sessions/session-1")
+                        .with(user(userDetails())))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.uploadMode").value("DIRECT_SINGLE"))
+                .andExpect(jsonPath("$.data.strategy.prepareUrl").value("/api/v2/files/upload-sessions/session-1/prepare"))
+                .andExpect(jsonPath("$.data.strategy.completeUrl").value("/api/v2/files/upload-sessions/session-1/complete"));
+    }
+
+    @Test
+    void shouldPrepareSingleUploadWithV2Envelope() throws Exception {
+        User user = createUser(7L);
+        when(userDetailsService.loadDomainUser("alice")).thenReturn(user);
+        when(uploadSessionService.prepareOwnedUpload(user, "session-1"))
+                .thenReturn(new com.yoyuzh.files.storage.PreparedUpload(
+                        true,
+                        "https://upload.example.com/session-1",
+                        "PUT",
+                        Map.of("Content-Type", "video/mp4"),
+                        "blobs/session-1"
+                ));
+
+        mockMvc.perform(get("/api/v2/files/upload-sessions/session-1/prepare")
+                        .with(user(userDetails())))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(0))
+                .andExpect(jsonPath("$.data.direct").value(true))
+                .andExpect(jsonPath("$.data.uploadUrl").value("https://upload.example.com/session-1"))
+                .andExpect(jsonPath("$.data.method").value("PUT"))
+                .andExpect(jsonPath("$.data.headers['Content-Type']").value("video/mp4"));
+    }
+
+    @Test
+    void shouldUploadProxyContentWithV2Envelope() throws Exception {
+        User user = createUser(7L);
+        UploadSession session = createSession(user);
+        session.setStatus(UploadSessionStatus.UPLOADING);
+        session.setMultipartUploadId(null);
+        session.setChunkCount(1);
+        when(userDetailsService.loadDomainUser("alice")).thenReturn(user);
+        when(uploadSessionService.uploadOwnedContent(eq(user), eq("session-1"), any())).thenReturn(session);
+
+        mockMvc.perform(multipart("/api/v2/files/upload-sessions/session-1/content")
+                        .file("file", "payload".getBytes())
+                        .with(user(userDetails())))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(0))
+                .andExpect(jsonPath("$.data.sessionId").value("session-1"))
+                .andExpect(jsonPath("$.data.status").value("UPLOADING"))
+                .andExpect(jsonPath("$.data.uploadMode").value("PROXY"))
+                .andExpect(jsonPath("$.data.strategy.proxyContentUrl").value("/api/v2/files/upload-sessions/session-1/content"))
+                .andExpect(jsonPath("$.data.strategy.proxyFormField").value("file"))
+                .andExpect(jsonPath("$.data.strategy.completeUrl").value("/api/v2/files/upload-sessions/session-1/complete"));
     }
 
     @Test

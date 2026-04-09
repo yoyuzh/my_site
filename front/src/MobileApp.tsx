@@ -11,7 +11,8 @@ import MobileOverview from './mobile-pages/MobileOverview';
 import MobileFiles from './mobile-pages/MobileFiles';
 import MobileTransfer from './mobile-pages/MobileTransfer';
 import MobileFileShare from './mobile-pages/MobileFileShare';
-import RecycleBin from './pages/RecycleBin';
+import MobileRecycleBin from './mobile-pages/MobileRecycleBin';
+import MobileAdminUnavailable from './mobile-pages/MobileAdminUnavailable';
 
 function LegacyTransferRedirect() {
   const location = useLocation();
@@ -54,16 +55,16 @@ function MobileAppRoutes() {
         <Route index element={<Navigate to="/overview" replace />} />
         <Route path="overview" element={<MobileOverview />} />
         <Route path="files" element={<MobileFiles />} />
-        <Route path="recycle-bin" element={<RecycleBin />} />
+        <Route path="recycle-bin" element={<MobileRecycleBin />} />
         <Route path="games" element={<Navigate to="/overview" replace />} />
       </Route>
 
       <Route path="/games/:gameId" element={<Navigate to={isAuthenticated ? '/overview' : '/login'} replace />} />
 
-      {/* Admin dashboard is not mobile-optimized in this phase yet, redirect to overview or login */}
+      {/* Admin dashboard is not mobile-optimized in this phase yet, show stub page */}
       <Route
         path="/admin/*"
-        element={isAuthenticated ? <Navigate to="/overview" replace /> : <Navigate to="/login" replace />}
+        element={isAuthenticated ? <MobileAdminUnavailable /> : <Navigate to="/login" replace />}
       />
       
       <Route

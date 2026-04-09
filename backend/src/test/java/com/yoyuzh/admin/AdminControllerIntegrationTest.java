@@ -8,6 +8,9 @@ import com.yoyuzh.files.core.FileBlob;
 import com.yoyuzh.files.core.FileBlobRepository;
 import com.yoyuzh.files.core.StoredFile;
 import com.yoyuzh.files.core.StoredFileRepository;
+import com.yoyuzh.files.policy.StoragePolicy;
+import com.yoyuzh.files.policy.StoragePolicyRepository;
+import com.yoyuzh.files.policy.StoragePolicyType;
 import com.yoyuzh.transfer.OfflineTransferSessionRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -41,7 +44,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
                 "spring.datasource.password=",
                 "spring.jpa.hibernate.ddl-auto=create-drop",
                 "app.jwt.secret=0123456789abcdef0123456789abcdef",
-                "app.admin.usernames=admin",
+                "app.admin.usernames=admin,alice",
                 "app.storage.root-dir=./target/test-storage-admin"
         }
 )
@@ -66,6 +69,8 @@ class AdminControllerIntegrationTest {
     private AdminMetricsStateRepository adminMetricsStateRepository;
     @Autowired
     private AdminMetricsService adminMetricsService;
+    @Autowired
+    private StoragePolicyRepository storagePolicyRepository;
 
     private User portalUser;
     private User secondaryUser;
@@ -336,6 +341,149 @@ class AdminControllerIntegrationTest {
                 .andExpect(jsonPath("$.data[0].capabilities.serverProxyDownload").value(true))
                 .andExpect(jsonPath("$.data[0].capabilities.requiresCors").value(false))
                 .andExpect(jsonPath("$.data[0].maxSizeBytes").isNumber());
+    }
+
+    @Test
+    @WithMockUser(username = "admin")
+    void shouldAllowConfiguredAdminToCreateUpdateAndDisableNonDefaultStoragePolicy() throws Exception {
+        mockMvc.perform(post("/api/admin/storage-policies")
+                        .contentType("application/json")
+                        .content("""
+                                {
+                                  "name": "Archive Bucket",
+                                  "type": "S3_COMPATIBLE",
+                                  "bucketName": "archive-bucket",
+                                  "endpoint": "https://s3.example.com",
+                                  "region": "auto",
+                                  "privateBucket": true,
+                                  "prefix": "archive/",
+                                  "credentialMode": "STATIC",
+                                  "maxSizeBytes": 20480,
+                                  "enabled": true,
+                                  "capabilities": {
+                                    "directUpload": true,
+                                    "multipartUpload": true,
+                                    "signedDownloadUrl": true,
+                                    "serverProxyDownload": true,
+                                    "thumbnailNative": false,
+                                    "friendlyDownloadName": true,
+                                    "requiresCors": true,
+                                    "supportsInternalEndpoint": false,
+                                    "maxObjectSize": 20480
+                                  }
+                                }
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(0))
+                .andExpect(jsonPath("$.data.name").value("Archive Bucket"))
+                .andExpect(jsonPath("$.data.type").value("S3_COMPATIBLE"))
+                .andExpect(jsonPath("$.data.defaultPolicy").value(false));
+
+        Long createdPolicyId = storagePolicyRepository.findAll().stream()
+                .filter(policy -> "Archive Bucket".equals(policy.getName()))
+                .map(StoragePolicy::getId)
+                .findFirst()
+                .orElseThrow();
+
+        mockMvc.perform(put("/api/admin/storage-policies/{policyId}", createdPolicyId)
+                        .contentType("application/json")
+                        .content("""
+                                {
+                                  "name": "Hot Bucket",
+                                  "type": "S3_COMPATIBLE",
+                                  "bucketName": "hot-bucket",
+                                  "endpoint": "https://hot.example.com",
+                                  "region": "cn-north-1",
+                                  "privateBucket": false,
+                                  "prefix": "hot/",
+                                  "credentialMode": "DOGECLOUD_TEMP",
+                                  "maxSizeBytes": 40960,
+                                  "enabled": true,
+                                  "capabilities": {
+                                    "directUpload": true,
+                                    "multipartUpload": true,
+                                    "signedDownloadUrl": true,
+                                    "serverProxyDownload": true,
+                                    "thumbnailNative": false,
+                                    "friendlyDownloadName": true,
+                                    "requiresCors": true,
+                                    "supportsInternalEndpoint": false,
+                                    "maxObjectSize": 40960
+                                  }
+                                }
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.id").value(createdPolicyId))
+                .andExpect(jsonPath("$.data.name").value("Hot Bucket"))
+                .andExpect(jsonPath("$.data.bucketName").value("hot-bucket"))
+                .andExpect(jsonPath("$.data.credentialMode").value("DOGECLOUD_TEMP"));
+
+        mockMvc.perform(patch("/api/admin/storage-policies/{policyId}/status", createdPolicyId)
+                        .contentType("application/json")
+                        .content("""
+                                {
+                                  "enabled": false
+                                }
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.id").value(createdPolicyId))
+                .andExpect(jsonPath("$.data.enabled").value(false));
+    }
+
+    @Test
+    @WithMockUser(username = "admin")
+    void shouldRejectDisablingDefaultStoragePolicy() throws Exception {
+        StoragePolicy defaultPolicy = storagePolicyRepository.findFirstByDefaultPolicyTrueOrderByIdAsc().orElseThrow();
+
+        mockMvc.perform(patch("/api/admin/storage-policies/{policyId}/status", defaultPolicy.getId())
+                        .contentType("application/json")
+                        .content("""
+                                {
+                                  "enabled": false
+                                }
+                                """))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.msg").value("默认存储策略不能停用"));
+    }
+
+    @Test
+    void shouldAllowAdminUserToCreateStoragePolicyMigrationTask() throws Exception {
+        StoragePolicy sourcePolicy = storagePolicyRepository.findFirstByDefaultPolicyTrueOrderByIdAsc().orElseThrow();
+
+        StoragePolicy targetPolicy = new StoragePolicy();
+        targetPolicy.setName("Archive Bucket");
+        targetPolicy.setType(StoragePolicyType.S3_COMPATIBLE);
+        targetPolicy.setBucketName("archive-bucket");
+        targetPolicy.setEndpoint("https://s3.example.com");
+        targetPolicy.setRegion("auto");
+        targetPolicy.setPrivateBucket(true);
+        targetPolicy.setPrefix("archive/");
+        targetPolicy.setCredentialMode(com.yoyuzh.files.policy.StoragePolicyCredentialMode.STATIC);
+        targetPolicy.setMaxSizeBytes(40960L);
+        targetPolicy.setCapabilitiesJson("""
+                {"directUpload":true,"multipartUpload":true,"signedDownloadUrl":true,"serverProxyDownload":true,"thumbnailNative":false,"friendlyDownloadName":true,"requiresCors":true,"supportsInternalEndpoint":false,"maxObjectSize":40960}
+                """);
+        targetPolicy.setEnabled(true);
+        targetPolicy.setDefaultPolicy(false);
+        targetPolicy = storagePolicyRepository.save(targetPolicy);
+
+        mockMvc.perform(post("/api/admin/storage-policies/migrations")
+                        .with(user("alice"))
+                        .contentType("application/json")
+                        .content("""
+                                {
+                                  "sourcePolicyId": %d,
+                                  "targetPolicyId": %d,
+                                  "correlationId": "migration-1"
+                                }
+                                """.formatted(sourcePolicy.getId(), targetPolicy.getId())))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(0))
+                .andExpect(jsonPath("$.data.type").value("STORAGE_POLICY_MIGRATION"))
+                .andExpect(jsonPath("$.data.status").value("QUEUED"))
+                .andExpect(jsonPath("$.data.publicStateJson").value(org.hamcrest.Matchers.containsString("\"sourcePolicyId\":" + sourcePolicy.getId())))
+                .andExpect(jsonPath("$.data.publicStateJson").value(org.hamcrest.Matchers.containsString("\"targetPolicyId\":" + targetPolicy.getId())))
+                .andExpect(jsonPath("$.data.publicStateJson").value(org.hamcrest.Matchers.containsString("\"migrationPerformed\":false")));
     }
 
     @Test

@@ -241,6 +241,43 @@ class FileServiceTest {
     }
 
     @Test
+    void shouldInitiateProxyUploadWhenDefaultPolicyDisablesDirectUpload() {
+        fileService = new FileService(
+                storedFileRepository,
+                fileBlobRepository,
+                fileEntityRepository,
+                storedFileEntityRepository,
+                fileContentStorage,
+                fileShareLinkRepository,
+                adminMetricsService,
+                storagePolicyService,
+                new FileStorageProperties()
+        );
+        User user = createUser(7L);
+        when(storedFileRepository.existsByUserIdAndPathAndFilename(7L, "/docs", "notes.txt")).thenReturn(false);
+        StoragePolicy policy = createDefaultStoragePolicy();
+        when(storagePolicyService.ensureDefaultPolicy()).thenReturn(policy);
+        when(storagePolicyService.readCapabilities(policy)).thenReturn(new com.yoyuzh.files.policy.StoragePolicyCapabilities(
+                false,
+                false,
+                false,
+                true,
+                false,
+                true,
+                false,
+                false,
+                500L * 1024 * 1024
+        ));
+
+        InitiateUploadResponse response = fileService.initiateUpload(user,
+                new InitiateUploadRequest("/docs", "notes.txt", "text/plain", 12L));
+
+        assertThat(response.direct()).isFalse();
+        assertThat(response.storageName()).startsWith("blobs/");
+        verify(fileContentStorage, never()).prepareBlobUpload(any(), any(), any(), any(), any(Long.class));
+    }
+
+    @Test
     void shouldCompleteDirectUploadAndPersistMetadata() {
         User user = createUser(7L);
         when(storedFileRepository.existsByUserIdAndPathAndFilename(7L, "/docs", "notes.txt")).thenReturn(false);

@@ -11,6 +11,7 @@ import com.yoyuzh.files.policy.StoragePolicyService;
 import com.yoyuzh.files.policy.StoragePolicyType;
 import com.yoyuzh.files.storage.FileContentStorage;
 import com.yoyuzh.files.storage.PreparedUpload;
+import org.springframework.mock.web.MockMultipartFile;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -135,6 +136,111 @@ class UploadSessionServiceTest {
     }
 
     @Test
+    void shouldPrepareDirectSingleUploadForOwnedSessionWhenPolicyDisablesMultipart() {
+        User user = createUser(7L);
+        UploadSession session = createSession(user);
+        session.setStoragePolicyId(42L);
+        session.setMultipartUploadId(null);
+        session.setChunkCount(1);
+        when(uploadSessionRepository.findBySessionIdAndUserId("session-1", 7L))
+                .thenReturn(Optional.of(session));
+        StoragePolicy policy = createDefaultStoragePolicy();
+        when(storagePolicyService.getRequiredPolicy(42L)).thenReturn(policy);
+        when(storagePolicyService.readCapabilities(policy)).thenReturn(new StoragePolicyCapabilities(
+                true,
+                false,
+                true,
+                true,
+                false,
+                true,
+                true,
+                false,
+                500L * 1024 * 1024
+        ));
+        when(fileContentStorage.prepareBlobUpload("/docs", "movie.mp4", "blobs/session-1", "video/mp4", 20L))
+                .thenReturn(new PreparedUpload(
+                        true,
+                        "https://upload.example.com/session-1",
+                        "PUT",
+                        Map.of("Content-Type", "video/mp4"),
+                        "blobs/session-1"
+                ));
+
+        PreparedUpload preparedUpload = uploadSessionService.prepareOwnedUpload(user, "session-1");
+
+        assertThat(preparedUpload.direct()).isTrue();
+        assertThat(preparedUpload.uploadUrl()).isEqualTo("https://upload.example.com/session-1");
+        assertThat(preparedUpload.method()).isEqualTo("PUT");
+    }
+
+    @Test
+    void shouldUploadProxyContentForOwnedSessionWhenPolicyDisablesDirectUpload() {
+        User user = createUser(7L);
+        UploadSession session = createSession(user);
+        session.setStoragePolicyId(42L);
+        session.setMultipartUploadId(null);
+        session.setChunkCount(1);
+        session.setSize(7L);
+        when(uploadSessionRepository.findBySessionIdAndUserId("session-1", 7L))
+                .thenReturn(Optional.of(session));
+        StoragePolicy policy = createDefaultStoragePolicy();
+        when(storagePolicyService.getRequiredPolicy(42L)).thenReturn(policy);
+        when(storagePolicyService.readCapabilities(policy)).thenReturn(new StoragePolicyCapabilities(
+                false,
+                false,
+                false,
+                true,
+                false,
+                true,
+                false,
+                false,
+                500L * 1024 * 1024
+        ));
+        when(uploadSessionRepository.save(any(UploadSession.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        UploadSession result = uploadSessionService.uploadOwnedContent(
+                user,
+                "session-1",
+                new MockMultipartFile("file", "movie.mp4", "video/mp4", "payload".getBytes())
+        );
+
+        assertThat(result.getStatus()).isEqualTo(UploadSessionStatus.UPLOADING);
+        verify(fileContentStorage).uploadBlob(eq("blobs/session-1"), any(MockMultipartFile.class));
+    }
+
+    @Test
+    void shouldCreateProxyUploadSessionWhenPolicyDisablesDirectUpload() {
+        User user = createUser(7L);
+        when(storedFileRepository.existsByUserIdAndPathAndFilename(7L, "/docs", "movie.mp4")).thenReturn(false);
+        StoragePolicy policy = createDefaultStoragePolicy();
+        when(storagePolicyService.ensureDefaultPolicy()).thenReturn(policy);
+        when(storagePolicyService.readCapabilities(policy)).thenReturn(new StoragePolicyCapabilities(
+                false,
+                false,
+                false,
+                true,
+                false,
+                true,
+                false,
+                false,
+                500L * 1024 * 1024
+        ));
+        when(uploadSessionRepository.save(any(UploadSession.class))).thenAnswer(invocation -> {
+            UploadSession saved = invocation.getArgument(0);
+            saved.setId(100L);
+            return saved;
+        });
+
+        UploadSession session = uploadSessionService.createSession(
+                user,
+                new UploadSessionCreateCommand("/docs", "movie.mp4", "video/mp4", 20L)
+        );
+
+        assertThat(session.getMultipartUploadId()).isNull();
+        assertThat(session.getChunkCount()).isEqualTo(1);
+    }
+
+    @Test
     void shouldOnlyReturnSessionOwnedByCurrentUser() {
         User user = createUser(7L);
         UploadSession session = new UploadSession();
@@ -153,6 +259,19 @@ class UploadSessionServiceTest {
     void shouldRejectDuplicateTargetWhenCreatingSession() {
         User user = createUser(7L);
         when(storedFileRepository.existsByUserIdAndPathAndFilename(7L, "/docs", "movie.mp4")).thenReturn(true);
+        StoragePolicy policy = createDefaultStoragePolicy();
+        when(storagePolicyService.ensureDefaultPolicy()).thenReturn(policy);
+        when(storagePolicyService.readCapabilities(policy)).thenReturn(new StoragePolicyCapabilities(
+                true,
+                true,
+                true,
+                true,
+                false,
+                true,
+                true,
+                false,
+                500L * 1024 * 1024
+        ));
 
         assertThatThrownBy(() -> uploadSessionService.createSession(
                 user,

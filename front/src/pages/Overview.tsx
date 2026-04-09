@@ -19,6 +19,8 @@ import { shouldLoadAvatarWithAuth } from '@/src/components/layout/account-utils'
 import { Button } from '@/src/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/src/components/ui/card';
 import { FileTypeIcon, getFileTypeTheme } from '@/src/components/ui/FileTypeIcon';
+import { AppPageShell } from '@/src/components/ui/AppPageShell';
+import { PageToolbar } from '@/src/components/ui/PageToolbar';
 import { apiDownload, apiRequest } from '@/src/lib/api';
 import { readCachedValue, writeCachedValue } from '@/src/lib/cache';
 import { resolveStoredFileType } from '@/src/lib/file-type';
@@ -197,23 +199,8 @@ export default function Overview() {
   }, [profile?.avatarUrl]);
 
   return (
-    <div className="space-y-6">
-      <motion.div
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        className="glass-panel rounded-3xl p-8 relative overflow-hidden"
-      >
-        <div className="absolute top-0 right-0 w-64 h-64 bg-[#336EFF] rounded-full mix-blend-screen filter blur-[100px] opacity-20" />
-        <div className="relative z-10 space-y-2">
-          <h1 className="text-3xl md:text-4xl font-bold text-white tracking-tight">
-            欢迎回来，{profile?.username ?? '访客'}
-          </h1>
-          <p className="text-[#336EFF] font-medium">现在时间 {currentTime} · {greeting}</p>
-          <p className="text-sm text-slate-400 mt-4 max-w-xl leading-relaxed">
-            这是您的个人门户总览。在这里可以快速查看网盘状态、近期文件动态，以及新加入的浏览器快传入口。
-          </p>
-        </div>
-      </motion.div>
+    <AppPageShell toolbar={<PageToolbar title={`总览 · ${greeting}，${profile?.username ?? '访客'}`} />}>
+      <div className="p-4 md:p-6 space-y-6 relative z-10">
 
       {loadingError ? (
         <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }}>
@@ -441,7 +428,8 @@ export default function Overview() {
           </Card>
         </div>
       </div>
-    </div>
+      </div>
+    </AppPageShell>
   );
 }
 

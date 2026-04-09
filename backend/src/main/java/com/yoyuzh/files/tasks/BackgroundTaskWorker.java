@@ -98,6 +98,7 @@ public class BackgroundTaskWorker {
             case ARCHIVE -> "archiving";
             case EXTRACT -> "extracting";
             case MEDIA_META -> "extracting-metadata";
+            case STORAGE_POLICY_MIGRATION -> "planning-storage-policy-migration";
             default -> "running";
         };
     }

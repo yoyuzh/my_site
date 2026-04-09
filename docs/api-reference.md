@@ -251,6 +251,8 @@
 - `POST /api/v2/files/upload-sessions`
 - `GET /api/v2/files/upload-sessions/{sessionId}`
 - `DELETE /api/v2/files/upload-sessions/{sessionId}`
+- `GET /api/v2/files/upload-sessions/{sessionId}/prepare`
+- `POST /api/v2/files/upload-sessions/{sessionId}/content`
 - `GET /api/v2/files/upload-sessions/{sessionId}/parts/{partIndex}/prepare`
 - `PUT /api/v2/files/upload-sessions/{sessionId}/parts/{partIndex}`
 - `POST /api/v2/files/upload-sessions/{sessionId}/complete`
@@ -258,12 +260,17 @@
 说明：
 
 - 需要登录，只允许操作当前用户自己的上传会话
-- 会话响应返回 `sessionId`、`objectKey`、`multipartUpload`、`path`、`filename`、`contentType`、`size`、`storagePolicyId`、`status`、`chunkSize`、`chunkCount`、`expiresAt`、`createdAt`、`updatedAt`
-- 默认 S3 存储策略下，创建会话时会立即初始化 multipart upload，并把 `multipartUpload=true` 返回给客户端；本地策略仍会返回 `multipartUpload=false`
+- 会话响应返回 `sessionId`、`objectKey`、`directUpload`、`multipartUpload`、`uploadMode`、`path`、`filename`、`contentType`、`size`、`storagePolicyId`、`status`、`chunkSize`、`chunkCount`、`expiresAt`、`createdAt`、`updatedAt`，以及一个面向前端消费的 `strategy` 对象
+- `uploadMode` 目前有三种：`PROXY`、`DIRECT_SINGLE`、`DIRECT_MULTIPART`
+- 默认 S3 存储策略下，创建会话时会立即初始化 multipart upload，并把 `directUpload=true`、`multipartUpload=true`、`uploadMode=DIRECT_MULTIPART` 返回给客户端；若默认策略 `directUpload=true` 但 `multipartUpload=false`，会返回 `DIRECT_SINGLE`；若 `directUpload=false`，则返回 `PROXY`
+- `strategy` 会把当前会话下一步该调用的后端入口显式返回出来：`DIRECT_SINGLE` 返回 `prepareUrl` + `completeUrl`，`PROXY` 返回 `proxyContentUrl` + `proxyFormField=file` + `completeUrl`，`DIRECT_MULTIPART` 返回 `partPrepareUrlTemplate`、`partRecordUrlTemplate` 和 `completeUrl`
+- `GET /{sessionId}/prepare` 仅用于 `DIRECT_SINGLE`，返回整文件直传所需的 `direct/uploadUrl/method/headers/storageName`
+- `POST /{sessionId}/content` 仅用于 `PROXY`，以 multipart 表单上传整文件内容到当前 upload session 绑定的 `objectKey`
 - `GET /parts/{partIndex}/prepare` 会返回当前分片的直传信息：`direct`、`uploadUrl`、`method`、`headers`、`storageName`
 - `PUT /parts/{partIndex}` 请求体仍为 `{ "etag": "...", "size": 8388608 }`，只负责记录 part 元数据，不直接接收字节流
 - `POST /complete` 会先按已记录的 part 元数据提交 multipart complete，再复用旧上传完成链路写入 `FileBlob + StoredFile + FileEntity.VERSION`
 - 后端每小时清理过期且未完成的会话；若会话已绑定 multipart upload，会优先向对象存储发送 abort
+- 当前前端网盘上传主链路已经消费这套 v2 接口：桌面/移动文件页和“存入网盘”入口都会按 `uploadMode + strategy` 自动选择代理上传、单请求直传或 multipart 分片上传
 
 ## 4. 快传模块
 
@@ -401,13 +408,21 @@
 
 ### 5.4 存储策略
 
-`GET /api/admin/storage-policies`
+- `GET /api/admin/storage-policies`
+- `POST /api/admin/storage-policies`
+- `PUT /api/admin/storage-policies/{policyId}`
+- `PATCH /api/admin/storage-policies/{policyId}/status`
+- `POST /api/admin/storage-policies/migrations`
 
 说明：
 
 - 需要管理员登录
-- 返回当前存储策略的只读列表和结构化能力声明
-- 当前仅用于管理台查看默认策略、启用状态、存储类型和能力矩阵，不支持新增、编辑、启停或删除策略
+- 返回当前存储策略列表和结构化能力声明
+- 新增/编辑接口当前允许维护名称、类型、bucket/endpoint/region、前缀、凭证模式、最大对象大小、能力声明与启用状态
+- `PATCH /status` 用于启用或停用非默认策略；默认策略不能被停用
+- `POST /migrations` 需要管理员登录，请求体为 `sourcePolicyId`、`targetPolicyId` 与可选 `correlationId`；当前会创建一个 `STORAGE_POLICY_MIGRATION` 后台任务，返回值沿用 `/api/v2/tasks/{id}` 的任务响应形状
+- 当前迁移任务会在“当前活动存储后端”内执行真实对象迁移：复制旧对象到新的 target-policy object key，更新 `FileBlob` 与 `FileEntity.VERSION`，并在事务提交后清理旧对象；如果源/目标策略类型与当前运行时存储后端不匹配，任务会失败
+- 当前仍不支持删除策略、切换默认策略或通过管理接口暴露实际凭证内容
 - `capabilities.multipartUpload` 现在会反映默认策略是否支持 v2 上传会话 multipart；当前默认 S3 策略为 `true`，本地策略为 `false`
 
 ## 6. 前端公开路由与接口关系

@@ -6,6 +6,8 @@ import { Button } from '@/src/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/src/components/ui/card';
 import { apiRequest } from '@/src/lib/api';
 import type { PageResponse, RecycleBinItem } from '@/src/lib/types';
+import { AppPageShell } from '@/src/components/ui/AppPageShell';
+import { PageToolbar } from '@/src/components/ui/PageToolbar';
 
 import { formatRecycleBinExpiresLabel, RECYCLE_BIN_RETENTION_DAYS } from './recycle-bin-state';
 
@@ -68,38 +70,35 @@ export default function RecycleBin() {
   };
 
   return (
-    <div className="mx-auto flex h-full w-full max-w-6xl flex-col gap-6">
-      <Card className="overflow-hidden">
-        <CardHeader className="flex flex-col gap-4 border-b border-white/10 sm:flex-row sm:items-end sm:justify-between">
-          <div className="space-y-2">
-            <div className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs text-slate-300">
-              <Trash2 className="h-3.5 w-3.5" />
-              回收站保留 {RECYCLE_BIN_RETENTION_DAYS} 天
+    <AppPageShell
+      toolbar={
+        <PageToolbar
+          title={
+            <div className="flex items-center gap-3">
+              <span>网盘回收站</span>
+              <div className="hidden sm:flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs text-slate-300 font-normal">
+                <Trash2 className="h-3.5 w-3.5" />
+                回收站保留 {RECYCLE_BIN_RETENTION_DAYS} 天
+              </div>
             </div>
-            <CardTitle className="text-2xl text-white">网盘回收站</CardTitle>
-            <p className="text-sm text-slate-400">
-              删除的文件会先进入回收站，{RECYCLE_BIN_RETENTION_DAYS} 天内可恢复，到期后自动清理。
-            </p>
-          </div>
-          <div className="flex items-center gap-3">
-            <Button
-              variant="outline"
-              className="border-white/10 bg-white/5 text-slate-200 hover:bg-white/10"
-              onClick={() => void loadRecycleBin()}
-              disabled={loading}
-            >
-              <RefreshCw className="mr-2 h-4 w-4" />
-              刷新
-            </Button>
-            <Link
-              to="/files"
-              className="inline-flex h-10 items-center justify-center rounded-xl border border-white/10 bg-white/5 px-4 py-2 text-sm font-medium text-slate-200 transition-colors hover:bg-white/10"
-            >
-              返回网盘
-            </Link>
-          </div>
-        </CardHeader>
-        <CardContent className="p-6">
+          }
+          actions={
+            <>
+              <Button variant="outline" className="h-9 border-white/10 bg-white/5 text-slate-200 hover:bg-white/10" onClick={() => void loadRecycleBin()} disabled={loading}>
+                <RefreshCw className="mr-2 h-4 w-4" />
+                刷新
+              </Button>
+              <Link to="/files" className="inline-flex h-9 items-center justify-center rounded-xl border border-white/10 bg-white/5 px-4 text-sm font-medium text-slate-200 transition-colors hover:bg-white/10">
+                返回网盘
+              </Link>
+            </>
+          }
+        />
+      }
+    >
+      <div className="p-4 md:p-6 mx-auto flex h-full w-full max-w-6xl flex-col gap-6">
+        <Card className="overflow-hidden bg-transparent border-0 shadow-none">
+          <CardContent className="p-0">
           {error ? (
             <div className="mb-4 rounded-2xl border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm text-red-200">
               {error}
@@ -160,6 +159,7 @@ export default function RecycleBin() {
           )}
         </CardContent>
       </Card>
-    </div>
+      </div>
+    </AppPageShell>
   );
 }

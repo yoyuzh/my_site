@@ -10,12 +10,18 @@ import com.yoyuzh.common.BusinessException;
 import com.yoyuzh.common.ErrorCode;
 import com.yoyuzh.common.PageResponse;
 import com.yoyuzh.files.core.FileBlobRepository;
+import com.yoyuzh.files.core.FileEntityRepository;
+import com.yoyuzh.files.core.FileEntityType;
 import com.yoyuzh.files.core.FileService;
 import com.yoyuzh.files.core.StoredFile;
+import com.yoyuzh.files.core.StoredFileEntityRepository;
 import com.yoyuzh.files.core.StoredFileRepository;
 import com.yoyuzh.files.policy.StoragePolicy;
 import com.yoyuzh.files.policy.StoragePolicyRepository;
 import com.yoyuzh.files.policy.StoragePolicyService;
+import com.yoyuzh.files.tasks.BackgroundTask;
+import com.yoyuzh.files.tasks.BackgroundTaskService;
+import com.yoyuzh.files.tasks.BackgroundTaskType;
 import com.yoyuzh.transfer.OfflineTransferSessionRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
@@ -24,6 +30,7 @@ import org.springframework.data.domain.Sort;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.util.StringUtils;
 
 import java.security.SecureRandom;
 import java.time.Instant;
@@ -45,6 +52,9 @@ public class AdminService {
     private final AdminMetricsService adminMetricsService;
     private final StoragePolicyRepository storagePolicyRepository;
     private final StoragePolicyService storagePolicyService;
+    private final FileEntityRepository fileEntityRepository;
+    private final StoredFileEntityRepository storedFileEntityRepository;
+    private final BackgroundTaskService backgroundTaskService;
     private final SecureRandom secureRandom = new SecureRandom();
 
     public AdminSummaryResponse getSummary() {
@@ -95,6 +105,75 @@ public class AdminService {
                 .stream()
                 .map(this::toStoragePolicyResponse)
                 .toList();
+    }
+
+    @Transactional
+    public AdminStoragePolicyResponse createStoragePolicy(AdminStoragePolicyUpsertRequest request) {
+        StoragePolicy policy = new StoragePolicy();
+        policy.setDefaultPolicy(false);
+        applyStoragePolicyUpsert(policy, request);
+        return toStoragePolicyResponse(storagePolicyRepository.save(policy));
+    }
+
+    @Transactional
+    public AdminStoragePolicyResponse updateStoragePolicy(Long policyId, AdminStoragePolicyUpsertRequest request) {
+        StoragePolicy policy = getRequiredStoragePolicy(policyId);
+        applyStoragePolicyUpsert(policy, request);
+        return toStoragePolicyResponse(storagePolicyRepository.save(policy));
+    }
+
+    @Transactional
+    public AdminStoragePolicyResponse updateStoragePolicyStatus(Long policyId, boolean enabled) {
+        StoragePolicy policy = getRequiredStoragePolicy(policyId);
+        if (policy.isDefaultPolicy() && !enabled) {
+            throw new BusinessException(ErrorCode.UNKNOWN, "默认存储策略不能停用");
+        }
+        policy.setEnabled(enabled);
+        return toStoragePolicyResponse(storagePolicyRepository.save(policy));
+    }
+
+    @Transactional
+    public BackgroundTask createStoragePolicyMigrationTask(User user, AdminStoragePolicyMigrationCreateRequest request) {
+        StoragePolicy sourcePolicy = getRequiredStoragePolicy(request.sourcePolicyId());
+        StoragePolicy targetPolicy = getRequiredStoragePolicy(request.targetPolicyId());
+        if (sourcePolicy.getId().equals(targetPolicy.getId())) {
+            throw new BusinessException(ErrorCode.UNKNOWN, "源存储策略和目标存储策略不能相同");
+        }
+        if (!targetPolicy.isEnabled()) {
+            throw new BusinessException(ErrorCode.UNKNOWN, "目标存储策略必须处于启用状态");
+        }
+
+        long candidateEntityCount = fileEntityRepository.countByStoragePolicyIdAndEntityType(
+                sourcePolicy.getId(),
+                FileEntityType.VERSION
+        );
+        long candidateStoredFileCount = storedFileEntityRepository.countDistinctStoredFilesByStoragePolicyIdAndEntityType(
+                sourcePolicy.getId(),
+                FileEntityType.VERSION
+        );
+
+        java.util.Map<String, Object> state = new java.util.LinkedHashMap<>();
+        state.put("sourcePolicyId", sourcePolicy.getId());
+        state.put("sourcePolicyName", sourcePolicy.getName());
+        state.put("targetPolicyId", targetPolicy.getId());
+        state.put("targetPolicyName", targetPolicy.getName());
+        state.put("candidateEntityCount", candidateEntityCount);
+        state.put("candidateStoredFileCount", candidateStoredFileCount);
+        state.put("migrationPerformed", false);
+        state.put("migrationMode", "skeleton");
+        state.put("entityType", FileEntityType.VERSION.name());
+        state.put("message", "storage policy migration skeleton queued; worker will validate and recount candidates without moving object data");
+
+        java.util.Map<String, Object> privateState = new java.util.LinkedHashMap<>(state);
+        privateState.put("taskType", BackgroundTaskType.STORAGE_POLICY_MIGRATION.name());
+
+        return backgroundTaskService.createQueuedTask(
+                user,
+                BackgroundTaskType.STORAGE_POLICY_MIGRATION,
+                state,
+                privateState,
+                request.correlationId()
+        );
     }
 
     @Transactional
@@ -214,9 +293,32 @@ public class AdminService {
         );
     }
 
+    private void applyStoragePolicyUpsert(StoragePolicy policy, AdminStoragePolicyUpsertRequest request) {
+        if (policy.isDefaultPolicy() && !request.enabled()) {
+            throw new BusinessException(ErrorCode.UNKNOWN, "默认存储策略不能停用");
+        }
+        validateStoragePolicyRequest(request);
+        policy.setName(request.name().trim());
+        policy.setType(request.type());
+        policy.setBucketName(normalizeNullable(request.bucketName()));
+        policy.setEndpoint(normalizeNullable(request.endpoint()));
+        policy.setRegion(normalizeNullable(request.region()));
+        policy.setPrivateBucket(request.privateBucket());
+        policy.setPrefix(normalizePrefix(request.prefix()));
+        policy.setCredentialMode(request.credentialMode());
+        policy.setMaxSizeBytes(request.maxSizeBytes());
+        policy.setCapabilitiesJson(storagePolicyService.writeCapabilities(request.capabilities()));
+        policy.setEnabled(request.enabled());
+    }
+
     private User getRequiredUser(Long userId) {
         return userRepository.findById(userId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.UNKNOWN, "用户不存在"));
+    }
+
+    private StoragePolicy getRequiredStoragePolicy(Long policyId) {
+        return storagePolicyRepository.findById(policyId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.UNKNOWN, "存储策略不存在"));
     }
 
     private String normalizeQuery(String query) {
@@ -224,6 +326,31 @@ public class AdminService {
             return "";
         }
         return query.trim();
+    }
+
+    private String normalizeNullable(String value) {
+        if (!StringUtils.hasText(value)) {
+            return null;
+        }
+        return value.trim();
+    }
+
+    private String normalizePrefix(String prefix) {
+        if (!StringUtils.hasText(prefix)) {
+            return "";
+        }
+        return prefix.trim();
+    }
+
+    private void validateStoragePolicyRequest(AdminStoragePolicyUpsertRequest request) {
+        if (request.type() == com.yoyuzh.files.policy.StoragePolicyType.LOCAL
+                && request.credentialMode() != com.yoyuzh.files.policy.StoragePolicyCredentialMode.NONE) {
+            throw new BusinessException(ErrorCode.UNKNOWN, "本地存储策略必须使用 NONE 凭证模式");
+        }
+        if (request.type() == com.yoyuzh.files.policy.StoragePolicyType.S3_COMPATIBLE
+                && !StringUtils.hasText(request.bucketName())) {
+            throw new BusinessException(ErrorCode.UNKNOWN, "S3 存储策略必须提供 bucketName");
+        }
     }
 
     private String generateTemporaryPassword() {

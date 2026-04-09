@@ -151,27 +151,36 @@ npm run test
 - v2 upload session 后端已补齐创建、查询、取消、prepare-part、record-part、complete 和过期清理
 - `FileContentStorage` 已新增 multipart 抽象；`S3FileContentStorage` 已实现 create/upload-part/complete/abort
 - 默认 S3 存储策略现在会声明 `multipartUpload=true`；创建会话时会生成 `multipartUploadId`，v2 响应会返回 `multipartUpload`
+- v2 会话现在还会返回 `directUpload` 与 `uploadMode=PROXY|DIRECT_SINGLE|DIRECT_MULTIPART`
+- v2 会话响应还会返回 `strategy`，显式给出当前模式应该走的 `prepareUrl/proxyContentUrl/partPrepareUrlTemplate/partRecordUrlTemplate/completeUrl`
+- `GET /api/v2/files/upload-sessions/{sessionId}/prepare` 已支持 `DIRECT_SINGLE` 模式下的整文件直传
+- `POST /api/v2/files/upload-sessions/{sessionId}/content` 已支持 `PROXY` 模式下的整文件代理上传
 - `GET /api/v2/files/upload-sessions/{sessionId}/parts/{partIndex}/prepare` 已可返回单分片直传地址；`POST /complete` 会先提交 multipart complete，再复用旧 `FileService.completeUpload()` 落库
 - 过期清理已从普通 `deleteBlob` 升级为对未完成 multipart 执行 abort
-- 前端上传队列仍未切到 v2 upload session
+- 旧 `/api/files/upload/initiate` 现在也会尊重默认策略 `directUpload/maxObjectSize`
+- 桌面端 `FilesPage`、移动端 `MobileFilesPage` 和 `saveFileToNetdisk()` 已切到 v2 upload session，并按 `uploadMode + strategy` 自动选择 `PROXY / DIRECT_SINGLE / DIRECT_MULTIPART`
+- 前端现已接上 `create/get/cancel/prepare/content/part-prepare/part-record/complete` 全套 v2 upload session helper
 
 后续未完成：
 
-- 前端上传队列切到 v2 session
+- 头像上传等非 files 子系统上传入口仍在走旧 `/api/**` 上传链路
 
 ### P2：存储策略继续推进
 
 当前状态：
 
 - `StoragePolicy` 和能力声明骨架已落地
-- 管理台只读展示已落地
+- 管理台查看、新增、编辑、启停非默认策略的后端接口已落地
+- `POST /api/admin/storage-policies/migrations` 已可创建 `STORAGE_POLICY_MIGRATION` 后台任务
+- `STORAGE_POLICY_MIGRATION` 现在会在当前活动存储后端内真实复制对象数据到新的 `policies/{targetPolicyId}/blobs/...` key，并更新 `FileBlob` 与 `FileEntity.VERSION`
+- 迁移任务会暴露 `migrationStage`、`processedEntityCount/totalEntityCount`、`processedStoredFileCount/totalStoredFileCount`、`migratedEntityCount`、`migratedStoredFileCount` 和真实 `progressPercent`
+- 如果迁移过程中失败，handler 会删除本轮新写对象，并依赖事务回滚元数据；旧对象清理则在成功提交后 best-effort 执行
 - 物理实体可追踪 `storagePolicyId`
 
 后续未完成：
 
-- 管理台新增/编辑/停用策略
-- 多策略迁移任务
-- 按策略能力决定上传路径与前端上传策略
+- 跨不同运行时后端类型的真正 provider 级迁移
+- 继续把按策略能力的上传体验外扩到其他非 files 子系统上传入口
 
 ## 当前本地运行状态
 

@@ -166,7 +166,8 @@
 - 定时清理任务会删除超过 10 天的回收站条目；只有当某个 `FileBlob` 的最后一个逻辑引用随之消失时，才真正删除底层对象
 - 应用启动时会把旧 `portal_file.storage_name` 行自动回填到新的 `blob_id` 引用，保证存量数据能继续读取
 - 当前线上网盘文件存储已切到多吉云对象存储，后端先通过多吉云临时密钥 API 换取短期 S3 会话，再访问底层 COS 兼容桶
-- v2 上传会话后端现已支持按存储策略能力走真实 multipart：默认 S3 策略会在创建会话时初始化 `multipartUploadId`，分片上传通过预签名 `UploadPart` 直传对象存储，完成时先提交 multipart complete，再复用旧 `FileService.completeUpload()` 落库；本地策略仍保持 `multipartUpload=false`
+- v2 上传会话后端现已按默认策略能力明确区分三种上传模式：`PROXY`、`DIRECT_SINGLE`、`DIRECT_MULTIPART`。默认 S3 策略会走 `DIRECT_MULTIPART`，在创建会话时初始化 `multipartUploadId`，分片上传通过预签名 `UploadPart` 直传对象存储，完成时先提交 multipart complete，再复用旧 `FileService.completeUpload()` 落库；若默认策略 `directUpload=true` 但 `multipartUpload=false`，则通过 `GET /api/v2/files/upload-sessions/{sessionId}/prepare` 返回整文件直传信息；若 `directUpload=false`，则通过 `POST /api/v2/files/upload-sessions/{sessionId}/content` 走代理上传。当前会话响应还会附带 `strategy`，把当前模式下应调用的后续接口模板显式返回给前端，减少前端自己硬编码 `uploadMode -> endpoint` 映射
+- 前端 files 子系统上传入口现已消费这套 v2 upload session：桌面端 `FilesPage`、移动端 `MobileFilesPage` 和 `saveFileToNetdisk()` 统一通过共享 helper 按 `uploadMode + strategy` 自动选路，并在 multipart 模式下逐片调用 `prepare -> direct upload -> record -> complete`；因此网盘上传主链路已经不再依赖旧 `/api/files/upload/**`
 - 前端会缓存目录列表和最后访问路径
 - 桌面网盘页在左侧树状目录栏底部固定展示回收站入口；移动端在网盘页顶部提供回收站入口；两端共用独立 `RecycleBin` 页面调用 `/api/files/recycle-bin` 与恢复接口
 
@@ -240,6 +241,7 @@ Android 壳补充说明：
 - 当前邀请码由后端返回给管理台展示
 - 用户列表会展示每个用户的已用空间 / 配额
 - 管理员修改用户密码后，旧密码应立即失效，新密码可直接重新登录
+- 管理台当前已可查看、新增、编辑并启停非默认 `StoragePolicy`，也可创建 `STORAGE_POLICY_MIGRATION` 后台任务；策略能力继续以结构化 `StoragePolicyCapabilities` 持久化和回显。当前迁移任务会在“当前活动存储后端”内复制对象数据到新的 target-policy object key、更新 `FileBlob/FileEntity.VERSION` 元数据，并在事务提交后清理旧对象；但仍不支持跨不同运行时后端类型的真正 provider 级迁移。默认策略切换和策略删除仍未落地
 - JWT 过滤器在受保护接口鉴权成功后，会把当天首次上线的用户写入管理统计表，只保留最近 7 天
 - 管理台请求折线图只渲染当天已发生的小时，不再为未来小时补空点
 
@@ -469,6 +471,8 @@ Android 壳补充说明：
 - 2026-04-08 `files/storage` 合并补充：S3 存储实现拆出多吉云临时密钥客户端与运行期会话提供器。`S3FileContentStorage` 现在通过 `S3SessionProvider.currentSession()` 获取当前 bucket、`S3Client` 和 `S3Presigner`，避免每次操作重复内联多吉云 token 解析逻辑；测试环境可直接注入 mock S3 client/presigner。当时该改动还没有引入 multipart，仍是单对象 PUT/HEAD/GET/COPY/DELETE 路径。
 - 2026-04-08 阶段 4 第二小步补充：`FileService` 在创建新的 `FileEntity.VERSION` 时会通过 `StoragePolicyService.ensureDefaultPolicy()` 写入默认 `storagePolicyId`；`FileEntityBackfillService` 对历史 `FileBlob` 回填新实体时也写入同一默认策略。复用已有实体时保持原策略字段不变，只增加引用计数，避免在兼容迁移阶段覆盖历史数据。
 - 2026-04-08 阶段 4 第三小步补充：管理台新增只读存储策略列表。`AdminController` 暴露 `GET /api/admin/storage-policies`，`AdminService` 通过白名单 DTO 返回策略基础字段和结构化 `StoragePolicyCapabilities`；前端 `react-admin` 新增 `storagePolicies` 资源展示能力矩阵。该能力只做配置可视化，不改变旧上传下载路径，也不暴露凭证或提供策略编辑能力。
+- 2026-04-09 存储策略管理补充：`AdminController` 现已补 `POST /api/admin/storage-policies`、`PUT /api/admin/storage-policies/{policyId}`、`PATCH /api/admin/storage-policies/{policyId}/status` 和 `POST /api/admin/storage-policies/migrations`。当前允许新增、编辑、启停非默认策略，并沿用 `StoragePolicyCapabilities` 作为强类型能力声明；迁移接口会为管理员创建 `STORAGE_POLICY_MIGRATION` 后台任务，worker 只校验源/目标策略并重算候选 `FileEntity.VERSION` / `StoredFile` 数量，不直接移动对象数据。默认策略仍不能被停用，也还不支持删除策略或切换默认策略。
+- 2026-04-09 存储策略迁移补充：`StoragePolicyMigrationBackgroundTaskHandler` 现在会在当前活动存储后端内执行真实对象迁移。它要求源/目标策略类型一致且与运行时后端匹配，复制旧 object key 的字节内容到新的 `policies/{targetPolicyId}/blobs/...` key，更新 `FileBlob.objectKey` 与 `FileEntity.VERSION.storagePolicyId/objectKey`，并在事务提交后清理旧对象；若中途失败，会删除本轮新写对象，依赖事务回滚数据库状态。
 - 2026-04-09 上传会话二期补充：`FileContentStorage` 抽象已新增 `createMultipartUpload/prepareMultipartPartUpload/completeMultipartUpload/abortMultipartUpload`；`S3FileContentStorage` 基于预签名 `UploadPart` 与 S3 `Complete/AbortMultipartUpload` 实现真实 multipart。`UploadSession` 新增 `multipartUploadId`，`UploadSessionService.createSession()` 会在默认策略声明 `multipartUpload=true` 时初始化 uploadId，并通过 `GET /api/v2/files/upload-sessions/{sessionId}/parts/{partIndex}/prepare` 返回单分片直传地址。会话完成时先按 `uploadedPartsJson` 提交 multipart complete，再复用旧上传完成链路落库；过期清理则改为优先 abort 未完成 multipart。
 
 ## 2026-04-08 阶段 5 文件搜索第一小步
