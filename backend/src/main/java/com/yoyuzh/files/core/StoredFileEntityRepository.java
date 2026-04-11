@@ -14,4 +14,31 @@ public interface StoredFileEntityRepository extends JpaRepository<StoredFileEnti
             """)
     long countDistinctStoredFilesByStoragePolicyIdAndEntityType(@Param("storagePolicyId") Long storagePolicyId,
                                                                 @Param("entityType") FileEntityType entityType);
+
+    long countByFileEntityId(Long fileEntityId);
+
+    @Query("""
+            select count(distinct relation.storedFile.user.id)
+            from StoredFileEntity relation
+            where relation.fileEntity.id = :fileEntityId
+            """)
+    long countDistinctOwnersByFileEntityId(@Param("fileEntityId") Long fileEntityId);
+
+    @Query("""
+            select min(owner.username)
+            from StoredFileEntity relation
+            join relation.storedFile storedFile
+            join storedFile.user owner
+            where relation.fileEntity.id = :fileEntityId
+            """)
+    String findSampleOwnerUsernameByFileEntityId(@Param("fileEntityId") Long fileEntityId);
+
+    @Query("""
+            select min(owner.email)
+            from StoredFileEntity relation
+            join relation.storedFile storedFile
+            join storedFile.user owner
+            where relation.fileEntity.id = :fileEntityId
+            """)
+    String findSampleOwnerEmailByFileEntityId(@Param("fileEntityId") Long fileEntityId);
 }

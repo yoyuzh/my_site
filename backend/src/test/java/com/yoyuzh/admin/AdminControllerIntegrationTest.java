@@ -2,15 +2,28 @@ package com.yoyuzh.admin;
 
 import com.yoyuzh.PortalBackendApplication;
 import com.yoyuzh.admin.AdminMetricsStateRepository;
+import com.yoyuzh.auth.RefreshTokenRepository;
 import com.yoyuzh.auth.User;
 import com.yoyuzh.auth.UserRepository;
 import com.yoyuzh.files.core.FileBlob;
 import com.yoyuzh.files.core.FileBlobRepository;
+import com.yoyuzh.files.core.FileEntity;
+import com.yoyuzh.files.core.FileEntityRepository;
+import com.yoyuzh.files.core.FileEntityType;
 import com.yoyuzh.files.core.StoredFile;
+import com.yoyuzh.files.core.StoredFileEntity;
+import com.yoyuzh.files.core.StoredFileEntityRepository;
 import com.yoyuzh.files.core.StoredFileRepository;
 import com.yoyuzh.files.policy.StoragePolicy;
 import com.yoyuzh.files.policy.StoragePolicyRepository;
 import com.yoyuzh.files.policy.StoragePolicyType;
+import com.yoyuzh.files.share.FileShareLink;
+import com.yoyuzh.files.share.FileShareLinkRepository;
+import com.yoyuzh.files.tasks.BackgroundTask;
+import com.yoyuzh.files.tasks.BackgroundTaskFailureCategory;
+import com.yoyuzh.files.tasks.BackgroundTaskRepository;
+import com.yoyuzh.files.tasks.BackgroundTaskStatus;
+import com.yoyuzh.files.tasks.BackgroundTaskType;
 import com.yoyuzh.transfer.OfflineTransferSessionRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -25,6 +38,7 @@ import java.time.LocalDateTime;
 import java.time.LocalDate;
 import java.time.LocalTime;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.greaterThanOrEqualTo;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -64,6 +78,16 @@ class AdminControllerIntegrationTest {
     @Autowired
     private FileBlobRepository fileBlobRepository;
     @Autowired
+    private FileEntityRepository fileEntityRepository;
+    @Autowired
+    private StoredFileEntityRepository storedFileEntityRepository;
+    @Autowired
+    private FileShareLinkRepository fileShareLinkRepository;
+    @Autowired
+    private BackgroundTaskRepository backgroundTaskRepository;
+    @Autowired
+    private RefreshTokenRepository refreshTokenRepository;
+    @Autowired
     private OfflineTransferSessionRepository offlineTransferSessionRepository;
     @Autowired
     private AdminMetricsStateRepository adminMetricsStateRepository;
@@ -79,11 +103,20 @@ class AdminControllerIntegrationTest {
 
     @BeforeEach
     void setUp() {
+        backgroundTaskRepository.deleteAll();
+        fileShareLinkRepository.deleteAll();
+        storedFileEntityRepository.deleteAll();
         offlineTransferSessionRepository.deleteAll();
+        refreshTokenRepository.deleteAll();
         storedFileRepository.deleteAll();
+        fileEntityRepository.deleteAll();
         fileBlobRepository.deleteAll();
         userRepository.deleteAll();
         adminMetricsStateRepository.deleteAll();
+
+        Long defaultPolicyId = storagePolicyRepository.findFirstByDefaultPolicyTrueOrderByIdAsc()
+                .map(StoragePolicy::getId)
+                .orElse(null);
 
         portalUser = new User();
         portalUser.setUsername("alice");
@@ -102,6 +135,16 @@ class AdminControllerIntegrationTest {
         secondaryUser = userRepository.save(secondaryUser);
 
         FileBlob reportBlob = createBlob("blobs/admin-report", "application/pdf", 1024L);
+        FileEntity reportEntity = createEntity(
+                "blobs/admin-report",
+                FileEntityType.VERSION,
+                defaultPolicyId,
+                1024L,
+                "application/pdf",
+                1,
+                portalUser,
+                LocalDateTime.now().minusMinutes(10)
+        );
         storedFile = new StoredFile();
         storedFile.setUser(portalUser);
         storedFile.setFilename("report.pdf");
@@ -110,10 +153,22 @@ class AdminControllerIntegrationTest {
         storedFile.setSize(1024L);
         storedFile.setDirectory(false);
         storedFile.setBlob(reportBlob);
+        storedFile.setPrimaryEntity(reportEntity);
         storedFile.setCreatedAt(LocalDateTime.now());
         storedFile = storedFileRepository.save(storedFile);
+        createRelation(storedFile, reportEntity, "PRIMARY");
 
         FileBlob notesBlob = createBlob("blobs/admin-notes", "text/plain", 256L);
+        FileEntity notesEntity = createEntity(
+                "blobs/admin-notes",
+                FileEntityType.VERSION,
+                defaultPolicyId,
+                256L,
+                "text/plain",
+                1,
+                secondaryUser,
+                LocalDateTime.now().minusHours(3)
+        );
         secondaryFile = new StoredFile();
         secondaryFile.setUser(secondaryUser);
         secondaryFile.setFilename("notes.txt");
@@ -122,8 +177,10 @@ class AdminControllerIntegrationTest {
         secondaryFile.setSize(256L);
         secondaryFile.setDirectory(false);
         secondaryFile.setBlob(notesBlob);
+        secondaryFile.setPrimaryEntity(notesEntity);
         secondaryFile.setCreatedAt(LocalDateTime.now().minusHours(2));
         secondaryFile = storedFileRepository.save(secondaryFile);
+        createRelation(secondaryFile, notesEntity, "PRIMARY");
     }
 
     private FileBlob createBlob(String objectKey, String contentType, long size) {
@@ -133,6 +190,35 @@ class AdminControllerIntegrationTest {
         blob.setSize(size);
         blob.setCreatedAt(LocalDateTime.now());
         return fileBlobRepository.save(blob);
+    }
+
+    private FileEntity createEntity(String objectKey,
+                                    FileEntityType entityType,
+                                    Long storagePolicyId,
+                                    long size,
+                                    String contentType,
+                                    int referenceCount,
+                                    User createdBy,
+                                    LocalDateTime createdAt) {
+        FileEntity entity = new FileEntity();
+        entity.setObjectKey(objectKey);
+        entity.setEntityType(entityType);
+        entity.setStoragePolicyId(storagePolicyId);
+        entity.setSize(size);
+        entity.setContentType(contentType);
+        entity.setReferenceCount(referenceCount);
+        entity.setCreatedBy(createdBy);
+        entity.setCreatedAt(createdAt);
+        return fileEntityRepository.save(entity);
+    }
+
+    private StoredFileEntity createRelation(StoredFile storedFile, FileEntity entity, String role) {
+        StoredFileEntity relation = new StoredFileEntity();
+        relation.setStoredFile(storedFile);
+        relation.setFileEntity(entity);
+        relation.setEntityRole(role);
+        relation.setCreatedAt(LocalDateTime.now());
+        return storedFileEntityRepository.save(relation);
     }
 
     @Test
@@ -327,6 +413,121 @@ class AdminControllerIntegrationTest {
 
     @Test
     @WithMockUser(username = "admin")
+    void shouldAllowConfiguredAdminToListFileBlobsWithRiskSignals() throws Exception {
+        Long defaultPolicyId = storagePolicyRepository.findFirstByDefaultPolicyTrueOrderByIdAsc()
+                .map(StoragePolicy::getId)
+                .orElse(null);
+        createEntity(
+                "blobs/missing-preview",
+                FileEntityType.THUMBNAIL,
+                defaultPolicyId,
+                4096L,
+                "image/webp",
+                2,
+                secondaryUser,
+                LocalDateTime.now().minusMinutes(1)
+        );
+
+        mockMvc.perform(get("/api/admin/file-blobs?page=0&size=10&objectKey=missing-preview&entityType=THUMBNAIL"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(0))
+                .andExpect(jsonPath("$.data.total").value(1))
+                .andExpect(jsonPath("$.data.items[0].objectKey").value("blobs/missing-preview"))
+                .andExpect(jsonPath("$.data.items[0].entityType").value("THUMBNAIL"))
+                .andExpect(jsonPath("$.data.items[0].createdByUsername").value("bob"))
+                .andExpect(jsonPath("$.data.items[0].blobMissing").value(true))
+                .andExpect(jsonPath("$.data.items[0].orphanRisk").value(true))
+                .andExpect(jsonPath("$.data.items[0].referenceMismatch").value(true))
+                .andExpect(jsonPath("$.data.items[0].linkedStoredFileCount").value(0))
+                .andExpect(jsonPath("$.data.items[0].linkedOwnerCount").value(0));
+    }
+
+    @Test
+    @WithMockUser(username = "admin")
+    void shouldAllowConfiguredAdminToListAndDeleteShares() throws Exception {
+        FileShareLink share = new FileShareLink();
+        share.setOwner(secondaryUser);
+        share.setFile(secondaryFile);
+        share.setToken("secret-token");
+        share.setShareName("Bob Private Notes");
+        share.setPasswordHash("hashed-secret");
+        share.setExpiresAt(LocalDateTime.now().minusHours(1));
+        share.setMaxDownloads(5);
+        share.setDownloadCount(2L);
+        share.setViewCount(4L);
+        share.setAllowImport(false);
+        share.setAllowDownload(true);
+        share.setCreatedAt(LocalDateTime.now().minusMinutes(5));
+        share = fileShareLinkRepository.save(share);
+
+        mockMvc.perform(get("/api/admin/shares?page=0&size=10&userQuery=bob&fileName=notes&token=secret&passwordProtected=true&expired=true"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(0))
+                .andExpect(jsonPath("$.data.total").value(1))
+                .andExpect(jsonPath("$.data.items[0].id").value(share.getId()))
+                .andExpect(jsonPath("$.data.items[0].shareName").value("Bob Private Notes"))
+                .andExpect(jsonPath("$.data.items[0].ownerUsername").value("bob"))
+                .andExpect(jsonPath("$.data.items[0].fileName").value("notes.txt"))
+                .andExpect(jsonPath("$.data.items[0].passwordProtected").value(true))
+                .andExpect(jsonPath("$.data.items[0].expired").value(true))
+                .andExpect(jsonPath("$.data.items[0].allowImport").value(false))
+                .andExpect(jsonPath("$.data.items[0].allowDownload").value(true));
+
+        mockMvc.perform(delete("/api/admin/shares/{shareId}", share.getId()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(0));
+
+        assertThat(fileShareLinkRepository.findById(share.getId())).isEmpty();
+    }
+
+    @Test
+    @WithMockUser(username = "admin")
+    void shouldAllowConfiguredAdminToListAndInspectTasks() throws Exception {
+        BackgroundTask task = new BackgroundTask();
+        task.setType(BackgroundTaskType.MEDIA_META);
+        task.setStatus(BackgroundTaskStatus.RUNNING);
+        task.setUserId(portalUser.getId());
+        task.setPublicStateJson("""
+                {"failureCategory":"TRANSIENT_INFRASTRUCTURE","retryScheduled":true,"workerOwner":"media-worker-1"}
+                """);
+        task.setPrivateStateJson("""
+                {"internal":"secret"}
+                """);
+        task.setCorrelationId("task-media-meta-1");
+        task.setAttemptCount(1);
+        task.setMaxAttempts(3);
+        task.setLeaseOwner("worker-a");
+        task.setLeaseExpiresAt(LocalDateTime.now().plusMinutes(5));
+        task.setHeartbeatAt(LocalDateTime.now().minusSeconds(30));
+        task.setCreatedAt(LocalDateTime.now().minusMinutes(2));
+        task.setUpdatedAt(LocalDateTime.now().minusSeconds(20));
+        task = backgroundTaskRepository.save(task);
+
+        mockMvc.perform(get("/api/admin/tasks?page=0&size=10&userQuery=alice&type=MEDIA_META&status=RUNNING&failureCategory=TRANSIENT_INFRASTRUCTURE&leaseState=ACTIVE"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(0))
+                .andExpect(jsonPath("$.data.total").value(1))
+                .andExpect(jsonPath("$.data.items[0].id").value(task.getId()))
+                .andExpect(jsonPath("$.data.items[0].type").value("MEDIA_META"))
+                .andExpect(jsonPath("$.data.items[0].status").value("RUNNING"))
+                .andExpect(jsonPath("$.data.items[0].ownerUsername").value("alice"))
+                .andExpect(jsonPath("$.data.items[0].failureCategory").value("TRANSIENT_INFRASTRUCTURE"))
+                .andExpect(jsonPath("$.data.items[0].retryScheduled").value(true))
+                .andExpect(jsonPath("$.data.items[0].workerOwner").value("media-worker-1"))
+                .andExpect(jsonPath("$.data.items[0].leaseState").value("ACTIVE"));
+
+        mockMvc.perform(get("/api/admin/tasks/{taskId}", task.getId()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(0))
+                .andExpect(jsonPath("$.data.id").value(task.getId()))
+                .andExpect(jsonPath("$.data.correlationId").value("task-media-meta-1"))
+                .andExpect(jsonPath("$.data.ownerEmail").value("alice@example.com"))
+                .andExpect(jsonPath("$.data.failureCategory").value("TRANSIENT_INFRASTRUCTURE"))
+                .andExpect(jsonPath("$.data.leaseState").value("ACTIVE"));
+    }
+
+    @Test
+    @WithMockUser(username = "admin")
     void shouldAllowConfiguredAdminToListStoragePolicies() throws Exception {
         mockMvc.perform(get("/api/admin/storage-policies"))
                 .andExpect(status().isOk())
@@ -442,8 +643,12 @@ class AdminControllerIntegrationTest {
                                   "enabled": false
                                 }
                                 """))
-                .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.msg").value("默认存储策略不能停用"));
+                .andExpect(status().isBadRequest());
+
+        assertThat(storagePolicyRepository.findById(defaultPolicy.getId()))
+                .get()
+                .extracting(StoragePolicy::isEnabled)
+                .isEqualTo(true);
     }
 
     @Test

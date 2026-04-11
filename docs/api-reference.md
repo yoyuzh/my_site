@@ -617,3 +617,138 @@
 - 服务重启后，只有 lease 已过期或历史上没有 lease 的 `RUNNING` 任务会在启动完成时被重置回 `QUEUED`，避免多实例下误抢仍在运行的 worker。
 - 创建成功后的任务 state 使用服务端文件信息，至少包含 `fileId`、`path`、`filename`、`directory`、`contentType`、`size`。
 - 桌面端 `Files` 页面会拉取最近 10 条任务、提供 `QUEUED/RUNNING` 取消按钮，并可为当前选中文件创建 `MEDIA_META` 任务；移动端与 archive/extract 的前端入口暂未接入。
+
+## 2026-04-10 Redis Login-State Invalidation
+
+- 新增可选 Redis 基础设施配置：
+  - `spring.data.redis.*`：连接参数。
+  - `app.redis.*`：业务 key prefix、TTL buffer、cache TTL 与命名空间。
+- 当 `app.redis.enabled=true` 时，认证链路会启用 Redis 驱动的登录态失效层：
+  - access token 按 `userId + clientType` 记录“在此时间点之前签发的 token 失效”。
+  - refresh token 按 hash 写入黑名单，TTL 与剩余有效期对齐。
+- `POST /api/auth/login`、`POST /api/auth/register`、`POST /api/auth/dev-login`：如果是同客户端重新签发登录态，旧 access token 会被写入 Redis 失效层，并继续保留原有 `sid` 会话匹配语义。
+- `POST /api/user/password`、管理员封禁/改密/重置密码相关路径：会同时触发 access token Redis 失效标记与数据库 refresh token 撤销。
+- `POST /api/auth/refresh`：旧 refresh token 在数据库撤销之外，还会同步写入 Redis 黑名单；先命中黑名单的 token 会被直接拒绝。
+- 当 Redis 关闭时，系统会自动回退到原有的数据库 refresh token + `sid` 会话校验语义，不影响本地与 dev 启动。
+## 2026-04-10 Redis Files Cache And Upload Runtime
+
+- `GET /api/files/list`
+  - 对外语义不变，仍使用 `path`、`page`、`size` 参数返回当前用户目录分页结果。
+  - 当 `app.redis.enabled=true` 时，后端会把热点目录页写入 Redis `files:list` cache，并通过目录版本号在创建、删除、移动、复制、重命名、恢复、上传完成和导入后做精准失效。
+  - 搜索结果、回收站列表和后台任务列表不复用这套 key，避免不同语义的分页结果互相污染。
+
+- `GET /api/v2/files/upload-sessions/{sessionId}`
+  - 响应体新增 `runtime` 字段；当 Redis 运行态存在时返回实时上传快照，不存在时返回 `null`，不影响原有会话元数据字段。
+  - `runtime` 当前包含 `phase`、`uploadedBytes`、`uploadedPartCount`、`progressPercent`、`lastUpdatedAt`、`expiresAt`。
+  - 该运行态由后端在会话创建、分片记录、代理上传、完成、取消、失败和过期时刷新，属于短生命周期缓存，不替代数据库里的最终状态。
+
+- `POST /api/files/recycle-bin/{fileId}/restore`
+  - 外部接口不变，但 Redis 启用时后端会为同一 `fileId` 的恢复流程加分布式锁，避免多实例或并发请求重复恢复同一批条目。
+
+## 2026-04-10 Redis Lightweight Broker First Landing
+
+- 本批次没有新增对外 HTTP API；用户可见接口仍沿用现有 `/api/files/**` 与 `/api/v2/tasks/**`。
+- 媒体文件通过网盘主链路落库后，后端现在会在事务提交后向轻量 broker 发布一次 `media-metadata-trigger`。这条触发只用于异步创建后台任务，不直接暴露为额外接口。
+- broker 当前只承载“自动补一条 `MEDIA_META` 任务”这一类轻量异步触发，最终执行状态、重试与公开结果仍以 `BackgroundTask` 记录和 `/api/v2/tasks/**` 查询结果为准。
+- `POST /api/v2/tasks/media-metadata`
+  - 用户手动创建任务的接口语义不变。
+  - 与此同时，媒体文件成功落库后也可能由后端自动补一条同类任务；系统会按 `correlationId` 去重，避免同一文件被 broker 重复创建多条自动任务。
+
+## 2026-04-10 Redis Transfer Session Store
+
+- 本批次没有新增快传 HTTP API，`/api/transfer/sessions`、`/api/transfer/sessions/lookup`、`/api/transfer/sessions/{sessionId}/join` 与信令轮询接口的对外协议保持不变。
+- 当 `app.redis.enabled=true` 时，在线快传 session 会写入 Redis `transfer-sessions` 命名空间，而不再只保存在当前 JVM 进程内；这让 `lookup/join/postSignal/pollSignals` 在多实例部署下具备共享同一在线会话状态的基础。
+- session 数据在 Redis 中会同时保存：
+  - `session:{sessionId}`：完整在线快传运行态快照。
+  - `pickup:{pickupCode}`：`pickupCode -> sessionId` 映射。
+- Redis 关闭时，系统会自动回退到原有进程内存 store，本地和 dev 环境不需要额外 Redis 也能继续运行。
+- 离线快传不走这套 Redis store，仍继续使用数据库 `OfflineTransferSession` 持久化模型。
+## 2026-04-10 Redis File Event Pub/Sub
+
+- `GET /api/v2/files/events?path=/`
+  - 对外 SSE 协议不变，仍要求登录并支持 `X-Yoyuzh-Client-Id`。
+  - 首次连接仍先收到 `READY` 事件，订阅路径过滤和同 `clientId` 自抑制语义保持不变。
+  - 当 `app.redis.enabled=true` 时，某个实例在事务提交后写入的文件事件会额外通过 Redis pub/sub 广播到其他实例，因此同一用户连到不同后端实例时也能收到变更通知。
+  - Redis pub/sub 只传播最小事件快照，不传播 `SseEmitter`、不重写 `FileEvent` 表，也不改变 `FileEvent` 作为审计持久化记录的角色。
+  - Redis 关闭时会自动回退为原有单实例本地广播行为。
+## 2026-04-10 Spring Cache Minimal Landing
+
+- `GET /api/admin/storage-policies`
+  - 瀵瑰鍗忚涓嶅彉銆?
+  - 褰?`app.redis.enabled=true` 鏃讹紝鍚庣浼氬皢鏁翠釜瀛樺偍绛栫暐鍒楄〃缂撳瓨鍒?`admin:storage-policies`銆?
+  - 褰?POST/PUT/PATCH` 瀛樺偍绛栫暐绠＄悊鎺ュ彛鍐欏叆鎴愬姛鍚庯紝缂撳瓨浼氱珛鍗宠澶辨晥锛屽悗缁璇锋眰浼氶噸寤烘柊鍒楄〃銆?
+
+- `GET /api/app/android/latest`
+  - 瀵瑰鍗忚涓嶅彉锛屼粛鏄叕寮€鎺ュ彛銆?
+  - 褰?`app.redis.enabled=true` 鏃讹紝鍚庣浼氬皢浠?`android/releases/latest.json` 鏋勫缓鍑虹殑 release metadata 鍝嶅簲缂撳瓨鍒?`android:release`銆?
+  - 杩欎釜缂撳瓨褰撳墠渚濊禆 TTL 鍒锋柊锛屽洜涓?latest metadata 鐨勬洿鏂版潵鑷?Android 鍙戝竷鑴氭湰鍐欏叆瀵硅薄瀛樺偍锛岃€屼笉鏄悗绔唴閮ㄦ煇涓鐞嗗啓鎺ュ彛銆?
+
+- `GET /api/admin/summary`
+  - 褰撳墠鏆備笉鎺ュ叆 Spring Cache銆?
+  - 鍘熷洜鏄繖涓?summary 鍚屾椂鍚湁 request count銆乧aily active users銆乭ourly timeline 绛夐珮棰戠粺璁″€硷紝鐢ㄦ樉寮忓け鏁堝緢闅惧湪褰撳墠鏋舵瀯涓嬩繚鎸佸共鍑€璇箟銆?
+## 2026-04-10 Spring Cache Minimal Landing Clarification
+
+- `GET /api/admin/storage-policies`
+  - Response shape is unchanged.
+  - When `app.redis.enabled=true`, the backend caches the full storage policy list in `admin:storage-policies`.
+  - Successful storage policy create, update, and status-change writes evict that cache immediately.
+
+- `GET /api/app/android/latest`
+  - Response shape is unchanged.
+  - When `app.redis.enabled=true`, the backend caches the metadata response derived from `android/releases/latest.json` in `android:release`.
+  - Refresh is TTL-based because the metadata is updated by the Android release publish script rather than an in-app admin write endpoint.
+
+- `GET /api/admin/summary`
+  - This endpoint is intentionally not cached at the moment.
+  - The response mixes high-churn metrics such as request count, daily active users, and hourly request timeline data, so there is not yet a clean explicit invalidation boundary.
+## 2026-04-10 DogeCloud Temporary S3 Session Clarification
+
+- No HTTP API contract changed in this batch.
+- The decision for Step 11 is architectural: DogeCloud temporary S3 sessions remain cached per backend instance inside `DogeCloudS3SessionProvider`.
+- This does not change upload, download, direct-upload, or multipart endpoint shapes; it only clarifies that cross-instance Redis reuse is intentionally not introduced for these temporary runtime sessions.
+## 2026-04-10 Stage 1 Validation Clarification
+
+- No API response shape changed in Step 12.
+- Validation confirmed that all new Redis-backed integrations added in Stage 1 still preserve the existing no-Redis API startup path when `app.redis.enabled=false`.
+- Local boot also confirmed that the backend now has one explicit non-Redis prerequisite for runtime startup in both default and `dev` profiles: `app.jwt.secret` must be configured via `APP_JWT_SECRET` and cannot be left empty.
+- Cross-instance behavior described by earlier Stage 1 notes remains architecturally valid, but it still needs real-environment verification with Redis plus multiple backend instances before being treated as deployment-proven.
+
+## 2026-04-10 Manual Redis Validation Addendum
+
+- No HTTP endpoint shape changed in this addendum either.
+- The local two-instance Redis validation did confirm these existing API behaviors in a real runtime flow:
+- `POST /api/auth/dev-login` on one instance invalidates the prior access token and refresh token even when the next authenticated read happens on the peer instance.
+- `POST /api/transfer/sessions` plus `GET /api/transfer/sessions/lookup` continue to work across instances for online sessions, including after the creating instance is stopped.
+- `GET /api/v2/files/events` on instance B receives a `CREATED` event after an authenticated media upload to instance A.
+- `GET /api/v2/tasks` on instance B exposes the queued `MEDIA_META` task auto-created by that upload.
+- Three backend fixes were internal and did not change API contracts:
+- Redis cache serialization/deserialization for file list pages;
+- Redis auth revocation cutoff precision;
+- non-null `storage_name` persistence for directory creation and normal file upload metadata.
+
+## 2026-04-11 Admin Backend Surface Addendum
+
+- `GET /api/admin/file-blobs`
+  - Auth: admin only.
+  - Query params: `page`, `size`, `userQuery`, `storagePolicyId`, `objectKey`, `entityType`.
+  - Response items expose `FileEntity`-centric blob inspection fields including `objectKey`, `entityType`, `storagePolicyId`, `referenceCount`, `linkedStoredFileCount`, `linkedOwnerCount`, `sampleOwnerUsername`, `sampleOwnerEmail`, `createdByUserId`, `createdByUsername`, `blobMissing`, `orphanRisk`, and `referenceMismatch`.
+  - This endpoint is for admin diagnostics and migration visibility; it does not replace end-user file reads.
+
+- `GET /api/admin/shares`
+  - Auth: admin only.
+  - Query params: `page`, `size`, `userQuery`, `fileName`, `token`, `passwordProtected`, `expired`.
+  - Response items expose share metadata from `FileShareLink`, plus owner and file summary fields.
+
+- `DELETE /api/admin/shares/{shareId}`
+  - Auth: admin only.
+  - Deletes the target `FileShareLink` immediately.
+  - Intended for operational cleanup and moderation.
+
+- `GET /api/admin/tasks`
+  - Auth: admin only.
+  - Query params: `page`, `size`, `userQuery`, `type`, `status`, `failureCategory`, `leaseState`.
+  - Response items expose task owner identity plus parsed task-state helpers: `failureCategory`, `retryScheduled`, `workerOwner`, and derived `leaseState`.
+
+- `GET /api/admin/tasks/{taskId}`
+  - Auth: admin only.
+  - Returns the same admin task response shape as the list endpoint for a single task.

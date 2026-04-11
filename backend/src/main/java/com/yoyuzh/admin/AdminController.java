@@ -5,7 +5,11 @@ import com.yoyuzh.auth.CustomUserDetailsService;
 import com.yoyuzh.auth.User;
 import com.yoyuzh.common.ApiResponse;
 import com.yoyuzh.common.PageResponse;
+import com.yoyuzh.files.core.FileEntityType;
 import com.yoyuzh.files.tasks.BackgroundTask;
+import com.yoyuzh.files.tasks.BackgroundTaskFailureCategory;
+import com.yoyuzh.files.tasks.BackgroundTaskStatus;
+import com.yoyuzh.files.tasks.BackgroundTaskType;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -59,6 +63,49 @@ public class AdminController {
                                                               @RequestParam(defaultValue = "") String query,
                                                               @RequestParam(defaultValue = "") String ownerQuery) {
         return ApiResponse.success(adminService.listFiles(page, size, query, ownerQuery));
+    }
+
+    @GetMapping("/file-blobs")
+    public ApiResponse<PageResponse<AdminFileBlobResponse>> fileBlobs(@RequestParam(defaultValue = "0") int page,
+                                                                      @RequestParam(defaultValue = "10") int size,
+                                                                      @RequestParam(defaultValue = "") String userQuery,
+                                                                      @RequestParam(required = false) Long storagePolicyId,
+                                                                      @RequestParam(defaultValue = "") String objectKey,
+                                                                      @RequestParam(required = false) FileEntityType entityType) {
+        return ApiResponse.success(adminService.listFileBlobs(page, size, userQuery, storagePolicyId, objectKey, entityType));
+    }
+
+    @GetMapping("/shares")
+    public ApiResponse<PageResponse<AdminShareResponse>> shares(@RequestParam(defaultValue = "0") int page,
+                                                                @RequestParam(defaultValue = "10") int size,
+                                                                @RequestParam(defaultValue = "") String userQuery,
+                                                                @RequestParam(defaultValue = "") String fileName,
+                                                                @RequestParam(defaultValue = "") String token,
+                                                                @RequestParam(required = false) Boolean passwordProtected,
+                                                                @RequestParam(required = false) Boolean expired) {
+        return ApiResponse.success(adminService.listShares(page, size, userQuery, fileName, token, passwordProtected, expired));
+    }
+
+    @DeleteMapping("/shares/{shareId}")
+    public ApiResponse<Void> deleteShare(@PathVariable Long shareId) {
+        adminService.deleteShare(shareId);
+        return ApiResponse.success();
+    }
+
+    @GetMapping("/tasks")
+    public ApiResponse<PageResponse<AdminTaskResponse>> tasks(@RequestParam(defaultValue = "0") int page,
+                                                              @RequestParam(defaultValue = "10") int size,
+                                                              @RequestParam(defaultValue = "") String userQuery,
+                                                              @RequestParam(required = false) BackgroundTaskType type,
+                                                              @RequestParam(required = false) BackgroundTaskStatus status,
+                                                              @RequestParam(required = false) BackgroundTaskFailureCategory failureCategory,
+                                                              @RequestParam(required = false) AdminTaskLeaseState leaseState) {
+        return ApiResponse.success(adminService.listTasks(page, size, userQuery, type, status, failureCategory, leaseState));
+    }
+
+    @GetMapping("/tasks/{taskId}")
+    public ApiResponse<AdminTaskResponse> task(@PathVariable Long taskId) {
+        return ApiResponse.success(adminService.getTask(taskId));
     }
 
     @GetMapping("/storage-policies")

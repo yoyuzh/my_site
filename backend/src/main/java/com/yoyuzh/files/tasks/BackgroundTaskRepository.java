@@ -15,7 +15,35 @@ public interface BackgroundTaskRepository extends JpaRepository<BackgroundTask, 
 
     Page<BackgroundTask> findByUserIdOrderByCreatedAtDesc(Long userId, Pageable pageable);
 
+    @Query("""
+            select task from BackgroundTask task
+            where (:userQuery is null or :userQuery = '' or exists (
+                    select 1 from User owner
+                    where owner.id = task.userId
+                      and (
+                          lower(owner.username) like lower(concat('%', :userQuery, '%'))
+                          or lower(owner.email) like lower(concat('%', :userQuery, '%'))
+                      )
+            ))
+              and (:type is null or task.type = :type)
+              and (:status is null or task.status = :status)
+              and (:failureCategoryPattern is null or lower(task.publicStateJson) like lower(concat('%', :failureCategoryPattern, '%')))
+              and (:leaseState is null
+                or (:leaseState = 'ACTIVE' and task.leaseOwner is not null and task.leaseExpiresAt is not null and task.leaseExpiresAt > :now)
+                or (:leaseState = 'EXPIRED' and task.leaseOwner is not null and task.leaseExpiresAt is not null and task.leaseExpiresAt <= :now)
+                or (:leaseState = 'NONE' and (task.leaseOwner is null or task.leaseExpiresAt is null)))
+            """)
+    Page<BackgroundTask> searchAdminTasks(@Param("userQuery") String userQuery,
+                                          @Param("type") BackgroundTaskType type,
+                                          @Param("status") BackgroundTaskStatus status,
+                                          @Param("failureCategoryPattern") String failureCategoryPattern,
+                                          @Param("leaseState") String leaseState,
+                                          @Param("now") LocalDateTime now,
+                                          Pageable pageable);
+
     Optional<BackgroundTask> findByIdAndUserId(Long id, Long userId);
+
+    boolean existsByCorrelationId(String correlationId);
 
     List<BackgroundTask> findByStatusOrderByCreatedAtAsc(BackgroundTaskStatus status, Pageable pageable);
 

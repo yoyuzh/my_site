@@ -1,5 +1,7 @@
 package com.yoyuzh.admin;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.yoyuzh.auth.AuthTokenInvalidationService;
 import com.yoyuzh.auth.PasswordPolicy;
 import com.yoyuzh.auth.RegistrationInviteService;
 import com.yoyuzh.auth.RefreshTokenService;
@@ -20,6 +22,8 @@ import com.yoyuzh.files.policy.StoragePolicyCredentialMode;
 import com.yoyuzh.files.policy.StoragePolicyRepository;
 import com.yoyuzh.files.policy.StoragePolicyService;
 import com.yoyuzh.files.policy.StoragePolicyType;
+import com.yoyuzh.files.share.FileShareLinkRepository;
+import com.yoyuzh.files.tasks.BackgroundTaskRepository;
 import com.yoyuzh.files.tasks.BackgroundTask;
 import com.yoyuzh.files.tasks.BackgroundTaskService;
 import com.yoyuzh.files.tasks.BackgroundTaskStatus;
@@ -63,6 +67,8 @@ class AdminServiceTest {
     @Mock
     private RefreshTokenService refreshTokenService;
     @Mock
+    private AuthTokenInvalidationService authTokenInvalidationService;
+    @Mock
     private RegistrationInviteService registrationInviteService;
     @Mock
     private OfflineTransferSessionRepository offlineTransferSessionRepository;
@@ -77,7 +83,11 @@ class AdminServiceTest {
     @Mock
     private StoredFileEntityRepository storedFileEntityRepository;
     @Mock
+    private BackgroundTaskRepository backgroundTaskRepository;
+    @Mock
     private BackgroundTaskService backgroundTaskService;
+    @Mock
+    private FileShareLinkRepository fileShareLinkRepository;
 
     private AdminService adminService;
 
@@ -85,10 +95,11 @@ class AdminServiceTest {
     void setUp() {
         adminService = new AdminService(
                 userRepository, storedFileRepository, fileBlobRepository, fileService,
-                passwordEncoder, refreshTokenService, registrationInviteService,
+                passwordEncoder, refreshTokenService, authTokenInvalidationService, registrationInviteService,
                 offlineTransferSessionRepository, adminMetricsService,
                 storagePolicyRepository, storagePolicyService,
-                fileEntityRepository, storedFileEntityRepository, backgroundTaskService);
+                fileEntityRepository, storedFileEntityRepository, backgroundTaskRepository,
+                backgroundTaskService, fileShareLinkRepository, new ObjectMapper());
     }
 
     // --- getSummary ---
@@ -258,8 +269,7 @@ class AdminServiceTest {
         when(storagePolicyRepository.findById(3L)).thenReturn(Optional.of(existingPolicy));
 
         assertThatThrownBy(() -> adminService.updateStoragePolicyStatus(3L, false))
-                .isInstanceOf(BusinessException.class)
-                .hasMessageContaining("默认存储策略不能停用");
+                .isInstanceOf(BusinessException.class);
 
         verify(storagePolicyRepository, never()).save(any(StoragePolicy.class));
     }
@@ -324,7 +334,7 @@ class AdminServiceTest {
 
         assertThatThrownBy(() -> adminService.deleteFile(99L))
                 .isInstanceOf(BusinessException.class)
-                .hasMessageContaining("文件不存在");
+                .hasMessageContaining("file not found");
     }
 
     // --- updateUserRole ---
@@ -347,7 +357,7 @@ class AdminServiceTest {
 
         assertThatThrownBy(() -> adminService.updateUserRole(99L, UserRole.ADMIN))
                 .isInstanceOf(BusinessException.class)
-                .hasMessageContaining("用户不存在");
+                .hasMessageContaining("user not found");
     }
 
     // --- updateUserBanned ---

@@ -186,3 +186,108 @@
 - 2026-04-09 存储策略管理后端继续收口：管理员接口已从只读 `GET /api/admin/storage-policies` 扩展到 `POST /api/admin/storage-policies`、`PUT /api/admin/storage-policies/{policyId}`、`PATCH /api/admin/storage-policies/{policyId}/status` 和 `POST /api/admin/storage-policies/migrations`。当前支持新增、编辑、启停非默认策略，并可创建 `STORAGE_POLICY_MIGRATION` 后台任务；默认策略不能停用，仍不支持删除策略或切换默认策略。
 - 2026-04-09 存储策略与上传路径后端继续推进：`STORAGE_POLICY_MIGRATION` 现已从 skeleton 升级为“当前活动存储后端内的真实迁移”。worker 会限制源/目标策略必须同类型，读取旧 `FileBlob` 对象字节，写入新的 `policies/{targetPolicyId}/blobs/...` object key，同步更新 `FileBlob.objectKey` 与 `FileEntity.VERSION(objectKey, storagePolicyId)`，并在事务提交后异步清理旧对象；若处理中失败，会删除本轮新写对象并依赖事务回滚元数据。与此同时，v2 upload session 现在会按默认策略能力决策 `uploadMode=PROXY|DIRECT_SINGLE|DIRECT_MULTIPART`：`directUpload=false` 时走 `POST /api/v2/files/upload-sessions/{sessionId}/content` 代理上传，`directUpload=true && multipartUpload=false` 时走 `GET /api/v2/files/upload-sessions/{sessionId}/prepare` 单请求直传，`multipartUpload=true` 时继续走现有分片 prepare/record/complete 链路；会话响应还会附带 `strategy`，把当前模式下的后续后端入口模板显式返回给前端；旧 `/api/files/upload/initiate` 也会尊重默认策略的 `directUpload/maxObjectSize`。
 - 2026-04-09 前端 files 上传链路已切到 v2 upload session：桌面端 `FilesPage`、移动端 `MobileFilesPage` 和 `saveFileToNetdisk()` 现在统一通过 `front/src/lib/upload-session.ts` 走 `create/get/cancel/prepare/content/part-prepare/part-record/complete` 全套 helper，并按后端返回的 `uploadMode + strategy` 自动选择 `PROXY / DIRECT_SINGLE / DIRECT_MULTIPART`。旧 `/api/files/upload/**` 当前仍保留给头像等非 files 子系统入口使用。
+- 2026-04-10 存储策略与上传路径后端进入正式迁移，并完成前端视觉系统全面升级：
+  - 后端：`STORAGE_POLICY_MIGRATION` 任务逻辑完整化，支持同类型后端间的数据物理迁移与元数据同步；v2 upload session 现已按策略能力矩阵分发 `PROXY / DIRECT_SINGLE / DIRECT_MULTIPART` 策略。
+  - 前端视觉：全站 UI 已重构为“Stitch”玻璃拟态 (Glassmorphism) 风格。引入全局 `bg-aurora` 背景、`.glass-panel` 通用样式类、`ThemeProvider` 与 `ThemeToggle` 亮暗色切换。
+  - 前端模块：网盘、快传、分享、任务、回收站、移动端布局、管理台 Dashboard、用户、文件、存储策略等所有核心视图均已完成视觉重构，在保持原有数据绑定与逻辑闭环的前提下，实现了极高质感的 UI 表现。
+  - 前端技术栈：由于 `front/` 根目录不直接由 UI 框架管理，通过 `src/components/` 及其对应 hooks/lib 实现了一套自定义的主题与玻璃态组件库，并解决了 overhaul 过程中引入的所有 TypeScript / Lint 缺失引用问题。
+- 2026-04-10 Cloudreve gap 后端升级计划已完成 Stage 1 第一批：
+  - 新增 Spring Cache 与 Spring Data Redis 依赖，`application.yml` / `application-dev.yml` 增加 `spring.data.redis.*` 与默认关闭的 `app.redis.*` 配置骨架；`spring.data.redis.repositories.enabled=false`，当前不启用 Redis repository。
+  - 新增 `AppRedisProperties`、`RedisConfiguration`、`RedisCacheNames`，把 Redis 使用边界拆成 `cache/auth/transfer-sessions/upload-state/locks/file-events/broker` 命名空间；Redis 关闭时回退到 `NoOpCacheManager`，不强依赖本地或 dev 环境外部 Redis。
+  - 新增 `AuthTokenInvalidationService`：Redis 启用时按 `userId + clientType` 写入 access token 的失效时间标记，并把被撤销 refresh token 的 hash 以剩余有效期 TTL 写入 Redis 黑名单；Redis 关闭时自动使用 no-op 实现。
+  - `AuthService` 的同端重登与改密、`AdminService` 的封禁/改密/重置密码、`RefreshTokenService` 的轮换/批量撤销/过期拒绝，现已统一接到这套 Redis 登录态失效层。
+  - `JwtAuthenticationFilter` 现在会在原有 JWT + `sid` 校验前先检查 Redis access token 失效标记；快传 session、热目录缓存、分布式锁、文件事件跨实例广播和轻量 broker 仍留在后续 Stage 1 小步。
+## 2026-04-10 Stage 1 Batch 2
+
+- `/api/files/list` 现已接入可选 Redis 热目录分页缓存，缓存 key 固定包含 `userId + path + page + size + sort context + directory version`，并在创建、删除、移动、复制、重命名、恢复、上传完成和导入后按目录版本精准失效。
+- 第一批分布式锁已落在回收站恢复路径，`FileService.restoreFromRecycleBin(...)` 通过 Redis `locks` 命名空间做带 TTL 和 owner token 的互斥，避免同一条目被并发恢复。
+- 上传会话短状态现已进入 Redis `upload-state` 命名空间，`UploadSessionService` 会在创建、上传中、完成、取消、失败、过期时刷新运行态；`GET /api/v2/files/upload-sessions/{sessionId}` 响应新增 `runtime` 字段，前端可直接读取 phase、uploadedBytes、uploadedPartCount、progressPercent、lastUpdatedAt、expiresAt。
+- 这一批后端升级已通过 `cd backend && mvn test` 全量验证，结果为 277 tests passed。
+
+## 2026-04-10 Stage 1 Batch 3
+
+- Stage 1 Step 7 已落地首批轻量 broker：新增 `LightweightBrokerService` 抽象，Redis 启用时走 Redis list，Redis 关闭时回退到内存队列，继续支持本地单实例开发和测试。
+- 当前 broker 的首个真实用例是媒体任务自动触发：`FileService.saveFileMetadata(...)` 会在媒体文件元数据落库并提交事务后，通过 `MediaMetadataTaskBrokerPublisher` 发布 `media-metadata-trigger`。
+- `MediaMetadataTaskBrokerConsumer` 会批量 drain 这类消息，并调用 `BackgroundTaskService.createQueuedAutoMediaMetadataTask(...)` 创建 `MEDIA_META` 后台任务；创建前会按 `correlationId` 去重，并重新校验文件仍存在、未删除且仍是媒体文件。
+- 这批 broker 明确不是高可靠消息系统，也不替代现有数据库 `BackgroundTask` worker；文件事件跨实例广播仍留给 Stage 1 Step 9 的 Redis pub/sub。
+- 本批次新增/更新测试后，`cd backend && mvn test` 已通过，结果为 281 tests passed。
+
+## 2026-04-10 Stage 1 Batch 4
+
+- Stage 1 Step 8 已完成：在线快传 `TransferSessionStore` 不再只依赖进程内 `ConcurrentHashMap`，Redis 启用时会把 session 快照与 `pickupCode -> sessionId` 映射写入 `transfer-sessions` 命名空间；Redis 关闭时自动回退到内存模式。
+- `TransferSession` 新增内部快照序列化形状，保留 `receiverJoined`、信令队列、cursor 和文件清单等在线运行态；因此 `joinSession` 和 `postSignal` 在修改在线会话后会重新写回 store，避免 Redis 模式下状态只改在临时副本里。
+- `TransferService.nextPickupCode()` 现已复用 store 侧生成逻辑；Redis 启用时会先对 pickup code 做短 TTL 预留，降低多实例并发创建在线快传 session 的碰撞概率。
+- 当前这一步只覆盖在线快传跨实例共享；离线快传仍继续走数据库 `OfflineTransferSessionRepository`，文件事件跨实例广播仍留给 Stage 1 Step 9。
+- 本批次补了 `TransferServiceTest` 和 `TransferSessionStoreTest`，并已通过 `mvn -Dtest=TransferControllerIntegrationTest,TransferServiceTest,TransferSessionStoreTest test` 与 `cd backend && mvn test`；全量结果为 284 tests passed。
+## 2026-04-10 Stage 1 Batch 5
+
+- Stage 1 Step 9 已完成：文件事件从“仅单实例内存广播”升级为“本地 SSE 广播 + Redis pub/sub 跨实例转发”。本地订阅管理仍留在 `FileEventService` 的内存 `subscriptions`，没有把 `SseEmitter` 或订阅状态存进 Redis。
+- 新增 `FileEventCrossInstancePublisher` 抽象与 Redis/no-op 双实现；Redis 开启时，`RedisFileEventPubSubPublisher` 会把已提交的 `FileEvent` 最小快照发布到 `keyPrefix:file-events:pubsub`，并附带当前实例 `instanceId`。
+- `RedisFileEventPubSubListener` 会订阅同一 topic，忽略本实例回环消息，只把远端事件重建后交给 `FileEventService.broadcastReplicatedEvent(...)` 做本地 SSE 投递，因此不会重复写 `FileEvent` 表。
+- 这批实现明确只解决“多实例下文件事件能到达其它实例上的活跃 SSE 订阅”问题，不提供历史重放、可靠投递或补偿语义；事件持久化事实源仍然是数据库 `portal_file_event`。
+- 验证已覆盖 `FileEventServiceTest`、`RedisFileEventPubSubPublisherTest`、`RedisFileEventPubSubListenerTest`、既有 `FileEventPersistenceIntegrationTest`、`FileEventsV2ControllerIntegrationTest`，并通过 `cd backend && mvn test`；全量结果更新为 288 tests passed。
+## 2026-04-10 Stage 1 Batch 6
+
+- Stage 1 Step 10 宸插畬鎴愶細`AdminService.listStoragePolicies()` 鎺ュ叆 `admin:storage-policies` Spring Cache锛屽悗鍙板瓨鍌ㄧ瓥鐣ュ垪琛ㄧ幇鍦ㄤ細鍦?create/update/status 鍐欐搷浣滃悗鍋?all-entries eviction锛汻edis 鍏抽棴鏃朵粛鑷姩鍥為€€鍒板師鏈夐潪缂撳瓨璇昏矾寰勩€?
+- `AndroidReleaseService.getLatestRelease()` 鐜板凡鎺ュ叆 `android:release` Spring Cache锛屽綋鍓嶉€氳繃 TTL 鎺у埗鏁版嵁鍒锋柊锛涘洜涓哄畨鍗撳彂甯冨厓鏁版嵁鏄敱浠撳簱澶栫殑瀵硅薄瀛樺偍鍙戝竷鑴氭湰鏇存柊锛屾病鏈夊悓婧愬啓璺緞鍙互鍦ㄥ悗绔唴閮ㄦ樉寮忓け鏁堛€?
+- `admin summary` 缁忚瘎浼板悗鏆備笉缂撳瓨锛屽洜涓哄叾鍚屾椂鍖呭惈 request count銆乨aily active users銆乭ourly timeline 绛夐珮棰戠粺璁″€硷紝鍋氭樉寮忓け鏁堜細璁╄涔夊彉寰椾笉绋冲畾銆?
+- 杩欐壒琛ヤ簡 `AdminServiceStoragePolicyCacheTest` 鍜?`AndroidReleaseServiceCacheTest` 锛屽苟閫氳繃 `mvn -Dtest=AdminControllerIntegrationTest,AndroidReleaseServiceTest,AndroidReleaseControllerTest,AdminServiceStoragePolicyCacheTest,AndroidReleaseServiceCacheTest test` 涓?`cd backend && mvn test`锛屽叏閲忕粨鏋滄洿鏂颁负 293 tests passed銆?
+## 2026-04-10 Stage 1 Batch 6 Clarification
+
+- Step 10 is complete.
+- `AdminService.listStoragePolicies()` now uses Spring Cache `admin:storage-policies`.
+- Successful storage policy create, update, and status-change writes evict that cache.
+- `AndroidReleaseService.getLatestRelease()` now uses Spring Cache `android:release`.
+- Android release metadata refresh is TTL-driven because updates come from the external release publish script writing `android/releases/latest.json`.
+- `admin summary` was evaluated and intentionally left uncached because it includes high-churn metrics without a clean explicit invalidation boundary.
+- Verification passed with targeted cache/admin/android tests and full `cd backend && mvn test`.
+- Full backend result after this batch: 293 tests passed.
+## 2026-04-10 Stage 1 Batch 7 Clarification
+
+- Stage 1 Step 11 is complete with a deliberate non-change: `DogeCloudS3SessionProvider` stays as a per-instance in-memory runtime cache.
+- The provider caches a live `S3FileRuntimeSession` (`S3Client` + `S3Presigner`) and refreshes only when the temporary credentials enter the built-in one-minute refresh window.
+- Multi-instance duplicate temporary-token fetches were judged acceptable; the repo does not now add Redis-based shared credential caching for DogeCloud temporary S3 sessions.
+- `DogeCloudS3SessionProviderTest` now also covers refresh-time cleanup of the previous runtime session and explicit `close()` cleanup.
+## 2026-04-10 Stage 1 Batch 8 Clarification
+
+- Stage 1 Step 12 is complete as a validation closeout batch.
+- Local verification passed with full `cd backend && mvn test`, keeping the backend suite green at 294 passing tests.
+- Redis-disabled boot compatibility was also re-checked: with `APP_REDIS_ENABLED=false`, `APP_JWT_SECRET` set, and `dev` profile active, the backend booted successfully and reached `Started PortalBackendApplication` on port `18081`.
+- This confirms the new Redis-backed capabilities still preserve the no-Redis local-development path instead of making Redis a hard startup dependency.
+- What remains unverified locally is environment-bound rather than code-bound: real Redis end-to-end behavior and multi-instance propagation for pub/sub, lightweight broker consumption, and Redis-backed runtime/session sharing.
+
+## 2026-04-10 Stage 1 Batch 9 Manual Redis Validation
+
+- Stage 1 manual Redis validation was continued with a real local Redis service plus two backend instances on `18081` and `18082`.
+- Four real regressions were found and fixed during that validation:
+- `RedisFileEventPubSubPublisher` and `RedisFileEventPubSubListener` needed explicit constructor selection for Spring bean creation in Redis-enabled startup.
+- `AuthTokenInvalidationService` was writing revocation cutoffs in milliseconds while JWT `iat` comparison effectively worked at second precision, causing fresh tokens to be treated as revoked; it now stores epoch seconds and tolerates old millisecond Redis values.
+- Redis file list cache needed two runtime fixes: cache serialization must use the application `ObjectMapper` so `LocalDateTime` can be written, and cache reads must tolerate generic map payloads returned by Redis cache deserialization.
+- `portal_file.storage_name` was missing in both `mkdir` and normal file upload metadata writes against the current schema, so both paths now persist a non-null legacy storage name.
+- Manual multi-instance verification that actually passed:
+- re-login invalidates the old access token and old refresh token while keeping the latest token usable;
+- online transfer lookup still works from instance B after instance A is stopped, proving shared runtime state;
+- uploading `image/png` on instance A delivers a `CREATED` SSE event to instance B and auto-creates one queued `MEDIA_META` task visible from instance B.
+- Backend test count is now 301 passing tests after adding coverage for the new Redis/manual-integration regressions.
+- A remaining environment note: direct `redis-cli` key scans did not show the expected Redis keys during local probing even though the cross-instance runtime checks proved Redis-backed sharing was active, so runtime behavior is currently the stronger evidence than raw key inspection.
+
+## Debugging Discipline
+
+- Use short bounded probes first when validating network, dependency, or startup issues. Prefer commands such as `curl --max-time`, `mvn -q`, `mvn dependency:get`, `apt-get update`, and similar narrow checks before launching long-running downloads or full test runs.
+- Do not wait indefinitely on a stalled download or progress indicator. If a command appears stuck, stop and re-check DNS, proxy inheritance, mirror reachability, and direct-vs-proxy routing before retrying.
+- For WSL debugging, verify the proxy path and the direct path separately, then choose the shortest working route. Do not assume a mirror problem until the network path has been isolated.
+- Use domestic mirrors as a delivery optimization, not as a substitute for diagnosis. First determine whether the failure is caused by DNS, proxy configuration, upstream availability, or the mirror itself.
+
+## 2026-04-11 Admin Backend Surface Addendum
+
+- The next backend phase from `2026-04-10-cloudreve-gap-next-phase-upgrade.md` is now underway on the admin surface.
+- `AdminController` and `AdminService` now expose three new admin data areas:
+- `GET /api/admin/file-blobs`: entity-centric blob inspection across `FileEntity`, `StoredFileEntity`, and `FileBlob`, including `blobMissing`, `orphanRisk`, and `referenceMismatch` signals.
+- `GET /api/admin/shares` and `DELETE /api/admin/shares/{shareId}`: admin-side share listing and forced cleanup for `FileShareLink`.
+- `GET /api/admin/tasks` and `GET /api/admin/tasks/{taskId}`: admin-side background task inspection with parsed `failureCategory`, `retryScheduled`, `workerOwner`, and derived `leaseState`.
+- The blob admin list is intentionally based on `FileEntity` instead of `StoredFile` so storage-policy migration and future multi-entity object lifecycles can be inspected without relying on the legacy `StoredFile.blob` read path.
+- Old public/user read flows still intentionally depend on `StoredFile.blob`; this batch does not yet switch download/share/recycle/zip reads to `primaryEntity`.
+- Verification for this batch passed with:
+- `cd backend && mvn -Dtest=AdminControllerIntegrationTest,AdminServiceTest,AdminServiceStoragePolicyCacheTest test`
+- `cd backend && mvn test`
+- Full backend result after this addendum: 304 tests passed.

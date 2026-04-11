@@ -514,3 +514,132 @@ Android 壳补充说明：
 - worker 现在会按失败分类和任务类型做自动重试：失败会归到 `UNSUPPORTED_INPUT`、`DATA_STATE`、`TRANSIENT_INFRASTRUCTURE`、`RATE_LIMITED`、`UNKNOWN`；其中 `ARCHIVE` 默认最多 4 次、`EXTRACT` 最多 3 次、`MEDIA_META` 最多 2 次，公开 state 会暴露 `attemptCount/maxAttempts/retryScheduled/nextRetryAt/retryDelaySeconds/lastFailureMessage/lastFailureAt/failureCategory`。
 - 当前仍不包含非 zip 解压格式、缩略图/视频时长任务，以及 archive/extract 的前端入口。
 - 桌面端 `front/src/pages/Files.tsx` 已接入最近 10 条后台任务查看与取消入口，并可为当前选中文件创建 `MEDIA_META` 任务；移动端与 archive/extract 的前端入口仍未接入。
+## 11. UI 视觉系统与主题引擎 (2026-04-10 升级)
+
+### 11.1 设计语言：Stitch Glassmorphism
+
+全站视觉系统已全面转向“Stitch”玻璃拟态 (Glassmorphism) 风格，其核心特征包括：
+
+- **全局背景 (Aurora)**：在 `index.css` 中定义了 `bg-aurora`，结合颜色渐变与动态光晕产生深邃的底色。
+- **玻璃面板 (.glass-panel)**：核心 UI 容器均使用半透明背景 (`bg-white/40` 或 `bg-black/40`)、高饱和背景模糊 (`backdrop-blur-xl`) 和细腻的白色线条边框 (`border-white/20`)。
+- **浮动质感**：通过 `rounded-3xl` 或 `rounded-[2rem]` 的大圆角和外阴影增强层叠感。
+
+### 11.2 主题管理 (Theme Engine)
+
+系统内建了一套完整的主题上下文，主要路径为：
+
+- `front/src/components/ThemeProvider.tsx`：提供 `light | dark | system` 主题状态切换与持久化，通过操作 `html` 根节点的 `class` 实现。
+- `front/src/components/ThemeToggle.tsx`：全局主题切换按钮组件。
+- `front/src/lib/utils.ts`：提供 `cn()` 工具函数，用于处理 Tailwind 类的动态组合与主题适配。
+
+### 11.3 模块适配情况
+
+- **用户侧**：网盘、快传、分享详情、任务列表、回收站均已完成适配。所有表格、卡片和导航栏均已升级为玻璃态。
+- **移动端**：`MobileLayout` 实现了一套悬浮式玻璃顶部标题栏与底部导航栏，并保持与桌面端一致的光晕背景。
+- **管理侧**：Dashboard 大盘指标卡片、用户列表、文件审计列表和存储策略列表均已同步升级。
+
+## 12. Redis Foundation (2026-04-10)
+
+- 后端已引入 Spring Data Redis 与 Spring Cache，但 Redis 仍是可选基础设施：`app.redis.enabled=false` 时，应用会回退到 no-op token 失效服务与 `NoOpCacheManager`，本地与 dev 环境不需要外部 Redis 也能正常启动与测试。
+- Redis 配置拆成两层：
+  - `spring.data.redis.*`：连接参数。
+  - `app.redis.*`：业务 key prefix、TTL buffer、cache TTL 与命名空间。
+- 当前声明的 Redis 命名空间包括：`cache`、`auth`、`transfer-sessions`、`upload-state`、`locks`、`file-events`、`broker`。本轮真正落地使用的是 `auth`，其余属于后续 Stage 1 边界预留。
+- 当前声明的 Spring Cache 名称包括：`files:list`、`admin:summary`、`admin:storage-policies`、`android:release`。本轮只完成了缓存边界与 TTL 骨架，尚未把具体读路径接到这些 cache。
+- 认证链路新增 Redis 失效层：
+  - access token：按 `userId + clientType` 记录“在此时间点之前签发的 token 失效”。
+  - refresh token：按 token hash 写入黑名单，TTL 与剩余有效期对齐。
+- `JwtAuthenticationFilter` 现在会先检查 access token 是否已被 Redis 失效层拒绝，再继续执行原有的 JWT 校验、用户加载与 `sid` 会话匹配。
+- `AuthService` 与 `AdminService` 的同端重登、改密、封禁、管理员重置密码路径，现已统一调用这层服务；`RefreshTokenService` 在轮换、过期拒绝与批量撤销时也会同步刷新 refresh token 黑名单。
+## 12.1 Redis Foundation Batch 2 (2026-04-10)
+
+- `FileService.list(...)` 现已通过 `FileListDirectoryCacheService` 接入可选 Redis 热目录缓存，当前只缓存 `/api/files/list` 的目录分页结果，不混入搜索、回收站或后台任务列表。
+- 热目录缓存使用 `files:list` Spring Cache 命名空间，真实缓存 key 由 `userId + normalized path + page + size + fixed sort context + directory version` 组成；目录版本存放在 Redis KV 中，按目录粒度增量失效，避免全局清空。
+- 目录列表失效点已经覆盖 `mkdir`、上传完成、外部导入、回收站删除、回收站恢复、重命名、移动、复制与默认目录补齐，所有变更最终都归一到 `touchDirectoryListings(...)`。
+- 分布式锁新增 `DistributedLockService` 抽象与 Redis 实现，当前第一批只落在 `FileService.restoreFromRecycleBin(...)`，锁 key 为 `files:recycle-restore:{fileId}`，通过 `SETNX + TTL + owner token` 获取并用 Lua compare-and-delete 释放。
+- 上传会话运行态新增 `UploadSessionRuntimeStateService` 抽象与 Redis 实现，短生命周期状态写入 `upload-state` 命名空间；数据库里的 `UploadSession` 继续承担最终事实，Redis 只承载创建中、上传中、完成中这类运行态快照。
+- `UploadSessionV2Controller` 已把运行态映射到响应体 `runtime` 字段，便于前端轮询时直接读取 phase、已上传字节数、分片数、进度百分比与过期时间，而不需要额外拼装临时状态。
+
+## 12.2 Redis Foundation Batch 3 (2026-04-10)
+
+- 轻量 broker 已新增 `LightweightBrokerService` 抽象：Redis 启用时使用 `RedisLightweightBrokerService` 把消息写入 Redis list；Redis 关闭时回退到 `InMemoryLightweightBrokerService`，继续支持本地单实例开发与测试。
+- 这层 broker 明确只服务“小规模、低成本、可接受保守语义”的异步触发，不承担高可靠消息系统职责；任务最终状态、重试、幂等与用户可见结果仍以数据库 `BackgroundTask` 为准。
+- 当前 broker 使用 `app.redis.namespaces.broker` 命名空间，首个 topic 为 `media-metadata-trigger`，消息体只携带最小触发上下文：`userId`、`fileId`、`correlationId`。
+- `FileService.saveFileMetadata(...)` 现在会在媒体文件元数据落库后通过 `MediaMetadataTaskBrokerPublisher` 做 after-commit 发布；非媒体文件、目录、缺少必要主键信息的条目不会进入 broker。
+- `MediaMetadataTaskBrokerConsumer` 通过定时 drain 方式消费 broker 消息，并调用 `BackgroundTaskService.createQueuedAutoMediaMetadataTask(...)` 创建 `MEDIA_META` 任务；该入口会先按 `correlationId` 去重，再校验文件仍存在、未删除且仍属于媒体文件，避免重复建任务。
+- 这批实现的目标是“让轻量 broker 先承担一类真实异步触发”，而不是替代现有 `BackgroundTask` worker，也不覆盖文件事件跨实例广播；后者仍归 Stage 1 Step 9 处理。
+
+## 12.3 Redis Foundation Batch 4 (2026-04-10)
+
+- 在线快传 session 已从进程内 `ConcurrentHashMap` 提升为可选 Redis 支撑：`TransferSessionStore` 在 Redis 启用时把 session JSON 与 `pickupCode -> sessionId` 映射写入 `transfer-sessions` 命名空间，关闭时自动回退到原有内存模式。
+- Redis key 当前按 `session:{sessionId}` 与 `pickup:{pickupCode}` 组织，TTL 与 session `expiresAt` 对齐并附带 `app.redis.ttlBufferSeconds` 缓冲；因此 Redis 只承载在线快传的短生命周期运行态，不替代离线快传数据库模型。
+- `TransferSession` 新增内部快照序列化形状，用于保留 `receiverJoined`、信令队列、cursor 和文件清单等运行期状态；`joinSession`、`postSignal` 在修改在线 session 后会重新写回 store，避免 Redis 模式下只改内存副本而不持久化。
+- `TransferService.nextPickupCode()` 现在复用 `TransferSessionStore.nextPickupCode()`；Redis 启用时 pickup code 会先在 Redis 映射 key 上做短 TTL 预留，降低多实例并发创建在线快传 session 时的冲突概率。
+- 当前 Step 8 只覆盖在线快传 session 的跨实例 lookup/join 基础能力；离线快传仍继续使用 `OfflineTransferSessionRepository`，文件事件广播也仍留在 Step 9。
+## 12.4 Redis Foundation Batch 5 (2026-04-10)
+
+- 文件事件跨实例分发现在落地在 Redis pub/sub，而不是把 `SseEmitter` 或订阅状态搬进 Redis。每个实例仍只在本地维护 `userId -> subscriptions` 的内存映射，SSE 过滤逻辑继续由 `FileEventService` 负责。
+- `FileEventService.record(...)` 现在仍然先写 `FileEvent` 表；事务提交后会先向本实例订阅者投递，再通过 `FileEventCrossInstancePublisher` 把最小事件快照发布到 `keyPrefix:file-events:pubsub` topic。
+- Redis 开启时，`RedisFileEventPubSubPublisher` 会附带当前实例 `instanceId`；`RedisFileEventPubSubListener` 在收到消息后会忽略同实例回环消息，只把远端事件重建成 `FileEvent` 并交回 `FileEventService.broadcastReplicatedEvent(...)` 做本地 SSE 投递。
+- 这条链路的目标是“跨实例转发已提交的文件事件”，不是高可靠消息系统：它不重放历史事件，不替代 `FileEvent` 表持久化，也不承担断线补偿；真正的事件审计事实源仍然是数据库。
+- Redis 关闭时，`NoOpFileEventCrossInstancePublisher` 会让行为自动回退为原有单实例本地广播，dev 与本地测试环境不需要额外 Redis 也能继续运行。
+## 12.5 Redis Foundation Batch 6 (2026-04-10)
+
+- Spring Cache 鍦ㄨ繖涓€鎵规寮忔帴鍏ヤ簡涓ょ被楂樿浣庡啓璇昏矾寰勶細`AdminService.listStoragePolicies()` 浣跨敤 `admin:storage-policies`锛宍AndroidReleaseService.getLatestRelease()` 浣跨敤 `android:release`銆?
+- 瀛樺偍绛栫暐鍒楄〃鐨勭紦瀛樺け鏁堢偣鏄槑纭殑绠＄悊鍐欒矾寰勶細鍒涘缓銆佺紪杈戙€佸惎鍋滈兘鍦?`AdminService` 涓婄洿鎺?evict锛屼笉鎶婂叾浠栫敤鎴疯矾寰勬垨鏂囦欢璇昏矾寰勬贩杩涘悓涓€ cache銆?
+- Android release metadata 鍒欐槸 TTL 椹卞姩鐨勭紦瀛橈細鏁版嵁婧愪粛鏄璞″瓨鍌ㄧ殑 `android/releases/latest.json`锛屽悗绔彧缂撳瓨鏋勫缓鍚庣殑 `AndroidReleaseResponse`锛屼笉缂撳瓨 APK 鍒嗗彂瀛楄妭娴併€?
+- `admin summary` 缁忚瘎浼板悗鏆備笉鎺ュ叆缂撳瓨锛屽洜涓鸿繖涓?DTO 鍚屾椂缁勫悎浜嗛珮棰戝彉鍖栫殑 request metrics銆佹瘡鏃ユ椿璺冪敤鎴风粺璁″拰閭€璇风爜绛夊€硷紝鐩墠娌℃湁涓€涓共鍑€鐨勬樉寮忓け鏁堣竟鐣岄€傚悎鎶婂畠鏀惧叆 Spring Cache銆?
+## 12.5 Redis Foundation Batch 6 Clarification (2026-04-10)
+
+- Spring Cache is now active on two high-read, low-write backend read paths.
+- `AdminService.listStoragePolicies()` uses cache `admin:storage-policies`.
+- `AndroidReleaseService.getLatestRelease()` uses cache `android:release`.
+- Storage policy cache invalidation is explicit and tied to admin create, update, and status-change writes.
+- Android release metadata uses TTL-based refresh because the source of truth is object storage metadata at `android/releases/latest.json`, updated by the release publish script rather than an in-app write path.
+- APK byte streaming remains uncached; only the metadata response is cached.
+- `admin summary` remains uncached by design because it mixes several high-churn metrics and does not yet have a clean invalidation boundary.
+## 12.6 Redis Foundation Batch 7 Clarification (2026-04-10)
+
+- `DogeCloudS3SessionProvider` intentionally remains a per-instance in-memory cache instead of moving to Redis.
+- The cached object is not just raw temporary credentials; it is a live runtime session containing `S3Client` and `S3Presigner`, both of which have local lifecycle and cleanup semantics.
+- Because of that, a Redis-backed shared cache would either have to cache only raw credential material and rebuild SDK clients locally anyway, or attempt to share values that are not meaningful across JVM instances.
+- The current design keeps refresh ownership local to each backend instance: if cached credentials are still outside the one-minute refresh window, the existing runtime session is reused; once inside that window, the old runtime session is closed and a fresh one is fetched and rebuilt.
+- This leaves some duplicate DogeCloud temporary-token fetches in multi-instance deployments, but the current plan judges that cost lower than the added complexity and secret-handling surface of a Redis shared-credential cache.
+## 12.7 Redis Foundation Batch 8 Clarification (2026-04-10)
+
+- Stage 1 validation closed with two local checks: full backend test regression and a Redis-disabled `dev` boot-path check.
+- The local boot-path check matters because Redis integration is optional by design. With `APP_REDIS_ENABLED=false`, the application still starts as a normal single-instance backend once mandatory base config such as `APP_JWT_SECRET` is present.
+- In the validated local path, the backend started successfully on an alternate port (`18081`) under the `dev` profile, using H2 and no Redis dependency.
+- Therefore the current architecture boundary remains unchanged: Redis augments cache, pub/sub, lock, broker, and short-lived runtime state when enabled, but it is not a required baseline component for local development or single-instance fallback.
+- The architecture still has explicit environment-bound gaps that were not closed in-process: real Redis reliability/TTL observation and cross-instance propagation timing for file events, lightweight broker delivery, upload runtime state, and transfer-session sharing.
+
+## 12.8 Manual Redis Validation Clarification (2026-04-10)
+
+- The later manual validation pass did exercise real local Redis plus two backend instances, so several Stage 1 architecture claims are now locally runtime-validated rather than only unit/integration-tested.
+- Verified runtime behaviors:
+- auth token invalidation survives cross-instance login churn;
+- online transfer runtime state survives loss of the creating instance;
+- file events can cross instances through the SSE path when a real uploaded file triggers a `CREATED` event;
+- the lightweight broker can auto-create a queued `MEDIA_META` task after a media upload and that task is visible from the peer instance.
+- The Redis file list cache architecture also needed one implementation detail clarified: Spring Cache may hand back generic decoded maps from Redis, so `RedisFileListDirectoryCacheService` now treats cache-value reconstruction as an application concern instead of assuming a strongly typed cache provider result.
+- The persistence model also still carries `portal_file.storage_name` as a required column in the live schema, so even after blob/entity migration work the backend must continue writing a non-null legacy storage name for directories and uploaded files until a later schema migration explicitly removes that requirement.
+- One environment gap remains: local `redis-cli` key inspection did not reveal the expected keys during probing even while cross-instance behavior proved shared runtime state was active. That means the current architectural confidence comes from observable runtime behavior, not from direct local key-space inspection.
+
+## Debugging Discipline
+
+- Use short bounded probes first when validating network, dependency, or startup issues. Prefer commands such as `curl --max-time`, `mvn -q`, `mvn dependency:get`, `apt-get update`, and similar narrow checks before launching long-running downloads or full test runs.
+- Do not wait indefinitely on a stalled download or progress indicator. If a command appears stuck, stop and re-check DNS, proxy inheritance, mirror reachability, and direct-vs-proxy routing before retrying.
+- For WSL debugging, verify the proxy path and the direct path separately, then choose the shortest working route. Do not assume a mirror problem until the network path has been isolated.
+- Use domestic mirrors as a delivery optimization, not as a substitute for diagnosis. First determine whether the failure is caused by DNS, proxy configuration, upstream availability, or the mirror itself.
+
+## 12.9 Admin Backend Surface Clarification (2026-04-11)
+
+- The admin module now covers four distinct backend inspection domains:
+- user and summary management;
+- logical file management;
+- storage policy management and migration task creation;
+- operational inspection for file blobs, shares, and background tasks.
+- `GET /api/admin/file-blobs` is architected around `FileEntity` plus `StoredFileEntity` relations instead of around `StoredFile` rows. This keeps the admin surface aligned with the newer object/entity model and lets operators inspect storage-policy ownership, reference counts, and missing-object anomalies before the legacy read path is retired.
+- `GET /api/admin/shares` and `DELETE /api/admin/shares/{shareId}` sit on top of `FileShareLinkRepository` and are intended as operational controls for share hygiene rather than end-user sharing flows.
+- `GET /api/admin/tasks` and `GET /api/admin/tasks/{taskId}` sit on top of `BackgroundTaskRepository` and parse structured fields out of `publicStateJson` so the admin UI can inspect failure category, retry scheduling, worker owner, and lease freshness without re-implementing backend parsing rules.
+- This batch does not change the current production read-path boundary: download, share detail, recycle-bin, and zip flows still read from `StoredFile.blob`, while `FileEntity` and `StoredFile.primaryEntity` continue to carry migration-oriented metadata for newer admin and storage-policy workflows.
