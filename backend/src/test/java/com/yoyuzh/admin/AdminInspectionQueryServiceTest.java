@@ -5,7 +5,10 @@ import com.yoyuzh.auth.User;
 import com.yoyuzh.auth.UserRepository;
 import com.yoyuzh.auth.UserRole;
 import com.yoyuzh.common.PageResponse;
+import com.yoyuzh.files.core.FileBlob;
 import com.yoyuzh.files.core.FileBlobRepository;
+import com.yoyuzh.files.core.FileEntity;
+import com.yoyuzh.files.core.FileEntityType;
 import com.yoyuzh.files.core.FileEntityRepository;
 import com.yoyuzh.files.core.StoredFile;
 import com.yoyuzh.files.core.StoredFileEntityRepository;
@@ -25,6 +28,9 @@ import java.util.List;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -121,6 +127,63 @@ class AdminInspectionQueryServiceTest {
         assertThat(response.items()).hasSize(1);
         assertThat(response.items().get(0).filename()).isEqualTo("report.pdf");
         assertThat(response.items().get(0).ownerUsername()).isEqualTo("alice");
+    }
+
+    @Test
+    void shouldListFileBlobsWithBatchLoadedBlobAndLinkStats() {
+        User creator = createUser(9L, "creator", "creator@example.com");
+        FileEntity entity = new FileEntity();
+        entity.setId(100L);
+        entity.setObjectKey("blobs/a");
+        entity.setEntityType(FileEntityType.VERSION);
+        entity.setStoragePolicyId(5L);
+        entity.setSize(1024L);
+        entity.setContentType("application/pdf");
+        entity.setReferenceCount(1);
+        entity.setCreatedBy(creator);
+        entity.setCreatedAt(LocalDateTime.now().minusMinutes(2));
+
+        FileBlob blob = new FileBlob();
+        blob.setId(88L);
+        blob.setObjectKey("blobs/a");
+        blob.setContentType("application/pdf");
+        blob.setSize(1024L);
+        blob.setCreatedAt(LocalDateTime.now().minusMinutes(3));
+
+        StoredFileEntityRepository.FileEntityLinkStatsProjection linkStats = mock(StoredFileEntityRepository.FileEntityLinkStatsProjection.class);
+        when(linkStats.getFileEntityId()).thenReturn(100L);
+        when(linkStats.getLinkedStoredFileCount()).thenReturn(1L);
+        when(linkStats.getLinkedOwnerCount()).thenReturn(1L);
+        when(linkStats.getSampleOwnerUsername()).thenReturn("alice");
+        when(linkStats.getSampleOwnerEmail()).thenReturn("alice@example.com");
+
+        when(fileEntityRepository.searchAdminEntities(anyString(), any(), anyString(), any(), any()))
+                .thenReturn(new PageImpl<>(List.of(entity)));
+        when(fileBlobRepository.findAllByObjectKeyIn(any())).thenReturn(List.of(blob));
+        when(storedFileEntityRepository.findAdminLinkStatsByFileEntityIds(any())).thenReturn(List.of(linkStats));
+
+        PageResponse<AdminFileBlobResponse> response = adminInspectionQueryService.listFileBlobs(
+                0,
+                10,
+                null,
+                null,
+                null,
+                null
+        );
+
+        assertThat(response.items()).hasSize(1);
+        assertThat(response.items().get(0).entityId()).isEqualTo(100L);
+        assertThat(response.items().get(0).blobId()).isEqualTo(88L);
+        assertThat(response.items().get(0).linkedStoredFileCount()).isEqualTo(1L);
+        assertThat(response.items().get(0).linkedOwnerCount()).isEqualTo(1L);
+        assertThat(response.items().get(0).sampleOwnerUsername()).isEqualTo("alice");
+        assertThat(response.items().get(0).sampleOwnerEmail()).isEqualTo("alice@example.com");
+
+        verify(fileBlobRepository, never()).findByObjectKey(anyString());
+        verify(storedFileEntityRepository, never()).countByFileEntityId(any());
+        verify(storedFileEntityRepository, never()).countDistinctOwnersByFileEntityId(any());
+        verify(storedFileEntityRepository, never()).findSampleOwnerUsernameByFileEntityId(any());
+        verify(storedFileEntityRepository, never()).findSampleOwnerEmailByFileEntityId(any());
     }
 
     private User createUser(Long id, String username, String email) {

@@ -821,3 +821,27 @@
 - Verification passed with:
 - `cd front && npm run lint`
 - `cd front && npm run build`
+
+## 2026-04-12 Backend/Frontend Refactor Batch 26
+
+- Review follow-up perf fixes were applied for two admin read-path N+1 hotspots plus route-level code-splitting in frontend root router.
+- `AdminInspectionQueryService#listFileBlobs(...)` no longer executes per-row blob/owner/stat lookups:
+- introduced batch blob load by object-key (`FileBlobRepository.findAllByObjectKeyIn(...)`)
+- introduced batch entity-link aggregate query (`StoredFileEntityRepository.findAdminLinkStatsByFileEntityIds(...)`)
+- mapping now uses in-memory maps (`objectKey -> blob`, `entityId -> link stats`) and keeps existing response semantics (`blobMissing`, `orphanRisk`, `referenceMismatch`) unchanged.
+- `AdminUserGovernanceService#listUsers(...)` no longer executes per-user storage sum:
+- introduced `StoredFileRepository.sumFileSizeByUserIds(...)` grouped aggregate query
+- list path now batch-loads storage usage map and maps each row without per-user SQL.
+- Regression tests updated/added:
+- `AdminInspectionQueryServiceTest` now covers batch blob/link-stat mapping path and asserts old per-row repository methods are no longer used.
+- `AdminUserGovernanceServiceTest` list-users path now stubs/asserts grouped `sumFileSizeByUserIds(...)`.
+- Frontend route loading in `front/src/App.tsx` switched to lazy imports + `Suspense` fallback:
+- all main pages and admin pages/layouts are now route-level lazy chunks instead of root synchronous imports.
+- Verification passed with:
+- `cd backend && mvn "-Dtest=AdminInspectionQueryServiceTest,AdminUserGovernanceServiceTest,AdminControllerIntegrationTest" test`
+- result: 34 tests run, 0 failures
+- full regression `cd backend && mvn test`
+- Backend total after this batch: 378 tests passed.
+- `cd front && npm run lint`
+- `cd front && npm run build`
+- build output now shows split chunks with main entry chunk `assets/index-CXR4rSrf.js` at **244.85 kB** (previously reported ~538.17 kB), and no Vite chunk-size warning.

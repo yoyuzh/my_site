@@ -8,10 +8,17 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 import java.time.LocalDateTime;
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 
 public interface StoredFileRepository extends JpaRepository<StoredFile, Long> {
+
+    interface UserStorageUsageProjection {
+        Long getUserId();
+
+        Long getUsedStorageBytes();
+    }
 
     @EntityGraph(attributePaths = {"user", "blob"})
     Page<StoredFile> findAllByOrderByCreatedAtDesc(Pageable pageable);
@@ -103,6 +110,14 @@ public interface StoredFileRepository extends JpaRepository<StoredFile, Long> {
             where f.user.id = :userId and f.directory = false and f.deletedAt is null
             """)
     long sumFileSizeByUserId(@Param("userId") Long userId);
+
+    @Query("""
+            select f.user.id as userId, coalesce(sum(f.size), 0) as usedStorageBytes
+            from StoredFile f
+            where f.user.id in :userIds and f.directory = false and f.deletedAt is null
+            group by f.user.id
+            """)
+    List<UserStorageUsageProjection> sumFileSizeByUserIds(@Param("userIds") Collection<Long> userIds);
 
     @Query("""
             select coalesce(sum(f.size), 0)

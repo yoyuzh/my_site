@@ -4,7 +4,22 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
+import java.util.Collection;
+import java.util.List;
+
 public interface StoredFileEntityRepository extends JpaRepository<StoredFileEntity, Long> {
+
+    interface FileEntityLinkStatsProjection {
+        Long getFileEntityId();
+
+        Long getLinkedStoredFileCount();
+
+        Long getLinkedOwnerCount();
+
+        String getSampleOwnerUsername();
+
+        String getSampleOwnerEmail();
+    }
 
     @Query("""
             select count(distinct relation.storedFile.id)
@@ -41,4 +56,18 @@ public interface StoredFileEntityRepository extends JpaRepository<StoredFileEnti
             where relation.fileEntity.id = :fileEntityId
             """)
     String findSampleOwnerEmailByFileEntityId(@Param("fileEntityId") Long fileEntityId);
+
+    @Query("""
+            select relation.fileEntity.id as fileEntityId,
+                   count(distinct relation.storedFile.id) as linkedStoredFileCount,
+                   count(distinct owner.id) as linkedOwnerCount,
+                   min(owner.username) as sampleOwnerUsername,
+                   min(owner.email) as sampleOwnerEmail
+            from StoredFileEntity relation
+            join relation.storedFile storedFile
+            join storedFile.user owner
+            where relation.fileEntity.id in :fileEntityIds
+            group by relation.fileEntity.id
+            """)
+    List<FileEntityLinkStatsProjection> findAdminLinkStatsByFileEntityIds(@Param("fileEntityIds") Collection<Long> fileEntityIds);
 }

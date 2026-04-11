@@ -21,7 +21,10 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.security.SecureRandom;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
@@ -41,8 +44,12 @@ public class AdminUserGovernanceService {
                 normalizeQuery(query),
                 PageRequest.of(page, size, Sort.by(Sort.Direction.DESC, "createdAt"))
         );
+        List<User> users = result.getContent();
+        Map<Long, Long> usedStorageByUserId = loadUsedStorageByUserIds(users);
         return new PageResponse<>(
-                result.getContent().stream().map(this::toUserResponse).toList(),
+                users.stream()
+                        .map(user -> toUserResponse(user, usedStorageByUserId.getOrDefault(user.getId(), 0L)))
+                        .toList(),
                 result.getTotalElements(),
                 page,
                 size
@@ -150,7 +157,10 @@ public class AdminUserGovernanceService {
     }
 
     private AdminUserResponse toUserResponse(User user) {
-        long usedStorageBytes = storedFileRepository.sumFileSizeByUserId(user.getId());
+        return toUserResponse(user, storedFileRepository.sumFileSizeByUserId(user.getId()));
+    }
+
+    private AdminUserResponse toUserResponse(User user, long usedStorageBytes) {
         return new AdminUserResponse(
                 user.getId(),
                 user.getUsername(),
@@ -163,6 +173,21 @@ public class AdminUserGovernanceService {
                 user.getStorageQuotaBytes(),
                 user.getMaxUploadSizeBytes()
         );
+    }
+
+    private Map<Long, Long> loadUsedStorageByUserIds(List<User> users) {
+        Set<Long> userIds = users.stream()
+                .map(User::getId)
+                .filter(id -> id != null)
+                .collect(Collectors.toSet());
+        if (userIds.isEmpty()) {
+            return Map.of();
+        }
+        return storedFileRepository.sumFileSizeByUserIds(userIds).stream()
+                .collect(Collectors.toMap(
+                        StoredFileRepository.UserStorageUsageProjection::getUserId,
+                        projection -> projection.getUsedStorageBytes() == null ? 0L : projection.getUsedStorageBytes()
+                ));
     }
 
     private User getRequiredUser(Long userId) {

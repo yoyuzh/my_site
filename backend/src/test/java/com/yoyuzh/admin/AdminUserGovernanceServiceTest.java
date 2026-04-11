@@ -27,6 +27,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -67,9 +68,12 @@ class AdminUserGovernanceServiceTest {
     @Test
     void shouldListUsersWithPagination() {
         User user = createUser(1L, "alice", "alice@example.com");
+        StoredFileRepository.UserStorageUsageProjection usageProjection = mock(StoredFileRepository.UserStorageUsageProjection.class);
+        when(usageProjection.getUserId()).thenReturn(1L);
+        when(usageProjection.getUsedStorageBytes()).thenReturn(2048L);
         when(userRepository.searchByUsernameOrEmail(anyString(), any()))
                 .thenReturn(new PageImpl<>(List.of(user)));
-        when(storedFileRepository.sumFileSizeByUserId(1L)).thenReturn(2048L);
+        when(storedFileRepository.sumFileSizeByUserIds(any())).thenReturn(List.of(usageProjection));
 
         PageResponse<AdminUserResponse> response = adminUserGovernanceService.listUsers(0, 10, "alice");
 
