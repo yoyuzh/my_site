@@ -5,7 +5,7 @@ import com.yoyuzh.auth.CustomUserDetailsService;
 import com.yoyuzh.auth.User;
 import com.yoyuzh.common.PageResponse;
 import com.yoyuzh.files.tasks.BackgroundTask;
-import com.yoyuzh.files.tasks.BackgroundTaskService;
+import com.yoyuzh.files.tasks.BackgroundTaskCommandService;
 import com.yoyuzh.files.tasks.BackgroundTaskType;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Max;
@@ -29,7 +29,7 @@ import org.springframework.web.bind.annotation.RestController;
 @RequiredArgsConstructor
 public class BackgroundTaskV2Controller {
 
-    private final BackgroundTaskService backgroundTaskService;
+    private final BackgroundTaskCommandService backgroundTaskCommandService;
     private final CustomUserDetailsService userDetailsService;
 
     @GetMapping
@@ -37,7 +37,7 @@ public class BackgroundTaskV2Controller {
                                                                     @RequestParam(defaultValue = "0") @Min(0) int page,
                                                                     @RequestParam(defaultValue = "20") @Min(1) @Max(100) int size) {
         User user = userDetailsService.loadDomainUser(userDetails.getUsername());
-        var result = backgroundTaskService.listOwnedTasks(
+        var result = backgroundTaskCommandService.listOwnedTasks(
                 user,
                 PageRequest.of(page, size, Sort.by(Sort.Direction.DESC, "createdAt"))
         );
@@ -53,21 +53,21 @@ public class BackgroundTaskV2Controller {
     public ApiV2Response<BackgroundTaskResponse> get(@AuthenticationPrincipal UserDetails userDetails,
                                                      @PathVariable Long id) {
         User user = userDetailsService.loadDomainUser(userDetails.getUsername());
-        return ApiV2Response.success(toResponse(backgroundTaskService.getOwnedTask(user, id)));
+        return ApiV2Response.success(toResponse(backgroundTaskCommandService.getOwnedTask(user, id)));
     }
 
     @DeleteMapping("/{id}")
     public ApiV2Response<BackgroundTaskResponse> cancel(@AuthenticationPrincipal UserDetails userDetails,
                                                         @PathVariable Long id) {
         User user = userDetailsService.loadDomainUser(userDetails.getUsername());
-        return ApiV2Response.success(toResponse(backgroundTaskService.cancelOwnedTask(user, id)));
+        return ApiV2Response.success(toResponse(backgroundTaskCommandService.cancelOwnedTask(user, id)));
     }
 
     @PostMapping("/{id}/retry")
     public ApiV2Response<BackgroundTaskResponse> retry(@AuthenticationPrincipal UserDetails userDetails,
                                                        @PathVariable Long id) {
         User user = userDetailsService.loadDomainUser(userDetails.getUsername());
-        return ApiV2Response.success(toResponse(backgroundTaskService.retryOwnedTask(user, id)));
+        return ApiV2Response.success(toResponse(backgroundTaskCommandService.retryOwnedTask(user, id)));
     }
 
     @PostMapping("/archive")
@@ -92,7 +92,7 @@ public class BackgroundTaskV2Controller {
                                               BackgroundTaskType type,
                                               CreateBackgroundTaskRequest request) {
         User user = userDetailsService.loadDomainUser(userDetails.getUsername());
-        BackgroundTask task = backgroundTaskService.createQueuedFileTask(
+        BackgroundTask task = backgroundTaskCommandService.createQueuedFileTask(
                 user,
                 type,
                 request.fileId(),

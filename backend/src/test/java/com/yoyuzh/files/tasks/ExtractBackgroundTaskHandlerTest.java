@@ -46,7 +46,7 @@ class ExtractBackgroundTaskHandlerTest {
                 storedFileRepository,
                 userRepository,
                 fileService,
-                new ObjectMapper()
+                new BackgroundTaskStateManager(new ObjectMapper())
         );
     }
 

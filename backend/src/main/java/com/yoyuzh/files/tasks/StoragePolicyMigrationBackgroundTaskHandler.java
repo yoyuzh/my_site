@@ -1,8 +1,5 @@
 package com.yoyuzh.files.tasks;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.core.type.TypeReference;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.yoyuzh.common.BusinessException;
 import com.yoyuzh.common.ErrorCode;
 import com.yoyuzh.files.core.FileBlob;
@@ -40,20 +37,20 @@ public class StoragePolicyMigrationBackgroundTaskHandler implements BackgroundTa
     private final FileBlobRepository fileBlobRepository;
     private final StoredFileRepository storedFileRepository;
     private final FileContentStorage fileContentStorage;
-    private final ObjectMapper objectMapper;
+    private final BackgroundTaskStateManager stateManager;
 
     public StoragePolicyMigrationBackgroundTaskHandler(StoragePolicyRepository storagePolicyRepository,
                                                        FileEntityRepository fileEntityRepository,
                                                        FileBlobRepository fileBlobRepository,
                                                        StoredFileRepository storedFileRepository,
                                                        FileContentStorage fileContentStorage,
-                                                       ObjectMapper objectMapper) {
+                                                       BackgroundTaskStateManager stateManager) {
         this.storagePolicyRepository = storagePolicyRepository;
         this.fileEntityRepository = fileEntityRepository;
         this.fileBlobRepository = fileBlobRepository;
         this.storedFileRepository = storedFileRepository;
         this.fileContentStorage = fileContentStorage;
-        this.objectMapper = objectMapper;
+        this.stateManager = stateManager;
     }
 
     @Override
@@ -69,7 +66,10 @@ public class StoragePolicyMigrationBackgroundTaskHandler implements BackgroundTa
 
     @Override
     public BackgroundTaskHandlerResult handle(BackgroundTask task, BackgroundTaskProgressReporter progressReporter) {
-        Map<String, Object> state = parseState(task.getPrivateStateJson());
+        Map<String, Object> state = stateManager.parseJsonObject(
+                task.getPrivateStateJson(),
+                "storage policy migration task state is invalid"
+        );
         Long sourcePolicyId = readLong(state.get("sourcePolicyId"), "sourcePolicyId");
         Long targetPolicyId = readLong(state.get("targetPolicyId"), "targetPolicyId");
 
@@ -210,7 +210,7 @@ public class StoragePolicyMigrationBackgroundTaskHandler implements BackgroundTa
                                               String migrationStage,
                                               boolean migrationPerformed) {
         Map<String, Object> patch = new LinkedHashMap<>();
-        patch.put(BackgroundTaskService.STATE_PHASE_KEY, "migrating-storage-policy");
+        patch.put(BackgroundTaskStateKeys.PHASE, "migrating-storage-policy");
         patch.put("worker", "storage-policy-migration");
         patch.put("migrationStage", migrationStage);
         patch.put("migrationMode", migrationPerformed ? "executed" : "executing");
@@ -281,24 +281,10 @@ public class StoragePolicyMigrationBackgroundTaskHandler implements BackgroundTa
         }
     }
 
-    private Map<String, Object> parseState(String json) {
-        if (!StringUtils.hasText(json)) {
-            return Map.of();
-        }
-        try {
-            return objectMapper.readValue(json, new TypeReference<LinkedHashMap<String, Object>>() {
-            });
-        } catch (JsonProcessingException ex) {
-            throw new IllegalStateException("storage policy migration task state is invalid", ex);
-        }
-    }
-
     private Long readLong(Object value, String key) {
-        if (value instanceof Number number) {
-            return number.longValue();
-        }
-        if (value instanceof String text && StringUtils.hasText(text)) {
-            return Long.parseLong(text.trim());
+        Long parsed = stateManager.readLong(value);
+        if (parsed != null) {
+            return parsed;
         }
         throw new IllegalStateException("storage policy migration task missing " + key);
     }

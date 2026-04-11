@@ -13,6 +13,26 @@
 - Maven 3.9+
 - 生产环境使用 MySQL 8.x 或 openGauss
 
+## Dev Container
+
+仓库根目录现在提供了后端专用的 `.devcontainer/devcontainer.json`。
+
+用途：
+
+- 使用 JDK 17 + Maven 的开发容器打开后端
+- 默认把工作目录定位到 `backend/`
+- 默认转发 `8080`
+- 默认注入一个本地开发用 `APP_JWT_SECRET`
+- 默认启用 `SPRING_PROFILES_ACTIVE=dev`
+
+进入容器后，仍按仓库已有命令运行：
+
+```bash
+mvn spring-boot:run -Dspring-boot.run.profiles=dev
+```
+
+如果你需要读取仓库根目录的 `.env`，它仍然和 `backend/` 一起挂载在同一个 workspace 下，可通过 `../.env` 访问。
+
 ## 启动
 
 推荐先在仓库根目录准备并加载 `.env`：

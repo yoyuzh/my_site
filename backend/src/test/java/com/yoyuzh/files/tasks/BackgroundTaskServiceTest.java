@@ -3,22 +3,27 @@ package com.yoyuzh.files.tasks;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.yoyuzh.api.v2.ApiV2Exception;
 import com.yoyuzh.auth.User;
+import com.yoyuzh.common.lock.DistributedLockService;
 import com.yoyuzh.files.core.StoredFile;
 import com.yoyuzh.files.core.StoredFileRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.function.Supplier;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.lenient;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -31,11 +36,30 @@ class BackgroundTaskServiceTest {
     @Mock
     private StoredFileRepository storedFileRepository;
 
+    @Mock
+    private DistributedLockService distributedLockService;
+
     private BackgroundTaskService backgroundTaskService;
+    private BackgroundTaskExecutionService backgroundTaskExecutionService;
 
     @BeforeEach
     void setUp() {
-        backgroundTaskService = new BackgroundTaskService(backgroundTaskRepository, storedFileRepository, new ObjectMapper());
+        backgroundTaskService = new BackgroundTaskService(
+                backgroundTaskRepository,
+                storedFileRepository,
+                new ObjectMapper(),
+                distributedLockService
+        );
+        backgroundTaskExecutionService = new BackgroundTaskExecutionService(
+                backgroundTaskRepository,
+                new BackgroundTaskRetryPolicy(),
+                new BackgroundTaskStateManager(new ObjectMapper())
+        );
+        lenient().when(distributedLockService.executeWithLock(any(), any(), any())).thenAnswer(invocation -> {
+            @SuppressWarnings("unchecked")
+            Supplier<Object> action = (Supplier<Object>) invocation.getArgument(2);
+            return action.get();
+        });
     }
 
     @Test
@@ -218,7 +242,7 @@ class BackgroundTaskServiceTest {
         when(backgroundTaskRepository.findById(1L)).thenReturn(Optional.of(task));
         when(backgroundTaskRepository.save(any(BackgroundTask.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
-        Optional<BackgroundTask> result = backgroundTaskService.claimQueuedTask(1L, "worker-a", 120L);
+        Optional<BackgroundTask> result = backgroundTaskExecutionService.claimQueuedTask(1L, "worker-a", 120L);
 
         assertThat(result).containsSame(task);
         assertThat(result.orElseThrow().getLeaseOwner()).isEqualTo("worker-a");
@@ -244,7 +268,7 @@ class BackgroundTaskServiceTest {
                 any()
         )).thenReturn(0);
 
-        Optional<BackgroundTask> result = backgroundTaskService.claimQueuedTask(2L, "worker-a", 120L);
+        Optional<BackgroundTask> result = backgroundTaskExecutionService.claimQueuedTask(2L, "worker-a", 120L);
 
         assertThat(result).isEmpty();
     }
@@ -267,7 +291,7 @@ class BackgroundTaskServiceTest {
         when(backgroundTaskRepository.findById(3L)).thenReturn(Optional.of(task));
         when(backgroundTaskRepository.save(any(BackgroundTask.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
-        BackgroundTask result = backgroundTaskService.markWorkerTaskCompleted(3L, "worker-a", Map.of("worker", "noop"), 120L);
+        BackgroundTask result = backgroundTaskExecutionService.markWorkerTaskCompleted(3L, "worker-a", Map.of("worker", "noop"), 120L);
 
         assertThat(result.getStatus()).isEqualTo(BackgroundTaskStatus.COMPLETED);
         assertThat(result.getFinishedAt()).isNotNull();
@@ -300,7 +324,7 @@ class BackgroundTaskServiceTest {
         when(backgroundTaskRepository.findById(7L)).thenReturn(Optional.of(task));
         when(backgroundTaskRepository.save(any(BackgroundTask.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
-        BackgroundTask result = backgroundTaskService.markWorkerTaskProgress(
+        BackgroundTask result = backgroundTaskExecutionService.markWorkerTaskProgress(
                 7L,
                 "worker-a",
                 Map.of("phase", "extracting", "progressPercent", 50),
@@ -333,7 +357,7 @@ class BackgroundTaskServiceTest {
         when(backgroundTaskRepository.findById(4L)).thenReturn(Optional.of(task));
         when(backgroundTaskRepository.save(any(BackgroundTask.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
-        BackgroundTask result = backgroundTaskService.markWorkerTaskFailed(
+        BackgroundTask result = backgroundTaskExecutionService.markWorkerTaskFailed(
                 4L,
                 "worker-a",
                 "media parser unavailable",
@@ -372,7 +396,7 @@ class BackgroundTaskServiceTest {
         when(backgroundTaskRepository.findById(14L)).thenReturn(Optional.of(task));
         when(backgroundTaskRepository.save(any(BackgroundTask.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
-        BackgroundTask result = backgroundTaskService.markWorkerTaskFailed(
+        BackgroundTask result = backgroundTaskExecutionService.markWorkerTaskFailed(
                 14L,
                 "worker-a",
                 "storage timeout",
@@ -412,7 +436,7 @@ class BackgroundTaskServiceTest {
         when(backgroundTaskRepository.findById(18L)).thenReturn(Optional.of(task));
         when(backgroundTaskRepository.save(any(BackgroundTask.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
-        BackgroundTask result = backgroundTaskService.markWorkerTaskFailed(
+        BackgroundTask result = backgroundTaskExecutionService.markWorkerTaskFailed(
                 18L,
                 "worker-a",
                 "429 too many requests",
@@ -445,7 +469,7 @@ class BackgroundTaskServiceTest {
         when(backgroundTaskRepository.findById(15L)).thenReturn(Optional.of(task));
         when(backgroundTaskRepository.save(any(BackgroundTask.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
-        BackgroundTask result = backgroundTaskService.markWorkerTaskFailed(
+        BackgroundTask result = backgroundTaskExecutionService.markWorkerTaskFailed(
                 15L,
                 "worker-a",
                 "storage timeout",
@@ -533,7 +557,7 @@ class BackgroundTaskServiceTest {
         when(backgroundTaskRepository.findById(10L)).thenReturn(Optional.of(expired));
         when(backgroundTaskRepository.save(any(BackgroundTask.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
-        int recovered = backgroundTaskService.requeueExpiredRunningTasks();
+        int recovered = backgroundTaskExecutionService.requeueExpiredRunningTasks();
 
         assertThat(recovered).isEqualTo(1);
         assertThat(expired.getStatus()).isEqualTo(BackgroundTaskStatus.QUEUED);
@@ -558,14 +582,67 @@ class BackgroundTaskServiceTest {
         when(backgroundTaskRepository.findReadyTaskIdsByStatusOrder(eq(BackgroundTaskStatus.QUEUED), any(), any()))
                 .thenReturn(List.of(5L, 6L));
 
-        List<Long> result = backgroundTaskService.findQueuedTaskIds(2);
+        List<Long> result = backgroundTaskExecutionService.findQueuedTaskIds(2);
 
         assertThat(result).containsExactly(5L, 6L);
     }
 
     @Test
     void shouldReturnEmptyTaskIdsWhenLimitIsNonPositive() {
-        List<Long> result = backgroundTaskService.findQueuedTaskIds(0);
+        List<Long> result = backgroundTaskExecutionService.findQueuedTaskIds(0);
+        assertThat(result).isEmpty();
+    }
+
+    @Test
+    void shouldCreateAutoMediaMetadataTaskWhenCorrelationIsNew() {
+        StoredFile file = createStoredFile(19L, createUser(7L), "/docs", "photo.png", false, "image/png", 18L);
+        when(backgroundTaskRepository.existsByCorrelationId("media-meta:auto:file:19")).thenReturn(false);
+        when(storedFileRepository.findByIdAndUserIdAndDeletedAtIsNull(19L, 7L)).thenReturn(Optional.of(file));
+        when(backgroundTaskRepository.saveAndFlush(any(BackgroundTask.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        Optional<BackgroundTask> result = backgroundTaskService.createQueuedAutoMediaMetadataTask(
+                7L,
+                19L,
+                "media-meta:auto:file:19"
+        );
+
+        assertThat(result).isPresent();
+        assertThat(result.orElseThrow().getType()).isEqualTo(BackgroundTaskType.MEDIA_META);
+        assertThat(result.orElseThrow().getCorrelationId()).isEqualTo("media-meta:auto:file:19");
+        assertThat(result.orElseThrow().getPublicStateJson()).contains("\"path\":\"/docs/photo.png\"");
+        assertThat(result.orElseThrow().getPublicStateJson()).contains("\"phase\":\"queued\"");
+        verify(distributedLockService).executeWithLock(eq("background-task-correlation:media-meta:auto:file:19"), any(), any());
+    }
+
+    @Test
+    void shouldSkipAutoMediaMetadataTaskWhenCorrelationAlreadyExists() {
+        when(backgroundTaskRepository.existsByCorrelationId("media-meta:auto:file:20")).thenReturn(true);
+
+        Optional<BackgroundTask> result = backgroundTaskService.createQueuedAutoMediaMetadataTask(
+                7L,
+                20L,
+                "media-meta:auto:file:20"
+        );
+
+        assertThat(result).isEmpty();
+        verify(storedFileRepository, never()).findByIdAndUserIdAndDeletedAtIsNull(20L, 7L);
+        verify(backgroundTaskRepository, never()).save(any(BackgroundTask.class));
+    }
+
+    @Test
+    void shouldTreatDuplicateCorrelationInsertAsIdempotentNoOp() {
+        StoredFile file = createStoredFile(21L, createUser(7L), "/docs", "photo.png", false, "image/png", 18L);
+        when(backgroundTaskRepository.existsByCorrelationId("media-meta:auto:file:21")).thenReturn(false);
+        when(storedFileRepository.findByIdAndUserIdAndDeletedAtIsNull(21L, 7L)).thenReturn(Optional.of(file));
+        when(backgroundTaskRepository.saveAndFlush(any(BackgroundTask.class)))
+                .thenThrow(new DataIntegrityViolationException("duplicate correlation id"));
+
+        Optional<BackgroundTask> result = backgroundTaskService.createQueuedAutoMediaMetadataTask(
+                7L,
+                21L,
+                "media-meta:auto:file:21"
+        );
+
         assertThat(result).isEmpty();
     }
 

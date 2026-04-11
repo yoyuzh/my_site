@@ -44,6 +44,8 @@ public class AuthService {
     private final AuthenticationManager authenticationManager;
     private final JwtTokenProvider jwtTokenProvider;
     private final RefreshTokenService refreshTokenService;
+    private final AuthTokenInvalidationService authTokenInvalidationService;
+    private final AuthSessionPolicy authSessionPolicy;
     private final FileService fileService;
     private final FileContentStorage fileContentStorage;
     private final RegistrationInviteService registrationInviteService;
@@ -115,13 +117,20 @@ public class AuthService {
         }
 
         final String finalCandidate = candidate;
-        User user = userRepository.findByUsername(finalCandidate).orElseGet(() -> {
+        UserRole desiredRole = resolveDevLoginRole(finalCandidate);
+        User user = userRepository.findByUsername(finalCandidate).map(existing -> {
+            if (existing.getRole() != desiredRole) {
+                existing.setRole(desiredRole);
+                return userRepository.save(existing);
+            }
+            return existing;
+        }).orElseGet(() -> {
             User created = new User();
             created.setUsername(finalCandidate);
             created.setDisplayName(finalCandidate);
             created.setEmail(finalCandidate + "@dev.local");
             created.setPasswordHash(passwordEncoder.encode("1"));
-            created.setRole(UserRole.USER);
+            created.setRole(desiredRole);
             created.setPreferredLanguage("zh-CN");
             return userRepository.save(created);
         });
@@ -291,6 +300,7 @@ public class AuthService {
     }
 
     private AuthResponse issueFreshTokens(User user, AuthClientType clientType) {
+        authTokenInvalidationService.revokeAccessTokensForUser(user.getId(), clientType);
         refreshTokenService.revokeAllForUser(user.getId(), clientType);
         return issueTokens(user, refreshTokenService.issueRefreshToken(user, clientType), clientType);
     }
@@ -300,31 +310,20 @@ public class AuthService {
         String accessToken = jwtTokenProvider.generateAccessToken(
                 sessionUser.getId(),
                 sessionUser.getUsername(),
-                getActiveSessionId(sessionUser, clientType),
+                authSessionPolicy.getActiveSessionId(sessionUser, clientType),
                 clientType
         );
         return AuthResponse.issued(accessToken, refreshToken, toProfile(sessionUser));
     }
 
     private User rotateActiveSession(User user, AuthClientType clientType) {
-        String nextSessionId = UUID.randomUUID().toString();
-        if (clientType == AuthClientType.MOBILE) {
-            user.setMobileActiveSessionId(nextSessionId);
-        } else {
-            user.setDesktopActiveSessionId(nextSessionId);
-            user.setActiveSessionId(nextSessionId);
-        }
+        authSessionPolicy.rotateActiveSession(user, clientType);
         return userRepository.save(user);
     }
 
     private void rotateAllActiveSessions(User user) {
-        user.setActiveSessionId(UUID.randomUUID().toString());
-        user.setDesktopActiveSessionId(UUID.randomUUID().toString());
-        user.setMobileActiveSessionId(UUID.randomUUID().toString());
-    }
-
-    private String getActiveSessionId(User user, AuthClientType clientType) {
-        return clientType == AuthClientType.MOBILE ? user.getMobileActiveSessionId() : user.getDesktopActiveSessionId();
+        authTokenInvalidationService.revokeAccessTokensForUser(user.getId());
+        authSessionPolicy.rotateAllActiveSessions(user);
     }
 
     private String normalizeOptionalText(String value) {
@@ -333,6 +332,16 @@ public class AuthService {
         }
         String trimmed = value.trim();
         return trimmed.isEmpty() ? null : trimmed;
+    }
+
+    private UserRole resolveDevLoginRole(String username) {
+        if ("admin".equalsIgnoreCase(username)) {
+            return UserRole.ADMIN;
+        }
+        if ("operator".equalsIgnoreCase(username) || "moderator".equalsIgnoreCase(username)) {
+            return UserRole.MODERATOR;
+        }
+        return UserRole.USER;
     }
 
     private String normalizePreferredLanguage(String preferredLanguage) {

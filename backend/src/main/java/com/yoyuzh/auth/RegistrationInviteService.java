@@ -29,6 +29,20 @@ public class RegistrationInviteService {
     }
 
     @Transactional
+    public String updateCurrentInviteCode(String inviteCode) {
+        RegistrationInviteState state = ensureCurrentStateForUpdate();
+        state.setInviteCode(requireValidInviteCode(inviteCode));
+        return registrationInviteStateRepository.save(state).getInviteCode();
+    }
+
+    @Transactional
+    public String rotateCurrentInviteCode() {
+        RegistrationInviteState state = ensureCurrentStateForUpdate();
+        state.setInviteCode(generateNextInviteCode(state.getInviteCode()));
+        return registrationInviteStateRepository.save(state).getInviteCode();
+    }
+
+    @Transactional
     public void consumeInviteCode(String inviteCode) {
         RegistrationInviteState state = ensureCurrentStateForUpdate();
         String candidateCode = normalize(inviteCode);
@@ -92,5 +106,16 @@ public class RegistrationInviteService {
 
     private String normalize(String value) {
         return value == null ? "" : value.trim();
+    }
+
+    private String requireValidInviteCode(String inviteCode) {
+        String normalized = normalize(inviteCode);
+        if (!StringUtils.hasText(normalized)) {
+            throw new BusinessException(ErrorCode.UNKNOWN, "邀请码不能为空");
+        }
+        if (normalized.length() > 64) {
+            throw new BusinessException(ErrorCode.UNKNOWN, "邀请码长度不能超过 64 个字符");
+        }
+        return normalized;
     }
 }

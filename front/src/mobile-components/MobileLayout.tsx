@@ -6,20 +6,18 @@ import { cn } from '@/src/lib/utils';
 import { ThemeToggle } from '@/src/components/ThemeToggle';
 import { logout } from '@/src/lib/auth';
 import { getSession, type PortalSession } from '@/src/lib/session';
+import { useSessionRuntime } from '@/src/hooks/use-session-runtime';
+import { UploadCenter } from '../components/upload/UploadCenter';
+import { TaskSummaryPanel } from '../components/tasks/TaskSummaryPanel';
+
 
 export default function MobileLayout() {
   const location = useLocation();
   const navigate = useNavigate();
-  const [session, setSession] = useState<PortalSession | null>(() => getSession());
+  const { session } = useSessionRuntime();
 
-  useEffect(() => {
-    const handleSessionChange = (event: Event) => {
-      const customEvent = event as CustomEvent<PortalSession | null>;
-      setSession(customEvent.detail ?? getSession());
-    };
-    window.addEventListener('portal-session-changed', handleSessionChange);
-    return () => window.removeEventListener('portal-session-changed', handleSessionChange);
-  }, []);
+
+
 
   useEffect(() => {
     if (!session && location.pathname !== '/transfer') {
@@ -44,9 +42,12 @@ export default function MobileLayout() {
       className="flex h-screen w-full flex-col overflow-hidden bg-aurora text-gray-900 dark:text-gray-100 transition-colors"
     >
       <header className="fixed top-4 left-4 right-4 z-50 flex items-center justify-between glass-panel rounded-lg px-6 py-4 shadow-xl border-white/20">
-        <div>
-          <div className="text-sm font-black tracking-tight text-blue-600 dark:text-blue-400 uppercase">移动端门户</div>
-          <div className="text-sm font-bold opacity-80 dark:opacity-90 uppercase tracking-[0.2em]">{session?.user.username || '游客用户'}</div>
+        <div className="flex items-center gap-3">
+          <div>
+            <div className="text-[10px] font-black tracking-tight text-blue-600 dark:text-blue-400 uppercase leading-none mb-1">移动端门户</div>
+            <div className="text-sm font-black uppercase tracking-tight">{session?.user.username || '游客用户'}</div>
+          </div>
+          <TaskSummaryPanel />
         </div>
         <div className="flex items-center gap-3">
           <ThemeToggle />
@@ -62,6 +63,9 @@ export default function MobileLayout() {
           </button>
         </div>
       </header>
+
+      <UploadCenter />
+
 
       <main className="relative flex-1 overflow-y-auto pt-28 pb-28 px-4">
         <Outlet />

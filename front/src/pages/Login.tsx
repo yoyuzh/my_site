@@ -85,7 +85,7 @@ export default function Login() {
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
-      className="min-h-screen bg-aurora flex flex-col justify-center py-12 px-6 lg:px-8 relative overflow-hidden"
+      className="min-h-screen bg-aurora text-gray-900 dark:text-gray-100 flex flex-col justify-center py-12 px-6 lg:px-8 relative overflow-hidden"
     >
       {/* Theme Toggle Top Right */}
       <motion.div 
@@ -145,7 +145,7 @@ export default function Login() {
                     placeholder="用户名"
                     value={loginForm.username}
                     onChange={(event) => setLoginForm((current) => ({ ...current, username: event.target.value }))}
-                    className="w-full px-5 py-4 bg-white/10 dark:bg-black/20 border border-white/10 dark:border-white/5 rounded-lg placeholder-white/30 text-base focus:outline-none focus:ring-2 focus:ring-blue-500/50 transition-all font-bold tracking-wide"
+                    className="w-full px-5 py-4 bg-white/10 dark:bg-black/20 border border-white/10 dark:border-white/5 rounded-lg text-gray-900 dark:text-gray-100 placeholder:text-gray-500 dark:placeholder:text-gray-400 text-base focus:outline-none focus:ring-2 focus:ring-blue-500/50 transition-all font-bold tracking-wide"
                     required
                   />
                 </motion.div>
@@ -155,7 +155,7 @@ export default function Login() {
                     placeholder="密码"
                     value={loginForm.password}
                     onChange={(event) => setLoginForm((current) => ({ ...current, password: event.target.value }))}
-                    className="w-full px-5 py-4 bg-white/10 dark:bg-black/20 border border-white/10 dark:border-white/5 rounded-lg placeholder-white/30 text-base focus:outline-none focus:ring-2 focus:ring-blue-500/50 transition-all font-bold tracking-wide"
+                    className="w-full px-5 py-4 bg-white/10 dark:bg-black/20 border border-white/10 dark:border-white/5 rounded-lg text-gray-900 dark:text-gray-100 placeholder:text-gray-500 dark:placeholder:text-gray-400 text-base focus:outline-none focus:ring-2 focus:ring-blue-500/50 transition-all font-bold tracking-wide"
                     required
                   />
                 </motion.div>
@@ -190,7 +190,7 @@ export default function Login() {
                       placeholder={field.placeholder}
                       value={registerForm[field.name as keyof RegisterFormState]}
                       onChange={(event) => setRegisterForm((current) => ({ ...current, [field.name]: event.target.value }))}
-                      className="w-full px-5 py-3.5 bg-white/10 dark:bg-black/20 border border-white/10 dark:border-white/5 rounded-lg placeholder-white/20 text-base focus:outline-none focus:ring-2 focus:ring-blue-500/50 transition-all font-bold tracking-wide"
+                      className="w-full px-5 py-3.5 bg-white/10 dark:bg-black/20 border border-white/10 dark:border-white/5 rounded-lg text-gray-900 dark:text-gray-100 placeholder:text-gray-500 dark:placeholder:text-gray-400 text-base focus:outline-none focus:ring-2 focus:ring-blue-500/50 transition-all font-bold tracking-wide"
                       required
                     />
                   </motion.div>

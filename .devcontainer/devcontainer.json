@@ -1,0 +1,38 @@
+{
+  "name": "my_site backend",
+  "image": "mcr.microsoft.com/devcontainers/java:1-17-bullseye",
+  "remoteUser": "vscode",
+  "workspaceFolder": "/workspaces/${localWorkspaceFolderBasename}/backend",
+  "runArgs": [
+    "--init"
+  ],
+  "mounts": [
+    "source=my-site-backend-maven-cache,target=/home/vscode/.m2,type=volume"
+  ],
+  "containerEnv": {
+    "APP_JWT_SECRET": "devcontainer-local-jwt-secret-please-change-if-needed",
+    "SPRING_PROFILES_ACTIVE": "dev"
+  },
+  "forwardPorts": [
+    8080
+  ],
+  "portsAttributes": {
+    "8080": {
+      "label": "Spring Boot backend",
+      "onAutoForward": "notify"
+    }
+  },
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "vscjava.vscode-java-pack",
+        "vscjava.vscode-lombok",
+        "vmware.vscode-spring-boot"
+      ],
+      "settings": {
+        "java.import.maven.enabled": true,
+        "java.configuration.updateBuildConfiguration": "interactive"
+      }
+    }
+  }
+}

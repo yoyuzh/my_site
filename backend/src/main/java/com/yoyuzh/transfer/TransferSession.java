@@ -69,4 +69,35 @@ final class TransferSession {
     String pickupCode() {
         return pickupCode;
     }
+
+    synchronized TransferSessionState toState() {
+        return new TransferSessionState(
+                sessionId,
+                pickupCode,
+                expiresAt,
+                files,
+                List.copyOf(senderQueue),
+                List.copyOf(receiverQueue),
+                receiverJoined,
+                nextSenderCursor,
+                nextReceiverCursor
+        );
+    }
+
+    static TransferSession fromState(TransferSessionState state) {
+        TransferSession session = new TransferSession(
+                state.sessionId(),
+                state.pickupCode(),
+                state.expiresAt(),
+                state.files()
+        );
+        synchronized (session) {
+            session.senderQueue.addAll(state.senderQueue());
+            session.receiverQueue.addAll(state.receiverQueue());
+            session.receiverJoined = state.receiverJoined();
+            session.nextSenderCursor = state.nextSenderCursor();
+            session.nextReceiverCursor = state.nextReceiverCursor();
+        }
+        return session;
+    }
 }

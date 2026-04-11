@@ -8,6 +8,7 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 import java.time.LocalDateTime;
+import java.util.List;
 import java.util.Optional;
 
 public interface RefreshTokenRepository extends JpaRepository<RefreshToken, Long> {
@@ -34,4 +35,19 @@ public interface RefreshTokenRepository extends JpaRepository<RefreshToken, Long
     int revokeAllActiveByUserIdAndClientType(@Param("userId") Long userId,
                                              @Param("clientType") String clientType,
                                              @Param("revokedAt") LocalDateTime revokedAt);
+
+    @Query("""
+            select token from RefreshToken token
+            where token.user.id = :userId and token.revoked = false and token.expiresAt > :now
+            """)
+    List<RefreshToken> findActiveByUserId(@Param("userId") Long userId, @Param("now") LocalDateTime now);
+
+    @Query("""
+            select token from RefreshToken token
+            where token.user.id = :userId and token.revoked = false and token.expiresAt > :now
+              and (token.clientType = :clientType or (:clientType = 'DESKTOP' and token.clientType is null))
+            """)
+    List<RefreshToken> findActiveByUserIdAndClientType(@Param("userId") Long userId,
+                                                       @Param("clientType") String clientType,
+                                                       @Param("now") LocalDateTime now);
 }

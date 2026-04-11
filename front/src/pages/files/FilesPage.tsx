@@ -3,11 +3,14 @@ import { ChevronRight, Copy, Download, FolderPlus, HardDrive, Move, RefreshCw, S
 import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'motion/react';
 import { createMediaMetadataTask } from '@/src/lib/background-tasks';
-import { copyFile, createDirectory, deleteFile, getDownloadUrl, listFiles, moveFile, renameFile, searchFiles, type FileItem } from '@/src/lib/files';
+import { copyFile, createDirectory, deleteFile, getDownloadUrl, moveFile, renameFile, searchFiles, type FileItem } from '@/src/lib/files';
 import { formatBytes, formatDateTime } from '@/src/lib/format';
 import { buildSharePublicUrl, createShare } from '@/src/lib/shares-v2';
-import { uploadFileWithSession } from '@/src/lib/upload-session';
+import { uploadRuntime } from '@/src/lib/upload-runtime';
 import { cn } from '@/src/lib/utils';
+
+import { useDirectoryData } from '@/src/hooks/use-directory-data';
+import { filesCache } from '@/src/lib/files-cache';
 
 function joinPath(basePath: string, name: string) {
   if (basePath === '/') {
@@ -42,38 +45,62 @@ const itemVariants = {
 export default function FilesPage() {
   const navigate = useNavigate();
   const uploadInputRef = useRef<HTMLInputElement | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
+  
+  // 核心路径状态
   const [path, setPath] = useState('/');
+  
+  // 搜索相关状态（与目录视图解耦）
   const [query, setQuery] = useState('');
-  const [files, setFiles] = useState<FileItem[]>([]);
+  const [isSearching, setIsSearching] = useState(false);
+  const [searchResults, setSearchResults] = useState<FileItem[]>([]);
+  const [searchLoading, setSearchLoading] = useState(false);
+  const [searchError, setSearchError] = useState('');
+
+  // 目录数据 Hook
+  const { 
+    items: directoryFiles, 
+    loading: directoryLoading, 
+    error: directoryError, 
+    refresh,
+    isStale 
+  } = useDirectoryData(path);
+
   const [selectedFile, setSelectedFile] = useState<FileItem | null>(null);
   const [directoryTree, setDirectoryTree] = useState<Record<string, FileItem[]>>({});
 
-  async function loadFiles(nextPath = path, nextQuery = query) {
-    setError('');
+  // 最终展示出的文件列表
+  const displayFiles = isSearching ? searchResults : directoryFiles;
+  const isLoading = isSearching ? searchLoading : directoryLoading;
+  const error = isSearching ? searchError : directoryError;
+
+  // 当目录数据变化时，更新左侧树
+  useEffect(() => {
+    if (!isSearching && directoryFiles.length > 0) {
+      setDirectoryTree((current) => ({
+        ...current,
+        [path]: directoryFiles.filter((item) => item.directory),
+      }));
+    }
+  }, [directoryFiles, path, isSearching]);
+
+  // 处理搜索
+  async function performSearch(val: string) {
+    if (!val.trim()) {
+      setIsSearching(false);
+      return;
+    }
+    setIsSearching(true);
+    setSearchLoading(true);
+    setSearchError('');
     try {
-      const result = nextQuery.trim()
-        ? await searchFiles(nextQuery.trim(), 0, 100)
-        : await listFiles(nextPath, 0, 100);
-      setFiles(result.items);
-      if (!nextQuery.trim()) {
-        setDirectoryTree((current) => ({
-          ...current,
-          [nextPath]: result.items.filter((item) => item.directory),
-        }));
-      }
-      setSelectedFile((current) => result.items.find((item) => item.id === current?.id) ?? null);
+      const result = await searchFiles(val.trim(), 0, 100);
+      setSearchResults(result.items);
     } catch (err) {
-      setError(err instanceof Error ? err.message : '加载文件失败');
+      setSearchError(err instanceof Error ? err.message : '搜索失败');
     } finally {
-      setLoading(false);
+      setSearchLoading(false);
     }
   }
-
-  useEffect(() => {
-    void loadFiles();
-  }, [path]);
 
   const breadcrumbs = useMemo(() => splitPath(path), [path]);
 
@@ -88,7 +115,11 @@ export default function FilesPage() {
         <div key={item.id} className="space-y-1">
           <button
             type="button"
-            onClick={() => setPath(nodePath)}
+            onClick={() => {
+              setIsSearching(false);
+              setQuery('');
+              setPath(nodePath);
+            }}
             className={cn(
                "group flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm font-black uppercase tracking-wider transition-all",
                path === nodePath 
@@ -117,13 +148,18 @@ export default function FilesPage() {
       className="flex gap-6 h-full w-full p-8 overflow-hidden text-gray-900 dark:text-gray-100"
     >
       <aside className="hidden lg:flex w-72 flex-col flex-shrink-0 glass-panel-no-hover rounded-lg overflow-hidden shadow-2xl border-white/10">
-        <div className="border-b border-white/10 px-6 py-6">
+        <div className="border-b border-white/10 px-6 py-6 flex items-center justify-between">
           <h2 className="text-[10px] font-black uppercase tracking-[0.3em] opacity-40">目录结构</h2>
+          {isStale && <span className="w-1.5 h-1.5 rounded-full bg-blue-500 animate-pulse" title="后台刷新中..."></span>}
         </div>
         <div className="flex-1 space-y-1.5 overflow-y-auto p-4 custom-scrollbar">
           <button
             type="button"
-            onClick={() => setPath('/')}
+            onClick={() => {
+              setIsSearching(false);
+              setQuery('');
+              setPath('/');
+            }}
             className={cn(
               "flex w-full items-center gap-2 rounded-lg px-3 py-2.5 text-sm font-black uppercase tracking-wider transition-all",
               path === '/' ? "bg-blue-600/10 text-blue-600 dark:text-blue-400 shadow-sm border border-blue-500/20" : "text-gray-700 dark:text-gray-200 hover:bg-white/30 dark:hover:bg-white/5"
@@ -151,7 +187,14 @@ export default function FilesPage() {
           <div className="flex flex-col gap-6 px-8 py-6">
             <div className="flex flex-wrap items-center justify-between gap-6">
               <div className="flex flex-wrap items-center text-[11px] font-black uppercase tracking-widest">
-                <button type="button" onClick={() => setPath('/')} className="opacity-40 hover:opacity-100 transition-opacity">
+                <button 
+                  type="button" 
+                  onClick={() => {
+                    setIsSearching(false);
+                    setQuery('');
+                    setPath('/');
+                  }} className="opacity-40 hover:opacity-100 transition-opacity"
+                >
                   文件系统
                 </button>
                 {breadcrumbs.map((segment, index) => {
@@ -159,7 +202,14 @@ export default function FilesPage() {
                   return (
                     <div key={target} className="flex items-center">
                       <ChevronRight className="mx-2 h-3 w-3 opacity-20" />
-                      <button type="button" onClick={() => setPath(target)} className="opacity-40 hover:opacity-100 transition-opacity">
+                      <button 
+                        type="button" 
+                        onClick={() => {
+                          setIsSearching(false);
+                          setQuery('');
+                          setPath(target);
+                        }} className="opacity-40 hover:opacity-100 transition-opacity"
+                      >
                         {segment}
                       </button>
                     </div>
@@ -170,11 +220,16 @@ export default function FilesPage() {
                 <Search className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 opacity-70 group-focus-within:opacity-100 text-blue-500 transition-opacity" />
                 <input
                   value={query}
-                  onChange={(event) => setQuery(event.target.value)}
+                  onChange={(event) => {
+                    const val = event.target.value;
+                    setQuery(val);
+                    if (!val.trim()) {
+                      setIsSearching(false);
+                    }
+                  }}
                   onKeyDown={(event) => {
                     if (event.key === 'Enter') {
-                      setLoading(true);
-                      void loadFiles(path, event.currentTarget.value);
+                      void performSearch(event.currentTarget.value);
                     }
                   }}
                   placeholder="搜索文件..."
@@ -191,13 +246,13 @@ export default function FilesPage() {
                 onChange={async (event) => {
                   const file = event.target.files?.[0];
                   if (!file) return;
-                  setLoading(true);
                   try {
-                    await uploadFileWithSession(file, path);
-                    await loadFiles();
+                    await uploadRuntime.uploadFile(file, path);
+                    filesCache.invalidate(path);
+                    refresh();
                   } catch (err) {
-                    setError(err instanceof Error ? err.message : '上传失败');
-                    setLoading(false);
+
+                    console.error('上传失败', err);
                   } finally {
                     event.target.value = '';
                   }
@@ -216,13 +271,12 @@ export default function FilesPage() {
                 onClick={async () => {
                   const name = window.prompt('请输入文件夹名称');
                   if (!name) return;
-                  setLoading(true);
                   try {
                     await createDirectory(joinPath(path, name));
-                    await loadFiles();
+                    filesCache.invalidate(path);
+                    refresh();
                   } catch (err) {
-                    setError(err instanceof Error ? err.message : '创建失败');
-                    setLoading(false);
+                    console.error('创建失败', err);
                   }
                 }}
                 className="flex items-center gap-2 rounded-lg glass-panel border-white/10 px-6 py-2.5 text-sm font-black uppercase tracking-widest text-gray-700 dark:text-gray-200 hover:bg-white/40 transition-all"
@@ -233,12 +287,11 @@ export default function FilesPage() {
               <button
                 type="button"
                 onClick={() => {
-                  setLoading(true);
-                  void loadFiles();
+                  refresh();
                 }}
                 className="flex items-center gap-2 rounded-lg glass-panel border-white/10 px-6 py-2.5 text-sm font-black uppercase tracking-widest text-gray-700 dark:text-gray-200 hover:bg-white/40 transition-all border-white/10"
               >
-                <RefreshCw className={cn("h-4 w-4", loading && "animate-spin")} />
+                <RefreshCw className={cn("h-4 w-4", isLoading && "animate-spin")} />
                 刷新
               </button>
             </div>
@@ -248,7 +301,7 @@ export default function FilesPage() {
         <div className="flex min-h-0 flex-1 relative z-10">
           <div className="min-w-0 flex-1 overflow-y-auto p-8 custom-scrollbar">
             {error ? <div className="mb-6 rounded-lg bg-red-500/10 border border-red-500/20 px-6 py-4 text-xs text-red-600 dark:text-red-400 font-bold backdrop-blur-md">{error}</div> : null}
-            {loading ? (
+            {isLoading && !displayFiles.length ? (
               <div className="rounded-lg glass-panel border-white/10 px-4 py-24 text-center text-[10px] font-black uppercase tracking-[0.3em] opacity-40">加载中...</div>
             ) : (
               <div className="overflow-hidden rounded-lg glass-panel border-white/10 shadow-2xl relative shadow-blue-500/5">
@@ -267,7 +320,7 @@ export default function FilesPage() {
                     animate="show"
                     className="divide-y divide-white/10 dark:divide-white/5"
                   >
-                    {files.map((file) => (
+                    {displayFiles.map((file) => (
                       <motion.tr
                         key={file.id}
                         variants={itemVariants}
@@ -288,10 +341,10 @@ export default function FilesPage() {
                         <td className="px-8 py-5 text-sm font-bold opacity-80 dark:opacity-90 tracking-tighter uppercase">{formatDateTime(file.createdAt)}</td>
                       </motion.tr>
                     ))}
-                    {files.length === 0 ? (
+                    {displayFiles.length === 0 ? (
                       <tr>
                         <td colSpan={4} className="px-8 py-24 text-center text-sm font-black uppercase tracking-widest opacity-70">
-                          {query.trim() ? '没有匹配文件' : '当前目录为空'}
+                          {isSearching ? '没有匹配文件' : '当前目录为空'}
                         </td>
                       </tr>
                     ) : null}
@@ -359,7 +412,11 @@ export default function FilesPage() {
                           type="button"
                           onClick={async () => {
                             const nextName = window.prompt('请输入新名称', selectedFile.filename);
-                            if (nextName) { await renameFile(selectedFile.id, nextName); await loadFiles(); }
+                            if (nextName) { 
+                              await renameFile(selectedFile.id, nextName); 
+                              filesCache.invalidate(path);
+                              refresh(); 
+                            }
                           }}
                           className="flex items-center justify-center gap-2 rounded-lg glass-panel border-white/10 p-4 text-xs font-black uppercase tracking-widest hover:bg-white/40 transition-all"
                         >
@@ -369,7 +426,12 @@ export default function FilesPage() {
                           type="button"
                           onClick={async () => {
                             const targetPath = window.prompt('请输入目标路径', selectedFile.path);
-                            if (targetPath) { await moveFile(selectedFile.id, targetPath); await loadFiles(); }
+                            if (targetPath) { 
+                              await moveFile(selectedFile.id, targetPath); 
+                              filesCache.invalidate(path);
+                              filesCache.invalidate(targetPath);
+                              refresh(); 
+                            }
                           }}
                           className="flex items-center justify-center gap-2 rounded-lg glass-panel border-white/10 p-4 text-xs font-black uppercase tracking-widest hover:bg-white/40 transition-all"
                         >
@@ -382,7 +444,8 @@ export default function FilesPage() {
                         onClick={async () => {
                           if (!window.confirm(`确认删除 ${selectedFile.filename} 吗？`)) return;
                           await deleteFile(selectedFile.id);
-                          await loadFiles();
+                          filesCache.invalidate(path);
+                          refresh();
                         }}
                         className="flex w-full items-center gap-3 rounded-lg glass-panel border-white/10 px-4 py-4 text-sm font-black uppercase tracking-[0.2em] text-red-500 hover:bg-red-500 hover:text-white transition-all border-red-500/20"
                       >

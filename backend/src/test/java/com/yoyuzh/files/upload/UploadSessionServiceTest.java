@@ -11,13 +11,14 @@ import com.yoyuzh.files.policy.StoragePolicyService;
 import com.yoyuzh.files.policy.StoragePolicyType;
 import com.yoyuzh.files.storage.FileContentStorage;
 import com.yoyuzh.files.storage.PreparedUpload;
-import org.springframework.mock.web.MockMultipartFile;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.mock.web.MockMultipartFile;
+import org.springframework.test.util.ReflectionTestUtils;
 
 import java.time.Clock;
 import java.time.Instant;
@@ -48,6 +49,8 @@ class UploadSessionServiceTest {
     private FileContentStorage fileContentStorage;
     @Mock
     private StoragePolicyService storagePolicyService;
+    @Mock
+    private UploadSessionRuntimeStateService uploadSessionRuntimeStateService;
 
     private UploadSessionService uploadSessionService;
 
@@ -64,6 +67,7 @@ class UploadSessionServiceTest {
                 properties,
                 Clock.fixed(Instant.parse("2026-04-08T06:00:00Z"), ZoneOffset.UTC)
         );
+        ReflectionTestUtils.setField(uploadSessionService, "uploadSessionRuntimeStateService", uploadSessionRuntimeStateService);
     }
 
     @Test
@@ -103,6 +107,7 @@ class UploadSessionServiceTest {
         assertThat(session.getChunkSize()).isEqualTo(8L * 1024 * 1024);
         assertThat(session.getChunkCount()).isEqualTo(3);
         assertThat(session.getExpiresAt()).isEqualTo(LocalDateTime.of(2026, 4, 9, 6, 0));
+        verify(uploadSessionRuntimeStateService).markCreated(session);
     }
 
     @Test
@@ -308,6 +313,7 @@ class UploadSessionServiceTest {
         assertThat(requestCaptor.getValue().storageName()).isEqualTo("blobs/session-1");
         assertThat(requestCaptor.getValue().contentType()).isEqualTo("video/mp4");
         assertThat(requestCaptor.getValue().size()).isEqualTo(20L);
+        verify(uploadSessionRuntimeStateService).markCompleted(result, LocalDateTime.of(2026, 4, 8, 6, 0));
     }
 
     @Test
@@ -353,6 +359,8 @@ class UploadSessionServiceTest {
         assertThat(secondResult.getUploadedPartsJson()).contains("\"partIndex\":1");
         assertThat(secondResult.getUploadedPartsJson()).contains("\"partIndex\":2");
         assertThat(secondResult.getUploadedPartsJson()).contains("\"etag\":\"etag-2\"");
+        verify(uploadSessionRuntimeStateService).markUploading(result, 8L * 1024 * 1024, 1, LocalDateTime.of(2026, 4, 8, 6, 0));
+        verify(uploadSessionRuntimeStateService).markUploading(secondResult, 8L * 1024 * 1024 + 4L, 2, LocalDateTime.of(2026, 4, 8, 6, 0));
     }
 
     @Test

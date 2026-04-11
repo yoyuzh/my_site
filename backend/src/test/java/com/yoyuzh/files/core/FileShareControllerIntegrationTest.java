@@ -181,6 +181,89 @@ class FileShareControllerIntegrationTest {
     }
 
     @Test
+    void shouldRejectLegacyCreateShareForDirectoryUsingUnifiedShareRules() throws Exception {
+        User owner = userRepository.findByUsername("alice").orElseThrow();
+        StoredFile directory = new StoredFile();
+        directory.setUser(owner);
+        directory.setFilename("docs");
+        directory.setPath("/");
+        directory.setContentType("directory");
+        directory.setSize(0L);
+        directory.setDirectory(true);
+        Long directoryId = storedFileRepository.save(directory).getId();
+
+        mockMvc.perform(post("/api/files/{fileId}/share-links", directoryId)
+                        .with(user("alice")))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value(1000));
+    }
+
+    @Test
+    void shouldRejectPasswordProtectedV2ShareOnLegacyEndpoints() throws Exception {
+        String response = mockMvc.perform(post("/api/v2/shares")
+                        .with(user("alice"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "fileId": %d,
+                                  "password": "Share123",
+                                  "allowImport": true,
+                                  "allowDownload": true
+                                }
+                                """.formatted(sharedFileId)))
+                .andExpect(status().isOk())
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+        String token = com.jayway.jsonpath.JsonPath.read(response, "$.data.token");
+
+        mockMvc.perform(get("/api/files/share-links/{token}", token))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value(1002));
+
+        mockMvc.perform(post("/api/files/share-links/{token}/import", token)
+                        .with(user("bob"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "path": "/涓嬭浇"
+                                }
+                                """))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value(1000));
+    }
+
+    @Test
+    void shouldRejectLegacyImportWhenV2ShareImportDisabled() throws Exception {
+        String response = mockMvc.perform(post("/api/v2/shares")
+                        .with(user("alice"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "fileId": %d,
+                                  "allowImport": false,
+                                  "allowDownload": true
+                                }
+                                """.formatted(sharedFileId)))
+                .andExpect(status().isOk())
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+        String token = com.jayway.jsonpath.JsonPath.read(response, "$.data.token");
+
+        mockMvc.perform(post("/api/files/share-links/{token}/import", token)
+                        .with(user("bob"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "path": "/涓嬭浇"
+                                }
+                                """))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value(1002));
+    }
+
+    @Test
     void shouldMoveFileIntoAnotherDirectoryThroughApi() throws Exception {
         User owner = userRepository.findByUsername("alice").orElseThrow();
 

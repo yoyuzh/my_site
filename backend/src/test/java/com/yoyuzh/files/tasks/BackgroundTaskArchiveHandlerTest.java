@@ -51,7 +51,7 @@ class BackgroundTaskArchiveHandlerTest {
                 storedFileRepository,
                 userRepository,
                 fileService,
-                new ObjectMapper()
+                new BackgroundTaskStateManager(new ObjectMapper())
         );
         archiveBytesCaptor = ArgumentCaptor.forClass(byte[].class);
     }

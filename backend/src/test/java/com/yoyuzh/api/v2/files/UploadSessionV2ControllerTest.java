@@ -21,7 +21,9 @@ import org.springframework.web.method.support.ModelAndViewContainer;
 
 import java.time.LocalDateTime;
 import java.util.Map;
+import java.util.Optional;
 
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
@@ -44,6 +46,7 @@ class UploadSessionV2ControllerTest {
     void setUp() {
         uploadSessionService = mock(UploadSessionService.class);
         userDetailsService = mock(CustomUserDetailsService.class);
+        when(uploadSessionService.getRuntimeState(anyString())).thenReturn(Optional.empty());
         mockMvc = MockMvcBuilders.standaloneSetup(
                 new UploadSessionV2Controller(uploadSessionService, userDetailsService)
         ).setCustomArgumentResolvers(authenticationPrincipalResolver()).build();
@@ -101,6 +104,32 @@ class UploadSessionV2ControllerTest {
                 .andExpect(jsonPath("$.data.strategy.partPrepareUrlTemplate").value("/api/v2/files/upload-sessions/session-1/parts/{partIndex}/prepare"))
                 .andExpect(jsonPath("$.data.strategy.partRecordUrlTemplate").value("/api/v2/files/upload-sessions/session-1/parts/{partIndex}"))
                 .andExpect(jsonPath("$.data.strategy.completeUrl").value("/api/v2/files/upload-sessions/session-1/complete"));
+    }
+
+    @Test
+    void shouldExposeRuntimeStateWhenRedisUploadStateExists() throws Exception {
+        User user = createUser(7L);
+        UploadSession session = createSession(user);
+        when(userDetailsService.loadDomainUser("alice")).thenReturn(user);
+        when(uploadSessionService.getOwnedSession(user, "session-1")).thenReturn(session);
+        when(uploadSessionService.getRuntimeState("session-1")).thenReturn(Optional.of(
+                new com.yoyuzh.files.upload.UploadSessionRuntimeState(
+                        "uploading",
+                        1024L,
+                        2,
+                        25,
+                        LocalDateTime.of(2026, 4, 10, 12, 0),
+                        LocalDateTime.of(2026, 4, 11, 12, 0)
+                )
+        ));
+
+        mockMvc.perform(get("/api/v2/files/upload-sessions/session-1")
+                        .with(user(userDetails())))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.runtime.phase").value("uploading"))
+                .andExpect(jsonPath("$.data.runtime.uploadedBytes").value(1024))
+                .andExpect(jsonPath("$.data.runtime.uploadedPartCount").value(2))
+                .andExpect(jsonPath("$.data.runtime.progressPercent").value(25));
     }
 
     @Test

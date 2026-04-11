@@ -3,6 +3,7 @@ package com.yoyuzh.admin;
 import com.yoyuzh.PortalBackendApplication;
 import com.yoyuzh.admin.AdminMetricsStateRepository;
 import com.yoyuzh.auth.RefreshTokenRepository;
+import com.yoyuzh.auth.RegistrationInviteStateRepository;
 import com.yoyuzh.auth.User;
 import com.yoyuzh.auth.UserRepository;
 import com.yoyuzh.files.core.FileBlob;
@@ -58,7 +59,6 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
                 "spring.datasource.password=",
                 "spring.jpa.hibernate.ddl-auto=create-drop",
                 "app.jwt.secret=0123456789abcdef0123456789abcdef",
-                "app.admin.usernames=admin,alice",
                 "app.storage.root-dir=./target/test-storage-admin"
         }
 )
@@ -92,6 +92,10 @@ class AdminControllerIntegrationTest {
     @Autowired
     private AdminMetricsStateRepository adminMetricsStateRepository;
     @Autowired
+    private RegistrationInviteStateRepository registrationInviteStateRepository;
+    @Autowired
+    private AdminAuditLogRepository adminAuditLogRepository;
+    @Autowired
     private AdminMetricsService adminMetricsService;
     @Autowired
     private StoragePolicyRepository storagePolicyRepository;
@@ -113,6 +117,8 @@ class AdminControllerIntegrationTest {
         fileBlobRepository.deleteAll();
         userRepository.deleteAll();
         adminMetricsStateRepository.deleteAll();
+        registrationInviteStateRepository.deleteAll();
+        adminAuditLogRepository.deleteAll();
 
         Long defaultPolicyId = storagePolicyRepository.findFirstByDefaultPolicyTrueOrderByIdAsc()
                 .map(StoragePolicy::getId)
@@ -222,8 +228,8 @@ class AdminControllerIntegrationTest {
     }
 
     @Test
-    @WithMockUser(username = "admin")
-    void shouldAllowConfiguredAdminToListUsersAndSummary() throws Exception {
+    @WithMockUser(username = "service-admin", roles = "ADMIN")
+    void shouldAllowAdminRoleToListUsersAndSummary() throws Exception {
         int currentHour = LocalTime.now().getHour();
         LocalDate today = LocalDate.now();
         adminMetricsService.recordUserOnline(portalUser.getId(), portalUser.getUsername());
@@ -263,7 +269,7 @@ class AdminControllerIntegrationTest {
     }
 
     @Test
-    @WithMockUser(username = "admin")
+    @WithMockUser(username = "service-admin", roles = "ADMIN")
     void shouldSupportUserSearchPasswordAndStatusManagement() throws Exception {
         mockMvc.perform(get("/api/admin/users?page=0&size=10&query=ali"))
                 .andExpect(status().isOk())
@@ -332,7 +338,136 @@ class AdminControllerIntegrationTest {
     }
 
     @Test
-    @WithMockUser(username = "admin")
+    @WithMockUser(username = "service-admin", roles = "ADMIN")
+    void shouldRejectInvalidOfflineTransferStorageLimitValues() throws Exception {
+        mockMvc.perform(patch("/api/admin/settings/offline-transfer-storage-limit")
+                        .contentType("application/json")
+                        .content("""
+                                {"offlineTransferStorageLimitBytes":0}
+                                """))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value(1000));
+
+        mockMvc.perform(patch("/api/admin/settings/offline-transfer-storage-limit")
+                        .contentType("application/json")
+                        .content("""
+                                {"offlineTransferStorageLimitBytes":-1}
+                                """))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value(1000));
+
+        mockMvc.perform(patch("/api/admin/settings/offline-transfer-storage-limit")
+                        .contentType("application/json")
+                        .content("""
+                                {}
+                                """))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value(1000));
+    }
+
+    @Test
+    @WithMockUser(username = "service-admin", roles = "ADMIN")
+    void shouldExposeSettingsAndFilesystemOverview() throws Exception {
+        mockMvc.perform(get("/api/admin/settings"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(0))
+                .andExpect(jsonPath("$.data.site.supported").value(false))
+                .andExpect(jsonPath("$.data.registration.inviteCodeRequired").value(true))
+                .andExpect(jsonPath("$.data.registration.currentInviteCode").isNotEmpty())
+                .andExpect(jsonPath("$.data.registration.managementRoles[0]").value("MODERATOR"))
+                .andExpect(jsonPath("$.data.registration.managementRoles[1]").value("ADMIN"))
+                .andExpect(jsonPath("$.data.registration.writeSupported").value(true))
+                .andExpect(jsonPath("$.data.userSession.accessExpirationSeconds").value(900))
+                .andExpect(jsonPath("$.data.userSession.refreshExpirationSeconds").value(1209600))
+                .andExpect(jsonPath("$.data.userSession.writeSupported").value(false))
+                .andExpect(jsonPath("$.data.transfer.offlineTransferStorageLimitBytes").isNumber())
+                .andExpect(jsonPath("$.data.transfer.writeSupported").value(true))
+                .andExpect(jsonPath("$.data.queue.backend").value("in-memory"))
+                .andExpect(jsonPath("$.data.queue.writeSupported").value(false))
+                .andExpect(jsonPath("$.data.server.storageProvider").value("local"))
+                .andExpect(jsonPath("$.data.server.redisEnabled").value(false))
+                .andExpect(jsonPath("$.data.server.writeSupported").value(false));
+
+        mockMvc.perform(get("/api/admin/filesystem"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(0))
+                .andExpect(jsonPath("$.data.overview.storageProvider").value("local"))
+                .andExpect(jsonPath("$.data.overview.totalFiles").value(2))
+                .andExpect(jsonPath("$.data.overview.totalBlobs").value(2))
+                .andExpect(jsonPath("$.data.overview.totalEntities").value(2))
+                .andExpect(jsonPath("$.data.defaultPolicy.type").value("LOCAL"))
+                .andExpect(jsonPath("$.data.upload.proxyUpload").value(true))
+                .andExpect(jsonPath("$.data.upload.directSingleUpload").value(false))
+                .andExpect(jsonPath("$.data.upload.directMultipartUpload").value(false))
+                .andExpect(jsonPath("$.data.mediaProcessing.metadataExtractionEnabled").value(true))
+                .andExpect(jsonPath("$.data.cache.backend").value("disabled"))
+                .andExpect(jsonPath("$.data.webdav.enabled").value(false));
+    }
+
+    @Test
+    @WithMockUser(username = "service-admin", roles = "ADMIN")
+    void shouldAllowConfiguredAdminToUpdateAndRotateInviteCode() throws Exception {
+        mockMvc.perform(get("/api/admin/settings"))
+                .andExpect(status().isOk());
+        String originalInviteCode = currentInviteCode();
+
+        mockMvc.perform(patch("/api/admin/settings/registration/invite-code")
+                        .contentType("application/json")
+                        .content("""
+                                {
+                                  "inviteCode": "INV-NEXT-2026"
+                                }
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(0))
+                .andExpect(jsonPath("$.data.currentInviteCode").value("INV-NEXT-2026"));
+
+        assertThat(currentInviteCode()).isEqualTo("INV-NEXT-2026");
+
+        mockMvc.perform(post("/api/admin/settings/registration/invite-code/rotate"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(0))
+                .andExpect(jsonPath("$.data.currentInviteCode").isNotEmpty())
+                .andExpect(jsonPath("$.data.currentInviteCode").value(org.hamcrest.Matchers.not("INV-NEXT-2026")));
+
+        assertThat(currentInviteCode())
+                .isNotBlank()
+                .isNotEqualTo(originalInviteCode)
+                .isNotEqualTo("INV-NEXT-2026");
+    }
+
+    @Test
+    @WithMockUser(username = "service-admin", roles = "ADMIN")
+    void shouldRejectInvalidInviteCodeUpdatesAndKeepCurrentCode() throws Exception {
+        mockMvc.perform(get("/api/admin/settings"))
+                .andExpect(status().isOk());
+        String originalInviteCode = currentInviteCode();
+
+        mockMvc.perform(patch("/api/admin/settings/registration/invite-code")
+                        .contentType("application/json")
+                        .content("""
+                                {
+                                  "inviteCode": "   "
+                                }
+                                """))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.msg").isNotEmpty());
+
+        mockMvc.perform(patch("/api/admin/settings/registration/invite-code")
+                        .contentType("application/json")
+                        .content("""
+                                {
+                                  "inviteCode": "%s"
+                                }
+                                """.formatted("A".repeat(65))))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.msg").isNotEmpty());
+
+        assertThat(currentInviteCode()).isEqualTo(originalInviteCode);
+    }
+
+    @Test
+    @WithMockUser(username = "service-admin", roles = "ADMIN")
     void shouldInvalidateOldPasswordAfterAdminPasswordUpdate() throws Exception {
         mockMvc.perform(put("/api/admin/users/{userId}/password", portalUser.getId())
                         .contentType("application/json")
@@ -368,12 +503,12 @@ class AdminControllerIntegrationTest {
     @Test
     void shouldExposeTrafficAndTransferMetricsInSummary() throws Exception {
         mockMvc.perform(get("/api/files/download/{fileId}/url", storedFile.getId())
-                        .with(user("alice")))
+                        .with(user("alice").roles("ADMIN")))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.url").value("/api/files/download/" + storedFile.getId()));
 
         mockMvc.perform(post("/api/transfer/sessions")
-                        .with(user("alice"))
+                        .with(user("alice").roles("ADMIN"))
                         .contentType("application/json")
                         .content("""
                                 {
@@ -386,7 +521,7 @@ class AdminControllerIntegrationTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.mode").value("OFFLINE"));
 
-        mockMvc.perform(get("/api/admin/summary").with(user("admin")))
+        mockMvc.perform(get("/api/admin/summary").with(user("service-admin").roles("ADMIN")))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.downloadTrafficBytes").value(1024L))
                 .andExpect(jsonPath("$.data.transferUsageBytes").value(13L))
@@ -394,8 +529,8 @@ class AdminControllerIntegrationTest {
     }
 
     @Test
-    @WithMockUser(username = "admin")
-    void shouldAllowConfiguredAdminToListAndDeleteFiles() throws Exception {
+    @WithMockUser(username = "service-admin", roles = "ADMIN")
+    void shouldAllowAdminRoleToListAndDeleteFiles() throws Exception {
         mockMvc.perform(get("/api/admin/files?page=0&size=10"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.items[0].filename").value("report.pdf"))
@@ -412,8 +547,8 @@ class AdminControllerIntegrationTest {
     }
 
     @Test
-    @WithMockUser(username = "admin")
-    void shouldAllowConfiguredAdminToListFileBlobsWithRiskSignals() throws Exception {
+    @WithMockUser(username = "service-admin", roles = "ADMIN")
+    void shouldAllowAdminRoleToListFileBlobsWithRiskSignals() throws Exception {
         Long defaultPolicyId = storagePolicyRepository.findFirstByDefaultPolicyTrueOrderByIdAsc()
                 .map(StoragePolicy::getId)
                 .orElse(null);
@@ -443,8 +578,8 @@ class AdminControllerIntegrationTest {
     }
 
     @Test
-    @WithMockUser(username = "admin")
-    void shouldAllowConfiguredAdminToListAndDeleteShares() throws Exception {
+    @WithMockUser(username = "service-admin", roles = "ADMIN")
+    void shouldAllowAdminRoleToListAndDeleteShares() throws Exception {
         FileShareLink share = new FileShareLink();
         share.setOwner(secondaryUser);
         share.setFile(secondaryFile);
@@ -481,8 +616,8 @@ class AdminControllerIntegrationTest {
     }
 
     @Test
-    @WithMockUser(username = "admin")
-    void shouldAllowConfiguredAdminToListAndInspectTasks() throws Exception {
+    @WithMockUser(username = "service-admin", roles = "ADMIN")
+    void shouldAllowAdminRoleToListAndInspectTasks() throws Exception {
         BackgroundTask task = new BackgroundTask();
         task.setType(BackgroundTaskType.MEDIA_META);
         task.setStatus(BackgroundTaskStatus.RUNNING);
@@ -527,8 +662,66 @@ class AdminControllerIntegrationTest {
     }
 
     @Test
-    @WithMockUser(username = "admin")
-    void shouldAllowConfiguredAdminToListStoragePolicies() throws Exception {
+    @WithMockUser(username = "service-admin", roles = "ADMIN")
+    void shouldExposeExpiredAndMissingLeaseStatesForAdminTasks() throws Exception {
+        BackgroundTask expiredTask = new BackgroundTask();
+        expiredTask.setType(BackgroundTaskType.EXTRACT);
+        expiredTask.setStatus(BackgroundTaskStatus.RUNNING);
+        expiredTask.setUserId(portalUser.getId());
+        expiredTask.setPublicStateJson("""
+                {"workerOwner":"extract-worker-1"}
+                """);
+        expiredTask.setPrivateStateJson("{}");
+        expiredTask.setCorrelationId("task-expired-1");
+        expiredTask.setAttemptCount(1);
+        expiredTask.setMaxAttempts(3);
+        expiredTask.setLeaseOwner("worker-expired");
+        expiredTask.setLeaseExpiresAt(LocalDateTime.now().minusMinutes(2));
+        expiredTask.setHeartbeatAt(LocalDateTime.now().minusMinutes(3));
+        expiredTask.setCreatedAt(LocalDateTime.now().minusMinutes(5));
+        expiredTask.setUpdatedAt(LocalDateTime.now().minusMinutes(2));
+        expiredTask = backgroundTaskRepository.save(expiredTask);
+
+        BackgroundTask noneTask = new BackgroundTask();
+        noneTask.setType(BackgroundTaskType.ARCHIVE);
+        noneTask.setStatus(BackgroundTaskStatus.QUEUED);
+        noneTask.setUserId(secondaryUser.getId());
+        noneTask.setPublicStateJson("{}");
+        noneTask.setPrivateStateJson("{}");
+        noneTask.setCorrelationId("task-none-1");
+        noneTask.setAttemptCount(0);
+        noneTask.setMaxAttempts(4);
+        noneTask.setCreatedAt(LocalDateTime.now().minusMinutes(4));
+        noneTask.setUpdatedAt(LocalDateTime.now().minusMinutes(4));
+        noneTask = backgroundTaskRepository.save(noneTask);
+
+        mockMvc.perform(get("/api/admin/tasks?page=0&size=10&leaseState=EXPIRED"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.total").value(1))
+                .andExpect(jsonPath("$.data.items[0].id").value(expiredTask.getId()))
+                .andExpect(jsonPath("$.data.items[0].leaseState").value("EXPIRED"))
+                .andExpect(jsonPath("$.data.items[0].workerOwner").value("extract-worker-1"));
+
+        mockMvc.perform(get("/api/admin/tasks?page=0&size=10&leaseState=NONE"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.total").value(1))
+                .andExpect(jsonPath("$.data.items[0].id").value(noneTask.getId()))
+                .andExpect(jsonPath("$.data.items[0].leaseState").value("NONE"));
+
+        mockMvc.perform(get("/api/admin/tasks/{taskId}", expiredTask.getId()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.id").value(expiredTask.getId()))
+                .andExpect(jsonPath("$.data.leaseState").value("EXPIRED"));
+
+        mockMvc.perform(get("/api/admin/tasks/{taskId}", noneTask.getId()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.id").value(noneTask.getId()))
+                .andExpect(jsonPath("$.data.leaseState").value("NONE"));
+    }
+
+    @Test
+    @WithMockUser(username = "service-admin", roles = "ADMIN")
+    void shouldAllowAdminRoleToListStoragePolicies() throws Exception {
         mockMvc.perform(get("/api/admin/storage-policies"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value(0))
@@ -545,8 +738,8 @@ class AdminControllerIntegrationTest {
     }
 
     @Test
-    @WithMockUser(username = "admin")
-    void shouldAllowConfiguredAdminToCreateUpdateAndDisableNonDefaultStoragePolicy() throws Exception {
+    @WithMockUser(username = "service-admin", roles = "ADMIN")
+    void shouldAllowAdminRoleToCreateUpdateAndDisableNonDefaultStoragePolicy() throws Exception {
         mockMvc.perform(post("/api/admin/storage-policies")
                         .contentType("application/json")
                         .content("""
@@ -632,7 +825,7 @@ class AdminControllerIntegrationTest {
     }
 
     @Test
-    @WithMockUser(username = "admin")
+    @WithMockUser(username = "service-admin", roles = "ADMIN")
     void shouldRejectDisablingDefaultStoragePolicy() throws Exception {
         StoragePolicy defaultPolicy = storagePolicyRepository.findFirstByDefaultPolicyTrueOrderByIdAsc().orElseThrow();
 
@@ -673,7 +866,7 @@ class AdminControllerIntegrationTest {
         targetPolicy = storagePolicyRepository.save(targetPolicy);
 
         mockMvc.perform(post("/api/admin/storage-policies/migrations")
-                        .with(user("alice"))
+                        .with(user("alice").roles("ADMIN"))
                         .contentType("application/json")
                         .content("""
                                 {
@@ -692,7 +885,7 @@ class AdminControllerIntegrationTest {
     }
 
     @Test
-    @WithMockUser(username = "portal-user")
+    @WithMockUser(username = "portal-user", roles = "USER")
     void shouldRejectNonAdminUser() throws Exception {
         mockMvc.perform(get("/api/admin/users?page=0&size=10"))
                 .andExpect(status().isForbidden())
@@ -701,5 +894,42 @@ class AdminControllerIntegrationTest {
         mockMvc.perform(get("/api/admin/storage-policies"))
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.msg").value("没有权限访问该资源"));
+    }
+
+    @Test
+    @WithMockUser(username = "ops-user", roles = "MODERATOR")
+    void shouldAllowModeratorRoleToAccessAdminEndpoints() throws Exception {
+        mockMvc.perform(get("/api/admin/users?page=0&size=10"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(0));
+    }
+
+    @Test
+    @WithMockUser(username = "service-admin", roles = "ADMIN")
+    void shouldExposeAdminAuditLogsForGovernanceWrites() throws Exception {
+        mockMvc.perform(patch("/api/admin/users/{userId}/role", portalUser.getId())
+                        .contentType("application/json")
+                        .content("""
+                                {"role":"ADMIN"}
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.role").value("ADMIN"));
+
+        mockMvc.perform(get("/api/admin/audits?page=0&size=10&actionType=UPDATE_USER_ROLE&targetType=USER")
+                        .with(user("service-admin").roles("ADMIN")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(0))
+                .andExpect(jsonPath("$.data.total").value(1))
+                .andExpect(jsonPath("$.data.items[0].actorUsername").value("service-admin"))
+                .andExpect(jsonPath("$.data.items[0].actionType").value("UPDATE_USER_ROLE"))
+                .andExpect(jsonPath("$.data.items[0].targetType").value("USER"))
+                .andExpect(jsonPath("$.data.items[0].targetId").value(portalUser.getId()))
+                .andExpect(jsonPath("$.data.items[0].summary").value("Updated user role"));
+    }
+
+    private String currentInviteCode() {
+        return registrationInviteStateRepository.findById(1L)
+                .orElseThrow()
+                .getInviteCode();
     }
 }

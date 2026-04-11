@@ -5,6 +5,15 @@ server:
 spring:
   application:
     name: yoyuzh-portal-backend
+  data:
+    redis:
+      host: ${SPRING_DATA_REDIS_HOST:127.0.0.1}
+      port: ${SPRING_DATA_REDIS_PORT:6379}
+      password: ${SPRING_DATA_REDIS_PASSWORD:}
+      database: ${SPRING_DATA_REDIS_DATABASE:0}
+      timeout: ${SPRING_DATA_REDIS_TIMEOUT:5s}
+      repositories:
+        enabled: false
   datasource:
     url: jdbc:mysql://localhost:3306/yoyuzh_portal?useSSL=false&serverTimezone=Asia/Shanghai&characterEncoding=utf8
     username: root
@@ -61,6 +70,24 @@ app:
       - capacitor://localhost
       - https://yoyuzh.xyz
       - https://www.yoyuzh.xyz
+  redis:
+    enabled: ${APP_REDIS_ENABLED:false}
+    key-prefix: ${APP_REDIS_KEY_PREFIX:yoyuzh}
+    ttl-buffer-seconds: ${APP_REDIS_TTL_BUFFER_SECONDS:60}
+    cache:
+      files-list-ttl-seconds: ${APP_REDIS_CACHE_FILES_LIST_TTL_SECONDS:60}
+      directory-version-ttl-seconds: ${APP_REDIS_CACHE_DIRECTORY_VERSION_TTL_SECONDS:3600}
+      admin-summary-ttl-seconds: ${APP_REDIS_CACHE_ADMIN_SUMMARY_TTL_SECONDS:30}
+      storage-policies-ttl-seconds: ${APP_REDIS_CACHE_STORAGE_POLICIES_TTL_SECONDS:300}
+      android-release-ttl-seconds: ${APP_REDIS_CACHE_ANDROID_RELEASE_TTL_SECONDS:60}
+    namespaces:
+      cache: ${APP_REDIS_NAMESPACE_CACHE:cache}
+      auth: ${APP_REDIS_NAMESPACE_AUTH:auth}
+      transfer-sessions: ${APP_REDIS_NAMESPACE_TRANSFER_SESSIONS:transfer-sessions}
+      upload-state: ${APP_REDIS_NAMESPACE_UPLOAD_STATE:upload-state}
+      locks: ${APP_REDIS_NAMESPACE_LOCKS:locks}
+      file-events: ${APP_REDIS_NAMESPACE_FILE_EVENTS:file-events}
+      broker: ${APP_REDIS_NAMESPACE_BROKER:broker}
 
 springdoc:
   swagger-ui:

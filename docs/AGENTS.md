@@ -8,3 +8,4 @@ This directory currently stores implementation plans under `docs/superpowers/pla
 - Do not introduce placeholder commands such as an imaginary root `npm test`, backend lint script, or standalone frontend typecheck script.
 - When documenting validation, state gaps explicitly. In this repo, backend lint/typecheck commands are not defined, and frontend type checking currently happens through `npm run lint`.
 - Keep plan or handoff documents tied to actual repo paths like `backend/...`, `front/...`, `scripts/...`, and `docs/...`.
+- `docs/architecture.md` is the project architecture document. Do not edit it unless the user explicitly asks for an architecture-document update.

@@ -46,7 +46,7 @@ class MediaMetadataBackgroundTaskHandlerTest {
                 storedFileRepository,
                 fileMetadataRepository,
                 fileContentStorage,
-                new ObjectMapper()
+                new BackgroundTaskStateManager(new ObjectMapper())
         );
     }
 

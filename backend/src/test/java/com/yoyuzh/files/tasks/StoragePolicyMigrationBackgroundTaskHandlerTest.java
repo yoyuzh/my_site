@@ -53,7 +53,7 @@ class StoragePolicyMigrationBackgroundTaskHandlerTest {
                 fileBlobRepository,
                 storedFileRepository,
                 fileContentStorage,
-                new ObjectMapper()
+                new BackgroundTaskStateManager(new ObjectMapper())
         );
     }
 

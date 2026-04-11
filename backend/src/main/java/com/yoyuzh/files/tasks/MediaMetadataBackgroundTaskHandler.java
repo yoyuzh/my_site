@@ -1,8 +1,5 @@
 package com.yoyuzh.files.tasks;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.core.type.TypeReference;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.yoyuzh.files.core.FileBlob;
 import com.yoyuzh.files.core.StoredFile;
 import com.yoyuzh.files.core.StoredFileRepository;
@@ -18,7 +15,6 @@ import java.awt.image.BufferedImage;
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.util.LinkedHashMap;
-import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 
@@ -34,16 +30,16 @@ public class MediaMetadataBackgroundTaskHandler implements BackgroundTaskHandler
     private final StoredFileRepository storedFileRepository;
     private final FileMetadataRepository fileMetadataRepository;
     private final FileContentStorage fileContentStorage;
-    private final ObjectMapper objectMapper;
+    private final BackgroundTaskStateManager stateManager;
 
     public MediaMetadataBackgroundTaskHandler(StoredFileRepository storedFileRepository,
                                               FileMetadataRepository fileMetadataRepository,
                                               FileContentStorage fileContentStorage,
-                                              ObjectMapper objectMapper) {
+                                              BackgroundTaskStateManager stateManager) {
         this.storedFileRepository = storedFileRepository;
         this.fileMetadataRepository = fileMetadataRepository;
         this.fileContentStorage = fileContentStorage;
-        this.objectMapper = objectMapper;
+        this.stateManager = stateManager;
     }
 
     @Override
@@ -114,37 +110,19 @@ public class MediaMetadataBackgroundTaskHandler implements BackgroundTaskHandler
     }
 
     private Long readFileId(BackgroundTask task) {
-        Long fileId = extractLong(parseState(task.getPrivateStateJson()).get("fileId"));
+        Long fileId = stateManager.readLong(
+                stateManager.parseJsonObject(task.getPrivateStateJson(), "media metadata task state is invalid").get("fileId")
+        );
         if (fileId != null) {
             return fileId;
         }
-        fileId = extractLong(parseState(task.getPublicStateJson()).get("fileId"));
+        fileId = stateManager.readLong(
+                stateManager.parseJsonObject(task.getPublicStateJson(), "media metadata task state is invalid").get("fileId")
+        );
         if (fileId != null) {
             return fileId;
         }
         throw new IllegalStateException("media metadata task missing fileId");
-    }
-
-    private Map<String, Object> parseState(String json) {
-        if (!StringUtils.hasText(json)) {
-            return Map.of();
-        }
-        try {
-            return objectMapper.readValue(json, new TypeReference<LinkedHashMap<String, Object>>() {
-            });
-        } catch (JsonProcessingException ex) {
-            throw new IllegalStateException("media metadata task state is invalid", ex);
-        }
-    }
-
-    private Long extractLong(Object value) {
-        if (value instanceof Number number) {
-            return number.longValue();
-        }
-        if (value instanceof String text && StringUtils.hasText(text)) {
-            return Long.parseLong(text.trim());
-        }
-        return null;
     }
 
     private String firstText(String primary, String fallback) {

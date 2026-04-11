@@ -1,4 +1,6 @@
-import { clearSession, getSession, setSession, type PortalSession } from './session';
+import { getSession, setSession, clearSession, type PortalSession } from './session';
+import { sessionRuntime } from './session-runtime';
+
 
 const CLIENT_HEADER = 'X-Yoyuzh-Client';
 const CLIENT_ID_HEADER = 'X-Yoyuzh-Client-Id';
@@ -168,6 +170,7 @@ export async function fetchApi<T = unknown>(endpoint: string, options: FetchApiO
   if ((response.status === 401 || response.status === 403) && auth && session?.refreshToken && retryOnAuthFailure) {
     try {
       const refreshed = await refreshAccessToken(session);
+      sessionRuntime.updateSession(refreshed);
       return fetchApi<T>(endpoint, {
         ...options,
         retryOnAuthFailure: false,
@@ -177,8 +180,13 @@ export async function fetchApi<T = unknown>(endpoint: string, options: FetchApiO
         },
       });
     } catch {
-      clearSession();
+      sessionRuntime.handleAuthFailure('EXPIRED');
+      throw new ApiError('登录已过期，请重新登录', 401);
     }
+  }
+
+  if (response.status === 401 && !retryOnAuthFailure) {
+    sessionRuntime.handleAuthFailure('EXPIRED');
   }
 
   if (rawResponse) {

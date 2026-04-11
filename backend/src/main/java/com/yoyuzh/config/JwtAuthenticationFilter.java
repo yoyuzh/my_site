@@ -1,6 +1,8 @@
 package com.yoyuzh.config;
 
 import com.yoyuzh.admin.AdminMetricsService;
+import com.yoyuzh.auth.AuthClientType;
+import com.yoyuzh.auth.AuthTokenInvalidationService;
 import com.yoyuzh.auth.CustomUserDetailsService;
 import com.yoyuzh.auth.JwtTokenProvider;
 import com.yoyuzh.auth.User;
@@ -24,6 +26,7 @@ import java.io.IOException;
 public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
     private final JwtTokenProvider jwtTokenProvider;
+    private final AuthTokenInvalidationService authTokenInvalidationService;
     private final CustomUserDetailsService userDetailsService;
     private final AdminMetricsService adminMetricsService;
 
@@ -36,6 +39,15 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             String token = header.substring(7);
             if (jwtTokenProvider.validateToken(token)
                     && SecurityContextHolder.getContext().getAuthentication() == null) {
+                Long userId = jwtTokenProvider.getUserId(token);
+                AuthClientType clientType = jwtTokenProvider.getClientType(token);
+                if (authTokenInvalidationService.isAccessTokenRevoked(
+                        userId,
+                        clientType,
+                        jwtTokenProvider.getIssuedAt(token))) {
+                    filterChain.doFilter(request, response);
+                    return;
+                }
                 String username = jwtTokenProvider.getUsername(token);
                 User domainUser;
                 try {

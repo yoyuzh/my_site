@@ -1,8 +1,5 @@
 package com.yoyuzh.files.tasks;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.core.type.TypeReference;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.yoyuzh.auth.User;
 import com.yoyuzh.auth.UserRepository;
 import com.yoyuzh.common.BusinessException;
@@ -28,16 +25,16 @@ public class ExtractBackgroundTaskHandler implements BackgroundTaskHandler {
     private final StoredFileRepository storedFileRepository;
     private final UserRepository userRepository;
     private final FileService fileService;
-    private final ObjectMapper objectMapper;
+    private final BackgroundTaskStateManager stateManager;
 
     public ExtractBackgroundTaskHandler(StoredFileRepository storedFileRepository,
                                         UserRepository userRepository,
                                         FileService fileService,
-                                        ObjectMapper objectMapper) {
+                                        BackgroundTaskStateManager stateManager) {
         this.storedFileRepository = storedFileRepository;
         this.userRepository = userRepository;
         this.fileService = fileService;
-        this.objectMapper = objectMapper;
+        this.stateManager = stateManager;
     }
 
     @Override
@@ -53,10 +50,14 @@ public class ExtractBackgroundTaskHandler implements BackgroundTaskHandler {
 
     @Override
     public BackgroundTaskHandlerResult handle(BackgroundTask task, BackgroundTaskProgressReporter progressReporter) {
-        Map<String, Object> state = parseState(task.getPrivateStateJson(), task.getPublicStateJson());
-        Long fileId = extractLong(state.get("fileId"));
-        String outputPath = extractText(state.get("outputPath"));
-        String outputDirectoryName = extractText(state.get("outputDirectoryName"));
+        Map<String, Object> state = stateManager.mergeJsonObjects(
+                task.getPublicStateJson(),
+                task.getPrivateStateJson(),
+                "extract task state is invalid"
+        );
+        Long fileId = stateManager.readLong(state.get("fileId"));
+        String outputPath = stateManager.readText(state.get("outputPath"));
+        String outputDirectoryName = stateManager.readText(state.get("outputDirectoryName"));
         if (fileId == null) {
             throw new IllegalStateException("extract task missing fileId");
         }
@@ -233,41 +234,6 @@ public class ExtractBackgroundTaskHandler implements BackgroundTaskHandler {
             return relativePath.substring(prefix.length());
         }
         return relativePath;
-    }
-
-    private Map<String, Object> parseState(String privateStateJson, String publicStateJson) {
-        Map<String, Object> state = new LinkedHashMap<>(parseJsonObject(publicStateJson));
-        state.putAll(parseJsonObject(privateStateJson));
-        return state;
-    }
-
-    private Map<String, Object> parseJsonObject(String json) {
-        if (!StringUtils.hasText(json)) {
-            return Map.of();
-        }
-        try {
-            return objectMapper.readValue(json, new TypeReference<LinkedHashMap<String, Object>>() {
-            });
-        } catch (JsonProcessingException ex) {
-            throw new IllegalStateException("extract task state is invalid", ex);
-        }
-    }
-
-    private Long extractLong(Object value) {
-        if (value instanceof Number number) {
-            return number.longValue();
-        }
-        if (value instanceof String text && StringUtils.hasText(text)) {
-            return Long.parseLong(text.trim());
-        }
-        return null;
-    }
-
-    private String extractText(Object value) {
-        if (value instanceof String text && StringUtils.hasText(text)) {
-            return text.trim();
-        }
-        return null;
     }
 
     private String normalizeDirectoryPath(String path) {

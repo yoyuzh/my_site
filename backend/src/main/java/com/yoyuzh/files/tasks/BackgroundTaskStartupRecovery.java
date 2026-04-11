@@ -11,11 +11,11 @@ import org.springframework.stereotype.Component;
 @Slf4j
 public class BackgroundTaskStartupRecovery {
 
-    private final BackgroundTaskService backgroundTaskService;
+    private final BackgroundTaskExecutionService backgroundTaskExecutionService;
 
     @EventListener(ApplicationReadyEvent.class)
     public void recoverOnStartup() {
-        int recovered = backgroundTaskService.requeueExpiredRunningTasks();
+        int recovered = backgroundTaskExecutionService.requeueExpiredRunningTasks();
         if (recovered > 0) {
             log.warn("Recovered {} expired RUNNING background task leases back to QUEUED on startup", recovered);
         }

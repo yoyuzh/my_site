@@ -1,4 +1,11 @@
 spring:
+  data:
+    redis:
+      host: ${SPRING_DATA_REDIS_HOST:127.0.0.1}
+      port: ${SPRING_DATA_REDIS_PORT:6379}
+      password: ${SPRING_DATA_REDIS_PASSWORD:}
+      database: ${SPRING_DATA_REDIS_DATABASE:1}
+      timeout: ${SPRING_DATA_REDIS_TIMEOUT:2s}
   datasource:
     url: jdbc:h2:file:./data/yoyuzh_portal_dev;MODE=MySQL;AUTO_SERVER=TRUE;DB_CLOSE_DELAY=-1
     username: sa
@@ -7,6 +14,11 @@ spring:
   jpa:
     hibernate:
       ddl-auto: update
+  sql:
+    init:
+      mode: always
+      continue-on-error: true
+      schema-locations: classpath:dev-h2-preinit.sql
   h2:
     console:
       enabled: true
@@ -16,6 +28,10 @@ app:
   jwt:
     secret: ${APP_JWT_SECRET:}
   admin:
-    usernames: ${APP_ADMIN_USERNAMES:}
+    usernames: ${APP_ADMIN_USERNAMES:admin}
   registration:
     invite-code: ${APP_AUTH_REGISTRATION_INVITE_CODE:dev-invite-code}
+  redis:
+    enabled: ${APP_REDIS_ENABLED:false}
+    cache:
+      directory-version-ttl-seconds: ${APP_REDIS_CACHE_DIRECTORY_VERSION_TTL_SECONDS:3600}

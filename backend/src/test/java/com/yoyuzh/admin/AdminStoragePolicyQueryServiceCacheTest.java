@@ -1,26 +1,15 @@
 package com.yoyuzh.admin;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.yoyuzh.auth.AuthTokenInvalidationService;
-import com.yoyuzh.auth.RefreshTokenService;
-import com.yoyuzh.auth.RegistrationInviteService;
-import com.yoyuzh.auth.UserRepository;
 import com.yoyuzh.config.RedisCacheNames;
-import com.yoyuzh.files.core.FileBlobRepository;
 import com.yoyuzh.files.core.FileEntityRepository;
-import com.yoyuzh.files.core.FileService;
 import com.yoyuzh.files.core.StoredFileEntityRepository;
-import com.yoyuzh.files.core.StoredFileRepository;
 import com.yoyuzh.files.policy.StoragePolicy;
 import com.yoyuzh.files.policy.StoragePolicyCapabilities;
 import com.yoyuzh.files.policy.StoragePolicyCredentialMode;
 import com.yoyuzh.files.policy.StoragePolicyRepository;
 import com.yoyuzh.files.policy.StoragePolicyService;
 import com.yoyuzh.files.policy.StoragePolicyType;
-import com.yoyuzh.files.share.FileShareLinkRepository;
-import com.yoyuzh.files.tasks.BackgroundTaskRepository;
-import com.yoyuzh.files.tasks.BackgroundTaskService;
-import com.yoyuzh.transfer.OfflineTransferSessionRepository;
+import com.yoyuzh.files.tasks.BackgroundTaskCommandService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -29,7 +18,6 @@ import org.springframework.cache.annotation.EnableCaching;
 import org.springframework.cache.concurrent.ConcurrentMapCacheManager;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
-import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.test.context.junit.jupiter.SpringJUnitConfig;
 
 import java.time.LocalDateTime;
@@ -43,11 +31,14 @@ import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-@SpringJUnitConfig(AdminServiceStoragePolicyCacheTest.CacheTestConfiguration.class)
-class AdminServiceStoragePolicyCacheTest {
+@SpringJUnitConfig(AdminStoragePolicyQueryServiceCacheTest.CacheTestConfiguration.class)
+class AdminStoragePolicyQueryServiceCacheTest {
 
     @Autowired
-    private AdminService adminService;
+    private AdminStoragePolicyQueryService adminStoragePolicyQueryService;
+
+    @Autowired
+    private AdminStorageGovernanceService adminStorageGovernanceService;
 
     @Autowired
     private CacheManager cacheManager;
@@ -71,8 +62,8 @@ class AdminServiceStoragePolicyCacheTest {
         when(storagePolicyRepository.findAll(any(org.springframework.data.domain.Sort.class)))
                 .thenReturn(List.of(defaultPolicy));
 
-        adminService.listStoragePolicies();
-        adminService.listStoragePolicies();
+        adminStoragePolicyQueryService.listStoragePolicies();
+        adminStoragePolicyQueryService.listStoragePolicies();
 
         verify(storagePolicyRepository, times(1)).findAll(any(org.springframework.data.domain.Sort.class));
     }
@@ -92,9 +83,9 @@ class AdminServiceStoragePolicyCacheTest {
             return saved;
         });
 
-        adminService.listStoragePolicies();
-        adminService.createStoragePolicy(upsertRequest("Archive Bucket", true));
-        adminService.listStoragePolicies();
+        adminStoragePolicyQueryService.listStoragePolicies();
+        adminStorageGovernanceService.createStoragePolicy(upsertRequest("Archive Bucket", true));
+        adminStoragePolicyQueryService.listStoragePolicies();
 
         verify(storagePolicyRepository, times(2)).findAll(any(org.springframework.data.domain.Sort.class));
     }
@@ -109,9 +100,9 @@ class AdminServiceStoragePolicyCacheTest {
         when(storagePolicyRepository.findById(2L)).thenReturn(Optional.of(existingPolicy));
         when(storagePolicyRepository.save(existingPolicy)).thenReturn(updatedPolicy);
 
-        adminService.listStoragePolicies();
-        adminService.updateStoragePolicy(2L, upsertRequest("Hot Bucket", true));
-        adminService.listStoragePolicies();
+        adminStoragePolicyQueryService.listStoragePolicies();
+        adminStorageGovernanceService.updateStoragePolicy(2L, upsertRequest("Hot Bucket", true));
+        adminStoragePolicyQueryService.listStoragePolicies();
 
         verify(storagePolicyRepository, times(2)).findAll(any(org.springframework.data.domain.Sort.class));
     }
@@ -126,9 +117,9 @@ class AdminServiceStoragePolicyCacheTest {
         when(storagePolicyRepository.findById(2L)).thenReturn(Optional.of(existingPolicy));
         when(storagePolicyRepository.save(existingPolicy)).thenReturn(disabledPolicy);
 
-        adminService.listStoragePolicies();
-        adminService.updateStoragePolicyStatus(2L, false);
-        adminService.listStoragePolicies();
+        adminStoragePolicyQueryService.listStoragePolicies();
+        adminStorageGovernanceService.updateStoragePolicyStatus(2L, false);
+        adminStoragePolicyQueryService.listStoragePolicies();
 
         verify(storagePolicyRepository, times(2)).findAll(any(org.springframework.data.domain.Sort.class));
     }
@@ -177,56 +168,6 @@ class AdminServiceStoragePolicyCacheTest {
         }
 
         @Bean
-        UserRepository userRepository() {
-            return mock(UserRepository.class);
-        }
-
-        @Bean
-        StoredFileRepository storedFileRepository() {
-            return mock(StoredFileRepository.class);
-        }
-
-        @Bean
-        FileBlobRepository fileBlobRepository() {
-            return mock(FileBlobRepository.class);
-        }
-
-        @Bean
-        FileService fileService() {
-            return mock(FileService.class);
-        }
-
-        @Bean
-        PasswordEncoder passwordEncoder() {
-            return mock(PasswordEncoder.class);
-        }
-
-        @Bean
-        RefreshTokenService refreshTokenService() {
-            return mock(RefreshTokenService.class);
-        }
-
-        @Bean
-        AuthTokenInvalidationService authTokenInvalidationService() {
-            return mock(AuthTokenInvalidationService.class);
-        }
-
-        @Bean
-        RegistrationInviteService registrationInviteService() {
-            return mock(RegistrationInviteService.class);
-        }
-
-        @Bean
-        OfflineTransferSessionRepository offlineTransferSessionRepository() {
-            return mock(OfflineTransferSessionRepository.class);
-        }
-
-        @Bean
-        AdminMetricsService adminMetricsService() {
-            return mock(AdminMetricsService.class);
-        }
-
-        @Bean
         StoragePolicyRepository storagePolicyRepository() {
             return mock(StoragePolicyRepository.class);
         }
@@ -247,63 +188,35 @@ class AdminServiceStoragePolicyCacheTest {
         }
 
         @Bean
-        BackgroundTaskService backgroundTaskService() {
-            return mock(BackgroundTaskService.class);
+        BackgroundTaskCommandService backgroundTaskCommandService() {
+            return mock(BackgroundTaskCommandService.class);
         }
 
         @Bean
-        BackgroundTaskRepository backgroundTaskRepository() {
-            return mock(BackgroundTaskRepository.class);
+        AdminAuditService adminAuditService() {
+            return mock(AdminAuditService.class);
         }
 
         @Bean
-        FileShareLinkRepository fileShareLinkRepository() {
-            return mock(FileShareLinkRepository.class);
+        AdminStoragePolicyQueryService adminStoragePolicyQueryService(StoragePolicyRepository storagePolicyRepository,
+                                                                      StoragePolicyService storagePolicyService) {
+            return new AdminStoragePolicyQueryService(storagePolicyRepository, storagePolicyService);
         }
 
         @Bean
-        ObjectMapper objectMapper() {
-            return new ObjectMapper();
-        }
-
-        @Bean
-        AdminService adminService(UserRepository userRepository,
-                                  StoredFileRepository storedFileRepository,
-                                  FileBlobRepository fileBlobRepository,
-                                  FileService fileService,
-                                  PasswordEncoder passwordEncoder,
-                                  RefreshTokenService refreshTokenService,
-                                  AuthTokenInvalidationService authTokenInvalidationService,
-                                  RegistrationInviteService registrationInviteService,
-                                  OfflineTransferSessionRepository offlineTransferSessionRepository,
-                                  AdminMetricsService adminMetricsService,
-                                  StoragePolicyRepository storagePolicyRepository,
-                                  StoragePolicyService storagePolicyService,
-                                  FileEntityRepository fileEntityRepository,
-                                  StoredFileEntityRepository storedFileEntityRepository,
-                                  BackgroundTaskRepository backgroundTaskRepository,
-                                  BackgroundTaskService backgroundTaskService,
-                                  FileShareLinkRepository fileShareLinkRepository,
-                                  ObjectMapper objectMapper) {
-            return new AdminService(
-                    userRepository,
-                    storedFileRepository,
-                    fileBlobRepository,
-                    fileService,
-                    passwordEncoder,
-                    refreshTokenService,
-                    authTokenInvalidationService,
-                    registrationInviteService,
-                    offlineTransferSessionRepository,
-                    adminMetricsService,
+        AdminStorageGovernanceService adminStorageGovernanceService(StoragePolicyRepository storagePolicyRepository,
+                                                                    StoragePolicyService storagePolicyService,
+                                                                    FileEntityRepository fileEntityRepository,
+                                                                    StoredFileEntityRepository storedFileEntityRepository,
+                                                                    BackgroundTaskCommandService backgroundTaskCommandService,
+                                                                    AdminAuditService adminAuditService) {
+            return new AdminStorageGovernanceService(
                     storagePolicyRepository,
                     storagePolicyService,
                     fileEntityRepository,
                     storedFileEntityRepository,
-                    backgroundTaskRepository,
-                    backgroundTaskService,
-                    fileShareLinkRepository,
-                    objectMapper
+                    backgroundTaskCommandService,
+                    adminAuditService
             );
         }
     }

@@ -5,6 +5,7 @@ import com.yoyuzh.common.BusinessException;
 import com.yoyuzh.common.ErrorCode;
 import com.yoyuzh.files.storage.FileContentStorage;
 import lombok.RequiredArgsConstructor;
+import org.springframework.cache.annotation.Cacheable;
 import org.springframework.stereotype.Service;
 
 import java.io.IOException;
@@ -18,6 +19,7 @@ public class AndroidReleaseService {
     private final ObjectMapper objectMapper;
     private final AndroidReleaseProperties androidReleaseProperties;
 
+    @Cacheable(cacheNames = RedisCacheNames.ANDROID_RELEASE, key = "'latest'")
     public AndroidReleaseResponse getLatestRelease() {
         AndroidReleaseMetadata metadata = loadReleaseMetadata();
         return new AndroidReleaseResponse(

@@ -1,8 +1,12 @@
 $ErrorActionPreference = 'Stop'
 
 $root = Split-Path -Parent $PSScriptRoot
-$frontendLogOut = Join-Path $root 'frontend-dev.out.log'
-$frontendLogErr = Join-Path $root 'frontend-dev.err.log'
+$logsDir = Join-Path $root 'logs'
+if (-not (Test-Path $logsDir)) {
+    New-Item -Path $logsDir -ItemType Directory | Out-Null
+}
+$frontendLogOut = Join-Path $logsDir 'frontend-dev.out.log'
+$frontendLogErr = Join-Path $logsDir 'frontend-dev.err.log'
 
 if (Test-Path $frontendLogOut) {
     Remove-Item $frontendLogOut -Force

@@ -1,6 +1,8 @@
 package com.yoyuzh.config;
 
 import com.yoyuzh.admin.AdminMetricsService;
+import com.yoyuzh.auth.AuthClientType;
+import com.yoyuzh.auth.AuthTokenInvalidationService;
 import com.yoyuzh.auth.CustomUserDetailsService;
 import com.yoyuzh.auth.JwtTokenProvider;
 import com.yoyuzh.auth.User;
@@ -18,6 +20,7 @@ import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.core.userdetails.UserDetails;
 
+import java.time.Instant;
 import java.time.LocalDateTime;
 import java.util.List;
 
@@ -32,6 +35,8 @@ class JwtAuthenticationFilterTest {
     @Mock
     private JwtTokenProvider jwtTokenProvider;
     @Mock
+    private AuthTokenInvalidationService authTokenInvalidationService;
+    @Mock
     private CustomUserDetailsService userDetailsService;
     @Mock
     private AdminMetricsService adminMetricsService;
@@ -42,7 +47,12 @@ class JwtAuthenticationFilterTest {
 
     @BeforeEach
     void setUp() {
-        filter = new JwtAuthenticationFilter(jwtTokenProvider, userDetailsService, adminMetricsService);
+        filter = new JwtAuthenticationFilter(
+                jwtTokenProvider,
+                authTokenInvalidationService,
+                userDetailsService,
+                adminMetricsService
+        );
         SecurityContextHolder.clearContext();
     }
 
@@ -84,14 +94,36 @@ class JwtAuthenticationFilterTest {
     }
 
     @Test
+    void shouldPassThroughWhenAccessTokenWasRevokedInRedis() throws Exception {
+        MockHttpServletRequest request = new MockHttpServletRequest();
+        request.addHeader("Authorization", "Bearer valid-token");
+        MockHttpServletResponse response = new MockHttpServletResponse();
+        Instant issuedAt = Instant.now().minusSeconds(30);
+        when(jwtTokenProvider.validateToken("valid-token")).thenReturn(true);
+        when(jwtTokenProvider.getUserId("valid-token")).thenReturn(1L);
+        when(jwtTokenProvider.getClientType("valid-token")).thenReturn(AuthClientType.DESKTOP);
+        when(jwtTokenProvider.getIssuedAt("valid-token")).thenReturn(issuedAt);
+        when(authTokenInvalidationService.isAccessTokenRevoked(1L, AuthClientType.DESKTOP, issuedAt)).thenReturn(true);
+
+        filter.doFilterInternal(request, response, filterChain);
+
+        verify(filterChain).doFilter(request, response);
+        verify(userDetailsService, never()).loadDomainUser(any());
+        assertThat(SecurityContextHolder.getContext().getAuthentication()).isNull();
+    }
+
+    @Test
     void shouldPassThroughWhenUserNotFound() throws Exception {
         MockHttpServletRequest request = new MockHttpServletRequest();
         request.addHeader("Authorization", "Bearer valid-token");
         MockHttpServletResponse response = new MockHttpServletResponse();
         when(jwtTokenProvider.validateToken("valid-token")).thenReturn(true);
+        when(jwtTokenProvider.getUserId("valid-token")).thenReturn(1L);
+        when(jwtTokenProvider.getClientType("valid-token")).thenReturn(AuthClientType.DESKTOP);
+        when(jwtTokenProvider.getIssuedAt("valid-token")).thenReturn(Instant.now());
         when(jwtTokenProvider.getUsername("valid-token")).thenReturn("alice");
         when(userDetailsService.loadDomainUser("alice"))
-                .thenThrow(new BusinessException(ErrorCode.NOT_LOGGED_IN, "用户不存在"));
+                .thenThrow(new BusinessException(ErrorCode.NOT_LOGGED_IN, "user not found"));
 
         filter.doFilterInternal(request, response, filterChain);
 
@@ -106,6 +138,9 @@ class JwtAuthenticationFilterTest {
         MockHttpServletResponse response = new MockHttpServletResponse();
         User domainUser = createDomainUser("alice", "session-1", null);
         when(jwtTokenProvider.validateToken("valid-token")).thenReturn(true);
+        when(jwtTokenProvider.getUserId("valid-token")).thenReturn(1L);
+        when(jwtTokenProvider.getClientType("valid-token")).thenReturn(AuthClientType.DESKTOP);
+        when(jwtTokenProvider.getIssuedAt("valid-token")).thenReturn(Instant.now());
         when(jwtTokenProvider.getUsername("valid-token")).thenReturn("alice");
         when(userDetailsService.loadDomainUser("alice")).thenReturn(domainUser);
         when(jwtTokenProvider.hasMatchingSession("valid-token", domainUser)).thenReturn(false);
@@ -129,6 +164,9 @@ class JwtAuthenticationFilterTest {
                 .authorities(List.of(new SimpleGrantedAuthority("ROLE_USER")))
                 .build();
         when(jwtTokenProvider.validateToken("valid-token")).thenReturn(true);
+        when(jwtTokenProvider.getUserId("valid-token")).thenReturn(1L);
+        when(jwtTokenProvider.getClientType("valid-token")).thenReturn(AuthClientType.DESKTOP);
+        when(jwtTokenProvider.getIssuedAt("valid-token")).thenReturn(Instant.now());
         when(jwtTokenProvider.getUsername("valid-token")).thenReturn("alice");
         when(userDetailsService.loadDomainUser("alice")).thenReturn(domainUser);
         when(jwtTokenProvider.hasMatchingSession("valid-token", domainUser)).thenReturn(true);
@@ -152,6 +190,9 @@ class JwtAuthenticationFilterTest {
                 .authorities(List.of(new SimpleGrantedAuthority("ROLE_USER")))
                 .build();
         when(jwtTokenProvider.validateToken("valid-token")).thenReturn(true);
+        when(jwtTokenProvider.getUserId("valid-token")).thenReturn(1L);
+        when(jwtTokenProvider.getClientType("valid-token")).thenReturn(AuthClientType.DESKTOP);
+        when(jwtTokenProvider.getIssuedAt("valid-token")).thenReturn(Instant.now());
         when(jwtTokenProvider.getUsername("valid-token")).thenReturn("alice");
         when(userDetailsService.loadDomainUser("alice")).thenReturn(domainUser);
         when(jwtTokenProvider.hasMatchingSession("valid-token", domainUser)).thenReturn(true);
@@ -178,7 +219,6 @@ class JwtAuthenticationFilterTest {
         return user;
     }
 
-    // Helper to avoid unused import warning on Mockito.any()
     private static <T> T any() {
         return org.mockito.ArgumentMatchers.any();
     }

@@ -4,6 +4,7 @@ import com.yoyuzh.api.v2.ApiV2Response;
 import com.yoyuzh.auth.CustomUserDetailsService;
 import com.yoyuzh.auth.User;
 import com.yoyuzh.files.upload.UploadSession;
+import com.yoyuzh.files.upload.UploadSessionRuntimeState;
 import com.yoyuzh.files.upload.UploadSessionCreateCommand;
 import com.yoyuzh.files.upload.UploadSessionUploadMode;
 import com.yoyuzh.files.upload.UploadSessionPartCommand;
@@ -142,7 +143,21 @@ public class UploadSessionV2Controller {
                 session.getExpiresAt(),
                 session.getCreatedAt(),
                 session.getUpdatedAt(),
+                uploadSessionService.getRuntimeState(session.getSessionId())
+                        .map(this::toRuntimeResponse)
+                        .orElse(null),
                 toStrategyResponse(session.getSessionId(), uploadMode)
+        );
+    }
+
+    private UploadSessionRuntimeStateV2Response toRuntimeResponse(UploadSessionRuntimeState runtimeState) {
+        return new UploadSessionRuntimeStateV2Response(
+                runtimeState.phase(),
+                runtimeState.uploadedBytes(),
+                runtimeState.uploadedPartCount(),
+                runtimeState.progressPercent(),
+                runtimeState.lastUpdatedAt(),
+                runtimeState.expiresAt()
         );
     }
 

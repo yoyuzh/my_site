@@ -11,9 +11,12 @@ import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.security.SecureRandom;
+import java.time.Instant;
 import java.time.LocalDateTime;
+import java.time.ZoneId;
 import java.util.Base64;
 import java.util.HexFormat;
+import java.util.List;
 
 @Service
 @RequiredArgsConstructor
@@ -23,6 +26,7 @@ public class RefreshTokenService {
 
     private final RefreshTokenRepository refreshTokenRepository;
     private final JwtProperties jwtProperties;
+    private final AuthTokenInvalidationService authTokenInvalidationService;
     private final SecureRandom secureRandom = new SecureRandom();
 
     @Transactional
@@ -47,7 +51,12 @@ public class RefreshTokenService {
 
     @Transactional(noRollbackFor = BusinessException.class)
     public RotatedRefreshToken rotateRefreshToken(String rawToken) {
-        RefreshToken existing = refreshTokenRepository.findForUpdateByTokenHash(hashToken(rawToken))
+        String tokenHash = hashToken(rawToken);
+        if (authTokenInvalidationService.isRefreshTokenHashBlacklisted(tokenHash)) {
+            throw new BusinessException(ErrorCode.NOT_LOGGED_IN, "刷新令牌无效或已使用");
+        }
+
+        RefreshToken existing = refreshTokenRepository.findForUpdateByTokenHash(tokenHash)
                 .orElseThrow(() -> new BusinessException(ErrorCode.NOT_LOGGED_IN, "刷新令牌无效"));
 
         if (existing.isRevoked()) {
@@ -56,12 +65,14 @@ public class RefreshTokenService {
 
         if (existing.getExpiresAt().isBefore(LocalDateTime.now())) {
             existing.revoke(LocalDateTime.now());
+            authTokenInvalidationService.blacklistRefreshTokenHash(existing.getTokenHash(), toInstant(existing.getExpiresAt()));
             throw new BusinessException(ErrorCode.NOT_LOGGED_IN, "刷新令牌已过期");
         }
 
         User user = existing.getUser();
         AuthClientType clientType = AuthClientType.fromHeader(existing.getClientType());
         existing.revoke(LocalDateTime.now());
+        authTokenInvalidationService.blacklistRefreshTokenHash(existing.getTokenHash(), toInstant(existing.getExpiresAt()));
         revokeAllForUser(user.getId(), clientType);
 
         String nextRefreshToken = issueRefreshToken(user, clientType);
@@ -70,12 +81,18 @@ public class RefreshTokenService {
 
     @Transactional
     public void revokeAllForUser(Long userId) {
-        refreshTokenRepository.revokeAllActiveByUserId(userId, LocalDateTime.now());
+        LocalDateTime now = LocalDateTime.now();
+        List<RefreshToken> tokens = refreshTokenRepository.findActiveByUserId(userId, now);
+        refreshTokenRepository.revokeAllActiveByUserId(userId, now);
+        blacklistRefreshTokens(tokens);
     }
 
     @Transactional
     public void revokeAllForUser(Long userId, AuthClientType clientType) {
-        refreshTokenRepository.revokeAllActiveByUserIdAndClientType(userId, clientType.name(), LocalDateTime.now());
+        LocalDateTime now = LocalDateTime.now();
+        List<RefreshToken> tokens = refreshTokenRepository.findActiveByUserIdAndClientType(userId, clientType.name(), now);
+        refreshTokenRepository.revokeAllActiveByUserIdAndClientType(userId, clientType.name(), now);
+        blacklistRefreshTokens(tokens);
     }
 
     private String generateRawToken() {
@@ -95,6 +112,16 @@ public class RefreshTokenService {
         } catch (NoSuchAlgorithmException ex) {
             throw new IllegalStateException("无法初始化刷新令牌哈希算法", ex);
         }
+    }
+
+    private void blacklistRefreshTokens(List<RefreshToken> tokens) {
+        for (RefreshToken token : tokens) {
+            authTokenInvalidationService.blacklistRefreshTokenHash(token.getTokenHash(), toInstant(token.getExpiresAt()));
+        }
+    }
+
+    private Instant toInstant(LocalDateTime dateTime) {
+        return dateTime.atZone(ZoneId.systemDefault()).toInstant();
     }
 
     public record RotatedRefreshToken(User user, String refreshToken, AuthClientType clientType) {

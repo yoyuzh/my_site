@@ -11,6 +11,7 @@ import com.yoyuzh.files.policy.StoragePolicyType;
 import com.yoyuzh.files.share.CreateFileShareLinkResponse;
 import com.yoyuzh.files.share.FileShareLink;
 import com.yoyuzh.files.share.FileShareLinkRepository;
+import com.yoyuzh.files.tasks.MediaMetadataTaskBrokerPublisher;
 import com.yoyuzh.files.upload.CompleteUploadRequest;
 import com.yoyuzh.files.upload.InitiateUploadRequest;
 import com.yoyuzh.files.upload.InitiateUploadResponse;
@@ -19,6 +20,7 @@ import com.yoyuzh.files.storage.PreparedUpload;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.data.domain.PageImpl;
@@ -27,6 +29,7 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.mock.web.MockMultipartFile;
+import org.springframework.test.util.ReflectionTestUtils;
 
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
@@ -57,6 +60,8 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.anyString;
 
 @ExtendWith(MockitoExtension.class)
 class FileServiceTest {
@@ -80,6 +85,8 @@ class FileServiceTest {
     private AdminMetricsService adminMetricsService;
     @Mock
     private StoragePolicyService storagePolicyService;
+    @Mock
+    private MediaMetadataTaskBrokerPublisher mediaMetadataTaskBrokerPublisher;
 
     private FileService fileService;
 
@@ -124,6 +131,33 @@ class FileServiceTest {
                         && blob.getObjectKey().startsWith("blobs/")
                         && blob.getSize().equals(5L)
                         && "text/plain".equals(blob.getContentType())));
+    }
+
+    @Test
+    void shouldPublishMediaMetadataTriggerWhenSavingImageFile() {
+        ReflectionTestUtils.setField(fileService, "mediaMetadataTaskBrokerPublisher", mediaMetadataTaskBrokerPublisher);
+        User user = createUser(7L);
+        MockMultipartFile multipartFile = new MockMultipartFile(
+                "file", "photo.png", "image/png", "hello".getBytes());
+        when(storedFileRepository.existsByUserIdAndPathAndFilename(7L, "/docs", "photo.png")).thenReturn(false);
+        when(fileBlobRepository.save(any(FileBlob.class))).thenAnswer(invocation -> {
+            FileBlob blob = invocation.getArgument(0);
+            blob.setId(100L);
+            return blob;
+        });
+        when(storedFileRepository.save(any(StoredFile.class))).thenAnswer(invocation -> {
+            StoredFile file = invocation.getArgument(0);
+            file.setId(10L);
+            return file;
+        });
+
+        fileService.upload(user, "/docs", multipartFile);
+
+        verify(mediaMetadataTaskBrokerPublisher).publishAfterCommit(org.mockito.ArgumentMatchers.argThat(file ->
+                file != null
+                        && file.getId().equals(10L)
+                        && "image/png".equals(file.getContentType())
+                        && "photo.png".equals(file.getFilename())));
     }
 
     @Test
@@ -611,14 +645,19 @@ class FileServiceTest {
     void shouldListFilesByPathWithPagination() {
         User user = createUser(7L);
         StoredFile file = createFile(100L, user, "/docs", "notes.txt");
+        FileListDirectoryCacheService cacheService = org.mockito.Mockito.mock(FileListDirectoryCacheService.class);
+        ReflectionTestUtils.setField(fileService, "fileListDirectoryCacheService", cacheService);
         when(storedFileRepository.findByUserIdAndPathOrderByDirectoryDescCreatedAtDesc(
                 7L, "/docs", PageRequest.of(0, 10)))
                 .thenReturn(new PageImpl<>(List.of(file)));
+        when(cacheService.getOrLoad(eq(7L), eq("/docs"), eq(0), eq(10), any()))
+                .thenAnswer(invocation -> invocation.<java.util.function.Supplier<com.yoyuzh.common.PageResponse<FileMetadataResponse>>>getArgument(4).get());
 
         var result = fileService.list(user, "/docs", 0, 10);
 
         assertThat(result.items()).hasSize(1);
         assertThat(result.items().get(0).filename()).isEqualTo("notes.txt");
+        verify(cacheService).getOrLoad(eq(7L), eq("/docs"), eq(0), eq(10), any());
     }
 
     @Test
@@ -649,6 +688,21 @@ class FileServiceTest {
         DownloadUrlResponse response = fileService.getDownloadUrl(user, 22L);
 
         assertThat(response.url()).isEqualTo("https://download.example.com/file");
+    }
+
+    @Test
+    void shouldPersistLegacyStorageNameWhenCreatingDefaultDirectories() {
+        User user = createUser(7L);
+        when(storedFileRepository.existsByUserIdAndPathAndFilename(anyLong(), anyString(), anyString())).thenReturn(false);
+        when(storedFileRepository.save(any(StoredFile.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        fileService.ensureDefaultDirectories(user);
+
+        ArgumentCaptor<StoredFile> captor = ArgumentCaptor.forClass(StoredFile.class);
+        verify(storedFileRepository, times(3)).save(captor.capture());
+        assertThat(captor.getAllValues())
+                .extracting(StoredFile::getLegacyStorageName)
+                .doesNotContainNull();
     }
 
     @Test

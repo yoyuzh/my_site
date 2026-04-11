@@ -15,6 +15,8 @@ export type FileItem = {
   contentType: string;
   directory: boolean;
   createdAt: string;
+  thumbnailKey?: string | null;
+  publicMetaJson?: string | null;
 };
 
 export type RecycleBinItem = {

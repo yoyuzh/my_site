@@ -58,7 +58,7 @@ class RefreshTokenServiceIntegrationTest {
         assertThat(rotated.refreshToken()).isNotBlank().isNotEqualTo(rawToken);
         assertThatThrownBy(() -> refreshTokenService.rotateRefreshToken(rawToken))
                 .isInstanceOf(BusinessException.class)
-                .hasMessageContaining("无效或已使用");
+                .hasMessageContaining("刷新令牌无效或已使用");
         assertThat(refreshTokenRepository.findAll())
                 .hasSize(2)
                 .filteredOn(RefreshToken::isRevoked)

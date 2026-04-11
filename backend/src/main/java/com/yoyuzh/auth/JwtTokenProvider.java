@@ -79,6 +79,11 @@ public class JwtTokenProvider {
         return uid == null ? null : Long.parseLong(uid.toString());
     }
 
+    public Instant getIssuedAt(String token) {
+        Date issuedAt = parseClaims(token).getIssuedAt();
+        return issuedAt == null ? null : issuedAt.toInstant();
+    }
+
     public String getSessionId(String token) {
         Object sessionId = parseClaims(token).get("sid");
         return sessionId == null ? null : sessionId.toString();

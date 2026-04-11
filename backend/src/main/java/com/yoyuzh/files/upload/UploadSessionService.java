@@ -6,8 +6,10 @@ import com.yoyuzh.auth.User;
 import com.yoyuzh.common.BusinessException;
 import com.yoyuzh.common.ErrorCode;
 import com.yoyuzh.config.FileStorageProperties;
+import com.yoyuzh.files.core.FileUploadRulesService;
 import com.yoyuzh.files.core.FileService;
 import com.yoyuzh.files.core.StoredFileRepository;
+import com.yoyuzh.files.core.WorkspaceNodeRulesService;
 import com.yoyuzh.files.policy.StoragePolicy;
 import com.yoyuzh.files.policy.StoragePolicyCapabilities;
 import com.yoyuzh.files.policy.StoragePolicyService;
@@ -26,6 +28,7 @@ import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 @Service
@@ -42,13 +45,17 @@ public class UploadSessionService {
     };
 
     private final UploadSessionRepository uploadSessionRepository;
-    private final StoredFileRepository storedFileRepository;
     private final FileService fileService;
     private final FileContentStorage fileContentStorage;
     private final StoragePolicyService storagePolicyService;
     private final ObjectMapper objectMapper = new ObjectMapper();
-    private final long maxFileSize;
+    private final UploadPolicyResolver uploadPolicyResolver;
+    private final UploadSessionStateMachine uploadSessionStateMachine;
+    private final WorkspaceNodeRulesService workspaceNodeRulesService;
+    private final FileUploadRulesService fileUploadRulesService;
     private final Clock clock;
+    @Autowired(required = false)
+    private UploadSessionRuntimeStateService uploadSessionRuntimeStateService = UploadSessionRuntimeStateService.noOp();
 
     @Autowired
     public UploadSessionService(UploadSessionRepository uploadSessionRepository,
@@ -56,8 +63,20 @@ public class UploadSessionService {
                                 FileService fileService,
                                 FileContentStorage fileContentStorage,
                                 StoragePolicyService storagePolicyService,
-                                FileStorageProperties properties) {
-        this(uploadSessionRepository, storedFileRepository, fileService, fileContentStorage, storagePolicyService, properties, Clock.systemUTC());
+                                FileStorageProperties properties,
+                                UploadPolicyResolver uploadPolicyResolver,
+                                UploadSessionStateMachine uploadSessionStateMachine) {
+        this(
+                uploadSessionRepository,
+                storedFileRepository,
+                fileService,
+                fileContentStorage,
+                storagePolicyService,
+                properties,
+                Clock.systemUTC(),
+                uploadPolicyResolver,
+                uploadSessionStateMachine
+        );
     }
 
     UploadSessionService(UploadSessionRepository uploadSessionRepository,
@@ -67,23 +86,52 @@ public class UploadSessionService {
                          StoragePolicyService storagePolicyService,
                          FileStorageProperties properties,
                          Clock clock) {
+        this(
+                uploadSessionRepository,
+                storedFileRepository,
+                fileService,
+                fileContentStorage,
+                storagePolicyService,
+                properties,
+                clock,
+                new UploadPolicyResolver(),
+                new UploadSessionStateMachine()
+        );
+    }
+
+    UploadSessionService(UploadSessionRepository uploadSessionRepository,
+                         StoredFileRepository storedFileRepository,
+                         FileService fileService,
+                         FileContentStorage fileContentStorage,
+                         StoragePolicyService storagePolicyService,
+                         FileStorageProperties properties,
+                         Clock clock,
+                         UploadPolicyResolver uploadPolicyResolver,
+                         UploadSessionStateMachine uploadSessionStateMachine) {
         this.uploadSessionRepository = uploadSessionRepository;
-        this.storedFileRepository = storedFileRepository;
         this.fileService = fileService;
         this.fileContentStorage = fileContentStorage;
         this.storagePolicyService = storagePolicyService;
-        this.maxFileSize = properties.getMaxFileSize();
         this.clock = clock;
+        this.uploadPolicyResolver = uploadPolicyResolver;
+        this.uploadSessionStateMachine = uploadSessionStateMachine;
+        this.workspaceNodeRulesService = new WorkspaceNodeRulesService(storedFileRepository, fileContentStorage);
+        this.fileUploadRulesService = new FileUploadRulesService(
+                storedFileRepository,
+                storagePolicyService,
+                workspaceNodeRulesService,
+                properties.getMaxFileSize()
+        );
     }
 
     @Transactional
     public UploadSession createSession(User user, UploadSessionCreateCommand command) {
-        String normalizedPath = normalizeDirectoryPath(command.path());
-        String filename = normalizeLeafName(command.filename());
+        String normalizedPath = workspaceNodeRulesService.normalizeDirectoryPath(command.path());
+        String filename = workspaceNodeRulesService.normalizeLeafName(command.filename());
         StoragePolicy policy = storagePolicyService.ensureDefaultPolicy();
         StoragePolicyCapabilities capabilities = storagePolicyService.readCapabilities(policy);
-        validateTarget(user, normalizedPath, filename, command.size(), policy, capabilities);
-        UploadSessionUploadMode uploadMode = resolveUploadMode(capabilities);
+        validateTarget(user, normalizedPath, filename, command.size());
+        UploadSessionUploadMode uploadMode = uploadPolicyResolver.resolveUploadMode(capabilities);
 
         UploadSession session = new UploadSession();
         session.setSessionId(UUID.randomUUID().toString());
@@ -96,44 +144,51 @@ public class UploadSessionService {
         session.setStoragePolicyId(policy.getId());
         session.setChunkSize(DEFAULT_CHUNK_SIZE);
         session.setChunkCount(uploadMode == UploadSessionUploadMode.DIRECT_MULTIPART
-                ? calculateChunkCount(command.size(), DEFAULT_CHUNK_SIZE)
+                ? uploadPolicyResolver.calculateChunkCount(command.size(), DEFAULT_CHUNK_SIZE)
                 : 1);
         session.setUploadedPartsJson("[]");
         session.setStatus(UploadSessionStatus.CREATED);
-        LocalDateTime now = LocalDateTime.ofInstant(clock.instant(), clock.getZone());
+        LocalDateTime now = now();
         session.setCreatedAt(now);
         session.setUpdatedAt(now);
         session.setExpiresAt(now.plusHours(SESSION_TTL_HOURS));
         if (uploadMode == UploadSessionUploadMode.DIRECT_MULTIPART) {
             session.setMultipartUploadId(fileContentStorage.createMultipartUpload(session.getObjectKey(), session.getContentType()));
         }
-        return uploadSessionRepository.save(session);
+        UploadSession savedSession = uploadSessionRepository.save(session);
+        uploadSessionRuntimeStateService.markCreated(savedSession);
+        return savedSession;
     }
 
     @Transactional(readOnly = true)
     public UploadSession getOwnedSession(User user, String sessionId) {
         return uploadSessionRepository.findBySessionIdAndUserId(sessionId, user.getId())
-                .orElseThrow(() -> new BusinessException(ErrorCode.FILE_NOT_FOUND, "上传会话不存在"));
+                .orElseThrow(() -> new BusinessException(ErrorCode.FILE_NOT_FOUND, "upload session not found"));
+    }
+
+    @Transactional(readOnly = true)
+    public Optional<UploadSessionRuntimeState> getRuntimeState(String sessionId) {
+        return uploadSessionRuntimeStateService.getState(sessionId);
     }
 
     @Transactional
     public UploadSession cancelOwnedSession(User user, String sessionId) {
         UploadSession session = getOwnedSession(user, sessionId);
         if (session.getStatus() == UploadSessionStatus.COMPLETED) {
-            throw new BusinessException(ErrorCode.UNKNOWN, "已完成的上传会话不能取消");
+            throw new BusinessException(ErrorCode.UNKNOWN, "completed upload session cannot be cancelled");
         }
-        session.setStatus(UploadSessionStatus.CANCELLED);
-        session.setUpdatedAt(LocalDateTime.ofInstant(clock.instant(), clock.getZone()));
-        return uploadSessionRepository.save(session);
+        uploadSessionStateMachine.markCancelled(session, now());
+        UploadSession savedSession = uploadSessionRepository.save(session);
+        uploadSessionRuntimeStateService.markCancelled(savedSession, savedSession.getUpdatedAt());
+        return savedSession;
     }
 
     @Transactional(readOnly = true)
     public PreparedUpload prepareOwnedUpload(User user, String sessionId) {
         UploadSession session = getOwnedSession(user, sessionId);
-        LocalDateTime now = LocalDateTime.ofInstant(clock.instant(), clock.getZone());
-        ensureSessionCanReceiveContent(session, now);
+        ensureSessionCanReceiveContent(session, now());
         if (resolveUploadMode(session) != UploadSessionUploadMode.DIRECT_SINGLE) {
-            throw new BusinessException(ErrorCode.UNKNOWN, "上传会话未启用单请求直传");
+            throw new BusinessException(ErrorCode.UNKNOWN, "upload session does not support direct single upload");
         }
         return fileContentStorage.prepareBlobUpload(
                 session.getTargetPath(),
@@ -147,21 +202,20 @@ public class UploadSessionService {
     @Transactional(readOnly = true)
     public PreparedUpload prepareOwnedPartUpload(User user, String sessionId, int partIndex) {
         UploadSession session = getOwnedSession(user, sessionId);
-        LocalDateTime now = LocalDateTime.ofInstant(clock.instant(), clock.getZone());
-        ensureSessionCanReceivePart(session, now);
+        ensureSessionCanReceivePart(session, now());
         if (resolveUploadMode(session) != UploadSessionUploadMode.DIRECT_MULTIPART
                 || !StringUtils.hasText(session.getMultipartUploadId())) {
-            throw new BusinessException(ErrorCode.UNKNOWN, "上传会话未启用 multipart");
+            throw new BusinessException(ErrorCode.UNKNOWN, "upload session does not support multipart upload");
         }
         if (partIndex < 0 || partIndex >= session.getChunkCount()) {
-            throw new BusinessException(ErrorCode.UNKNOWN, "分片序号不合法");
+            throw new BusinessException(ErrorCode.UNKNOWN, "invalid part index");
         }
         return fileContentStorage.prepareMultipartPartUpload(
                 session.getObjectKey(),
                 session.getMultipartUploadId(),
                 partIndex + 1,
                 session.getContentType(),
-                resolveChunkSize(session, partIndex)
+                uploadPolicyResolver.resolveChunkSize(session, partIndex)
         );
     }
 
@@ -171,19 +225,19 @@ public class UploadSessionService {
                                             int partIndex,
                                             UploadSessionPartCommand command) {
         UploadSession session = getOwnedSession(user, sessionId);
-        LocalDateTime now = LocalDateTime.ofInstant(clock.instant(), clock.getZone());
+        LocalDateTime now = now();
         ensureSessionCanReceivePart(session, now);
         if (resolveUploadMode(session) != UploadSessionUploadMode.DIRECT_MULTIPART) {
-            throw new BusinessException(ErrorCode.UNKNOWN, "上传会话未启用 multipart");
+            throw new BusinessException(ErrorCode.UNKNOWN, "upload session does not support multipart upload");
         }
         if (partIndex < 0 || partIndex >= session.getChunkCount()) {
-            throw new BusinessException(ErrorCode.UNKNOWN, "分片序号不合法");
+            throw new BusinessException(ErrorCode.UNKNOWN, "invalid part index");
         }
         if (!StringUtils.hasText(command.etag())) {
-            throw new BusinessException(ErrorCode.UNKNOWN, "分片标识不能为空");
+            throw new BusinessException(ErrorCode.UNKNOWN, "part etag is required");
         }
         if (command.size() < 0) {
-            throw new BusinessException(ErrorCode.UNKNOWN, "分片大小不合法");
+            throw new BusinessException(ErrorCode.UNKNOWN, "invalid part size");
         }
 
         List<UploadedPart> uploadedParts = new ArrayList<>(readUploadedParts(session));
@@ -192,33 +246,42 @@ public class UploadSessionService {
         uploadedParts.sort(Comparator.comparingInt(UploadedPart::partIndex));
 
         session.setUploadedPartsJson(writeUploadedParts(uploadedParts));
-        if (session.getStatus() == UploadSessionStatus.CREATED) {
-            session.setStatus(UploadSessionStatus.UPLOADING);
-        }
-        session.setUpdatedAt(now);
-        return uploadSessionRepository.save(session);
+        uploadSessionStateMachine.markUploading(session, now);
+        UploadSession savedSession = uploadSessionRepository.save(session);
+        long uploadedBytes = uploadedParts.stream().mapToLong(UploadedPart::size).sum();
+        uploadSessionRuntimeStateService.markUploading(
+                savedSession,
+                uploadedBytes,
+                uploadedParts.size(),
+                savedSession.getUpdatedAt()
+        );
+        return savedSession;
     }
 
     @Transactional
     public UploadSession uploadOwnedContent(User user, String sessionId, MultipartFile file) {
         UploadSession session = getOwnedSession(user, sessionId);
-        LocalDateTime now = LocalDateTime.ofInstant(clock.instant(), clock.getZone());
+        LocalDateTime now = now();
         ensureSessionCanReceiveContent(session, now);
         if (resolveUploadMode(session) != UploadSessionUploadMode.PROXY) {
-            throw new BusinessException(ErrorCode.UNKNOWN, "上传会话未启用代理上传");
+            throw new BusinessException(ErrorCode.UNKNOWN, "upload session does not support proxy upload");
         }
         if (file == null || file.isEmpty()) {
-            throw new BusinessException(ErrorCode.UNKNOWN, "上传内容不能为空");
+            throw new BusinessException(ErrorCode.UNKNOWN, "upload content is required");
         }
         if (file.getSize() != session.getSize()) {
-            throw new BusinessException(ErrorCode.UNKNOWN, "上传内容大小与会话不一致");
+            throw new BusinessException(ErrorCode.UNKNOWN, "upload size does not match session");
         }
         fileContentStorage.uploadBlob(session.getObjectKey(), file);
-        if (session.getStatus() == UploadSessionStatus.CREATED) {
-            session.setStatus(UploadSessionStatus.UPLOADING);
-        }
-        session.setUpdatedAt(now);
-        return uploadSessionRepository.save(session);
+        uploadSessionStateMachine.markUploading(session, now);
+        UploadSession savedSession = uploadSessionRepository.save(session);
+        uploadSessionRuntimeStateService.markUploading(
+                savedSession,
+                savedSession.getSize(),
+                1,
+                savedSession.getUpdatedAt()
+        );
+        return savedSession;
     }
 
     @Transactional
@@ -228,19 +291,24 @@ public class UploadSessionService {
             return session;
         }
         if (session.getStatus() == UploadSessionStatus.CANCELLED || session.getStatus() == UploadSessionStatus.FAILED) {
-            throw new BusinessException(ErrorCode.UNKNOWN, "上传会话不能完成");
+            throw new BusinessException(ErrorCode.UNKNOWN, "upload session cannot be completed");
         }
-        LocalDateTime now = LocalDateTime.ofInstant(clock.instant(), clock.getZone());
+        LocalDateTime now = now();
         if (session.getExpiresAt().isBefore(now)) {
-            session.setStatus(UploadSessionStatus.EXPIRED);
-            session.setUpdatedAt(now);
-            uploadSessionRepository.save(session);
-            throw new BusinessException(ErrorCode.UNKNOWN, "上传会话已过期");
+            uploadSessionStateMachine.markExpired(session, now);
+            UploadSession expiredSession = uploadSessionRepository.save(session);
+            uploadSessionRuntimeStateService.markExpired(expiredSession, expiredSession.getUpdatedAt());
+            throw new BusinessException(ErrorCode.UNKNOWN, "upload session has expired");
         }
 
-        session.setStatus(UploadSessionStatus.COMPLETING);
-        session.setUpdatedAt(now);
-        uploadSessionRepository.save(session);
+        uploadSessionStateMachine.markCompleting(session, now);
+        UploadSession completingSession = uploadSessionRepository.save(session);
+        uploadSessionRuntimeStateService.markUploading(
+                completingSession,
+                completingSession.getSize() == null ? 0L : completingSession.getSize(),
+                Math.max(1, completingSession.getChunkCount() == null ? 1 : completingSession.getChunkCount()),
+                completingSession.getUpdatedAt()
+        );
 
         try {
             if (resolveUploadMode(session) == UploadSessionUploadMode.DIRECT_MULTIPART
@@ -258,13 +326,14 @@ public class UploadSessionService {
                     session.getContentType(),
                     session.getSize()
             ));
-            session.setStatus(UploadSessionStatus.COMPLETED);
-            session.setUpdatedAt(now);
-            return uploadSessionRepository.save(session);
+            uploadSessionStateMachine.markCompleted(session, now);
+            UploadSession completedSession = uploadSessionRepository.save(session);
+            uploadSessionRuntimeStateService.markCompleted(completedSession, completedSession.getUpdatedAt());
+            return completedSession;
         } catch (RuntimeException ex) {
-            session.setStatus(UploadSessionStatus.FAILED);
-            session.setUpdatedAt(now);
-            uploadSessionRepository.save(session);
+            uploadSessionStateMachine.markFailed(session, now);
+            UploadSession failedSession = uploadSessionRepository.save(session);
+            uploadSessionRuntimeStateService.markFailed(failedSession, failedSession.getUpdatedAt());
             throw ex;
         }
     }
@@ -272,7 +341,7 @@ public class UploadSessionService {
     @Scheduled(fixedDelay = 60 * 60 * 1000L)
     @Transactional
     public int pruneExpiredSessions() {
-        LocalDateTime now = LocalDateTime.ofInstant(clock.instant(), clock.getZone());
+        LocalDateTime now = now();
         List<UploadSession> expiredSessions = uploadSessionRepository.findByStatusInAndExpiresAtBefore(
                 EXPIRABLE_STATUSES,
                 now
@@ -287,8 +356,8 @@ public class UploadSessionService {
             } catch (RuntimeException ignored) {
                 // Expiration is authoritative in the database even if remote object cleanup fails.
             }
-            session.setStatus(UploadSessionStatus.EXPIRED);
-            session.setUpdatedAt(now);
+            uploadSessionStateMachine.markExpired(session, now);
+            uploadSessionRuntimeStateService.markExpired(session, session.getUpdatedAt());
         }
         if (!expiredSessions.isEmpty()) {
             uploadSessionRepository.saveAll(expiredSessions);
@@ -304,64 +373,44 @@ public class UploadSessionService {
             return UploadSessionUploadMode.PROXY;
         }
         StoragePolicy policy = storagePolicyService.getRequiredPolicy(session.getStoragePolicyId());
-        return resolveUploadMode(storagePolicyService.readCapabilities(policy));
-    }
-
-    private UploadSessionUploadMode resolveUploadMode(StoragePolicyCapabilities capabilities) {
-        if (!capabilities.directUpload()) {
-            return UploadSessionUploadMode.PROXY;
-        }
-        if (capabilities.multipartUpload()) {
-            return UploadSessionUploadMode.DIRECT_MULTIPART;
-        }
-        return UploadSessionUploadMode.DIRECT_SINGLE;
+        return uploadPolicyResolver.resolveUploadMode(storagePolicyService.readCapabilities(policy));
     }
 
     private void validateTarget(User user,
                                 String normalizedPath,
                                 String filename,
-                                long size,
-                                StoragePolicy policy,
-                                StoragePolicyCapabilities capabilities) {
-        long effectiveMaxUploadSize = Math.min(maxFileSize, user.getMaxUploadSizeBytes());
-        if (policy.getMaxSizeBytes() > 0) {
-            effectiveMaxUploadSize = Math.min(effectiveMaxUploadSize, policy.getMaxSizeBytes());
-        }
-        if (capabilities.maxObjectSize() > 0) {
-            effectiveMaxUploadSize = Math.min(effectiveMaxUploadSize, capabilities.maxObjectSize());
-        }
-        if (size > effectiveMaxUploadSize) {
-            throw new BusinessException(ErrorCode.UNKNOWN, "文件大小超出限制");
-        }
-        if (storedFileRepository.existsByUserIdAndPathAndFilename(user.getId(), normalizedPath, filename)) {
-            throw new BusinessException(ErrorCode.UNKNOWN, "同目录下文件已存在");
-        }
-        long usedBytes = storedFileRepository.sumFileSizeByUserId(user.getId());
-        if (user.getStorageQuotaBytes() >= 0 && usedBytes + size > user.getStorageQuotaBytes()) {
-            throw new BusinessException(ErrorCode.UNKNOWN, "存储空间不足");
-        }
+                                long size) {
+        fileUploadRulesService.validateUpload(user, normalizedPath, filename, size);
     }
 
     private void ensureSessionCanReceiveContent(UploadSession session, LocalDateTime now) {
-        ensureSessionCanReceivePart(session, now);
-        if (session.getStatus() == UploadSessionStatus.UPLOADING && StringUtils.hasText(session.getMultipartUploadId())) {
-            throw new BusinessException(ErrorCode.UNKNOWN, "multipart 上传会话不能走整体内容上传");
+        try {
+            uploadSessionStateMachine.ensureCanReceiveContent(
+                    session,
+                    now,
+                    StringUtils.hasText(session.getMultipartUploadId())
+            );
+        } catch (BusinessException ex) {
+            markRuntimeExpiredIfNeeded(session);
+            throw ex;
         }
     }
 
     private void ensureSessionCanReceivePart(UploadSession session, LocalDateTime now) {
-        if (session.getStatus() == UploadSessionStatus.CANCELLED
-                || session.getStatus() == UploadSessionStatus.FAILED
-                || session.getStatus() == UploadSessionStatus.COMPLETING
-                || session.getStatus() == UploadSessionStatus.COMPLETED) {
-            throw new BusinessException(ErrorCode.UNKNOWN, "上传会话不能继续上传分片");
+        try {
+            uploadSessionStateMachine.ensureCanReceivePart(session, now);
+        } catch (BusinessException ex) {
+            markRuntimeExpiredIfNeeded(session);
+            throw ex;
         }
-        if (session.getExpiresAt().isBefore(now)) {
-            session.setStatus(UploadSessionStatus.EXPIRED);
-            session.setUpdatedAt(now);
-            uploadSessionRepository.save(session);
-            throw new BusinessException(ErrorCode.UNKNOWN, "上传会话已过期");
+    }
+
+    private void markRuntimeExpiredIfNeeded(UploadSession session) {
+        if (session.getStatus() != UploadSessionStatus.EXPIRED) {
+            return;
         }
+        UploadSession expiredSession = uploadSessionRepository.save(session);
+        uploadSessionRuntimeStateService.markExpired(expiredSession, expiredSession.getUpdatedAt());
     }
 
     private List<UploadedPart> readUploadedParts(UploadSession session) {
@@ -371,7 +420,7 @@ public class UploadSessionService {
         try {
             return objectMapper.readValue(session.getUploadedPartsJson(), UPLOADED_PARTS_TYPE);
         } catch (Exception ex) {
-            throw new BusinessException(ErrorCode.UNKNOWN, "上传会话分片状态不合法");
+            throw new BusinessException(ErrorCode.UNKNOWN, "invalid uploaded part state");
         }
     }
 
@@ -379,7 +428,7 @@ public class UploadSessionService {
         try {
             return objectMapper.writeValueAsString(uploadedParts);
         } catch (Exception ex) {
-            throw new BusinessException(ErrorCode.UNKNOWN, "上传会话分片状态写入失败");
+            throw new BusinessException(ErrorCode.UNKNOWN, "failed to write uploaded part state");
         }
     }
 
@@ -388,18 +437,18 @@ public class UploadSessionService {
                 .sorted(Comparator.comparingInt(UploadedPart::partIndex))
                 .toList();
         if (uploadedParts.size() != session.getChunkCount()) {
-            throw new BusinessException(ErrorCode.UNKNOWN, "上传分片不完整");
+            throw new BusinessException(ErrorCode.UNKNOWN, "multipart upload is incomplete");
         }
         for (int expectedIndex = 0; expectedIndex < session.getChunkCount(); expectedIndex++) {
             UploadedPart part = uploadedParts.get(expectedIndex);
             if (part.partIndex() != expectedIndex) {
-                throw new BusinessException(ErrorCode.UNKNOWN, "上传分片不完整");
+                throw new BusinessException(ErrorCode.UNKNOWN, "multipart upload is incomplete");
             }
             if (!StringUtils.hasText(part.etag())) {
-                throw new BusinessException(ErrorCode.UNKNOWN, "上传分片标识缺失");
+                throw new BusinessException(ErrorCode.UNKNOWN, "missing part etag");
             }
-            if (part.size() <= 0 || part.size() > resolveChunkSize(session, expectedIndex)) {
-                throw new BusinessException(ErrorCode.UNKNOWN, "上传分片大小不合法");
+            if (part.size() <= 0 || part.size() > uploadPolicyResolver.resolveChunkSize(session, expectedIndex)) {
+                throw new BusinessException(ErrorCode.UNKNOWN, "invalid part size");
             }
         }
         return uploadedParts.stream()
@@ -407,53 +456,15 @@ public class UploadSessionService {
                 .toList();
     }
 
-    private long resolveChunkSize(UploadSession session, int partIndex) {
-        if (partIndex < 0 || partIndex >= session.getChunkCount()) {
-            throw new BusinessException(ErrorCode.UNKNOWN, "分片序号不合法");
-        }
-        if (partIndex < session.getChunkCount() - 1) {
-            return session.getChunkSize();
-        }
-        long remaining = session.getSize() - session.getChunkSize() * (session.getChunkCount() - 1L);
-        return remaining > 0 ? remaining : session.getChunkSize();
-    }
-
     private record UploadedPart(int partIndex, String etag, long size, String uploadedAt) {
-    }
-
-    private int calculateChunkCount(long size, long chunkSize) {
-        if (size <= 0) {
-            return 1;
-        }
-        return (int) Math.ceil((double) size / chunkSize);
     }
 
     private String createBlobObjectKey() {
         return "blobs/" + UUID.randomUUID();
     }
 
-    private String normalizeDirectoryPath(String path) {
-        String cleaned = StringUtils.cleanPath(path == null ? "/" : path.trim().replace("\\", "/"));
-        if (!cleaned.startsWith("/")) {
-            cleaned = "/" + cleaned;
-        }
-        while (cleaned.length() > 1 && cleaned.endsWith("/")) {
-            cleaned = cleaned.substring(0, cleaned.length() - 1);
-        }
-        if (!StringUtils.hasText(cleaned) || cleaned.contains("..")) {
-            throw new BusinessException(ErrorCode.UNKNOWN, "路径不合法");
-        }
-        return cleaned;
+    private LocalDateTime now() {
+        return LocalDateTime.ofInstant(clock.instant(), clock.getZone());
     }
 
-    private String normalizeLeafName(String filename) {
-        String cleaned = StringUtils.cleanPath(filename == null ? "" : filename).trim();
-        if (!StringUtils.hasText(cleaned)) {
-            throw new BusinessException(ErrorCode.UNKNOWN, "文件名不能为空");
-        }
-        if (cleaned.contains("/") || cleaned.contains("\\") || cleaned.contains("..")) {
-            throw new BusinessException(ErrorCode.UNKNOWN, "文件名不合法");
-        }
-        return cleaned;
-    }
 }

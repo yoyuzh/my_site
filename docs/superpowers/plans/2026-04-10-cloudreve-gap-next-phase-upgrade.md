@@ -271,7 +271,7 @@
 - 媒体处理开关
 - Redis / runtime 只读状态
 
-- [ ] **Step 1: 设计参数设置 DTO 与权限边界**
+- [x] **Step 1: 设计参数设置 DTO 与权限边界**
 - [ ] **Step 2: 先拆站点信息子分组**
   - 站点名称
   - 站点描述
@@ -299,9 +299,9 @@
   - 前端品牌化字段
   - CDN / 静态资源缓存参数
   - 服务器运行信息、Redis 状态、存储后端状态
-- [ ] **Step 2: 暴露管理员参数读取与更新接口**
-- [ ] **Step 3: 只允许修改当前可安全热更新的参数**
-- [ ] **Step 4: 文档化哪些配置仍需环境变量或重启**
+- [x] **Step 2: 暴露管理员参数读取与更新接口**
+- [x] **Step 3: 只允许修改当前可安全热更新的参数**
+- [x] **Step 4: 文档化哪些配置仍需环境变量或重启**
 
 ### Admin-B2: File System
 
@@ -710,3 +710,32 @@
 - `cd backend && mvn -Dtest=AdminControllerIntegrationTest,AdminServiceTest,AdminServiceStoragePolicyCacheTest test`
 - `cd backend && mvn test`
 - Full backend result after this landing note: 304 tests passed.
+
+## 2026-04-11 Admin Next-Phase Backend Landing Note 2
+
+- Admin-B1 and Admin-B2 have now both started with read-only backend surfaces.
+- Implemented:
+- `GET /api/admin/settings`
+- `GET /api/admin/filesystem`
+- `GET /api/admin/settings` currently stops at backend-owned observation: invite-code state, configured admin usernames, JWT/user-session timing, Redis/token-blacklist availability, queue cadence, and storage/Redis runtime mode.
+- `GET /api/admin/filesystem` currently stops at operational observation: default policy snapshot, resolved upload-mode matrix, effective max file size, metadata/thumbnail capability flags, cache backend/TTL status, aggregate file/blob/entity counts, and reserved-off `WebDAV` state.
+- This batch intentionally does not introduce writable parameter settings yet. Hot-update safety boundaries and persistent admin writes remain part of the next Admin-B1 follow-up.
+- Verification passed in WSL with:
+- `cd backend && mvn -Dtest=AdminControllerIntegrationTest,AdminServiceTest,AdminServiceStoragePolicyCacheTest test`
+- `cd backend && mvn test`
+
+## 2026-04-11 Admin Next-Phase Backend Landing Note 3
+
+- Admin-B1 has now moved beyond read-only snapshots into the first bounded write path.
+- Implemented:
+- `PATCH /api/admin/settings/registration/invite-code`
+- `POST /api/admin/settings/registration/invite-code/rotate`
+- `GET /api/admin/settings` now also returns per-section `writeSupported` flags and a `transfer` section exposing the persisted offline-transfer storage limit.
+- Current hot-update boundary is explicit:
+- writable now: current registration invite code, offline transfer storage limit;
+- still read-only/runtime-derived: admin usernames, JWT lifetimes, Redis enablement and TTL policy, queue backend/cadence, storage provider, and other environment-bound server settings.
+- The invite-code write path is deliberately backed by the existing `RegistrationInviteState` row instead of introducing a generic mutable config store.
+- Verification passed in WSL with:
+- `cd backend && mvn -Dtest=AdminControllerIntegrationTest,AdminServiceTest,AdminServiceStoragePolicyCacheTest test`
+- `cd backend && mvn test`
+- Full backend result after this batch: 310 tests passed.

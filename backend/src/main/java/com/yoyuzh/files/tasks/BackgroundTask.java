@@ -11,6 +11,7 @@ import jakarta.persistence.Index;
 import jakarta.persistence.PrePersist;
 import jakarta.persistence.PreUpdate;
 import jakarta.persistence.Table;
+import jakarta.persistence.UniqueConstraint;
 
 import java.time.LocalDateTime;
 
@@ -18,8 +19,9 @@ import java.time.LocalDateTime;
 @Table(name = "portal_background_task", indexes = {
         @Index(name = "idx_background_task_user_created_at", columnList = "user_id,created_at"),
         @Index(name = "idx_background_task_status_created_at", columnList = "status,created_at"),
-        @Index(name = "idx_background_task_status_lease_expires_at", columnList = "status,lease_expires_at"),
-        @Index(name = "idx_background_task_correlation_id", columnList = "correlation_id")
+        @Index(name = "idx_background_task_status_lease_expires_at", columnList = "status,lease_expires_at")
+}, uniqueConstraints = {
+        @UniqueConstraint(name = "uk_background_task_correlation_id", columnNames = "correlation_id")
 })
 public class BackgroundTask {
 

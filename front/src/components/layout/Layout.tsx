@@ -16,27 +16,34 @@ import { cn } from '@/src/lib/utils';
 import { logout } from '@/src/lib/auth';
 import { getSession, type PortalSession } from '@/src/lib/session';
 import { useTheme } from '../ThemeProvider';
+import { useSessionRuntime } from '@/src/hooks/use-session-runtime';
+import { UploadCenter } from '../upload/UploadCenter';
+import { TaskSummaryPanel } from '../tasks/TaskSummaryPanel';
+import { realtimeRuntime } from '@/src/lib/realtime-runtime';
+
+
+
+
 
 export default function Layout() {
   const location = useLocation();
   const navigate = useNavigate();
-  const [session, setSession] = useState<PortalSession | null>(() => getSession());
+  const { session } = useSessionRuntime();
   const { theme, setTheme } = useTheme();
 
-  useEffect(() => {
-    const handleSessionChange = (event: Event) => {
-      const customEvent = event as CustomEvent<PortalSession | null>;
-      setSession(customEvent.detail ?? getSession());
-    };
-    window.addEventListener('portal-session-changed', handleSessionChange);
-    return () => window.removeEventListener('portal-session-changed', handleSessionChange);
-  }, []);
 
   useEffect(() => {
     if (!session && location.pathname !== '/transfer') {
       navigate('/login', { replace: true });
     }
+    if (session) {
+      realtimeRuntime.start();
+    } else {
+      realtimeRuntime.stop();
+    }
+    return () => realtimeRuntime.stop();
   }, [location.pathname, navigate, session]);
+
 
   const navItems = [
     { to: '/overview', icon: LayoutDashboard, label: '概览' },
@@ -55,7 +62,8 @@ export default function Layout() {
       {/* Sidebar */}
       <aside className="w-68 flex-shrink-0 border-r border-white/20 dark:border-white/10 bg-white/40 dark:bg-black/40 backdrop-blur-2xl flex flex-col z-20 shadow-xl">
         <div className="h-24 flex items-center justify-between px-8 border-b border-white/10">
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-6">
+            <TaskSummaryPanel />
             <div className="w-10 h-10 bg-blue-600 rounded-lg flex items-center justify-center text-white font-black shadow-lg text-lg tracking-tighter">P</div>
             <span className="text-2xl font-black tracking-tight uppercase">门户</span>
           </div>
@@ -116,6 +124,8 @@ export default function Layout() {
       <main className="relative flex min-w-0 flex-1 flex-col overflow-hidden z-10">
         <Outlet />
       </main>
+
+      <UploadCenter />
     </div>
   );
 }

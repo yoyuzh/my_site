@@ -6,7 +6,8 @@ This repository is split across a Java backend, a Vite/React frontend, a small `
 
 - Every new window / new session that starts work in this repository must read `memory.md`, `docs/architecture.md`, and `docs/api-reference.md` first before planning, coding, reviewing, or deploying.
 - Treat `memory.md` as the current project memory and continuity handoff unless the user explicitly overrides it.
-- Treat `docs/architecture.md` as the system-level source of truth for module boundaries and runtime structure.
+- Treat `docs/architecture.md` as the project architecture document and source of truth for module boundaries and runtime structure.
+- Do not edit `docs/architecture.md` during normal implementation, refactor, review, or handoff work. Only change it when the user explicitly asks to update the architecture document itself.
 - Treat `docs/api-reference.md` as the quick reference for backend endpoints and auth/public access boundaries.
 
 ## Real project structure
@@ -117,7 +118,8 @@ Important:
 
 ### Project memory upkeep
 
-- Every time a task causes a major project change, update `memory.md` and `docs/architecture.md` in the same turn before handing off. Major changes include architecture shifts, storage/provider migrations, auth or security model changes, deployment topology changes, and meaningful new product capabilities.
+- Every time a task causes a major project change, update `memory.md` in the same turn before handing off.
+- Do not update `docs/architecture.md` as part of routine implementation follow-up. That file is reserved for explicit architecture-document changes requested by the user.
 
 ## Repo-specific guardrails
 
@@ -128,5 +130,12 @@ Important:
 - Frontend tests already exist under `front/src/**/*.test.ts`; keep new tests next to the state or library module they verify.
 - For frontend releases, prefer `node scripts/deploy-front-oss.mjs` over ad hoc `ossutil` or manual uploads.
 - For backend releases, package from `backend/` and deploy the produced jar; do not commit `backend/target/` artifacts to git unless the user explicitly asks for that unusual workflow.
+
+## Debugging Discipline
+
+- When diagnosing environment or download issues, use short probes first: prefer `curl --max-time`, `mvn -q`, `apt-get update`, `mvn dependency:get`, or similar bounded checks before any full build or long download.
+- Do not wait indefinitely on a stalled download or network command. If a command shows no progress within a short probe window, stop and inspect the active proxy, DNS, and mirror path before retrying.
+- For WSL-based debugging, prefer the native WSL shell plus the current mirror/proxy settings already in place. If a download path is slow, verify whether the proxy path is actually faster before forcing direct access.
+- If a package source is unstable, switch to a domestic mirror only after confirming whether the failure is in DNS, proxy routing, or the upstream mirror itself.
 
 Directory-level `AGENTS.md` files in `backend/`, `front/`, and `docs/` add more specific rules and override this file where they are more specific.

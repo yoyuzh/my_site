@@ -15,6 +15,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
+import org.mockito.Spy;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.BadCredentialsException;
@@ -53,6 +54,9 @@ class AuthServiceTest {
     private RefreshTokenService refreshTokenService;
 
     @Mock
+    private AuthTokenInvalidationService authTokenInvalidationService;
+
+    @Mock
     private FileService fileService;
 
     @Mock
@@ -60,6 +64,9 @@ class AuthServiceTest {
 
     @Mock
     private RegistrationInviteService registrationInviteService;
+
+    @Spy
+    private AuthSessionPolicy authSessionPolicy = new AuthSessionPolicy();
 
     @InjectMocks
     private AuthService authService;
@@ -238,9 +245,56 @@ class AuthServiceTest {
         AuthResponse response = authService.devLogin("demo");
 
         assertThat(response.user().username()).isEqualTo("demo");
+        assertThat(response.user().role()).isEqualTo(UserRole.USER);
         assertThat(response.accessToken()).isEqualTo("access-token");
         assertThat(response.refreshToken()).isEqualTo("refresh-token");
         verify(fileService).ensureDefaultDirectories(any(User.class));
+    }
+
+    @Test
+    void shouldUpgradeAdminDevLoginUserToAdminRole() {
+        User existing = new User();
+        existing.setId(18L);
+        existing.setUsername("admin");
+        existing.setDisplayName("admin");
+        existing.setEmail("admin@dev.local");
+        existing.setRole(UserRole.USER);
+        existing.setPreferredLanguage("zh-CN");
+        existing.setCreatedAt(LocalDateTime.now());
+
+        when(userRepository.findByUsername("admin")).thenReturn(Optional.of(existing));
+        when(userRepository.save(existing)).thenReturn(existing);
+        when(jwtTokenProvider.generateAccessToken(eq(18L), eq("admin"), anyString(), eq(AuthClientType.DESKTOP))).thenReturn("admin-access-token");
+        when(refreshTokenService.issueRefreshToken(existing, AuthClientType.DESKTOP)).thenReturn("admin-refresh-token");
+
+        AuthResponse response = authService.devLogin("admin");
+
+        assertThat(response.user().role()).isEqualTo(UserRole.ADMIN);
+        assertThat(existing.getRole()).isEqualTo(UserRole.ADMIN);
+        verify(fileService).ensureDefaultDirectories(existing);
+    }
+
+    @Test
+    void shouldUpgradeOperatorDevLoginUserToModeratorRole() {
+        User existing = new User();
+        existing.setId(19L);
+        existing.setUsername("operator");
+        existing.setDisplayName("operator");
+        existing.setEmail("operator@dev.local");
+        existing.setRole(UserRole.USER);
+        existing.setPreferredLanguage("zh-CN");
+        existing.setCreatedAt(LocalDateTime.now());
+
+        when(userRepository.findByUsername("operator")).thenReturn(Optional.of(existing));
+        when(userRepository.save(existing)).thenReturn(existing);
+        when(jwtTokenProvider.generateAccessToken(eq(19L), eq("operator"), anyString(), eq(AuthClientType.DESKTOP))).thenReturn("operator-access-token");
+        when(refreshTokenService.issueRefreshToken(existing, AuthClientType.DESKTOP)).thenReturn("operator-refresh-token");
+
+        AuthResponse response = authService.devLogin("operator");
+
+        assertThat(response.user().role()).isEqualTo(UserRole.MODERATOR);
+        assertThat(existing.getRole()).isEqualTo(UserRole.MODERATOR);
+        verify(fileService).ensureDefaultDirectories(existing);
     }
 
     @Test
@@ -303,6 +357,7 @@ class AuthServiceTest {
 
         assertThat(response.accessToken()).isEqualTo("new-access");
         assertThat(response.refreshToken()).isEqualTo("new-refresh");
+        verify(authTokenInvalidationService).revokeAccessTokensForUser(1L);
         verify(refreshTokenService).revokeAllForUser(1L);
         verify(passwordEncoder).encode("NewPass1!A");
     }

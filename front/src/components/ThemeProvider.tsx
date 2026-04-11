@@ -20,6 +20,10 @@ const initialState: ThemeProviderState = {
 
 const ThemeProviderContext = createContext<ThemeProviderState>(initialState);
 
+function resolveSystemTheme(): 'dark' | 'light' {
+  return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+}
+
 export function ThemeProvider({
   children,
   defaultTheme = 'system',
@@ -32,20 +36,26 @@ export function ThemeProvider({
 
   useEffect(() => {
     const root = window.document.documentElement;
+    const applyTheme = (nextTheme: Theme) => {
+      const resolved = nextTheme === 'system' ? resolveSystemTheme() : nextTheme;
 
-    root.classList.remove('light', 'dark');
+      root.classList.remove('dark');
+      if (resolved === 'dark') {
+        root.classList.add('dark');
+      }
+      root.style.colorScheme = resolved;
+    };
 
-    if (theme === 'system') {
-      const systemTheme = window.matchMedia('(prefers-color-scheme: dark)')
-        .matches
-        ? 'dark'
-        : 'light';
+    applyTheme(theme);
 
-      root.classList.add(systemTheme);
+    if (theme !== 'system') {
       return;
     }
 
-    root.classList.add(theme);
+    const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
+    const handleChange = () => applyTheme('system');
+    mediaQuery.addEventListener('change', handleChange);
+    return () => mediaQuery.removeEventListener('change', handleChange);
   }, [theme]);
 
   const value = {

@@ -19,6 +19,7 @@ public record UploadSessionV2Response(
         LocalDateTime expiresAt,
         LocalDateTime createdAt,
         LocalDateTime updatedAt,
+        UploadSessionRuntimeStateV2Response runtime,
         UploadSessionV2StrategyResponse strategy
 ) {
 }

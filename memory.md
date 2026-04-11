@@ -291,3 +291,533 @@
 - `cd backend && mvn -Dtest=AdminControllerIntegrationTest,AdminServiceTest,AdminServiceStoragePolicyCacheTest test`
 - `cd backend && mvn test`
 - Full backend result after this addendum: 304 tests passed.
+- 2026-04-11 admin backend batch 2 extended the admin surface with `GET /api/admin/settings` and `GET /api/admin/filesystem`.
+- `GET /api/admin/settings` is intentionally read-only and runtime-oriented. It currently exposes invite-code state, configured admin usernames, JWT session timing, Redis-backed token blacklist availability, queue cadence, and server storage/Redis mode.
+- `GET /api/admin/filesystem` is intentionally operational and read-only. It exposes the active default storage policy snapshot, resolved upload-mode matrix, effective max file size after policy/capability limits, metadata/thumbnail capability flags, cache backend/TTL visibility, aggregate file/blob/entity counts, and the current reserved-off `WebDAV` state.
+- 2026-04-11 admin backend batch 3 pushed `Admin-B1` into the first bounded write path: `PATCH /api/admin/settings/registration/invite-code` and `POST /api/admin/settings/registration/invite-code/rotate` now manage the persisted invite code through `RegistrationInviteState`.
+- `GET /api/admin/settings` now returns per-section `writeSupported` flags and a new `transfer` section with the persisted offline-transfer storage limit, so the backend explicitly distinguishes writable settings from runtime/environment-derived read-only settings.
+- Current admin hot-update boundary is now explicit: invite code and offline-transfer storage limit are writable; JWT lifetime, Redis enablement/TTL policy, queue cadence/backend, storage provider, and configured admin usernames remain read-only runtime/config snapshots.
+- This batch was verified in WSL with `mvn -Dtest=AdminControllerIntegrationTest,AdminServiceTest,AdminServiceStoragePolicyCacheTest test` and full `mvn test`; backend total is now 310 passing tests.
+- WSL-side Maven download failures on 2026-04-11 were traced to missing Maven proxy configuration rather than general network loss. Adding HTTP/HTTPS proxy entries for `127.0.0.1:7890` to WSL `~/.m2/settings.xml` restored `mvn validate` and `mvn test`.
+
+## 2026-04-11 Backend Refactor Batch 1
+
+- A new refactor plan was written to `docs/superpowers/plans/2026-04-11-backend-refactor-plan.md` to lock the next backend cleanup to explicit business rules before further feature work.
+- Online transfer session mutation now uses `TransferSessionStore.withSession(...)` as the atomic read-modify-write entrypoint for `joinSession` and `postSignal`. `TransferService` no longer reads the session under a lock and saves it outside the critical section.
+- Automatic media-metadata task creation now runs under a correlation-scoped distributed lock in `BackgroundTaskService`. The current boundary is service-level atomicity around `correlationId` rather than a new database uniqueness constraint.
+- Lightweight broker delivery for media-metadata triggers now has an explicit `requeue(...)` path. `MediaMetadataTaskBrokerConsumer` drops malformed payloads, but requeues the payload and stops the current batch when downstream task creation throws.
+- Regression coverage was added for all three refactor targets:
+- `TransferServiceTest` now asserts online-session mutation goes through the atomic store entrypoint.
+- `BackgroundTaskServiceTest` now asserts correlation-scoped locking around auto media task creation.
+- `MediaMetadataTaskBrokerConsumerTest` now covers both requeue-on-failure and drop-malformed-payload behavior.
+- Verification passed with targeted tests `mvn "-Dtest=TransferServiceTest,BackgroundTaskServiceTest,MediaMetadataTaskBrokerConsumerTest" test`. Full backend regression is the next verification step in this session.
+- Full backend regression then passed with `cd backend && mvn test`; backend total is now 312 passing tests.
+
+## 2026-04-11 Backend Refactor Batch 2
+
+- The auto media-metadata idempotency boundary is now closed at the database layer rather than only at the Redis lock layer.
+- `portal_background_task.correlation_id` now has a database unique constraint, so cross-instance races cannot create two persisted tasks with the same semantic key even if one transaction has not committed when the next instance acquires the Redis lock.
+- `BackgroundTaskService.createQueuedAutoMediaMetadataTask(...)` still uses the correlation-scoped distributed lock to reduce duplicate work, but now also forces the auto-media insert to `saveAndFlush(...)` inside the locked section and treats duplicate-key failures as an idempotent no-op.
+- The resulting rule is stricter than the previous batch: for auto-created `MEDIA_META` tasks, correctness no longer depends on Redis lock timing alone; the database is now the final arbiter of `correlationId` uniqueness.
+- The lightweight broker poison-message boundary is also tightened: `RedisLightweightBrokerService.poll(...)` now drops malformed raw JSON payloads at the broker layer, logs the event, and continues polling later queue entries instead of throwing out of the consumer batch after the bad payload has already been dequeued.
+- `MediaMetadataTaskBrokerConsumer` therefore now only sees successfully parsed payloads; downstream runtime failures still requeue the payload and stop the current batch, while malformed raw broker payloads are treated as terminal poison messages and isolated locally.
+- New regression coverage was added in `BackgroundTaskRepositoryIntegrationTest` for the database uniqueness rule and in `RedisLightweightBrokerServiceTest` for malformed raw-payload skipping.
+- Verification passed with `cd backend && mvn "-Dtest=BackgroundTaskServiceTest,BackgroundTaskRepositoryIntegrationTest,RedisLightweightBrokerServiceTest,MediaMetadataTaskBrokerConsumerTest" test` and full `cd backend && mvn test`; backend total is now 315 passing tests.
+
+## 2026-04-11 Target Architecture Baseline
+
+- `docs/architecture.md` has been repurposed from a near-current-state business summary into the target enterprise business architecture for future refactoring.
+- Future sessions must not treat `docs/architecture.md` as a plain snapshot of the current implementation.
+- The document now defines the desired target model: domain-oriented boundaries, unified role model, workspace/content separation, share/transfer separation, unified async job domain, and storage governance as a first-class domain.
+- Current implementation details should continue to be discovered from code and `docs/api-reference.md`; architectural alignment should be judged against the target-state `docs/architecture.md`.
+- The document scope was further expanded to include three architecture-level appendices that are now part of the baseline itself:
+- a rule decision matrix that assigns each rule family to a single owning domain,
+- a high-risk test scenario list that defines what the target architecture must be able to defend through automation,
+- and a migration / module rollout order that defines the intended landing sequence from current structure to target domains.
+
+## 2026-04-11 Backend Refactor Batch 3
+
+- The first rule-extraction batch from `docs/superpowers/plans/2026-04-11-backend-refactor-plan.md` is now implemented without changing external API behavior.
+- `BackgroundTaskService` now delegates retry and state-JSON concerns to:
+- `BackgroundTaskRetryPolicy`
+- `BackgroundTaskStateManager`
+- `BackgroundTaskStateKeys`
+- File-event flow is now split into:
+- `FileEventService` for persistence and after-commit orchestration
+- `FileEventDispatcher` for local SSE subscription and dispatch
+- `FileEventPayloadCodec` for payload serialization and emitter shaping
+- `RedisFileEventPubSubListener` now drops malformed pub/sub payloads locally instead of failing the listener path.
+- Upload-session flow is now split into:
+- `UploadPolicyResolver` for upload-mode, effective-size, and chunk rules
+- `UploadSessionStateMachine` for lifecycle transitions and write eligibility
+- `UploadSessionService` as the persistence/runtime coordinator around those rules
+- Auth session rotation rules are now extracted into `AuthSessionPolicy`, used by `AuthService` for single-client rotation and all-session rotation.
+- New regression tests added:
+- `BackgroundTaskRetryPolicyTest`
+- `UploadSessionStateMachineTest`
+- `AuthSessionPolicyTest`
+- `RedisFileEventPubSubListenerTest` malformed-payload isolation case
+- Verification passed with:
+- `cd backend && mvn "-Dtest=BackgroundTaskRetryPolicyTest,UploadSessionStateMachineTest,AuthSessionPolicyTest,FileEventServiceTest,RedisFileEventPubSubListenerTest,BackgroundTaskServiceTest,UploadSessionServiceTest,AuthServiceTest" test`
+- `cd backend && mvn test`
+- Full backend result after this batch: 330 tests passed.
+
+## 2026-04-11 Backend Refactor Batch 4
+
+- The next admin/auth rule-consolidation batch is now complete as the first direct alignment step against the new target architecture's unified identity/access rules.
+- `AdminAccessEvaluator` no longer depends on `app.admin.usernames`; admin-surface access is now derived from authenticated role authorities, with `MODERATOR` and `ADMIN` both treated as management roles for `/api/admin/**`.
+- `GET /api/admin/settings` now exposes `registration.managementRoles` instead of configured admin usernames, so the admin settings snapshot reflects the runtime authorization model instead of a legacy username whitelist.
+- `AdminService.updateUserBanned(...)` and `AdminService.updateUserPassword(...)` now reuse `AuthSessionPolicy.rotateAllActiveSessions(...)` rather than hand-rolling three UUID rotations inline.
+- Dev login role mapping was tightened so `admin -> ADMIN`, `operator/moderator -> MODERATOR`, and other dev-login usernames remain `USER`.
+- This batch intentionally did not rename persisted `UserRole` enum values yet; the higher-risk role-model/data-migration step remains deferred until the broader target-architecture identity model is landed deliberately.
+- Regression coverage was updated across:
+- `AdminControllerIntegrationTest`
+- `AdminServiceTest`
+- `AdminServiceStoragePolicyCacheTest`
+- `AuthServiceTest`
+- Verification passed with:
+- `cd backend && mvn "-Dtest=AdminControllerIntegrationTest,AdminServiceTest,AdminServiceStoragePolicyCacheTest,AuthServiceTest" test`
+- `cd backend && mvn test`
+- Full backend result after this batch: 332 tests passed.
+
+## 2026-04-11 Backend Refactor Batch 5
+
+- The next admin refactor batch is now complete around the runtime-snapshot vs mutable-settings boundary.
+- `AdminController` no longer routes settings/filesystem/invite-code/offline-limit endpoints through the catch-all `AdminService`.
+- Read-only admin runtime snapshots now live in `AdminConfigSnapshotService`, covering:
+- `GET /api/admin/settings`
+- `GET /api/admin/filesystem`
+- Mutable admin settings writes now live in `AdminMutableSettingsService`, covering:
+- `PATCH /api/admin/settings/registration/invite-code`
+- `POST /api/admin/settings/registration/invite-code/rotate`
+- `PATCH /api/admin/settings/offline-transfer-storage-limit`
+- `AdminService` is correspondingly narrower again and now focuses on summary, user governance, file/share/task inspection, storage-policy governance, and related admin operations rather than also owning mixed runtime snapshot/config write concerns.
+- Storage-policy response assembly used by both admin storage-policy management and filesystem snapshot code is now shared through `AdminStoragePolicyResponses`, avoiding divergent response shaping during the split.
+- Regression coverage was split along the same boundary:
+- `AdminConfigSnapshotServiceTest`
+- `AdminMutableSettingsServiceTest`
+- existing `AdminControllerIntegrationTest`
+- existing `AdminServiceTest`
+- existing `AdminServiceStoragePolicyCacheTest`
+- Verification passed with:
+- `cd backend && mvn "-Dtest=AdminControllerIntegrationTest,AdminConfigSnapshotServiceTest,AdminMutableSettingsServiceTest,AdminServiceTest,AdminServiceStoragePolicyCacheTest" test`
+- `cd backend && mvn test`
+- Full backend result after this batch: 333 tests passed.
+
+## 2026-04-11 Backend Refactor Batch 6
+
+- The next admin refactor batch is now complete around user-governance boundary extraction.
+- `AdminController` no longer routes admin user listing, role updates, ban/unban, password change/reset, storage quota, or max-upload-size writes through `AdminService`.
+- Those user-governance responsibilities now live in `AdminUserGovernanceService`, covering:
+- `GET /api/admin/users`
+- `PATCH /api/admin/users/{userId}/role`
+- `PATCH /api/admin/users/{userId}/status`
+- `PUT /api/admin/users/{userId}/password`
+- `PATCH /api/admin/users/{userId}/storage-quota`
+- `PATCH /api/admin/users/{userId}/max-upload-size`
+- `POST /api/admin/users/{userId}/password/reset`
+- `AdminUserGovernanceService` now owns the actual user-governance rules: user lookup, password-strength validation, session rotation through `AuthSessionPolicy`, token revocation, used-storage projection, and temporary-password generation.
+- `AdminService` is narrower again and now focuses on admin summary, file/blob/share/task inspection, storage-policy governance, and file deletion instead of also owning mutable user-governance flows.
+- Regression coverage was realigned to the new boundary:
+- new `AdminUserGovernanceServiceTest`
+- updated `AdminServiceTest`
+- updated `AdminServiceStoragePolicyCacheTest`
+- existing `AdminControllerIntegrationTest`
+- Verification passed with:
+- `cd backend && mvn "-Dtest=AdminControllerIntegrationTest,AdminUserGovernanceServiceTest,AdminServiceTest,AdminServiceStoragePolicyCacheTest" test`
+- `cd backend && mvn test`
+- Full backend result after this batch: 335 tests passed.
+
+## 2026-04-11 Backend Refactor Batch 7
+
+- The next admin refactor batch is now complete around the remaining governance-write boundary, leaving `AdminService` as a read-only admin query/orchestration surface.
+- `AdminController` no longer routes resource-deletion or storage-governance writes through `AdminService`.
+- Resource-deletion writes now live in `AdminResourceGovernanceService`, covering:
+- `DELETE /api/admin/shares/{shareId}`
+- `DELETE /api/admin/files/{fileId}`
+- Storage-governance writes now live in `AdminStorageGovernanceService`, covering:
+- `POST /api/admin/storage-policies`
+- `PUT /api/admin/storage-policies/{policyId}`
+- `PATCH /api/admin/storage-policies/{policyId}/status`
+- `POST /api/admin/storage-policies/migrations`
+- `AdminStorageGovernanceService` now owns storage-policy validation, persistence, cache eviction, and storage-policy migration-task creation, while `AdminService` keeps only admin read paths such as summary, file/blob/share/task inspection, and storage-policy list snapshots.
+- `AdminServiceStoragePolicyCacheTest` was updated to verify the intended new boundary explicitly: cached storage-policy reads still come from `AdminService`, and cache eviction now happens when `AdminStorageGovernanceService` performs writes.
+- New regression coverage was added in:
+- `AdminResourceGovernanceServiceTest`
+- `AdminStorageGovernanceServiceTest`
+- updated `AdminServiceTest`
+- updated `AdminServiceStoragePolicyCacheTest`
+- existing `AdminControllerIntegrationTest`
+- Verification passed with:
+- `cd backend && mvn "-Dtest=AdminControllerIntegrationTest,AdminResourceGovernanceServiceTest,AdminStorageGovernanceServiceTest,AdminUserGovernanceServiceTest,AdminServiceTest,AdminServiceStoragePolicyCacheTest" test`
+- `cd backend && mvn test`
+- Full backend result after this batch: 337 tests passed.
+
+## 2026-04-11 Backend Refactor Batch 8
+
+- The next admin refactor batch is now complete around read-side thematic decomposition; `AdminService` has been removed and replaced by explicit query services.
+- `AdminController` now routes read endpoints through dedicated query services:
+- `AdminInspectionQueryService`:
+- `GET /api/admin/summary`
+- `GET /api/admin/files`
+- `GET /api/admin/file-blobs`
+- `GET /api/admin/shares`
+- `AdminTaskQueryService`:
+- `GET /api/admin/tasks`
+- `GET /api/admin/tasks/{taskId}`
+- `AdminStoragePolicyQueryService`:
+- `GET /api/admin/storage-policies`
+- Write paths remain in the previously extracted governance services:
+- `AdminUserGovernanceService`
+- `AdminResourceGovernanceService`
+- `AdminStorageGovernanceService`
+- This leaves the admin surface with clear read/write service boundaries by responsibility, instead of a mixed read-orchestration class.
+- Regression coverage was realigned to the new read-side services:
+- new `AdminInspectionQueryServiceTest`
+- new `AdminTaskQueryServiceTest`
+- new `AdminStoragePolicyQueryServiceCacheTest`
+- existing `AdminControllerIntegrationTest`
+- existing governance-service tests
+- Verification passed with:
+- `cd backend && mvn "-Dtest=AdminInspectionQueryServiceTest,AdminTaskQueryServiceTest,AdminStoragePolicyQueryServiceCacheTest,AdminResourceGovernanceServiceTest,AdminStorageGovernanceServiceTest,AdminUserGovernanceServiceTest,AdminControllerIntegrationTest" test`
+- `cd backend && mvn test`
+- Full backend result after this batch: 339 tests passed.
+
+## 2026-04-11 Backend Refactor Batch 9
+
+- The remaining Stage-7 admin item around explicit audit capability is now implemented.
+- New audit domain pieces were added:
+- `AdminAuditService` (write-side audit recording)
+- `AdminAuditLogEntity` + `AdminAuditLogRepository`
+- `AdminAuditQueryService` + `AdminAuditLogResponse`
+- `AdminController` now exposes `GET /api/admin/audits` for paged audit-log queries with filters:
+- `actorQuery`
+- `actionType`
+- `targetType`
+- `targetId`
+- Governance write services now emit explicit audit records after successful writes:
+- `AdminMutableSettingsService`
+- `AdminUserGovernanceService`
+- `AdminResourceGovernanceService`
+- `AdminStorageGovernanceService`
+- This keeps admin write rules in governance services while making audit a first-class, explicit admin capability instead of implicit side effects.
+- Regression coverage added/updated in:
+- new `AdminAuditServiceTest`
+- new `AdminAuditQueryServiceTest`
+- updated `AdminControllerIntegrationTest`
+- updated governance-service unit tests and cache test wiring for the new audit dependency
+- Verification passed with:
+- `cd backend && mvn "-Dtest=AdminAuditServiceTest,AdminAuditQueryServiceTest,AdminMutableSettingsServiceTest,AdminUserGovernanceServiceTest,AdminResourceGovernanceServiceTest,AdminStorageGovernanceServiceTest,AdminStoragePolicyQueryServiceCacheTest,AdminControllerIntegrationTest" test`
+
+## 2026-04-11 Backend Refactor Batch 10
+
+- The Stage-6 async-job direction is now advanced with an explicit command-vs-execution entry split, while preserving existing task behavior.
+- New services were introduced:
+- `BackgroundTaskCommandService`
+- `BackgroundTaskExecutionService`
+- Routing updates now use those boundaries:
+- `BackgroundTaskV2Controller` now depends on `BackgroundTaskCommandService` for user command/query flows (create/list/get/cancel/retry).
+- `BackgroundTaskWorker` now depends on `BackgroundTaskExecutionService` for queue scanning, claim, heartbeat/progress, completion, and failure transitions.
+- `BackgroundTaskStartupRecovery` now depends on `BackgroundTaskExecutionService` for expired-running-task recovery.
+- `MediaMetadataTaskBrokerConsumer` now depends on `BackgroundTaskCommandService` for auto media-metadata task creation.
+- `AdminStorageGovernanceService` now uses `BackgroundTaskCommandService` when creating storage-policy migration tasks.
+- This batch keeps the existing `BackgroundTaskService` implementation intact as the internal rule engine, but external orchestration boundaries now explicitly separate command-oriented and execution-oriented entrypoints.
+- Regression tests were updated for the new boundaries in:
+- `BackgroundTaskWorkerTest`
+- `MediaMetadataTaskBrokerConsumerTest`
+- `AdminStorageGovernanceServiceTest`
+- `AdminStoragePolicyQueryServiceCacheTest`
+- plus integration coverage remained green for:
+- `BackgroundTaskV2ControllerIntegrationTest`
+- `AdminControllerIntegrationTest`
+- Verification passed with:
+- `cd backend && mvn "-Dtest=BackgroundTaskWorkerTest,MediaMetadataTaskBrokerConsumerTest,BackgroundTaskV2ControllerIntegrationTest,AdminStorageGovernanceServiceTest,AdminStoragePolicyQueryServiceCacheTest,AdminControllerIntegrationTest" test`
+
+## 2026-04-11 Backend Refactor Batch 11
+
+- Stage-6 async-job refactor continued with execution boundary hardening and state-transition consolidation.
+- `BackgroundTaskExecutionService` now has explicit transactional boundaries on execution write paths used directly by worker/startup flows:
+- `requeueExpiredRunningTasks`
+- `claimQueuedTask`
+- `markWorkerTaskProgress`
+- `markWorkerTaskCompleted`
+- `markWorkerTaskFailed`
+- `BackgroundTaskService` now accepts `BackgroundTaskExecutionService` as an explicit dependency at the primary Spring constructor boundary (instead of only relying on an internally constructed helper instance), and stale execution-only private helpers were removed from `BackgroundTaskService`.
+- Execution-side state-key coupling was reduced:
+- `BackgroundTaskExecutionService`
+- `BackgroundTaskWorker`
+- `StoragePolicyMigrationBackgroundTaskHandler`
+- now reference `BackgroundTaskStateKeys` directly instead of `BackgroundTaskService.STATE_*` aliases.
+- Public-state transition patch assembly was further consolidated into `BackgroundTaskStateManager` with explicit helpers:
+- `cancelledStatePatch`
+- `completedStatePatch`
+- `failedStatePatch`
+- `retryQueuedStatePatch`
+- This removes additional scattered `Map.of(...)` state-transition literals from service/worker write paths and advances the plan item of gradually replacing broad ad-hoc JSON merge usage with typed transition entrypoints.
+- New regression coverage added:
+- `BackgroundTaskStateManagerTest`
+- Verification passed with:
+- `cd backend && mvn "-Dtest=BackgroundTaskStateManagerTest,BackgroundTaskServiceTest,BackgroundTaskWorkerTest,MediaMetadataTaskBrokerConsumerTest,BackgroundTaskV2ControllerIntegrationTest,AdminStorageGovernanceServiceTest,AdminStoragePolicyQueryServiceCacheTest,AdminControllerIntegrationTest" test`
+- Full targeted result for this batch: 76 tests run, 0 failures.
+- Full backend regression also passed with:
+- `cd backend && mvn test`
+- Backend total after this batch: 348 tests passed.
+
+## 2026-04-11 Backend Refactor Batch 12
+
+- Stage-6 async-job boundary thinning continued: `BackgroundTaskService` no longer exposes worker execution lifecycle methods (`requeue/findQueued/claim/progress/complete/fail`) and now remains on command/query orchestration responsibilities.
+- Execution lifecycle ownership is now explicit at service boundaries:
+- `BackgroundTaskWorker` and `BackgroundTaskStartupRecovery` continue to use `BackgroundTaskExecutionService` directly for execution-state transitions.
+- `BackgroundTaskServiceTest` execution-lifecycle assertions were re-routed to call `BackgroundTaskExecutionService` directly, preserving behavioral coverage while keeping command-service boundaries clear.
+- Handler-side state parsing was further consolidated into `BackgroundTaskStateManager`:
+- new reusable helpers were added: `parseJsonObject(...)`, `mergeJsonObjects(...)`, `readLong(...)`, and `readText(...)`.
+- `ArchiveBackgroundTaskHandler`, `ExtractBackgroundTaskHandler`, `MediaMetadataBackgroundTaskHandler`, and `StoragePolicyMigrationBackgroundTaskHandler` no longer keep duplicated per-handler JSON parse/extract boilerplate; they now delegate state decode and primitive extraction to `BackgroundTaskStateManager`.
+- Related handler tests were updated to construct handlers with `BackgroundTaskStateManager` instead of raw `ObjectMapper`.
+- Verification passed with:
+- `cd backend && mvn "-Dtest=BackgroundTaskServiceTest,BackgroundTaskWorkerTest,BackgroundTaskArchiveHandlerTest,ExtractBackgroundTaskHandlerTest,MediaMetadataBackgroundTaskHandlerTest,StoragePolicyMigrationBackgroundTaskHandlerTest,MediaMetadataTaskBrokerConsumerTest,BackgroundTaskV2ControllerIntegrationTest,AdminStorageGovernanceServiceTest,AdminStoragePolicyQueryServiceCacheTest,AdminControllerIntegrationTest" test`
+- full regression `cd backend && mvn test`
+- Backend total after this batch remains 348 passing tests.
+
+## 2026-04-11 Backend Refactor Batch 13
+
+- Stage-2 (workspace/content-asset split) first-cut rule extraction is now started in `files.core` without changing API behavior.
+- New `WorkspaceNodeRulesService` has been introduced to host workspace-node rule logic that was previously embedded inside `FileService`, including:
+- directory-path normalization (`normalizeDirectoryPath`)
+- leaf-name and upload-filename normalization (`normalizeLeafName`, `normalizeUploadFilename`)
+- path helpers (`extractParentPath`, `extractLeafName`, `buildTargetLogicalPath`)
+- directory hierarchy checks/build-up (`ensureDirectoryHierarchy`, `ensureExistingDirectoryPath`)
+- `FileService` now delegates those workspace-rule responsibilities through `WorkspaceNodeRulesService`, reducing direct rule ownership in the orchestration service while keeping existing external behavior intact.
+- New focused regression coverage was added in:
+- `WorkspaceNodeRulesServiceTest`
+- Existing `FileServiceTest` remained green to confirm behavior compatibility after delegation.
+- Verification passed with:
+- `cd backend && mvn "-Dtest=WorkspaceNodeRulesServiceTest,FileServiceTest" test`
+- full regression `cd backend && mvn test`
+- Backend total after this batch: 352 tests passed.
+
+## 2026-04-11 Backend Refactor Batch 14
+
+- Stage-2 read/write rule thinning continued in `files.core` by further moving workspace conflict checks out of `FileService`.
+- `WorkspaceNodeRulesService` now also owns:
+- sibling-name existence query (`existsNodeName`)
+- standardized conflict assertion (`ensureNodeNameAvailable`)
+- recycle-restore target conflict validation (`validateRecycleRestoreTargets`)
+- `FileService` conflict checks for `mkdir` / `rename` / `move` / `copy` / upload pre-check / external-import pre-check now delegate to `WorkspaceNodeRulesService`, reducing duplicated repository-level rule literals in orchestration code.
+- `FileService.validateRecycleRestoreTargets(...)` is now only an adapter that delegates to `WorkspaceNodeRulesService` with `requireRecycleOriginalPath(...)` resolver.
+- Regression coverage was extended in `WorkspaceNodeRulesServiceTest` with:
+- conflict assertion behavior (`ensureNodeNameAvailable`)
+- recycle-restore conflict behavior (`validateRecycleRestoreTargets`)
+- Verification passed with:
+- `cd backend && mvn "-Dtest=WorkspaceNodeRulesServiceTest,FileServiceTest" test`
+- full regression `cd backend && mvn test`
+- Backend total after this batch: 354 tests passed.
+
+## 2026-04-11 Backend Refactor Batch 15
+
+- Stage-2 content-asset boundary extraction continued with a first-cut content-binding service split.
+- New `ContentAssetBindingService` has been added in `files.core` to own content-asset binding rules that were previously embedded in `FileService`, including:
+- primary-entity create-or-reference behavior (`createOrReferencePrimaryEntity`)
+- default storage-policy capability projection for upload mode selection (`resolveDefaultStoragePolicyCapabilities`)
+- `StoredFile` -> `FileEntity` primary relation persistence (`savePrimaryEntityRelation`)
+- `FileService` now delegates those content-binding rules through `ContentAssetBindingService`, further narrowing `FileService` toward orchestration across workspace/content/storage concerns.
+- New regression coverage was added in:
+- `ContentAssetBindingServiceTest`
+- Existing rule-split tests remained green:
+- `WorkspaceNodeRulesServiceTest`
+- `FileServiceTest`
+- Verification passed with:
+- `cd backend && mvn "-Dtest=ContentAssetBindingServiceTest,WorkspaceNodeRulesServiceTest,FileServiceTest" test`
+- full regression `cd backend && mvn test`
+- Backend total after this batch: 357 tests passed.
+
+## 2026-04-11 Backend Refactor Batch 16
+
+- Stage-2 (workspace/content-asset split) continued with blob lifecycle rule extraction.
+- New `ContentBlobLifecycleService` has been added in `files.core` to own blob lifecycle rules previously embedded inside `FileService`, including:
+- post-write rollback guard (`executeAfterBlobStored`)
+- batch cleanup rollback for external-import partial writes (`cleanupWrittenBlobs`)
+- blob metadata persistence (`createAndSaveBlob`)
+- required blob assertion for file-content reads (`getRequiredBlob`)
+- blob deletion candidate aggregation by remaining references (`collectBlobsToDelete`)
+- physical blob + metadata deletion (`deleteBlobs`)
+- `FileService` now delegates blob lifecycle operations through `ContentBlobLifecycleService` across:
+- normal upload and direct-upload completion
+- external single-file and batch import
+- recycle-bin expiry prune
+- file download URL/body reads and archive read/write paths
+- New focused regression coverage was added in:
+- `ContentBlobLifecycleServiceTest`
+- Existing split-compat tests remained green:
+- `ContentAssetBindingServiceTest`
+- `WorkspaceNodeRulesServiceTest`
+- `FileServiceTest`
+- Verification passed with:
+- `cd backend && mvn "-Dtest=ContentBlobLifecycleServiceTest,ContentAssetBindingServiceTest,WorkspaceNodeRulesServiceTest,FileServiceTest" test`
+- full regression `cd backend && mvn test`
+- Backend total after this batch: 365 tests passed.
+
+## 2026-04-11 Backend Refactor Batch 17
+
+- Stage-2 continued with upload/quota rule boundary extraction from `FileService`.
+- New `FileUploadRulesService` has been added in `files.core` to own upload admission rules that were still embedded in orchestration code, including:
+- effective max upload-size resolution across system limit, user limit, default storage-policy max size, and storage-policy capability `maxObjectSize`
+- filename/path conflict check via workspace node rules
+- user storage-quota guard (`sumFileSizeByUserId` + overflow-safe additional-bytes check)
+- `FileService` upload/read-write paths now call `FileUploadRulesService` directly for:
+- standard upload
+- direct-upload initiate/complete validation
+- copy/restore/external-import quota checks
+- shared-file import and zip-import upload admission checks
+- Existing fallback private helpers remain but are now gated behind explicit delegation to `FileUploadRulesService`, so active rule ownership is centralized in the extracted service.
+- New focused regression coverage added in:
+- `FileUploadRulesServiceTest`
+- Existing Stage-2 split tests remained green:
+- `ContentBlobLifecycleServiceTest`
+- `ContentAssetBindingServiceTest`
+- `WorkspaceNodeRulesServiceTest`
+- `FileServiceTest`
+- Verification passed with:
+- `cd backend && mvn "-Dtest=FileUploadRulesServiceTest,ContentBlobLifecycleServiceTest,ContentAssetBindingServiceTest,WorkspaceNodeRulesServiceTest,FileServiceTest" test`
+- full regression `cd backend && mvn test`
+- Backend total after this batch: 368 tests passed.
+
+## 2026-04-11 Backend Refactor Batch 18
+
+- Stage-2 continued with external-import rule extraction from `FileService`.
+- New `ExternalImportRulesService` has been added in `files.core` to own external-import normalization and batch validation rules that were previously embedded in orchestration code, including:
+- directory normalization + canonical ordering for batch import
+- import file descriptor normalization (path/name/content-type/content fallback)
+- batch-level target conflict checks (directory/file planned target collisions)
+- batch quota validation through `FileUploadRulesService`
+- `FileService#importExternalFilesAtomically(...)` now routes normalization and batch validation through `ExternalImportRulesService`, keeping blob write + metadata orchestration in `FileService` while moving import-rule ownership into a dedicated rule service.
+- New focused regression coverage added in:
+- `ExternalImportRulesServiceTest`
+- Existing Stage-2 split tests remained green:
+- `FileUploadRulesServiceTest`
+- `ContentBlobLifecycleServiceTest`
+- `ContentAssetBindingServiceTest`
+- `WorkspaceNodeRulesServiceTest`
+- `FileServiceTest`
+- Verification passed with:
+- `cd backend && mvn "-Dtest=ExternalImportRulesServiceTest,FileUploadRulesServiceTest,ContentBlobLifecycleServiceTest,ContentAssetBindingServiceTest,WorkspaceNodeRulesServiceTest,FileServiceTest" test`
+- full regression `cd backend && mvn test`
+- Backend total after this batch: 371 tests passed.
+
+## 2026-04-11 Backend Refactor Batch 19
+
+- Stage-3 upload rule convergence advanced by making upload-admission rules reusable across `files.core` and `files.upload`.
+- `WorkspaceNodeRulesService` and `FileUploadRulesService` are now explicit reusable rule services (public boundary), so upload-session flows can consume the same normalized path/name + quota + conflict + max-size rules used by `FileService`.
+- `UploadSessionService` now delegates create-session target admission to the shared rule services instead of keeping its own duplicated checks:
+- path/name normalization now routes through `WorkspaceNodeRulesService`
+- upload admission (effective max-size + same-directory conflict + quota) now routes through `FileUploadRulesService`
+- local duplicated methods in `UploadSessionService` were removed:
+- `validateTarget(...)` rule literals
+- local `normalizeDirectoryPath(...)`
+- local `normalizeLeafName(...)`
+- This keeps v2 upload-session command flow behavior unchanged while moving rule ownership to a single shared entry point.
+- Verification passed with:
+- `cd backend && mvn "-Dtest=UploadSessionServiceTest,UploadSessionV2ControllerTest,FileUploadRulesServiceTest,WorkspaceNodeRulesServiceTest,FileServiceTest" test`
+- full regression `cd backend && mvn test`
+- Backend total after this batch remains 371 passing tests.
+
+## 2026-04-12 Backend Refactor Batch 20
+
+- Stage-4 share-domain convergence continued by thinning the legacy `/api/files/share-links/**` path into a compatibility layer that reuses v2 share governance rules.
+- `FileController` legacy share read/import endpoints now delegate to `ShareV2Service` instead of directly calling legacy `FileService` share read/import logic:
+- `GET /api/files/share-links/{token}`
+- `POST /api/files/share-links/{token}/import`
+- Legacy-vs-v2 error semantics are bridged in `FileController` via explicit `ApiV2Exception -> BusinessException` mapping, so old endpoints keep `ErrorCode` response envelopes while enforcing v2 policies.
+- Legacy share behavior is now aligned with v2 governance for critical controls:
+- password-protected shares are no longer bypassable through legacy endpoints
+- `allowImport` policy and quota checks are enforced on legacy import path through v2 service rules
+- New integration coverage added in `FileShareControllerIntegrationTest`:
+- reject password-protected v2 shares on legacy read/import endpoints
+- reject legacy import when v2 share has `allowImport=false`
+- Verification passed with:
+- `cd backend && mvn "-Dtest=FileShareControllerIntegrationTest,ShareV2ControllerIntegrationTest,FileServiceTest" test`
+- full regression `cd backend && mvn test`
+- Backend total after this batch: 373 tests passed.
+
+## 2026-04-12 Backend Refactor Batch 21
+
+- Stage-4 share-domain convergence is now completed for legacy share create/read/import compatibility endpoints.
+- `FileController` legacy share-create endpoint now delegates to `ShareV2Service` instead of legacy `FileService` logic:
+- `POST /api/files/{fileId}/share-links`
+- Legacy response shape is still preserved via explicit mapping from `ShareV2Response` to `CreateFileShareLinkResponse`.
+- Legacy-vs-v2 error semantics are now uniformly bridged for create/read/import through `ApiV2Exception -> BusinessException` mapping in `FileController`.
+- New integration coverage added in `FileShareControllerIntegrationTest`:
+- reject legacy share creation for directory targets through unified v2 share rules (`BAD_REQUEST -> legacy code=1000` mapping path)
+- Verification passed with:
+- `cd backend && mvn "-Dtest=FileShareControllerIntegrationTest,ShareV2ControllerIntegrationTest,FileServiceTest" test`
+- full regression `cd backend && mvn test`
+- Backend total after this batch: 374 tests passed.
+
+## 2026-04-12 Backend Refactor Batch 22
+
+- Stage-5 transfer-domain decomposition advanced with explicit service boundaries while preserving controller API contracts.
+- `TransferService` is now a thin orchestration facade, and transfer responsibilities were split into dedicated services:
+- `OnlineTransferService`: online session create/lookup/join/signal/poll + atomic session-store mutation entrypoints.
+- `OfflineTransferService`: offline session create/lookup/join/list/upload/download + expiry cleanup and ready-file access.
+- `OfflineTransferQuotaService`: offline upload admission rules (size/mismatch/global offline storage limit).
+- `TransferImportService`: offline file import orchestration into workspace/content flow via `FileService.importExternalFile(...)`.
+- Existing `/api/transfer/**` endpoints remain unchanged in `TransferController`; behavior is preserved through delegation at service boundaries.
+- Transfer tests were realigned with the new boundaries:
+- `OnlineTransferServiceTest` added for atomic online session mutation checks (`withSession(...)` path).
+- `TransferServiceTest` now verifies orchestration routing and offline-auth boundary on create-session.
+- Existing integration coverage remained green in `TransferControllerIntegrationTest`.
+- Verification passed with:
+- `cd backend && mvn "-Dtest=TransferControllerIntegrationTest,TransferServiceTest,OnlineTransferServiceTest,TransferSessionStoreTest" test`
+- full regression `cd backend && mvn test`
+- Backend total after this batch: 377 tests passed.
+
+## 2026-04-12 Frontend Refactor Batch 23
+
+- Stage-8 frontend domain regroup has started with transfer-domain entrypoint extraction while preserving route/API behavior.
+- Transfer domain files were reorganized:
+- `front/src/transfer/api/transfer.ts` now owns transfer API helpers and transfer types.
+- `front/src/transfer/pages/TransferPage.tsx` now owns the transfer page implementation.
+- Compatibility shims were kept to avoid breaking legacy imports during staged migration:
+- `front/src/lib/transfer.ts` now re-exports from `front/src/transfer/api/transfer.ts`
+- `front/src/pages/Transfer.tsx` now re-exports from `front/src/transfer/pages/TransferPage.tsx`
+- Router domain entry now points to the transfer domain page directly in `front/src/App.tsx`.
+- Verification:
+- `cd front && npm run lint` currently fails due pre-existing type-check issues unrelated to this batch:
+- `src/components/upload/UploadCenter.tsx` effect cleanup return type
+- `src/hooks/use-directory-data.ts` effect cleanup return type
+- `src/hooks/use-session-runtime.ts` effect cleanup return type
+- `cd front && npm run build` passed (verified with sandbox-external execution where needed due local spawn permission limits).
+
+## 2026-04-12 Frontend Refactor Batch 24
+
+- Frontend verification baseline was repaired so Stage-8 iteration can keep using repo-defined checks cleanly.
+- Fixed `useEffect` cleanup typing in runtime/cache subscribe paths by ensuring cleanup callbacks return `void` instead of `boolean`:
+- `front/src/lib/upload-runtime.ts`
+- `front/src/lib/files-cache.ts`
+- `front/src/lib/session-runtime.ts`
+- This resolves the pre-existing `EffectCallback` type errors in:
+- `src/components/upload/UploadCenter.tsx`
+- `src/hooks/use-directory-data.ts`
+- `src/hooks/use-session-runtime.ts`
+- Verification passed with:
+- `cd front && npm run lint`
+- `cd front && npm run build`
+
+## 2026-04-12 Frontend Refactor Batch 25
+
+- Stage-8 frontend domain regroup continued with route-level domain entry migration (while retaining compatibility shims for phased file moves).
+- Added domain page entry wrappers:
+- `front/src/account/pages/LoginPage.tsx`
+- `front/src/workspace/pages/OverviewPage.tsx`
+- `front/src/workspace/pages/FilesPage.tsx`
+- `front/src/workspace/pages/RecycleBinPage.tsx`
+- `front/src/sharing/pages/SharesPage.tsx`
+- `front/src/sharing/pages/FileSharePage.tsx`
+- `front/src/common/pages/TasksPage.tsx`
+- App routing imports in `front/src/App.tsx` now consume domain entrypoints instead of directly binding to legacy `src/pages/*`.
+- Transfer domain route/API entry continues to use:
+- `front/src/transfer/pages/TransferPage.tsx`
+- `front/src/transfer/api/transfer.ts`
+- Compatibility shims remain in place (`src/pages/Transfer.tsx`, `src/lib/transfer.ts`) to reduce migration blast radius while allowing progressive internal moves.
+- Verification passed with:
+- `cd front && npm run lint`
+- `cd front && npm run build`

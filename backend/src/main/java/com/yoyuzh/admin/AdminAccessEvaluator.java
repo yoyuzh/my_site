@@ -1,27 +1,34 @@
 package com.yoyuzh.admin;
 
-import com.yoyuzh.config.AdminProperties;
+import com.yoyuzh.auth.UserRole;
 import org.springframework.security.core.Authentication;
+import org.springframework.security.core.GrantedAuthority;
 import org.springframework.stereotype.Component;
 
-import java.util.Set;
-import java.util.stream.Collectors;
+import java.util.Objects;
 
 @Component
 public class AdminAccessEvaluator {
 
-    private final Set<String> adminUsernames;
-
-    public AdminAccessEvaluator(AdminProperties adminProperties) {
-        this.adminUsernames = adminProperties.getUsernames().stream()
-                .map(username -> username == null ? "" : username.trim())
-                .filter(username -> !username.isEmpty())
-                .collect(Collectors.toUnmodifiableSet());
+    public boolean isAdmin(Authentication authentication) {
+        if (authentication == null || !authentication.isAuthenticated()) {
+            return false;
+        }
+        return authentication.getAuthorities().stream()
+                .map(GrantedAuthority::getAuthority)
+                .map(this::toUserRole)
+                .filter(Objects::nonNull)
+                .anyMatch(UserRole::canAccessAdmin);
     }
 
-    public boolean isAdmin(Authentication authentication) {
-        return authentication != null
-                && authentication.isAuthenticated()
-                && adminUsernames.contains(authentication.getName());
+    private UserRole toUserRole(String authority) {
+        if (authority == null || !authority.startsWith("ROLE_")) {
+            return null;
+        }
+        try {
+            return UserRole.valueOf(authority.substring("ROLE_".length()));
+        } catch (IllegalArgumentException ex) {
+            return null;
+        }
     }
 }
