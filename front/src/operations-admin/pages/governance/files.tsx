@@ -3,7 +3,7 @@ import { RefreshCw, Search, Trash2, Folder, FileText, ChevronRight } from 'lucid
 import { motion } from 'motion/react';
 import { cn } from '@/src/lib/utils';
 import { AdminAlertDialog } from '@/src/components/admin/AdminAlertDialog';
-import { deleteAdminFile, listAdminFiles, type AdminFile } from '@/src/lib/admin';
+import { deleteAdminFile, listAdminFiles, type AdminFile } from '@/src/operations-admin/api/core/admin';
 import { formatBytes, formatDateTime } from '@/src/lib/format';
 
 const container = {

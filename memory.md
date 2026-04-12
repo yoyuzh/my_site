@@ -1,4 +1,4 @@
-## 任务目标
+﻿## 任务目标
 一句话:记录当前仓库、线上环境、最近实现和开发注意事项，方便后续继续协作与接手。
 
 ## 当前状态
@@ -1164,3 +1164,277 @@
 - `manualPassword`
 - 新增的 `front/src/components/admin/AdminInput.tsx` 仍然只是薄包装，没有引入 label、error、prefix 或其他额外抽象。
 - OSS 替换执行计划 `docs/superpowers/plans/2026-04-12-admin-oss-refactor.md` 已同步更新为当前 users-list scope。
+
+## 2026-04-12 Frontend Refactor Batch 44
+
+- Stage-8 frontend domain regroup continued by migrating route-page implementation ownership from legacy `src/pages/*` into domain entry files, while keeping old paths as compatibility shims.
+- Domain page files now own real page implementations (instead of re-export stubs):
+- `front/src/account/pages/LoginPage.tsx`
+- `front/src/workspace/pages/OverviewPage.tsx`
+- `front/src/workspace/pages/FilesPage.tsx`
+- `front/src/workspace/pages/RecycleBinPage.tsx`
+- `front/src/sharing/pages/SharesPage.tsx`
+- `front/src/sharing/pages/FileSharePage.tsx`
+- `front/src/common/pages/TasksPage.tsx`
+- Legacy pages were inverted into compatibility shims that re-export domain pages:
+- `front/src/pages/Login.tsx`
+- `front/src/pages/Overview.tsx`
+- `front/src/pages/files/FilesPage.tsx`
+- `front/src/pages/RecycleBin.tsx`
+- `front/src/pages/Shares.tsx`
+- `front/src/pages/FileShare.tsx`
+- `front/src/pages/Tasks.tsx`
+- This keeps runtime route behavior unchanged while making domain directories the source of truth for page implementations.
+- Verification status in this workspace:
+- `cd front && cmd /c npm run lint` failed due missing installed packages in local environment (module resolution errors for `@tanstack/react-table`, `@radix-ui/react-alert-dialog`, `@radix-ui/react-dialog`, `@radix-ui/react-select`).
+- `cd front && cmd /c npm run build` failed for the same dependency-resolution reason at admin imports.
+
+## 2026-04-12 Frontend Refactor Batch 45
+
+- Stage-8 frontend domain regroup continued by removing the legacy `front/src/pages` compatibility layer after confirming there are no remaining source imports to old page entry paths.
+- Removed legacy route-page shim files:
+- `front/src/pages/Login.tsx`
+- `front/src/pages/Overview.tsx`
+- `front/src/pages/files/FilesPage.tsx`
+- `front/src/pages/RecycleBin.tsx`
+- `front/src/pages/Shares.tsx`
+- `front/src/pages/FileShare.tsx`
+- `front/src/pages/Tasks.tsx`
+- `front/src/pages/Transfer.tsx`
+- Removed empty legacy directories:
+- `front/src/pages/files`
+- `front/src/pages`
+- Domain page implementations introduced in Batch 44 are now the only route page source-of-truth under:
+- `front/src/account/pages`
+- `front/src/workspace/pages`
+- `front/src/sharing/pages`
+- `front/src/common/pages`
+- Verification status in this workspace remained blocked by missing installed frontend dependencies (unrelated to this batch's page-entry cleanup):
+- `cd front && cmd /c npm run lint` failed with unresolved modules `@tanstack/react-table`, `@radix-ui/react-alert-dialog`, `@radix-ui/react-dialog`, `@radix-ui/react-select`.
+- `cd front && cmd /c npm run build` failed with Rollup unresolved import for `@tanstack/react-table` from admin pages.
+
+## 2026-04-12 Frontend Refactor Batch 46
+
+- Stage-8 frontend domain regroup continued by removing the remaining transfer API compatibility shim.
+- Removed legacy shim file:
+- `front/src/lib/transfer.ts`
+- Updated transfer helper test to import from the new domain API entry:
+- `front/src/lib/transfer.test.ts` now imports from `@/src/transfer/api/transfer`.
+- This resolves the local module-path regression introduced by removing `front/src/lib/transfer.ts` and keeps transfer API usage anchored at domain path.
+- Verification status in this workspace remained blocked by missing installed frontend dependencies (unrelated to this batch's transfer shim cleanup):
+- `cd front && cmd /c npm run lint` failed with unresolved modules `@tanstack/react-table`, `@radix-ui/react-alert-dialog`, `@radix-ui/react-dialog`, `@radix-ui/react-select`.
+- `cd front && cmd /c npm run build` failed with Rollup unresolved import for `@tanstack/react-table` from admin pages.
+
+## 2026-04-12 Frontend Refactor Batch 47
+
+- Frontend local dependency state was repaired in `front/` to restore repository validation commands.
+- Executed `cd front && cmd /c npm install`, which refreshed lockfile/dependency resolution for the current environment.
+- After dependency restore, frontend verification is green again:
+- `cd front && cmd /c npm run lint` passed.
+- `cd front && cmd /c npm run build` passed.
+- Build now succeeds with route-split domain page chunks (including `LoginPage`, `OverviewPage`, `FilesPage`, `RecycleBinPage`, `SharesPage`, `FileSharePage`, `TasksPage`, `TransferPage`), confirming the Stage-8 page/domain entry cleanup remains stable.
+
+## 2026-04-12 Frontend Refactor Batch 48
+
+- Stage-8 frontend/domain regroup follow-up aligned current frontend docs with the new domain page entry layout.
+- Updated `docs/frontend-page-orchestration.md` route/component path references from removed legacy `front/src/pages/*` files to current domain entries:
+- `front/src/account/pages/LoginPage.tsx`
+- `front/src/workspace/pages/OverviewPage.tsx`
+- `front/src/workspace/pages/FilesPage.tsx`
+- `front/src/common/pages/TasksPage.tsx`
+- `front/src/sharing/pages/SharesPage.tsx`
+- `front/src/workspace/pages/RecycleBinPage.tsx`
+- `front/src/sharing/pages/FileSharePage.tsx`
+- Updated `docs/frontend-component-guide.md` references for files/tasks/shares pages to domain paths (workspace/common/sharing) instead of removed `src/pages` locations.
+- Cleaned `front/src/mobile-components/MobileLayout.tsx` by removing unused imports left over from earlier iterations (`useState`, `getSession`, `PortalSession`).
+- Removed empty local legacy mobile directory tree `front/src/mobile-pages/` from workspace (no tracked source files remained).
+- Verification passed with:
+- `cd front && cmd /c npm run lint`
+- `cd front && cmd /c npm run build`
+
+## 2026-04-12 Frontend Refactor Batch 49
+
+- Continued Stage-8 cleanup by aligning frontend documentation with current admin implementation status and domainized route entries.
+- `docs/frontend-page-orchestration.md` updates:
+- Admin route inventory now marks `settings/filesystem/file-blobs/shares/tasks/audits` as implemented and includes `/admin/audits` explicitly.
+- `/admin/oauth-apps` is now described as a planning/info page rather than a generic placeholder.
+- Audit section was updated from “backend only, frontend route missing” to “frontend + backend already connected”.
+- Summary/gap section now reflects current reality (admin core pages are usable; main remaining backend-gap page is oauth-apps).
+- `docs/frontend-component-guide.md` updates:
+- page-path references switched from removed `front/src/pages/*` entries to current domain page files (`account/workspace/sharing/common`).
+- `front/src/mobile-components/MobileLayout.tsx` cleanup:
+- removed unused imports (`useState`, `getSession`, `PortalSession`) without behavior changes.
+- Local empty legacy mobile directory `front/src/mobile-pages/` was removed from workspace (no tracked files remained).
+- Verification passed with:
+- `cd front && cmd /c npm run lint`
+- `cd front && cmd /c npm run build`
+
+## 2026-04-12 Frontend Refactor Batch 50
+
+- `docs/frontend-page-orchestration.md` was further corrected to reflect current admin reality:
+- route table now includes `/admin/audits` and marks `settings/filesystem/file-blobs/shares/tasks/audits` as implemented.
+- section status wording was updated from “placeholder” to implemented/planning where appropriate.
+- audit section wording now matches actual router behavior (`/admin/audits` already mounted).
+- summary section now treats admin pages as usable core, with `oauth-apps` as the main planning-only page.
+- `docs/frontend-component-guide.md` wording was adjusted to remove stale “multiple admin placeholder pages” statement.
+- Verification re-run passed with:
+- `cd front && cmd /c npm run lint`
+- `cd front && cmd /c npm run build`
+
+## 2026-04-12 Frontend Refactor Batch 51
+
+- Continued Stage-8 domain regroup by splitting admin page ownership into a dedicated `operations-admin` domain directory.
+- New admin domain source-of-truth paths were added:
+- `front/src/operations-admin/AdminLayout.tsx`
+- `front/src/operations-admin/pages/dashboard.tsx`
+- `front/src/operations-admin/pages/settings.tsx`
+- `front/src/operations-admin/pages/filesystem.tsx`
+- `front/src/operations-admin/pages/storage-policies-list.tsx`
+- `front/src/operations-admin/pages/users-list.tsx`
+- `front/src/operations-admin/pages/files-list.tsx`
+- `front/src/operations-admin/pages/fileblobs.tsx`
+- `front/src/operations-admin/pages/shares.tsx`
+- `front/src/operations-admin/pages/tasks.tsx`
+- `front/src/operations-admin/pages/audits.tsx`
+- `front/src/operations-admin/pages/oauthapps.tsx`
+- Existing `front/src/admin/*` files were converted into compatibility re-exports to the new `operations-admin` paths to avoid route/runtime breakage during transition.
+- `front/src/App.tsx` lazy imports were updated from `./admin/*` to `./operations-admin/*` and `./operations-admin/pages/*`.
+- Frontend docs were aligned to the new admin domain paths:
+- `docs/frontend-component-guide.md`
+- `docs/frontend-page-orchestration.md`
+- Verified no stale admin path references remain in these docs (`front/src/admin/` removed; page paths now point to `front/src/operations-admin/pages/*.tsx`, while layout path remains `front/src/operations-admin/AdminLayout.tsx`).
+- Verification passed with:
+- `cd front && cmd /c npm run lint`
+- `cd front && cmd /c npm run build`
+
+## 2026-04-12 Frontend Refactor Batch 52
+
+- Completed Stage-8 admin domain migration by removing the temporary compatibility re-export layer under `front/src/admin/`.
+- Deleted legacy admin compatibility files:
+- `front/src/admin/AdminLayout.tsx`
+- `front/src/admin/dashboard.tsx`
+- `front/src/admin/settings.tsx`
+- `front/src/admin/filesystem.tsx`
+- `front/src/admin/storage-policies-list.tsx`
+- `front/src/admin/users-list.tsx`
+- `front/src/admin/files-list.tsx`
+- `front/src/admin/fileblobs.tsx`
+- `front/src/admin/shares.tsx`
+- `front/src/admin/tasks.tsx`
+- `front/src/admin/audits.tsx`
+- `front/src/admin/oauthapps.tsx`
+- After cleanup, admin route implementations are sourced only from:
+- `front/src/operations-admin/AdminLayout.tsx`
+- `front/src/operations-admin/pages/*.tsx`
+- Post-cleanup checks confirmed no stale `front/src/admin` references remain in runtime source (`front/src`) or active frontend docs (`docs/frontend-component-guide.md`, `docs/frontend-page-orchestration.md`).
+- Verification passed with:
+- `cd front && cmd /c npm run lint`
+- `cd front && cmd /c npm run build`
+
+## 2026-04-12 Frontend Refactor Batch 53
+
+- Continued Stage-8 admin domain regroup by migrating admin API implementation ownership from `front/src/lib/admin*.ts` to `front/src/operations-admin/api/admin*.ts`.
+- New source-of-truth admin API files:
+- `front/src/operations-admin/api/admin.ts`
+- `front/src/operations-admin/api/admin-users.ts`
+- `front/src/operations-admin/api/admin-tasks.ts`
+- `front/src/operations-admin/api/admin-storage-policies.ts`
+- `front/src/operations-admin/api/admin-shares.ts`
+- `front/src/operations-admin/api/admin-settings.ts`
+- `front/src/operations-admin/api/admin-filesystem.ts`
+- `front/src/operations-admin/api/admin-fileblobs.ts`
+- `front/src/operations-admin/api/admin-audits.ts`
+- API files now import shared transport/types from stable paths (`@/src/lib/api`, `@/src/lib/files`) while remaining domain-owned in `operations-admin/api`.
+- To avoid runtime/import blast radius, compatibility shims were reintroduced in `front/src/lib/admin*.ts` as pure re-exports to `operations-admin/api`.
+- During migration, one attempt that rewrote `operations-admin/pages/*.tsx` via PowerShell text write introduced encoding damage on Chinese strings and caused large TypeScript parse failures; files were restored and copied back using byte-preserving file operations, and page source imports were intentionally left unchanged to prevent further encoding churn in this batch.
+- `front/src/admin/*.tsx` compatibility layer remains removed; admin page/layout runtime source-of-truth is still `front/src/operations-admin/`.
+- Frontend docs were aligned for admin users API path mention:
+- `docs/frontend-page-orchestration.md` now references `front/src/operations-admin/api/admin-users.ts`.
+- Verification passed with:
+- `cd front && cmd /c npm run lint`
+- `cd front && cmd /c npm run build`
+
+## 2026-04-12 Frontend Refactor Batch 54
+
+- Completed the next Stage-8 admin-domain cleanup by removing `front/src/lib/admin*.ts` compatibility shims after moving all `operations-admin` pages to direct domain API imports.
+- `front/src/operations-admin/pages/*.tsx` now imports directly from `@/src/operations-admin/api/admin*` instead of `@/src/lib/admin*`.
+- Deleted compatibility API shims:
+- `front/src/lib/admin.ts`
+- `front/src/lib/admin-users.ts`
+- `front/src/lib/admin-tasks.ts`
+- `front/src/lib/admin-storage-policies.ts`
+- `front/src/lib/admin-shares.ts`
+- `front/src/lib/admin-settings.ts`
+- `front/src/lib/admin-filesystem.ts`
+- `front/src/lib/admin-fileblobs.ts`
+- `front/src/lib/admin-audits.ts`
+- Verified there are no remaining runtime or active-frontend-doc references to `@/src/lib/admin*` / `front/src/lib/admin*`.
+- Verification passed with:
+- `cd front && cmd /c npm run lint`
+- `cd front && cmd /c npm run build`
+
+## 2026-04-12 Frontend Refactor Batch 55
+
+- Continued Stage-8 admin-domain regroup by splitting `operations-admin` internals into sub-domain directories instead of flat `pages/api` files.
+- Admin page structure is now grouped by responsibility:
+- `front/src/operations-admin/pages/overview/dashboard.tsx`
+- `front/src/operations-admin/pages/settings/{settings,filesystem,storage-policies-list,oauthapps}.tsx`
+- `front/src/operations-admin/pages/governance/{users-list,files-list,fileblobs,shares}.tsx`
+- `front/src/operations-admin/pages/monitoring/{tasks,audits}.tsx`
+- Admin API structure is now grouped by responsibility:
+- `front/src/operations-admin/api/core/admin.ts`
+- `front/src/operations-admin/api/settings/{admin-settings,admin-filesystem,admin-storage-policies}.ts`
+- `front/src/operations-admin/api/governance/{admin-users,admin-shares,admin-fileblobs}.ts`
+- `front/src/operations-admin/api/monitoring/{admin-tasks,admin-audits}.ts`
+- `front/src/App.tsx` lazy route imports were updated to the new page subpaths.
+- `operations-admin` pages now import domain APIs from the new subpaths (`core/settings/governance/monitoring`) instead of the old flat API paths.
+- Frontend docs path references were aligned with new admin page/API paths:
+- `docs/frontend-component-guide.md`
+- `docs/frontend-page-orchestration.md`
+- Verification passed with:
+- `cd front && cmd /c npm run lint`
+- `cd front && cmd /c npm run build`
+
+## 2026-04-12 Frontend Refactor Batch 56
+
+- Continued Stage-8 admin-domain cleanup by normalizing repeated page filenames to directory index entrypoints.
+- Renamed:
+- `front/src/operations-admin/pages/overview/dashboard.tsx` -> `front/src/operations-admin/pages/overview/index.tsx`
+- `front/src/operations-admin/pages/settings/settings.tsx` -> `front/src/operations-admin/pages/settings/index.tsx`
+- Updated `front/src/App.tsx` lazy imports to directory entry imports:
+- `./operations-admin/pages/overview`
+- `./operations-admin/pages/settings`
+- Updated frontend docs path references to new index file paths:
+- `docs/frontend-component-guide.md`
+- `docs/frontend-page-orchestration.md`
+- Verified no remaining references to old `overview/dashboard` or `settings/settings` paths in runtime source and active frontend docs.
+- Verification passed with:
+- `cd front && cmd /c npm run lint`
+- `cd front && cmd /c npm run build`
+
+## 2026-04-12 Frontend Refactor Batch 57
+
+- Completed the final naming-unification batch for `operations-admin` with kebab-case and clearer semantic filenames across pages and admin API modules.
+- Page filenames renamed:
+- `front/src/operations-admin/pages/settings/oauthapps.tsx` -> `front/src/operations-admin/pages/settings/oauth-apps.tsx`
+- `front/src/operations-admin/pages/settings/storage-policies-list.tsx` -> `front/src/operations-admin/pages/settings/storage-policies.tsx`
+- `front/src/operations-admin/pages/governance/users-list.tsx` -> `front/src/operations-admin/pages/governance/users.tsx`
+- `front/src/operations-admin/pages/governance/files-list.tsx` -> `front/src/operations-admin/pages/governance/files.tsx`
+- `front/src/operations-admin/pages/governance/fileblobs.tsx` -> `front/src/operations-admin/pages/governance/file-blobs.tsx`
+- API filenames renamed:
+- `front/src/operations-admin/api/settings/admin-settings.ts` -> `front/src/operations-admin/api/settings/settings.ts`
+- `front/src/operations-admin/api/settings/admin-filesystem.ts` -> `front/src/operations-admin/api/settings/filesystem.ts`
+- `front/src/operations-admin/api/settings/admin-storage-policies.ts` -> `front/src/operations-admin/api/settings/storage-policies.ts`
+- `front/src/operations-admin/api/governance/admin-users.ts` -> `front/src/operations-admin/api/governance/users.ts`
+- `front/src/operations-admin/api/governance/admin-shares.ts` -> `front/src/operations-admin/api/governance/shares.ts`
+- `front/src/operations-admin/api/governance/admin-fileblobs.ts` -> `front/src/operations-admin/api/governance/file-blobs.ts`
+- `front/src/operations-admin/api/monitoring/admin-tasks.ts` -> `front/src/operations-admin/api/monitoring/tasks.ts`
+- `front/src/operations-admin/api/monitoring/admin-audits.ts` -> `front/src/operations-admin/api/monitoring/audits.ts`
+- Updated all runtime references:
+- `front/src/App.tsx` lazy imports
+- all imports in `front/src/operations-admin/pages/**`
+- all related doc path references in `docs/frontend-component-guide.md` and `docs/frontend-page-orchestration.md`
+- Fixed dependent type import in `front/src/operations-admin/api/settings/filesystem.ts` from `./admin-storage-policies` to `./storage-policies`.
+- Verification passed with:
+- `cd front && cmd /c npm run lint`
+- `cd front && cmd /c npm run build`

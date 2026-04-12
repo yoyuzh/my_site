@@ -12,7 +12,7 @@ import { AdminSelect } from '@/src/components/admin/AdminSelect';
 import { cn } from '@/src/lib/utils';
 import { AdminAlertDialog } from '@/src/components/admin/AdminAlertDialog';
 import { formatBytes, formatDateTime } from '@/src/lib/format';
-import { deleteAdminShare, getAdminShares, type AdminShare } from '@/src/lib/admin-shares';
+import { deleteAdminShare, getAdminShares, type AdminShare } from '@/src/operations-admin/api/governance/shares';
 
 declare module '@tanstack/react-table' {
   interface ColumnMeta<TData extends RowData, TValue> {

@@ -8,7 +8,7 @@ import {
   getAdminFileBlobs,
   type AdminFileBlobEntityType,
   type AdminFileBlobResponse,
-} from '@/src/lib/admin-fileblobs';
+} from '@/src/operations-admin/api/governance/file-blobs';
 
 const container = {
   hidden: { opacity: 0 },

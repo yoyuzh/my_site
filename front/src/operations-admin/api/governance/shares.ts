@@ -1,5 +1,5 @@
-import { fetchApi } from './api';
-import type { PageResponse } from './files';
+﻿import { fetchApi } from '@/src/lib/api';
+import type { PageResponse } from '@/src/lib/files';
 
 export type AdminShare = {
   id: number;
@@ -67,3 +67,4 @@ export async function deleteAdminShare(shareId: number) {
     method: 'DELETE',
   });
 }
+

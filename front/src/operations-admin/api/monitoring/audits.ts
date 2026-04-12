@@ -1,5 +1,5 @@
-import { fetchApi } from './api';
-import type { PageResponse } from './files';
+﻿import { fetchApi } from '@/src/lib/api';
+import type { PageResponse } from '@/src/lib/files';
 
 export type AdminAuditLog = {
   id: number;
@@ -45,3 +45,4 @@ export async function getAdminAudits(page = 0, size = 100, query: AdminAuditQuer
 
   return fetchApi<PageResponse<AdminAuditLog>>(`/admin/audits?${params.toString()}`);
 }
+

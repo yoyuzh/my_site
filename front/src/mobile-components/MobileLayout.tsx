@@ -1,11 +1,10 @@
-import { useEffect, useState } from 'react';
+import { useEffect } from 'react';
 import { Outlet, NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { HardDrive, LayoutDashboard, ListTodo, LogOut, Send, Share2, Trash2 } from 'lucide-react';
 import { motion } from 'motion/react';
 import { cn } from '@/src/lib/utils';
 import { ThemeToggle } from '@/src/components/ThemeToggle';
 import { logout } from '@/src/lib/auth';
-import { getSession, type PortalSession } from '@/src/lib/session';
 import { useSessionRuntime } from '@/src/hooks/use-session-runtime';
 import { UploadCenter } from '../components/upload/UploadCenter';
 import { TaskSummaryPanel } from '../components/tasks/TaskSummaryPanel';
@@ -15,9 +14,6 @@ export default function MobileLayout() {
   const location = useLocation();
   const navigate = useNavigate();
   const { session } = useSessionRuntime();
-
-
-
 
   useEffect(() => {
     if (!session && location.pathname !== '/transfer') {

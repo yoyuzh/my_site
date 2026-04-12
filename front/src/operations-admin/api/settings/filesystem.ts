@@ -1,5 +1,5 @@
-import { fetchApi } from './api';
-import type { AdminStoragePolicy } from './admin-storage-policies';
+﻿import { fetchApi } from '@/src/lib/api';
+import type { AdminStoragePolicy } from './storage-policies';
 
 export type AdminFilesystemResponse = {
   overview: {
@@ -32,3 +32,4 @@ export type AdminFilesystemResponse = {
 export async function getAdminFilesystem() {
   return fetchApi<AdminFilesystemResponse>('/admin/filesystem');
 }
+

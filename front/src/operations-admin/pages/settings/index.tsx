@@ -11,7 +11,7 @@ import {
   updateAdminOfflineTransferStorageLimit,
   updateAdminRegistrationInviteCode,
   type AdminSettings,
-} from '@/src/lib/admin-settings';
+} from '@/src/operations-admin/api/settings/settings';
 import { formatBytes } from '@/src/lib/format';
 
 const container = {

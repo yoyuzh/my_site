@@ -1,4 +1,4 @@
-import { fetchApi } from './api';
+﻿import { fetchApi } from '@/src/lib/api';
 
 export type AdminSettings = {
   site: {
@@ -76,3 +76,4 @@ export async function updateAdminOfflineTransferStorageLimit(offlineTransferStor
     body: JSON.stringify({ offlineTransferStorageLimitBytes }),
   });
 }
+

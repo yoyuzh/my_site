@@ -5,7 +5,7 @@ import {
   buildOfflineTransferDownloadUrl,
   sanitizePickupCode,
   toTransferFilePayload,
-} from './transfer';
+} from '@/src/transfer/api/transfer';
 
 test('sanitizePickupCode keeps only uppercase letters and digits', () => {
   assert.equal(sanitizePickupCode(' ab-12 cD*3 '), 'AB12CD');

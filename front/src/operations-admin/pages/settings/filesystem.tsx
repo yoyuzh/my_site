@@ -3,7 +3,7 @@ import { CheckCircle2, Copy, Database, Globe, HardDrive, Layers3, RefreshCw, Ser
 import { motion } from 'motion/react';
 import { cn } from '@/src/lib/utils';
 import { formatBytes, formatDateTime } from '@/src/lib/format';
-import { getAdminFilesystem, type AdminFilesystemResponse } from '@/src/lib/admin-filesystem';
+import { getAdminFilesystem, type AdminFilesystemResponse } from '@/src/operations-admin/api/settings/filesystem';
 
 const container = {
   hidden: { opacity: 0 },

@@ -1,4 +1,4 @@
-import { fetchApi } from './api';
+﻿import { fetchApi } from '@/src/lib/api';
 
 export type StoragePolicyCapabilities = {
   directUpload: boolean;
@@ -75,3 +75,4 @@ export async function createStorageMigration(sourcePolicyId: number, targetPolic
     body: JSON.stringify({ sourcePolicyId, targetPolicyId }),
   });
 }
+

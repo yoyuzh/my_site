@@ -1,5 +1,5 @@
-import { fetchApi } from './api';
-import type { PageResponse } from './files';
+﻿import { fetchApi } from '@/src/lib/api';
+import type { PageResponse } from '@/src/lib/files';
 
 export type AdminFileBlobEntityType = 'VERSION' | 'THUMBNAIL' | 'LIVE_PHOTO' | 'TRANSCODE' | 'AVATAR';
 
@@ -56,3 +56,4 @@ export async function getAdminFileBlobs(page = 0, size = 100, query: AdminFileBl
 
   return fetchApi<PageResponse<AdminFileBlobResponse>>(`/admin/file-blobs?${params.toString()}`);
 }
+

@@ -15,7 +15,7 @@ import { motion } from 'motion/react';
 import { AdminSelect } from '@/src/components/admin/AdminSelect';
 import { cn } from '@/src/lib/utils';
 import { formatDateTime } from '@/src/lib/format';
-import { getAdminTask, getAdminTasks, type AdminTask, type AdminTaskQuery } from '@/src/lib/admin-tasks';
+import { getAdminTask, getAdminTasks, type AdminTask, type AdminTaskQuery } from '@/src/operations-admin/api/monitoring/tasks';
 
 const container = {
   hidden: { opacity: 0 },

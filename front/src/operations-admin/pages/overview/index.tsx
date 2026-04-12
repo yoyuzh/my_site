@@ -15,7 +15,7 @@ import {
 import { Link } from 'react-router-dom';
 import { motion } from 'motion/react';
 import { cn } from '@/src/lib/utils';
-import { getAdminSummary, type AdminSummary } from '@/src/lib/admin';
+import { getAdminSummary, type AdminSummary } from '@/src/operations-admin/api/core/admin';
 import { formatBytes } from '@/src/lib/format';
 
 const container = {

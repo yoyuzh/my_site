@@ -1,5 +1,5 @@
-import { fetchApi } from './api';
-import type { PageResponse } from './files';
+﻿import { fetchApi } from '@/src/lib/api';
+import type { PageResponse } from '@/src/lib/files';
 
 export type AdminTask = {
   id: number;
@@ -66,3 +66,4 @@ export async function getAdminTasks(page = 0, size = 20, query: AdminTaskQuery =
 export async function getAdminTask(taskId: number) {
   return fetchApi<AdminTask>(`/admin/tasks/${taskId}`);
 }
+

@@ -17,7 +17,7 @@ import {
   type AdminStoragePolicy,
   type StoragePolicyCapabilities,
   type StoragePolicyUpsertPayload,
-} from '@/src/lib/admin-storage-policies';
+} from '@/src/operations-admin/api/settings/storage-policies';
 import { AdminDialog } from '@/src/components/admin/AdminDialog';
 import { AdminInput } from '@/src/components/admin/AdminInput';
 import { AdminSelect } from '@/src/components/admin/AdminSelect';

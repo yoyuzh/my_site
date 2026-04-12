@@ -21,7 +21,7 @@ import {
   updateUserStatus,
   updateUserStorageQuota,
   type AdminUser,
-} from '@/src/lib/admin-users';
+} from '@/src/operations-admin/api/governance/users';
 import { AdminDialog } from '@/src/components/admin/AdminDialog';
 import { formatBytes, formatDateTime } from '@/src/lib/format';
 

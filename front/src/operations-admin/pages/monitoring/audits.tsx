@@ -3,7 +3,7 @@ import { ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Copy, RefreshCw, Sea
 import { motion } from 'motion/react';
 import { cn } from '@/src/lib/utils';
 import { formatDateTime } from '@/src/lib/format';
-import { getAdminAudits, type AdminAuditLog } from '@/src/lib/admin-audits';
+import { getAdminAudits, type AdminAuditLog } from '@/src/operations-admin/api/monitoring/audits';
 
 const container = {
   hidden: { opacity: 0 },
