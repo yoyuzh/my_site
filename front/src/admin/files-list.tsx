@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { RefreshCw, Search, Trash2, Folder, FileText, ChevronRight } from 'lucide-react';
 import { motion } from 'motion/react';
 import { cn } from '@/src/lib/utils';
+import { AdminAlertDialog } from '@/src/components/admin/AdminAlertDialog';
 import { deleteAdminFile, listAdminFiles, type AdminFile } from '@/src/lib/admin';
 import { formatBytes, formatDateTime } from '@/src/lib/format';
 
@@ -26,6 +27,7 @@ export default function AdminFilesList() {
   const [query, setQuery] = useState('');
   const [ownerQuery, setOwnerQuery] = useState('');
   const [files, setFiles] = useState<AdminFile[]>([]);
+  const [pendingDeleteFile, setPendingDeleteFile] = useState<AdminFile | null>(null);
 
   async function loadFiles(nextQuery = query, nextOwnerQuery = ownerQuery) {
     setError('');
@@ -42,6 +44,21 @@ export default function AdminFilesList() {
   useEffect(() => {
     void loadFiles();
   }, []);
+
+  async function handleConfirmDeleteFile() {
+    if (!pendingDeleteFile) {
+      return;
+    }
+
+    const target = pendingDeleteFile;
+    setPendingDeleteFile(null);
+    try {
+      await deleteAdminFile(target.id);
+      await loadFiles();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '彻底删除文件失败');
+    }
+  }
 
   return (
     <motion.div 
@@ -148,13 +165,7 @@ export default function AdminFilesList() {
                       <td className="px-8 py-5 text-right">
                         <button
                           type="button"
-                          onClick={async () => {
-                            if (!window.confirm(`确认物理擦除 ${file.filename} 吗？此操作将触发硬件级销毁。`)) {
-                              return;
-                            }
-                            await deleteAdminFile(file.id);
-                            await loadFiles();
-                          }}
+                          onClick={() => setPendingDeleteFile(file)}
                           className="p-2.5 rounded-lg glass-panel hover:bg-red-600 hover:text-white text-red-500 border border-white/10 transition-all opacity-0 group-hover:opacity-100 shadow-sm"
                           title="彻底删除"
                         >
@@ -176,6 +187,22 @@ export default function AdminFilesList() {
           </div>
         )}
       </div>
+
+      <AdminAlertDialog
+        open={pendingDeleteFile !== null}
+        title="彻底删除文件"
+        description={
+          pendingDeleteFile
+            ? `确认物理擦除 ${pendingDeleteFile.filename} 吗？此操作将触发硬件级销毁。`
+            : ''
+        }
+        confirmLabel="确认删除"
+        cancelLabel="取消"
+        confirmTone="danger"
+        busy={loading && pendingDeleteFile !== null}
+        onConfirm={handleConfirmDeleteFile}
+        onCancel={() => setPendingDeleteFile(null)}
+      />
     </motion.div>
   );
 }

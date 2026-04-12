@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Ban, Check, Clipboard, KeyRound, PencilLine, RefreshCw, Search, Shield, Mail, Phone, X } from 'lucide-react';
 import { motion } from 'motion/react';
-import { useForm } from 'react-hook-form';
+import { Controller, useForm } from 'react-hook-form';
 import {
   createColumnHelper,
   flexRender,
@@ -9,6 +9,8 @@ import {
   useReactTable,
   type ColumnDef,
 } from '@tanstack/react-table';
+import { AdminSelect } from '@/src/components/admin/AdminSelect';
+import { AdminInput } from '@/src/components/admin/AdminInput';
 import { cn } from '@/src/lib/utils';
 import {
   getAdminUsers,
@@ -20,6 +22,7 @@ import {
   updateUserStorageQuota,
   type AdminUser,
 } from '@/src/lib/admin-users';
+import { AdminDialog } from '@/src/components/admin/AdminDialog';
 import { formatBytes, formatDateTime } from '@/src/lib/format';
 
 const container = {
@@ -85,6 +88,7 @@ export default function AdminUsersList() {
   const [temporaryPasswords, setTemporaryPasswords] = useState<Record<number, string>>({});
   const [copiedTemporaryPasswordUserId, setCopiedTemporaryPasswordUserId] = useState<number | null>(null);
   const {
+    control,
     register,
     trigger,
     getValues,
@@ -456,274 +460,260 @@ export default function AdminUsersList() {
 
       {error ? <div className="mb-8 rounded-lg bg-red-500/10 border border-red-500/20 px-6 py-4 text-xs text-red-600 font-bold backdrop-blur-md uppercase tracking-widest">{error}</div> : null}
 
-      <div className="grid flex-1 min-h-0 gap-6 xl:grid-cols-[minmax(0,1fr)_360px]">
+      <div className="flex-1 min-h-0">
         {loading && users.length === 0 ? (
           <div className="glass-panel-no-hover rounded-lg px-4 py-16 text-center text-[10px] font-black uppercase tracking-widest opacity-40">正在查询用户数据...</div>
         ) : (
-          <>
-            <div className="glass-panel-no-hover rounded-lg overflow-hidden shadow-3xl border border-white/10">
-              <div className="overflow-x-auto">
-                <table className="min-w-full divide-y divide-white/10">
-                  <thead className="bg-white/10 dark:bg-black/40">
-                    {table.getHeaderGroups().map((headerGroup) => (
-                      <tr key={headerGroup.id}>
-                        {headerGroup.headers.map((header) => (
-                          <th
-                            key={header.id}
-                            className={cn(
-                              "px-8 py-5 text-[9px] font-black uppercase tracking-[0.2em] opacity-40",
-                              header.column.id === 'actions' ? 'text-right' : 'text-left'
-                            )}
-                          >
-                            {header.isPlaceholder ? null : flexRender(header.column.columnDef.header, header.getContext())}
-                          </th>
-                        ))}
-                      </tr>
-                    ))}
-                  </thead>
-                  <motion.tbody 
-                    variants={container}
-                    initial="hidden"
-                    animate="show"
-                    className="divide-y divide-white/10 dark:divide-white/5"
-                  >
-                    {table.getRowModel().rows.map((row) => {
-                      const user = row.original;
-                      const isEditing = editingUser?.id === user.id;
-                      return (
-                        <motion.tr
-                          key={row.id}
-                          variants={itemVariants}
+          <div className="glass-panel-no-hover rounded-lg overflow-hidden shadow-3xl border border-white/10">
+            <div className="overflow-x-auto">
+              <table className="min-w-full divide-y divide-white/10">
+                <thead className="bg-white/10 dark:bg-black/40">
+                  {table.getHeaderGroups().map((headerGroup) => (
+                    <tr key={headerGroup.id}>
+                      {headerGroup.headers.map((header) => (
+                        <th
+                          key={header.id}
                           className={cn(
-                            "group transition-colors",
-                            isEditing ? "bg-blue-500/10 dark:bg-blue-500/5" : "hover:bg-white/10 dark:hover:bg-white/5"
+                            'px-8 py-5 text-[9px] font-black uppercase tracking-[0.2em] opacity-40',
+                            header.column.id === 'actions' ? 'text-right' : 'text-left',
                           )}
                         >
-                          {row.getVisibleCells().map((cell) => (
-                            <td
-                              key={cell.id}
-                              className={cn(
-                                "px-8 py-5 align-top",
-                                cell.column.id === 'actions' ? 'text-right' : 'text-left'
-                              )}
-                            >
-                              {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                            </td>
-                          ))}
-                        </motion.tr>
-                      );
-                    })}
-                    {table.getRowModel().rows.length === 0 ? (
-                      <tr>
-                        <td colSpan={6} className="px-8 py-20 text-center text-[10px] font-black uppercase tracking-widest opacity-30">
-                          暂无用户记录
-                        </td>
-                      </tr>
-                    ) : null}
-                  </motion.tbody>
-                </table>
+                          {header.isPlaceholder ? null : flexRender(header.column.columnDef.header, header.getContext())}
+                        </th>
+                      ))}
+                    </tr>
+                  ))}
+                </thead>
+                <motion.tbody
+                  variants={container}
+                  initial="hidden"
+                  animate="show"
+                  className="divide-y divide-white/10 dark:divide-white/5"
+                >
+                  {table.getRowModel().rows.map((row) => {
+                    const user = row.original;
+                    const isEditing = editingUser?.id === user.id;
+                    return (
+                      <motion.tr
+                        key={row.id}
+                        variants={itemVariants}
+                        className={cn(
+                          'group transition-colors',
+                          isEditing ? 'bg-blue-500/10 dark:bg-blue-500/5' : 'hover:bg-white/10 dark:hover:bg-white/5',
+                        )}
+                      >
+                        {row.getVisibleCells().map((cell) => (
+                          <td
+                            key={cell.id}
+                            className={cn(
+                              'px-8 py-5 align-top',
+                              cell.column.id === 'actions' ? 'text-right' : 'text-left',
+                            )}
+                          >
+                            {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                          </td>
+                        ))}
+                      </motion.tr>
+                    );
+                  })}
+                  {table.getRowModel().rows.length === 0 ? (
+                    <tr>
+                      <td colSpan={6} className="px-8 py-20 text-center text-[10px] font-black uppercase tracking-widest opacity-30">
+                        暂无用户记录
+                      </td>
+                    </tr>
+                  ) : null}
+                </motion.tbody>
+              </table>
+            </div>
+          </div>
+        )}
+      </div>
+
+      <AdminDialog
+        open={Boolean(editingUser)}
+        layout="side-panel"
+        title="用户策略编辑"
+        description={
+          editingUser
+            ? '这里负责角色、存储配额、最大上传限制和手动改密。临时密码生成仍保留在表格快捷操作里，避免和手动改密混在一起。'
+            : '从左侧表格点击“编辑”按钮，右侧会自动展开该用户的策略面板。'
+        }
+        onOpenChange={(nextOpen) => {
+          if (!nextOpen) {
+            closeEditor();
+          }
+        }}
+      >
+        {editingUser ? (
+          <div className="space-y-6">
+            <div className="rounded-lg border border-white/10 bg-white/5 px-4 py-4">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <div className="text-[9px] font-black uppercase tracking-[0.2em] opacity-30">当前账号</div>
+                  <div className="mt-2 text-[12px] font-black uppercase tracking-tight">{editingUser.email}</div>
+                </div>
+                <span
+                  className={cn(
+                    'inline-flex items-center gap-2 rounded-sm px-2 py-0.5 text-[9px] font-black uppercase tracking-widest border',
+                    editingUser.banned
+                      ? 'bg-red-500/10 text-red-500 border-red-500/20'
+                      : 'bg-green-500/10 text-green-500 border-green-500/20',
+                  )}
+                >
+                  {editingUser.banned ? '已禁用' : '正常'}
+                </span>
+              </div>
+              <div className="mt-4 text-[10px] font-black uppercase tracking-tight">
+                {formatBytes(editingUser.usedStorageBytes)} / <span className="opacity-30">{formatBytes(editingUser.storageQuotaBytes)}</span>
+              </div>
+              <div className="mt-2 h-1 w-full rounded-full bg-white/10 overflow-hidden">
+                <div
+                  className="h-full bg-blue-500 shadow-[0_0_8px_rgba(59,130,246,0.5)]"
+                  style={{ width: `${Math.min(100, (editingUser.usedStorageBytes / editingUser.storageQuotaBytes) * 100)}%` }}
+                />
               </div>
             </div>
 
-            <aside className="glass-panel-no-hover rounded-lg border border-white/10 p-6 shadow-3xl xl:sticky xl:top-6 xl:self-start">
+            <div className="space-y-4">
               <div className="flex items-start justify-between gap-3">
                 <div>
-                  <div className="text-[9px] font-black uppercase tracking-[0.2em] opacity-30">用户策略编辑</div>
-                  <h2 className="mt-2 text-lg font-black tracking-tight uppercase">
-                    {editingUser ? editingUser.username : '请选择用户'}
-                  </h2>
-                  <p className="mt-2 text-[10px] font-bold opacity-40 leading-relaxed">
-                    {editingUser
-                      ? '这里负责角色、存储配额、最大上传限制和手动改密。临时密码生成仍保留在表格快捷操作里，避免和手动改密混在一起。'
-                      : '从左侧表格点击“编辑”打开该用户的策略面板。'}
-                  </p>
+                  <div className="text-[9px] font-black uppercase tracking-[0.2em] opacity-30">基础配置</div>
+                  <div className="mt-1 text-[11px] font-bold opacity-50">修改角色、存储配额和最大上传限制后，点击保存即可生效。</div>
                 </div>
-                {editingUser ? (
-                  <button
-                    type="button"
-                    onClick={closeEditor}
-                    className="rounded-full border border-white/10 px-3 py-1.5 text-[10px] font-black uppercase tracking-widest opacity-50 transition-colors hover:bg-white/10 hover:opacity-100"
-                  >
-                    关闭
-                  </button>
-                ) : null}
+                <span className="inline-flex items-center gap-2 rounded-sm px-2 py-0.5 text-[9px] font-black uppercase tracking-widest border bg-blue-500/10 text-blue-500 border-blue-500/20">
+                  <Shield className="h-3 w-3" />
+                  {watchedRole}
+                </span>
               </div>
 
-              {editingUser ? (
-                <div className="mt-6 space-y-6">
-                  <div className="rounded-lg border border-white/10 bg-white/5 px-4 py-4">
-                    <div className="flex items-center justify-between gap-3">
-                      <div>
-                        <div className="text-[9px] font-black uppercase tracking-[0.2em] opacity-30">当前账号</div>
-                        <div className="mt-2 text-[12px] font-black uppercase tracking-tight">{editingUser.email}</div>
-                      </div>
-                      <span
-                        className={cn(
-                          "inline-flex items-center gap-2 rounded-sm px-2 py-0.5 text-[9px] font-black uppercase tracking-widest border",
-                          editingUser.banned
-                            ? "bg-red-500/10 text-red-500 border-red-500/20"
-                            : "bg-green-500/10 text-green-500 border-green-500/20"
-                        )}
-                      >
-                        {editingUser.banned ? '已禁用' : '正常'}
-                      </span>
-                    </div>
-                    <div className="mt-4 text-[10px] font-black uppercase tracking-tight">
-                      {formatBytes(editingUser.usedStorageBytes)} / <span className="opacity-30">{formatBytes(editingUser.storageQuotaBytes)}</span>
-                    </div>
-                    <div className="mt-2 h-1 w-full rounded-full bg-white/10 overflow-hidden">
-                      <div
-                        className="h-full bg-blue-500 shadow-[0_0_8px_rgba(59,130,246,0.5)]"
-                        style={{ width: `${Math.min(100, (editingUser.usedStorageBytes / editingUser.storageQuotaBytes) * 100)}%` }}
-                      />
-                    </div>
-                  </div>
-
-                  <div className="space-y-4">
-                    <div className="flex items-start justify-between gap-3">
-                      <div>
-                        <div className="text-[9px] font-black uppercase tracking-[0.2em] opacity-30">基础配置</div>
-                        <div className="mt-1 text-[11px] font-bold opacity-50">修改角色、存储配额和最大上传限制后，点击保存即可生效。</div>
-                      </div>
-                      <span className="inline-flex items-center gap-2 rounded-sm px-2 py-0.5 text-[9px] font-black uppercase tracking-widest border bg-blue-500/10 text-blue-500 border-blue-500/20">
-                        <Shield className="h-3 w-3" />
-                        {watchedRole}
-                      </span>
-                    </div>
-
-                    <label className="block">
-                      <span className="mb-2 block text-[9px] font-black uppercase tracking-[0.2em] opacity-30">角色</span>
-                      <select
-                        {...register('role', {
-                          validate: (value) => (value === 'USER' || value === 'ADMIN' ? true : '请选择有效角色'),
-                        })}
-                        className="w-full rounded-lg border border-white/10 bg-white/10 px-4 py-3 text-[11px] font-black uppercase tracking-widest outline-none transition-colors focus:border-blue-500/50 focus:ring-4 focus:ring-blue-500/10"
-                      >
-                        <option value="USER">USER - 普通用户</option>
-                        <option value="ADMIN">ADMIN - 管理员</option>
-                      </select>
-                      {errors.role ? (
-                        <p className="mt-2 text-[10px] font-bold uppercase tracking-widest text-red-500">
-                          {errors.role.message}
-                        </p>
-                      ) : null}
-                    </label>
-
-                    <div className="grid gap-4 sm:grid-cols-2">
-                      <label className="block">
-                        <span className="mb-2 block text-[9px] font-black uppercase tracking-[0.2em] opacity-30">存储配额（字节）</span>
-                        <input
-                          {...register('storageQuotaBytes', {
-                            validate: (value) => validateNonNegativeBytes(value, '存储配额'),
-                          })}
-                          inputMode="numeric"
-                          className="w-full rounded-lg border border-white/10 bg-white/10 px-4 py-3 text-[11px] font-black tracking-widest outline-none transition-colors focus:border-blue-500/50 focus:ring-4 focus:ring-blue-500/10"
-                        />
-                        {errors.storageQuotaBytes ? (
-                          <p className="mt-2 text-[10px] font-bold uppercase tracking-widest text-red-500">
-                            {errors.storageQuotaBytes.message}
-                          </p>
-                        ) : null}
-                      </label>
-                      <label className="block">
-                        <span className="mb-2 block text-[9px] font-black uppercase tracking-[0.2em] opacity-30">最大上传限制（字节）</span>
-                        <input
-                          {...register('maxUploadSizeBytes', {
-                            validate: (value) => validateNonNegativeBytes(value, '最大上传限制'),
-                          })}
-                          inputMode="numeric"
-                          className="w-full rounded-lg border border-white/10 bg-white/10 px-4 py-3 text-[11px] font-black tracking-widest outline-none transition-colors focus:border-blue-500/50 focus:ring-4 focus:ring-blue-500/10"
-                        />
-                        {errors.maxUploadSizeBytes ? (
-                          <p className="mt-2 text-[10px] font-bold uppercase tracking-widest text-red-500">
-                            {errors.maxUploadSizeBytes.message}
-                          </p>
-                        ) : null}
-                      </label>
-                    </div>
-
-                    <button
-                      type="button"
-                      onClick={() => void saveEditorProfile()}
-                      className="inline-flex w-full items-center justify-center gap-3 rounded-lg bg-blue-600 px-4 py-3 text-[10px] font-black uppercase tracking-[0.2em] text-white transition-colors hover:bg-blue-500"
+              <label className="block">
+                <span className="mb-2 block text-[9px] font-black uppercase tracking-[0.2em] opacity-30">角色</span>
+                <Controller
+                  control={control}
+                  name="role"
+                  rules={{
+                    validate: (value) => (value === 'USER' || value === 'ADMIN' ? true : '请选择有效角色'),
+                  }}
+                  render={({ field }) => (
+                    <AdminSelect
+                      value={field.value}
+                      onChange={(event) => field.onChange(event.target.value)}
+                      className="w-full text-[11px] font-black uppercase tracking-widest"
                     >
-                      <Check className="h-4 w-4" />
-                      保存基础配置
-                    </button>
-                  </div>
+                      <option value="USER">USER - 普通用户</option>
+                      <option value="ADMIN">ADMIN - 管理员</option>
+                    </AdminSelect>
+                  )}
+                />
+                {errors.role ? (
+                  <p className="mt-2 text-[10px] font-bold uppercase tracking-widest text-red-500">{errors.role.message}</p>
+                ) : null}
+              </label>
 
-                  <div className="space-y-4 rounded-lg border border-amber-500/20 bg-amber-500/10 px-4 py-4">
-                    <div className="flex items-start justify-between gap-3">
-                      <div>
-                        <div className="text-[9px] font-black uppercase tracking-[0.2em] text-amber-500">手动设置密码</div>
-                        <div className="mt-1 text-[10px] font-bold opacity-60 leading-relaxed">
-                          这里是人工指定一个新密码，会直接覆盖当前密码。它和“生成临时密码”是两条不同的管理路径。
-                        </div>
-                      </div>
-                      <KeyRound className="h-4 w-4 text-amber-500" />
-                    </div>
-                    <label className="block">
-                      <span className="mb-2 block text-[9px] font-black uppercase tracking-[0.2em] opacity-30">新密码</span>
-                      <input
-                        {...register('manualPassword', {
-                          validate: (value) => (value.trim() ? true : '请输入要手动设置的新密码'),
-                        })}
-                        type="password"
-                        autoComplete="new-password"
-                        className="w-full rounded-lg border border-white/10 bg-black/20 px-4 py-3 text-[11px] font-black tracking-widest outline-none transition-colors focus:border-amber-500/50 focus:ring-4 focus:ring-amber-500/10"
-                        placeholder="输入后点击“手动设置密码”"
-                      />
-                      {errors.manualPassword ? (
-                        <p className="mt-2 text-[10px] font-bold uppercase tracking-widest text-amber-500">
-                          {errors.manualPassword.message}
-                        </p>
-                      ) : null}
-                    </label>
-                    <button
-                      type="button"
-                      onClick={() => void submitManualPassword()}
-                      className="inline-flex w-full items-center justify-center gap-3 rounded-lg border border-amber-500/20 bg-amber-500/15 px-4 py-3 text-[10px] font-black uppercase tracking-[0.2em] text-amber-500 transition-colors hover:bg-amber-500 hover:text-white"
-                    >
-                      <KeyRound className="h-4 w-4" />
-                      手动设置密码
-                    </button>
-                    <p className="text-[10px] font-bold opacity-50 leading-relaxed">
-                      适合人工恢复账号、统一初始化密码或和用户同步已知密码。若要发放一次性密码，请继续使用表格里的“生成临时密码”。
+              <div className="grid gap-4 sm:grid-cols-2">
+                <label className="block">
+                  <span className="mb-2 block text-[9px] font-black uppercase tracking-[0.2em] opacity-30">存储配额（字节）</span>
+                  <AdminInput
+                    {...register('storageQuotaBytes', {
+                      validate: (value) => validateNonNegativeBytes(value, '存储配额'),
+                    })}
+                    inputMode="numeric"
+                  />
+                  {errors.storageQuotaBytes ? (
+                    <p className="mt-2 text-[10px] font-bold uppercase tracking-widest text-red-500">
+                      {errors.storageQuotaBytes.message}
                     </p>
-                  </div>
+                  ) : null}
+                </label>
+                <label className="block">
+                  <span className="mb-2 block text-[9px] font-black uppercase tracking-[0.2em] opacity-30">最大上传限制（字节）</span>
+                  <AdminInput
+                    {...register('maxUploadSizeBytes', {
+                      validate: (value) => validateNonNegativeBytes(value, '最大上传限制'),
+                    })}
+                    inputMode="numeric"
+                  />
+                  {errors.maxUploadSizeBytes ? (
+                    <p className="mt-2 text-[10px] font-bold uppercase tracking-widest text-red-500">
+                      {errors.maxUploadSizeBytes.message}
+                    </p>
+                  ) : null}
+                </label>
+              </div>
 
-                  <div className="rounded-lg border border-white/10 bg-white/5 px-4 py-4">
-                    <div className="text-[9px] font-black uppercase tracking-[0.2em] opacity-30">账号状态</div>
-                    <div className="mt-2 text-[10px] font-bold opacity-50 leading-relaxed">
-                      可直接切换禁用 / 恢复，不影响上面的基础配置或手动改密表单。
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => void mutate(() => updateUserStatus(editingUser.id, !editingUser.banned))}
-                      className={cn(
-                        "mt-4 inline-flex w-full items-center justify-center gap-3 rounded-lg border px-4 py-3 text-[10px] font-black uppercase tracking-[0.2em] transition-colors",
-                        editingUser.banned
-                          ? "border-green-500/20 bg-green-500/10 text-green-500 hover:bg-green-500 hover:text-white"
-                          : "border-red-500/20 bg-red-500/10 text-red-500 hover:bg-red-500 hover:text-white"
-                      )}
-                    >
-                      <Ban className="h-4 w-4" />
-                      {editingUser.banned ? '恢复账号' : '禁用账号'}
-                    </button>
+              <button
+                type="button"
+                onClick={() => void saveEditorProfile()}
+                className="inline-flex w-full items-center justify-center gap-3 rounded-lg bg-blue-600 px-4 py-3 text-[10px] font-black uppercase tracking-[0.2em] text-white transition-colors hover:bg-blue-500"
+              >
+                <Check className="h-4 w-4" />
+                保存基础配置
+              </button>
+            </div>
+
+            <div className="space-y-4 rounded-lg border border-amber-500/20 bg-amber-500/10 px-4 py-4">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <div className="text-[9px] font-black uppercase tracking-[0.2em] text-amber-500">手动设置密码</div>
+                  <div className="mt-1 text-[10px] font-bold opacity-60 leading-relaxed">
+                    这里是人工指定一个新密码，会直接覆盖当前密码。它和“生成临时密码”是两条不同的管理路径。
                   </div>
                 </div>
-              ) : (
-                <div className="mt-10 rounded-lg border border-dashed border-white/10 px-6 py-12 text-center">
-                  <div className="text-[10px] font-black uppercase tracking-[0.2em] opacity-25">编辑面板为空</div>
-                  <p className="mt-3 text-[11px] font-bold opacity-40 leading-relaxed">
-                    点击左侧任意用户行的“编辑”按钮，右侧会自动展开该用户的角色、配额和密码管理表单。
+                <KeyRound className="h-4 w-4 text-amber-500" />
+              </div>
+              <label className="block">
+                <span className="mb-2 block text-[9px] font-black uppercase tracking-[0.2em] opacity-30">新密码</span>
+                <AdminInput
+                  {...register('manualPassword', {
+                    validate: (value) => (value.trim() ? true : '请输入要手动设置的新密码'),
+                  })}
+                  type="password"
+                  autoComplete="new-password"
+                  className="bg-black/20 focus:border-amber-500/50 focus:ring-amber-500/10"
+                  placeholder="输入后点击“手动设置密码”"
+                />
+                {errors.manualPassword ? (
+                  <p className="mt-2 text-[10px] font-bold uppercase tracking-widest text-amber-500">
+                    {errors.manualPassword.message}
                   </p>
-                </div>
-              )}
-            </aside>
-          </>
-        )}
-      </div>
+                ) : null}
+              </label>
+              <button
+                type="button"
+                onClick={() => void submitManualPassword()}
+                className="inline-flex w-full items-center justify-center gap-3 rounded-lg border border-amber-500/20 bg-amber-500/15 px-4 py-3 text-[10px] font-black uppercase tracking-[0.2em] text-amber-500 transition-colors hover:bg-amber-500 hover:text-white"
+              >
+                <KeyRound className="h-4 w-4" />
+                手动设置密码
+              </button>
+              <p className="text-[10px] font-bold opacity-50 leading-relaxed">
+                适合人工恢复账号、统一初始化密码或和用户同步已知密码。若要发放一次性密码，请继续使用表格里的“生成临时密码”。
+              </p>
+            </div>
+
+            <div className="rounded-lg border border-white/10 bg-white/5 px-4 py-4">
+              <div className="text-[9px] font-black uppercase tracking-[0.2em] opacity-30">账号状态</div>
+              <div className="mt-2 text-[10px] font-bold opacity-50 leading-relaxed">
+                可直接切换禁用 / 恢复，不影响上面的基础配置或手动改密表单。
+              </div>
+              <button
+                type="button"
+                onClick={() => void mutate(() => updateUserStatus(editingUser.id, !editingUser.banned))}
+                className={cn(
+                  'mt-4 inline-flex w-full items-center justify-center gap-3 rounded-lg border px-4 py-3 text-[10px] font-black uppercase tracking-[0.2em] transition-colors',
+                  editingUser.banned
+                    ? 'border-green-500/20 bg-green-500/10 text-green-500 hover:bg-green-500 hover:text-white'
+                    : 'border-red-500/20 bg-red-500/10 text-red-500 hover:bg-red-500 hover:text-white',
+                )}
+              >
+                <Ban className="h-4 w-4" />
+                {editingUser.banned ? '恢复账号' : '禁用账号'}
+              </button>
+            </div>
+          </div>
+        ) : null}
+      </AdminDialog>
     </motion.div>
   );
 }

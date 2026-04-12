@@ -1,6 +1,7 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { AlertTriangle, CheckCircle2, Copy, FileBox, RefreshCw, Search, ShieldAlert, XCircle } from 'lucide-react';
 import { motion } from 'motion/react';
+import { AdminSelect } from '@/src/components/admin/AdminSelect';
 import { cn } from '@/src/lib/utils';
 import { formatBytes, formatDateTime } from '@/src/lib/format';
 import {
@@ -114,6 +115,7 @@ export default function AdminFileBlobs() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState('');
+  const [notice, setNotice] = useState('');
   const [filters, setFilters] = useState(DEFAULT_FILTERS);
   const [page, setPage] = useState<{
     items: AdminFileBlobResponse[];
@@ -166,8 +168,11 @@ export default function AdminFileBlobs() {
 
     try {
       await navigator.clipboard.writeText(value);
+      setNotice('对象键已复制');
+      setError('');
     } catch {
-      window.alert('复制失败，请手动复制。');
+      setError('复制失败，请手动复制。');
+      setNotice('');
     }
   }
 
@@ -213,6 +218,12 @@ export default function AdminFileBlobs() {
           </button>
         </div>
       </div>
+
+      {notice ? (
+        <div className="mb-8 rounded-lg border border-blue-500/20 bg-blue-500/10 px-6 py-4 text-xs font-bold uppercase tracking-widest text-blue-600 dark:text-blue-300">
+          {notice}
+        </div>
+      ) : null}
 
       <motion.section variants={container} initial="hidden" animate="show" className="mb-10 grid grid-cols-1 gap-6 md:grid-cols-2 xl:grid-cols-4">
         <motion.div variants={itemVariants}>
@@ -285,7 +296,7 @@ export default function AdminFileBlobs() {
             />
           </label>
           <label className="group relative block">
-            <select
+            <AdminSelect
               value={filters.entityType}
               onChange={(event) =>
                 setFilters((current) => ({
@@ -293,7 +304,7 @@ export default function AdminFileBlobs() {
                   entityType: event.target.value as AdminFileBlobEntityType | '',
                 }))
               }
-              className="w-full rounded-lg border border-white/10 bg-white/10 px-5 py-4 outline-none transition-all font-black text-[11px] uppercase tracking-widest focus:border-blue-500/50 focus:ring-4 focus:ring-blue-500/10"
+              className="w-full font-black text-[11px] uppercase tracking-widest"
             >
               <option value="">全部实体类型</option>
               {Object.entries(ENTITY_TYPE_LABELS).map(([value, label]) => (
@@ -301,7 +312,7 @@ export default function AdminFileBlobs() {
                   {label}
                 </option>
               ))}
-            </select>
+            </AdminSelect>
           </label>
         </div>
 

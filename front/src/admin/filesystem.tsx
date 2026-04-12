@@ -69,10 +69,12 @@ function sectionTitle(title: string, subtitle: string) {
 export default function AdminFilesystem() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [notice, setNotice] = useState('');
   const [filesystem, setFilesystem] = useState<AdminFilesystemResponse | null>(null);
 
   async function loadFilesystem() {
     setError('');
+    setNotice('');
     try {
       setFilesystem(await getAdminFilesystem());
     } catch (err) {
@@ -92,8 +94,11 @@ export default function AdminFilesystem() {
     }
     try {
       await navigator.clipboard.writeText(value);
+      setNotice('标识已复制');
+      setError('');
     } catch {
-      window.alert('复制失败，请手动复制。');
+      setError('复制失败，请手动复制。');
+      setNotice('');
     }
   }
 
@@ -165,6 +170,7 @@ export default function AdminFilesystem() {
       </div>
 
       {error ? <div className="mb-8 rounded-lg border border-red-500/20 bg-red-500/10 px-6 py-4 text-xs font-bold uppercase tracking-widest text-red-600 dark:text-red-400">{error}</div> : null}
+      {notice ? <div className="mb-8 rounded-lg border border-blue-500/20 bg-blue-500/10 px-6 py-4 text-xs font-bold uppercase tracking-widest text-blue-600 dark:text-blue-300">{notice}</div> : null}
 
       {loading && !filesystem ? (
         <div className="glass-panel-no-hover rounded-lg px-4 py-16 text-center text-[10px] font-black uppercase tracking-widest opacity-40">正在读取文件系统快照...</div>

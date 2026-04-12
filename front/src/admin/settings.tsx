@@ -3,6 +3,8 @@ import { useForm } from 'react-hook-form';
 import { Copy, Database, RefreshCw, RotateCcw, Save, Server, Settings, Shield, Clock3, Layers3 } from 'lucide-react';
 import { motion } from 'motion/react';
 import { cn } from '@/src/lib/utils';
+import { AdminAlertDialog } from '@/src/components/admin/AdminAlertDialog';
+import { AdminInput } from '@/src/components/admin/AdminInput';
 import {
   getAdminSettings,
   rotateAdminRegistrationInviteCode,
@@ -139,6 +141,7 @@ export default function AdminSettingsPage() {
   const [refreshing, setRefreshing] = useState(false);
   const [savingInviteCode, setSavingInviteCode] = useState(false);
   const [rotatingInviteCode, setRotatingInviteCode] = useState(false);
+  const [rotateInviteDialogOpen, setRotateInviteDialogOpen] = useState(false);
   const [savingTransferLimit, setSavingTransferLimit] = useState(false);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
@@ -208,10 +211,6 @@ export default function AdminSettingsPage() {
   }
 
   async function handleRotateInviteCode() {
-    if (!window.confirm('确定要轮换邀请码吗？旧邀请码会立即失效。')) {
-      return;
-    }
-
     setRotatingInviteCode(true);
     setError('');
     setNotice('');
@@ -224,6 +223,11 @@ export default function AdminSettingsPage() {
     } finally {
       setRotatingInviteCode(false);
     }
+  }
+
+  async function handleConfirmRotateInviteCode() {
+    setRotateInviteDialogOpen(false);
+    await handleRotateInviteCode();
   }
 
   async function handleSaveTransferLimit(values: OfflineTransferLimitFormValues) {
@@ -384,7 +388,7 @@ export default function AdminSettingsPage() {
                       <span className="mb-2 block text-[9px] font-black uppercase tracking-[0.25em] opacity-30">
                         编辑邀请码
                       </span>
-                      <input
+                      <AdminInput
                         {...inviteCodeForm.register('inviteCode', {
                           required: '邀请码不能为空',
                           maxLength: {
@@ -396,7 +400,6 @@ export default function AdminSettingsPage() {
                         maxLength={64}
                         placeholder="输入新的邀请码"
                         aria-invalid={inviteCodeForm.formState.errors.inviteCode ? 'true' : 'false'}
-                        className="w-full rounded-lg border border-white/10 bg-white/10 px-4 py-4 font-mono text-[12px] font-black tracking-[0.25em] outline-none transition-all placeholder:opacity-20 focus:border-blue-500/50 focus:ring-4 focus:ring-blue-500/10"
                       />
                       {inviteCodeForm.formState.errors.inviteCode ? (
                         <div className="mt-2 text-[10px] font-bold uppercase tracking-[0.15em] text-red-500 dark:text-red-400">
@@ -415,7 +418,7 @@ export default function AdminSettingsPage() {
                       </button>
                       <button
                         type="button"
-                        onClick={handleRotateInviteCode}
+                        onClick={() => setRotateInviteDialogOpen(true)}
                         disabled={savingInviteCode || rotatingInviteCode}
                         className="inline-flex items-center justify-center gap-2 rounded-lg border border-white/10 bg-white/5 px-5 py-4 text-[11px] font-black uppercase tracking-[0.15em] transition-all hover:bg-white/15 disabled:cursor-not-allowed disabled:opacity-60"
                       >
@@ -467,7 +470,7 @@ export default function AdminSettingsPage() {
                       <span className="mb-2 block text-[9px] font-black uppercase tracking-[0.25em] opacity-30">
                         输入新的字节数
                       </span>
-                      <input
+                      <AdminInput
                         type="number"
                         min={1}
                         step={1}
@@ -478,7 +481,6 @@ export default function AdminSettingsPage() {
                             Number.isInteger(value) && value > 0 ? true : '离线快传存储上限必须是大于 0 的整数',
                         })}
                         aria-invalid={offlineTransferLimitForm.formState.errors.offlineTransferStorageLimitBytes ? 'true' : 'false'}
-                        className="w-full rounded-lg border border-white/10 bg-white/10 px-4 py-4 font-mono text-[12px] font-black tracking-[0.2em] outline-none transition-all placeholder:opacity-20 focus:border-amber-500/50 focus:ring-4 focus:ring-amber-500/10"
                       />
                       {offlineTransferLimitForm.formState.errors.offlineTransferStorageLimitBytes ? (
                         <div className="mt-2 text-[10px] font-bold uppercase tracking-[0.15em] text-red-500 dark:text-red-400">
@@ -615,6 +617,18 @@ export default function AdminSettingsPage() {
           </section>
         </motion.div>
       ) : null}
+
+      <AdminAlertDialog
+        open={rotateInviteDialogOpen}
+        title="轮换邀请码"
+        description="旧邀请码会立即失效，新的邀请码将覆盖当前注册入口。"
+        confirmLabel="确认轮换"
+        cancelLabel="取消"
+        confirmTone="warning"
+        busy={rotatingInviteCode}
+        onConfirm={handleConfirmRotateInviteCode}
+        onCancel={() => setRotateInviteDialogOpen(false)}
+      />
     </motion.div>
   );
 }

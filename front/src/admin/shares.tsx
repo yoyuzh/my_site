@@ -8,7 +8,9 @@ import {
   type ColumnDef,
   type RowData,
 } from '@tanstack/react-table';
+import { AdminSelect } from '@/src/components/admin/AdminSelect';
 import { cn } from '@/src/lib/utils';
+import { AdminAlertDialog } from '@/src/components/admin/AdminAlertDialog';
 import { formatBytes, formatDateTime } from '@/src/lib/format';
 import { deleteAdminShare, getAdminShares, type AdminShare } from '@/src/lib/admin-shares';
 
@@ -70,9 +72,11 @@ function boolBadge(active: boolean, activeLabel: string, inactiveLabel: string, 
 export default function AdminShares() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [notice, setNotice] = useState('');
   const [filters, setFilters] = useState(DEFAULT_FILTERS);
   const [shares, setShares] = useState<AdminShare[]>([]);
   const [total, setTotal] = useState(0);
+  const [pendingDeleteShare, setPendingDeleteShare] = useState<AdminShare | null>(null);
 
   async function loadShares(nextFilters = filters) {
     setError('');
@@ -94,9 +98,28 @@ export default function AdminShares() {
   async function copyText(value: string, successMessage: string) {
     try {
       await navigator.clipboard.writeText(value);
-      window.alert(successMessage);
+      setNotice(successMessage);
+      setError('');
     } catch {
       setError('复制失败，请手动复制。');
+      setNotice('');
+    }
+  }
+
+  async function handleConfirmDeleteShare() {
+    if (!pendingDeleteShare) {
+      return;
+    }
+
+    const target = pendingDeleteShare;
+    setPendingDeleteShare(null);
+    try {
+      await deleteAdminShare(target.id);
+      setLoading(true);
+      await loadShares();
+    } catch (err) {
+      setLoading(false);
+      setError(err instanceof Error ? err.message : '删除分享失败');
     }
   }
 
@@ -240,14 +263,7 @@ export default function AdminShares() {
             </button>
             <button
               type="button"
-              onClick={async () => {
-                if (!window.confirm(`确认删除分享 ${share.shareName || share.fileName} 吗？`)) {
-                  return;
-                }
-                await deleteAdminShare(share.id);
-                setLoading(true);
-                await loadShares();
-              }}
+              onClick={() => setPendingDeleteShare(share)}
               className="rounded-lg border border-white/10 bg-white/5 p-2.5 text-red-500 transition-all hover:bg-red-500 hover:text-white"
               title="删除分享"
             >
@@ -331,26 +347,26 @@ export default function AdminShares() {
             />
           </label>
           <label className="relative block group">
-            <select
+            <AdminSelect
               value={filters.passwordProtected}
               onChange={(event) => setFilters((current) => ({ ...current, passwordProtected: event.target.value as 'true' | 'false' | '' }))}
-              className="w-full rounded-lg border border-white/10 bg-white/10 px-5 py-4 outline-none transition-all font-black text-[11px] uppercase tracking-widest focus:border-blue-500/50 focus:ring-4 focus:ring-blue-500/10"
+              className="w-full font-black text-[11px] uppercase tracking-widest"
             >
               <option value="">密码保护</option>
               <option value="true">需要密码</option>
               <option value="false">无需密码</option>
-            </select>
+            </AdminSelect>
           </label>
           <label className="relative block group">
-            <select
+            <AdminSelect
               value={filters.expired}
               onChange={(event) => setFilters((current) => ({ ...current, expired: event.target.value as 'true' | 'false' | '' }))}
-              className="w-full rounded-lg border border-white/10 bg-white/10 px-5 py-4 outline-none transition-all font-black text-[11px] uppercase tracking-widest focus:border-blue-500/50 focus:ring-4 focus:ring-blue-500/10"
+              className="w-full font-black text-[11px] uppercase tracking-widest"
             >
               <option value="">过期状态</option>
               <option value="true">已过期</option>
               <option value="false">未过期</option>
-            </select>
+            </AdminSelect>
           </label>
         </div>
 
@@ -391,6 +407,12 @@ export default function AdminShares() {
       {error ? (
         <div className="mb-8 rounded-lg border border-red-500/20 bg-red-500/10 px-6 py-4 text-xs font-bold uppercase tracking-widest text-red-600 dark:text-red-400">
           {error}
+        </div>
+      ) : null}
+
+      {notice ? (
+        <div className="mb-8 rounded-lg border border-blue-500/20 bg-blue-500/10 px-6 py-4 text-xs font-bold uppercase tracking-widest text-blue-600 dark:text-blue-300">
+          {notice}
         </div>
       ) : null}
 
@@ -458,6 +480,22 @@ export default function AdminShares() {
           </div>
         )}
       </div>
+
+      <AdminAlertDialog
+        open={pendingDeleteShare !== null}
+        title="删除分享"
+        description={
+          pendingDeleteShare
+            ? `确认删除分享 ${pendingDeleteShare.shareName || pendingDeleteShare.fileName} 吗？删除后该分享将立即失效。`
+            : ''
+        }
+        confirmLabel="确认删除"
+        cancelLabel="取消"
+        confirmTone="danger"
+        busy={loading && pendingDeleteShare !== null}
+        onConfirm={handleConfirmDeleteShare}
+        onCancel={() => setPendingDeleteShare(null)}
+      />
     </motion.div>
   );
 }

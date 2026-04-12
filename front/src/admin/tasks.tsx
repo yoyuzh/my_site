@@ -12,6 +12,7 @@ import {
   User,
 } from 'lucide-react';
 import { motion } from 'motion/react';
+import { AdminSelect } from '@/src/components/admin/AdminSelect';
 import { cn } from '@/src/lib/utils';
 import { formatDateTime } from '@/src/lib/format';
 import { getAdminTask, getAdminTasks, type AdminTask, type AdminTaskQuery } from '@/src/lib/admin-tasks';
@@ -345,21 +346,21 @@ export default function AdminTasks() {
         <div className="flex flex-wrap items-center gap-3">
           <label className="rounded-lg glass-panel px-4 py-3 text-[11px] font-black uppercase tracking-widest">
             <span className="mr-3 opacity-40">每页</span>
-            <select
+            <AdminSelect
               value={pageSize}
               onChange={(event) => {
                 const nextSize = Number(event.target.value);
                 setPageSize(nextSize);
                 void loadTasks(0, filters, nextSize);
               }}
-              className="bg-transparent outline-none"
+              className="w-auto min-w-[5rem] bg-transparent border-0 rounded-none p-0 pr-8 shadow-none focus:ring-0 focus:border-transparent font-black text-[11px] uppercase tracking-widest"
             >
               {PAGE_SIZE_OPTIONS.map((option) => (
                 <option key={option} value={option}>
                   {option}
                 </option>
               ))}
-            </select>
+            </AdminSelect>
           </label>
           <button
             type="button"

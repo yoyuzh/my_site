@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { ArrowRightLeft, Edit2, Play, Plus, RefreshCw, Square } from 'lucide-react';
-import { motion, AnimatePresence } from 'motion/react';
+import { motion } from 'motion/react';
 import {
   flexRender,
   getCoreRowModel,
@@ -18,6 +18,9 @@ import {
   type StoragePolicyCapabilities,
   type StoragePolicyUpsertPayload,
 } from '@/src/lib/admin-storage-policies';
+import { AdminDialog } from '@/src/components/admin/AdminDialog';
+import { AdminInput } from '@/src/components/admin/AdminInput';
+import { AdminSelect } from '@/src/components/admin/AdminSelect';
 import { formatBytes } from '@/src/lib/format';
 import { cn } from '@/src/lib/utils';
 
@@ -421,217 +424,215 @@ export default function AdminStoragePoliciesList() {
         )}
       </div>
 
-      {showForm ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-md px-4 py-8 overflow-y-auto mt-0">
-          <motion.div 
-            initial={{ scale: 0.95, opacity: 0 }}
-            animate={{ scale: 1, opacity: 1 }}
-            className="w-full max-w-2xl glass-panel-no-hover rounded-lg p-12 shadow-2xl border-white/20"
-          >
-            <h2 className="mb-10 text-3xl font-black tracking-tighter uppercase">{editingPolicy ? '编辑策略' : '新建策略'}</h2>
-            
-            <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
-              <div className="space-y-2">
-                <label className="text-[10px] font-black uppercase tracking-[0.2em] opacity-40 ml-1">策略名称</label>
-                <input 
-                  value={form.name} 
-                  onChange={(event) => setForm((current) => ({ ...current, name: event.target.value }))} 
-                  className="w-full rounded-lg glass-panel bg-white/10 p-4 outline-none border-white/10 focus:border-blue-500/50 transition-all font-bold text-sm" 
-                />
-              </div>
-              <div className="space-y-2">
-                <label className="text-[10px] font-black uppercase tracking-[0.2em] opacity-40 ml-1">驱动协议</label>
-                <select 
-                  value={form.type} 
-                  onChange={(event) => setForm((current) => ({ ...current, type: event.target.value as StoragePolicyUpsertPayload['type'] }))} 
-                  className="w-full rounded-lg glass-panel bg-white/10 p-4 outline-none border-white/10 focus:border-blue-500/50 transition-all font-bold text-sm"
-                >
-                  <option value="LOCAL">本地文件系统</option>
-                  <option value="S3_COMPATIBLE">S3 兼容接口</option>
-                </select>
-              </div>
-              <div className="space-y-2 md:col-span-2">
-                <label className="text-[10px] font-black uppercase tracking-[0.2em] opacity-40 ml-1">端点地址</label>
-                <input 
-                  value={form.endpoint || ''} 
-                  onChange={(event) => setForm((current) => ({ ...current, endpoint: event.target.value }))} 
-                  className="w-full rounded-lg glass-panel bg-white/10 p-4 outline-none border-white/10 focus:border-blue-500/50 transition-all font-bold text-sm" 
-                />
-              </div>
-              <div className="space-y-2">
-                <label className="text-[10px] font-black uppercase tracking-[0.2em] opacity-40 ml-1">桶名称</label>
-                <input 
-                  value={form.bucketName || ''} 
-                  onChange={(event) => setForm((current) => ({ ...current, bucketName: event.target.value }))} 
-                  className="w-full rounded-lg glass-panel bg-white/10 p-4 outline-none border-white/10 focus:border-blue-500/50 transition-all font-bold text-sm" 
-                />
-              </div>
-              <div className="space-y-2">
-                <label className="text-[10px] font-black uppercase tracking-[0.2em] opacity-40 ml-1">对象大小上限（字节）</label>
-                <input
-                  type="number"
-                  value={form.maxSizeBytes}
-                  onChange={(event) => setForm((current) => ({ ...current, maxSizeBytes: Number(event.target.value), capabilities: { ...current.capabilities, maxObjectSize: Number(event.target.value) } }))}
-                  className="w-full rounded-lg glass-panel bg-white/10 p-4 outline-none border-white/10 focus:border-blue-500/50 transition-all font-bold text-sm"
-                />
-              </div>
-            </div>
-
-            <div className="mt-10 grid grid-cols-2 gap-4 text-[9px] font-black uppercase tracking-widest md:grid-cols-4">
-              {(
-                [
-                  ['privateBucket', '私有桶'],
-                  ['enabled', '启用'],
-                  ['capabilities.directUpload', '直传'],
-                  ['capabilities.multipartUpload', '分片上传'],
-                  ['capabilities.signedDownloadUrl', '签名下载'],
-                  ['capabilities.serverProxyDownload', '代理下载'],
-                  ['capabilities.requiresCors', '需要 CORS'],
-                  ['capabilities.supportsInternalEndpoint', '内网端点'],
-                ] as const
-              ).map(([key, label]) => {
-                const checked =
-                  key === 'privateBucket'
-                    ? form.privateBucket
-                    : key === 'enabled'
-                      ? form.enabled
-                      : form.capabilities[key.replace('capabilities.', '') as keyof StoragePolicyCapabilities];
-                const checkedBoolean = Boolean(checked);
-                return (
-                  <label key={key} className={cn(
-                    "flex items-center gap-3 p-3 rounded-lg hover:bg-white/10 transition-all cursor-pointer border border-transparent group",
-                    checkedBoolean ? "bg-white/5 border-white/10" : "opacity-30"
-                  )}>
-                    <input
-                      type="checkbox"
-                      checked={checkedBoolean}
-                      onChange={(event) => {
-                        const nextValue = event.target.checked;
-                        if (key === 'privateBucket') {
-                          setForm((current) => ({ ...current, privateBucket: nextValue }));
-                          return;
-                        }
-                        if (key === 'enabled') {
-                          setForm((current) => ({ ...current, enabled: nextValue }));
-                          return;
-                        }
-                        const capabilityKey = key.replace('capabilities.', '') as keyof StoragePolicyCapabilities;
-                        setForm((current) => ({
-                          ...current,
-                          capabilities: {
-                            ...current.capabilities,
-                            [capabilityKey]: nextValue,
-                          },
-                        }));
-                      }}
-                      className="w-4 h-4 rounded-sm border-white/20 bg-white/10 text-blue-600 focus:ring-0"
-                    />
-                    <span className={cn("transition-colors", checked ? "text-blue-500" : "")}>
-                      {label}
-                    </span>
-                  </label>
-                );
-              })}
-            </div>
-
-            <div className="mt-12 flex justify-end gap-3">
-              <button
-                type="button"
-                onClick={() => {
-                  setShowForm(false);
-                  setEditingPolicy(null);
-                }}
-                className="px-8 py-4 rounded-lg glass-panel hover:bg-white/40 text-[11px] font-black uppercase tracking-widest transition-all"
-              >
-                取消
-              </button>
-              <button 
-                type="button" 
-                onClick={() => void savePolicy()} 
-                className="px-10 py-4 rounded-lg bg-blue-600 text-white text-[11px] font-black uppercase tracking-widest shadow-xl hover:bg-blue-500 hover:scale-[1.02] active:scale-[0.98] transition-all"
-              >
-                保存
-              </button>
-            </div>
-          </motion.div>
-        </div>
-      ) : null}
-
-      <AnimatePresence>
-        {migratingPolicy ? (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-md px-4 py-8 overflow-y-auto mt-0">
-            <motion.div
-              initial={{ scale: 0.96, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              exit={{ scale: 0.96, opacity: 0 }}
-              className="w-full max-w-2xl glass-panel-no-hover rounded-lg p-10 shadow-2xl border-white/20"
+      <AdminDialog
+        open={showForm}
+        title={editingPolicy ? '编辑策略' : '新建策略'}
+        onOpenChange={(nextOpen) => {
+          if (!nextOpen) {
+            setShowForm(false);
+            setEditingPolicy(null);
+          }
+        }}
+        footer={
+          <>
+            <button
+              type="button"
+              onClick={() => {
+                setShowForm(false);
+                setEditingPolicy(null);
+              }}
+              className="px-8 py-4 rounded-lg glass-panel hover:bg-white/40 text-[11px] font-black uppercase tracking-widest transition-all"
             >
-              <h2 className="text-3xl font-black tracking-tighter uppercase">发起迁移</h2>
-              <p className="mt-3 text-[10px] font-black uppercase tracking-[0.2em] opacity-40">仅创建迁移任务，不会立即执行对象复制</p>
+              取消
+            </button>
+            <button
+              type="button"
+              onClick={() => void savePolicy()}
+              className="px-10 py-4 rounded-lg bg-blue-600 text-white text-[11px] font-black uppercase tracking-widest shadow-xl hover:bg-blue-500 hover:scale-[1.02] active:scale-[0.98] transition-all"
+            >
+              保存
+            </button>
+          </>
+        }
+      >
+        <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
+          <div className="space-y-2">
+            <label className="text-[10px] font-black uppercase tracking-[0.2em] opacity-40 ml-1">策略名称</label>
+            <AdminInput
+              value={form.name}
+              onChange={(event) => setForm((current) => ({ ...current, name: event.target.value }))}
+            />
+          </div>
+          <div className="space-y-2">
+            <label className="text-[10px] font-black uppercase tracking-[0.2em] opacity-40 ml-1">驱动协议</label>
+            <AdminSelect
+              value={form.type}
+              onChange={(event) => setForm((current) => ({ ...current, type: event.target.value as StoragePolicyUpsertPayload['type'] }))}
+            >
+              <option value="LOCAL">本地文件系统</option>
+              <option value="S3_COMPATIBLE">S3 兼容接口</option>
+            </AdminSelect>
+          </div>
+          <div className="space-y-2 md:col-span-2">
+            <label className="text-[10px] font-black uppercase tracking-[0.2em] opacity-40 ml-1">端点地址</label>
+            <AdminInput
+              value={form.endpoint || ''}
+              onChange={(event) => setForm((current) => ({ ...current, endpoint: event.target.value }))}
+            />
+          </div>
+          <div className="space-y-2">
+            <label className="text-[10px] font-black uppercase tracking-[0.2em] opacity-40 ml-1">桶名称</label>
+            <AdminInput
+              value={form.bucketName || ''}
+              onChange={(event) => setForm((current) => ({ ...current, bucketName: event.target.value }))}
+            />
+          </div>
+          <div className="space-y-2">
+            <label className="text-[10px] font-black uppercase tracking-[0.2em] opacity-40 ml-1">对象大小上限（字节）</label>
+            <AdminInput
+              type="number"
+              value={form.maxSizeBytes}
+              onChange={(event) =>
+                setForm((current) => ({
+                  ...current,
+                  maxSizeBytes: Number(event.target.value),
+                  capabilities: { ...current.capabilities, maxObjectSize: Number(event.target.value) },
+                }))
+              }
+            />
+          </div>
+        </div>
 
-              <div className="mt-8 grid gap-4 rounded-lg border border-white/10 bg-white/5 p-5">
-                <div>
-                  <div className="text-[10px] font-black uppercase tracking-[0.2em] opacity-40">源策略</div>
-                  <div className="mt-2 text-sm font-black tracking-tight">{migratingPolicy.name}</div>
-                  <div className="mt-1 text-[10px] font-bold opacity-40">PID::{migratingPolicy.id}</div>
-                </div>
-                <div className="h-px bg-white/10" />
-                <div className="grid gap-4 md:grid-cols-2">
-                  <div className="space-y-2">
-                    <label className="text-[10px] font-black uppercase tracking-[0.2em] opacity-40 ml-1">选择已有目标策略</label>
-                    <select
-                      value={migrationTargetPolicyId}
-                      onChange={(event) => setMigrationTargetPolicyId(event.target.value)}
-                      className="w-full rounded-lg glass-panel bg-white/10 p-4 outline-none border-white/10 focus:border-blue-500/50 transition-all font-bold text-sm"
-                    >
-                      <option value="">请选择目标策略</option>
-                      {policies
-                        .filter((item) => item.id !== migratingPolicy.id)
-                        .map((policy) => (
-                          <option key={policy.id} value={policy.id}>
-                            {policy.name} / PID::{policy.id} / {policy.type}
-                          </option>
-                        ))}
-                    </select>
-                  </div>
-                  <div className="space-y-2">
-                    <label className="text-[10px] font-black uppercase tracking-[0.2em] opacity-40 ml-1">或手动输入目标策略 ID</label>
-                    <input
-                      type="number"
-                      min="1"
-                      value={migrationTargetPolicyId}
-                      onChange={(event) => setMigrationTargetPolicyId(event.target.value)}
-                      placeholder="例如 12"
-                      className="w-full rounded-lg glass-panel bg-white/10 p-4 outline-none border-white/10 focus:border-blue-500/50 transition-all font-bold text-sm"
-                    />
-                  </div>
-                </div>
-                <p className="text-[10px] font-bold leading-5 opacity-50">
-                  如果目标策略不在下拉框里，可以直接输入它的策略 ID。当前页面只负责创建迁移任务，不负责迁移进度展示。
-                </p>
-              </div>
+        <div className="mt-10 grid grid-cols-2 gap-4 text-[9px] font-black uppercase tracking-widest md:grid-cols-4">
+          {(
+            [
+              ['privateBucket', '私有桶'],
+              ['enabled', '启用'],
+              ['capabilities.directUpload', '直传'],
+              ['capabilities.multipartUpload', '分片上传'],
+              ['capabilities.signedDownloadUrl', '签名下载'],
+              ['capabilities.serverProxyDownload', '代理下载'],
+              ['capabilities.requiresCors', '需要 CORS'],
+              ['capabilities.supportsInternalEndpoint', '内网端点'],
+            ] as const
+          ).map(([key, label]) => {
+            const checked =
+              key === 'privateBucket'
+                ? form.privateBucket
+                : key === 'enabled'
+                  ? form.enabled
+                  : form.capabilities[key.replace('capabilities.', '') as keyof StoragePolicyCapabilities];
+            const checkedBoolean = Boolean(checked);
+            return (
+              <label
+                key={key}
+                className={cn(
+                  'flex items-center gap-3 p-3 rounded-lg hover:bg-white/10 transition-all cursor-pointer border border-transparent group',
+                  checkedBoolean ? 'bg-white/5 border-white/10' : 'opacity-30'
+                )}
+              >
+                <input
+                  type="checkbox"
+                  checked={checkedBoolean}
+                  onChange={(event) => {
+                    const nextValue = event.target.checked;
+                    if (key === 'privateBucket') {
+                      setForm((current) => ({ ...current, privateBucket: nextValue }));
+                      return;
+                    }
+                    if (key === 'enabled') {
+                      setForm((current) => ({ ...current, enabled: nextValue }));
+                      return;
+                    }
+                    const capabilityKey = key.replace('capabilities.', '') as keyof StoragePolicyCapabilities;
+                    setForm((current) => ({
+                      ...current,
+                      capabilities: {
+                        ...current.capabilities,
+                        [capabilityKey]: nextValue,
+                      },
+                    }));
+                  }}
+                  className="w-4 h-4 rounded-sm border-white/20 bg-white/10 text-blue-600 focus:ring-0"
+                />
+                <span className={cn('transition-colors', checked ? 'text-blue-500' : '')}>{label}</span>
+              </label>
+            );
+          })}
+        </div>
+      </AdminDialog>
 
-              <div className="mt-10 flex justify-end gap-3">
-                <button
-                  type="button"
-                  onClick={closeMigrationDialog}
-                  className="px-8 py-4 rounded-lg glass-panel hover:bg-white/40 text-[11px] font-black uppercase tracking-widest transition-all"
+      <AdminDialog
+        open={Boolean(migratingPolicy)}
+        title="发起迁移"
+        description="仅创建迁移任务，不会立即执行对象复制"
+        onOpenChange={(nextOpen) => {
+          if (!nextOpen) {
+            closeMigrationDialog();
+          }
+        }}
+        footer={
+          <>
+            <button
+              type="button"
+              onClick={closeMigrationDialog}
+              className="px-8 py-4 rounded-lg glass-panel hover:bg-white/40 text-[11px] font-black uppercase tracking-widest transition-all"
+            >
+              取消
+            </button>
+            <button
+              type="button"
+              onClick={() => void submitMigration()}
+              disabled={migrationSubmitting}
+              className="px-10 py-4 rounded-lg bg-blue-600 text-white text-[11px] font-black uppercase tracking-widest shadow-xl hover:bg-blue-500 hover:scale-[1.02] active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60 transition-all"
+            >
+              {migrationSubmitting ? '创建中...' : '创建迁移任务'}
+            </button>
+          </>
+        }
+      >
+        {migratingPolicy ? (
+          <div className="grid gap-4 rounded-lg border border-white/10 bg-white/5 p-5">
+            <div>
+              <div className="text-[10px] font-black uppercase tracking-[0.2em] opacity-40">源策略</div>
+              <div className="mt-2 text-sm font-black tracking-tight">{migratingPolicy.name}</div>
+              <div className="mt-1 text-[10px] font-bold opacity-40">PID::{migratingPolicy.id}</div>
+            </div>
+            <div className="h-px bg-white/10" />
+            <div className="grid gap-4 md:grid-cols-2">
+              <div className="space-y-2">
+                <label className="text-[10px] font-black uppercase tracking-[0.2em] opacity-40 ml-1">选择已有目标策略</label>
+                <AdminSelect
+                  value={migrationTargetPolicyId}
+                  onChange={(event) => setMigrationTargetPolicyId(event.target.value)}
                 >
-                  取消
-                </button>
-                <button
-                  type="button"
-                  onClick={() => void submitMigration()}
-                  disabled={migrationSubmitting}
-                  className="px-10 py-4 rounded-lg bg-blue-600 text-white text-[11px] font-black uppercase tracking-widest shadow-xl hover:bg-blue-500 hover:scale-[1.02] active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60 transition-all"
-                >
-                  {migrationSubmitting ? '创建中...' : '创建迁移任务'}
-                </button>
+                  <option value="">请选择目标策略</option>
+                  {policies
+                    .filter((item) => item.id !== migratingPolicy.id)
+                    .map((policy) => (
+                      <option key={policy.id} value={policy.id}>
+                        {policy.name} / PID::{policy.id} / {policy.type}
+                      </option>
+                    ))}
+                </AdminSelect>
               </div>
-            </motion.div>
+              <div className="space-y-2">
+                <label className="text-[10px] font-black uppercase tracking-[0.2em] opacity-40 ml-1">或手动输入目标策略 ID</label>
+                <AdminInput
+                  type="number"
+                  min="1"
+                  value={migrationTargetPolicyId}
+                  onChange={(event) => setMigrationTargetPolicyId(event.target.value)}
+                  placeholder="例如 12"
+                />
+              </div>
+            </div>
+            <p className="text-[10px] font-bold leading-5 opacity-50">
+              如果目标策略不在下拉框里，可以直接输入它的策略 ID。当前页面只负责创建迁移任务，不负责迁移进度展示。
+            </p>
           </div>
         ) : null}
-      </AnimatePresence>
+      </AdminDialog>
     </motion.div>
   );
 }

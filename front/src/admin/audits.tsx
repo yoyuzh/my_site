@@ -99,6 +99,7 @@ export default function AdminAuditsPage() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState('');
+  const [notice, setNotice] = useState('');
   const [filters, setFilters] = useState(DEFAULT_FILTERS);
   const [page, setPage] = useState<{
     items: AdminAuditLog[];
@@ -134,8 +135,11 @@ export default function AdminAuditsPage() {
   async function copyText(value: string) {
     try {
       await navigator.clipboard.writeText(value);
+      setNotice('审计详情已复制');
+      setError('');
     } catch {
-      window.alert('复制失败，请手动复制。');
+      setError('复制失败，请手动复制。');
+      setNotice('');
     }
   }
 
@@ -178,6 +182,12 @@ export default function AdminAuditsPage() {
           刷新列表
         </button>
       </div>
+
+      {notice ? (
+        <div className="mb-8 rounded-lg border border-blue-500/20 bg-blue-500/10 px-6 py-4 text-xs font-bold uppercase tracking-widest text-blue-600 dark:text-blue-300">
+          {notice}
+        </div>
+      ) : null}
 
       <form
         onSubmit={(event) => {

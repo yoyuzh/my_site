@@ -6,13 +6,16 @@
   - 项目主线已经从旧教务模块切换为“网盘 + 快传 + 管理台”结构
   - 快传模块已整合进主站，支持取件码、分享链接、P2P 传输、部分文件接收、ZIP 下载、存入网盘
   - 网盘已支持上传、下载、重命名、删除、移动、复制、公开分享、接收快传后存入
+  - 2026-04-12 已将管理台治理页里的原生 `<select>` 迁移到共享 `AdminSelect`，当前覆盖 `shares`、`fileblobs`、`tasks` 三页，筛选行为和后端调用保持不变
   - 注册改成邀请码机制，邀请码单次使用后自动刷新，并在管理台展示与复制
   - 同账号现已允许桌面端与移动端同时在线，但同一端类型仍只保留一个有效会话；同端再次登录会在下一次受保护请求时挤掉旧会话
   - 后端已补生产 CORS，默认放行 `https://yoyuzh.xyz` 与 `https://www.yoyuzh.xyz`
   - 线上文件存储与前端静态托管已迁到多吉云对象存储，后端通过临时密钥 API 获取短期 S3 会话访问底层 COS 兼容桶
   - 管理台 dashboard 已显示总存储量、下载流量、今日请求次数、快传使用量、离线快传占用和请求折线图，并支持调整离线快传总上限
   - 管理台用户列表已显示每个用户的已用空间 / 配额，表格也已收紧
-  - 游戏页已接入 `/race/`、`/t_race/`，带站内播放器、退出按钮和友情链接
+- 2026-04-12 已将 `用户策略` 的右侧编辑壳迁移到共享 `AdminDialog` side-panel 模式，保留原有表格、表单字段、快捷操作与后端调用
+- 2026-04-12 已新增共享 `AdminInput` 基础输入壳，当前只覆盖 admin 目录下的文本 / 数字输入视觉和 `forwardRef` 接口，不引入额外依赖，也不改 admin 页面
+- 游戏页已接入 `/race/`、`/t_race/`，带站内播放器、退出按钮和友情链接
   - 2026-04-02 已统一密码策略为“至少 8 位且包含大写字母”，并补测试确认管理员改密后旧密码失效、新密码生效
   - 2026-04-02 已放开未登录直达快传：登录页可直接进入快传，匿名用户可发在线快传；2026-04-03 又放开了离线接收，因此匿名用户现在可发在线快传、接收在线快传、接收离线快传，但发离线和把离线文件存入网盘仍要求登录
   - 2026-04-02 快传发送页已新增“我的离线快传”区域：登录用户可查看自己未过期的离线快传记录，并点开弹层重新查看取件码、二维码和分享链接
@@ -1043,3 +1046,121 @@
 - 本批前端验证通过：
 - `cd front && npm run lint`
 - `cd front && npm run build`
+
+## 2026-04-12 Frontend OSS Refactor Batch 36
+
+- 前端 OSS 替换计划的 Batch 4 已完成，管理台已移除原生 `window.alert` / `window.confirm`。
+- `front/package.json` / `front/package-lock.json` 已新增 `@radix-ui/react-alert-dialog` 依赖。
+- 新增 `front/src/components/admin/AdminAlertDialog.tsx`，当前管理台确认动作统一走 Radix Alert Dialog，并保持现有玻璃态视觉风格。
+- `front/src/admin/settings.tsx` 已将“轮换邀请码”改为站内确认对话框，不再使用系统确认框。
+- `front/src/admin/shares.tsx` 已将“删除分享”改为站内确认对话框，同时把复制 Token 成功/失败改为页内 notice / error。
+- `front/src/admin/files-list.tsx` 已将“彻底删除文件”改为站内确认对话框，不再使用系统确认框。
+- `front/src/admin/filesystem.tsx`、`front/src/admin/fileblobs.tsx`、`front/src/admin/audits.tsx` 的复制失败提示已改为页内反馈，不再使用系统弹窗。
+- 当前 `front/src/admin` 下已不存在原生 `window.alert` 或 `window.confirm`。
+- OSS 替换执行计划 `docs/superpowers/plans/2026-04-12-admin-oss-refactor.md` 已继续打钩更新。
+- 本批前端验证通过：
+- `cd front && npm run lint`
+- `cd front && npm run build`
+
+## 2026-04-12 Frontend OSS Refactor Batch 37
+
+- 前端 OSS 替换计划的 Batch 5 已推进到 `front/src/admin/storage-policies-list.tsx`。
+- 该页原先手写的两个 overlay 已切到共享 `AdminDialog`：
+- 新建 / 编辑策略弹层
+- 发起迁移弹层
+- 迁移说明与页面级迁移通知 banner 保持原样。
+- 后端调用、字段校验、保存逻辑和迁移任务创建逻辑均未改动。
+- 共享对话框文件 `front/src/components/admin/AdminDialog.tsx` 已补齐 `mode` / `layout` 兼容，避免影响并发改动中的用户策略页面。
+- 本批前端验证通过：
+- `cd front && npm run lint`
+- `cd front && npm run build`
+
+## 2026-04-12 Frontend OSS Refactor Batch 38
+
+- 前端 OSS 替换计划的 Batch 5 已完成，管理台的手写 modal / side-sheet 壳已切到 Radix Dialog。
+- `front/package.json` / `front/package-lock.json` 已新增 `@radix-ui/react-dialog` 直接依赖。
+- 新增 `front/src/components/admin/AdminDialog.tsx`，当前统一提供：
+- 居中 modal 布局
+- 右侧 side-panel 布局
+- `layout` / `mode` 兼容参数
+- 统一 header / body / footer / close / dismiss 行为
+- `front/src/admin/storage-policies-list.tsx` 已将：
+- 新建 / 编辑策略弹层
+- 发起迁移弹层
+- 全部迁移到共享 `AdminDialog`
+- `front/src/admin/users-list.tsx` 已将用户策略编辑壳从页面内手写右侧面板切换为共享 `AdminDialog` 的 `side-panel` 布局，表格、表单字段、临时密码、禁用/恢复与后端调用均保持不变。
+- OSS 替换执行计划 `docs/superpowers/plans/2026-04-12-admin-oss-refactor.md` 已继续打钩更新，Task 5 已完成。
+- 本批前端验证通过：
+- `cd front && npm run lint`
+- `cd front && npm run build`
+
+## 2026-04-12 Frontend OSS Refactor Batch 39
+
+- 前端 OSS 替换计划的 Batch 6 已推进到 `front/src/admin/storage-policies-list.tsx`。
+- 该页原先手写的两个 `<select>` 已切到共享 `AdminSelect`：
+- 新建 / 编辑策略里的驱动协议选择
+- 发起迁移里的目标策略选择
+- 由于当前仓库里还没有现成的 `AdminSelect` 文件，我补了一个本地共享包装组件到 `front/src/components/admin/AdminSelect.tsx`，用原生 select 保持行为不变。
+- 其他页面、包依赖和后端调用均未改动。
+- OSS 替换执行计划 `docs/superpowers/plans/2026-04-12-admin-oss-refactor.md` 已继续打钩更新，Task 6 的 storage-policy 子步骤已完成。
+- 本批前端验证通过：
+- `cd front && npm run lint`
+- `cd front && npm run build`
+
+## 2026-04-12 Frontend OSS Refactor Batch 40
+
+- 前端 OSS 替换计划的 Batch 6 已完成，管理台当前目标范围内的手写单选下拉已切到 Radix Select。
+- `front/package.json` / `front/package-lock.json` 已新增 `@radix-ui/react-select` 依赖。
+- 新增 `front/src/components/admin/AdminSelect.tsx`，当前是一个基于 Radix Select 的共享单选包装组件：
+- 兼容当前页面已有的 `<option>` children 调用方式
+- 兼容现有 `onChange(event)` 形状，减少页面改造面
+- 对空值选项做 sentinel 映射，允许“全部 / 未设置”这类选项继续工作
+- `front/src/admin/shares.tsx` 已将密码保护、过期状态筛选切到共享 `AdminSelect`。
+- `front/src/admin/fileblobs.tsx` 已将实体类型筛选切到共享 `AdminSelect`。
+- `front/src/admin/tasks.tsx` 已将“每页条数”选择器切到共享 `AdminSelect`，紧凑样式保持原样。
+- `front/src/admin/storage-policies-list.tsx` 已将：
+- 新建 / 编辑策略里的驱动协议选择
+- 发起迁移里的目标策略选择
+- 切到共享 `AdminSelect`。
+- 当前 `front/src/admin` 里仍保留的原生 `<select>` 仅剩 `front/src/admin/users-list.tsx` 的角色字段；它属于 `react-hook-form` 驱动表单，不在 Batch 6 范围内。
+- OSS 替换执行计划 `docs/superpowers/plans/2026-04-12-admin-oss-refactor.md` 已继续打钩更新，Task 6 已完成。
+- 本批前端验证通过：
+- `cd front && npm run lint`
+- `cd front && npm run build`
+
+## 2026-04-12 Frontend OSS Refactor Batch 41
+
+- 前端 OSS 替换计划的 Batch 7 已完成，管理台剩余的原生表单单选已清空。
+- `front/src/admin/users-list.tsx` 已将 `react-hook-form` 驱动的 `role` 字段切到共享 `AdminSelect`，通过 `Controller` 保持：
+- 字段值同步
+- 表单校验
+- 提交流程
+- 现有 `watchedRole` 展示
+- 当前 `front/src/admin` 下已不存在原生 `<select>`。
+- OSS 替换执行计划 `docs/superpowers/plans/2026-04-12-admin-oss-refactor.md` 已继续打钩更新，Task 7 已完成。
+- 本批前端验证通过：
+- `cd front && npm run lint`
+- `cd front && npm run build`
+
+## 2026-04-12 Frontend OSS Refactor Batch 42
+
+- 前端 OSS 替换计划的 Batch 8 已按当前 scope 完成，`settings.tsx` 与 `storage-policies-list.tsx` 的可编辑文本/数字输入已切到共享 `AdminInput`。
+- 新增 `front/src/components/admin/AdminInput.tsx`，作为统一的 admin 输入壳：
+- 保留原生 `<input>` 行为
+- 兼容 `react-hook-form register`
+- 兼容受控 `value/onChange`
+- 保留现有 focus、disabled、validation affordances
+- `front/src/admin/settings.tsx` 已将邀请码与离线快传上限输入切到共享 `AdminInput`，校验、提交和后端调用保持不变。
+- `front/src/admin/storage-policies-list.tsx` 已将策略名称、端点、桶、对象上限与迁移目标 ID 输入切到共享 `AdminInput`，保存与迁移逻辑保持不变。
+- 当前 batch 明确未改 `front/src/admin/users-list.tsx`，它已从本次 scope 中延期。
+- OSS 替换执行计划 `docs/superpowers/plans/2026-04-12-admin-oss-refactor.md` 已继续打钩更新，Task 8 的当前 scope 已完成。
+
+## 2026-04-12 Frontend OSS Refactor Batch 43
+
+- `front/src/admin/users-list.tsx` 的用户策略编辑面板已把可编辑的文本、数字和密码输入切到共享 `AdminInput`。
+- 现在这三个字段都保留了原有的 `react-hook-form` 注册、验证和提交行为：
+- `storageQuotaBytes`
+- `maxUploadSizeBytes`
+- `manualPassword`
+- 新增的 `front/src/components/admin/AdminInput.tsx` 仍然只是薄包装，没有引入 label、error、prefix 或其他额外抽象。
+- OSS 替换执行计划 `docs/superpowers/plans/2026-04-12-admin-oss-refactor.md` 已同步更新为当前 users-list scope。
