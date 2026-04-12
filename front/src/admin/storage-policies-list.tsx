@@ -2,6 +2,13 @@ import { useEffect, useState } from 'react';
 import { ArrowRightLeft, Edit2, Play, Plus, RefreshCw, Square } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import {
+  flexRender,
+  getCoreRowModel,
+  useReactTable,
+  type ColumnDef,
+  type RowData,
+} from '@tanstack/react-table';
+import {
   createStorageMigration,
   createStoragePolicy,
   getStoragePolicies,
@@ -13,6 +20,13 @@ import {
 } from '@/src/lib/admin-storage-policies';
 import { formatBytes } from '@/src/lib/format';
 import { cn } from '@/src/lib/utils';
+
+declare module '@tanstack/react-table' {
+  interface ColumnMeta<TData extends RowData, TValue> {
+    thClassName?: string;
+    tdClassName?: string;
+  }
+}
 
 function createDefaultCapabilities(maxObjectSize = 1024 * 1024 * 1024): StoragePolicyCapabilities {
   return {
@@ -67,6 +81,161 @@ export default function AdminStoragePoliciesList() {
   const [editingPolicy, setEditingPolicy] = useState<AdminStoragePolicy | null>(null);
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState<StoragePolicyUpsertPayload>(buildInitialForm());
+  const [migratingPolicy, setMigratingPolicy] = useState<AdminStoragePolicy | null>(null);
+  const [migrationTargetPolicyId, setMigrationTargetPolicyId] = useState('');
+  const [migrationSubmitting, setMigrationSubmitting] = useState(false);
+  const [migrationNotice, setMigrationNotice] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
+
+  const columns: ColumnDef<AdminStoragePolicy>[] = [
+    {
+      accessorKey: 'name',
+      header: '名称',
+      meta: {
+        thClassName: 'px-8 py-5 text-left',
+        tdClassName: 'px-8 py-5',
+      },
+      cell: ({ row }) => {
+        const policy = row.original;
+        return (
+          <div>
+            <div className="flex items-center gap-2 font-black text-[13px] tracking-tight">
+              {policy.name}
+              {policy.defaultPolicy ? (
+                <span className="rounded-sm bg-blue-500/20 text-blue-600 dark:text-blue-400 px-1.5 py-0.5 text-[8px] border border-blue-500/20 uppercase tracking-widest font-black">
+                  默认
+                </span>
+              ) : null}
+            </div>
+            <div className="text-[10px] font-bold opacity-30 mt-1 tracking-tighter">PID::{policy.id}</div>
+          </div>
+        );
+      },
+    },
+    {
+      accessorKey: 'type',
+      header: '后端类型',
+      meta: {
+        thClassName: 'px-8 py-5 text-left',
+        tdClassName: 'px-8 py-5',
+      },
+      cell: ({ getValue }) => (
+        <span className="font-black text-[10px] uppercase tracking-widest opacity-60 bg-white/10 px-2 py-0.5 rounded-sm">
+          {String(getValue())}
+        </span>
+      ),
+    },
+    {
+      id: 'endpoint',
+      header: '访问端点',
+      meta: {
+        thClassName: 'px-8 py-5 text-left',
+        tdClassName: 'px-8 py-5',
+      },
+      cell: ({ row }) => {
+        const policy = row.original;
+        return (
+          <div>
+            <div className="truncate max-w-[180px] font-bold opacity-60 text-[11px] tracking-tight">
+              {policy.endpoint || '-'}
+            </div>
+            <div className="text-[9px] font-black text-blue-500 uppercase tracking-tighter mt-0.5">
+              {policy.bucketName || '私有根路径'}
+            </div>
+          </div>
+        );
+      },
+    },
+    {
+      id: 'status',
+      header: '状态',
+      meta: {
+        thClassName: 'px-8 py-5 text-left',
+        tdClassName: 'px-8 py-5',
+      },
+      cell: ({ row }) => {
+        const policy = row.original;
+        return (
+          <span
+            className={cn(
+              'inline-flex items-center gap-1.5 rounded-sm px-2 py-1 text-[9px] font-black uppercase tracking-widest border',
+              policy.enabled
+                ? 'bg-green-500/10 text-green-600 dark:text-green-400 border-green-500/20'
+                : 'bg-red-500/10 text-red-600 dark:text-red-400 border-red-500/20'
+            )}
+          >
+            <span className={cn('w-1.5 h-1.5 rounded-full', policy.enabled ? 'bg-green-500 animate-pulse' : 'bg-red-500')} />
+            {policy.enabled ? '启用' : '停用'}
+          </span>
+        );
+      },
+    },
+    {
+      accessorKey: 'maxSizeBytes',
+      header: '对象上限',
+      meta: {
+        thClassName: 'px-8 py-5 text-left',
+        tdClassName: 'px-8 py-5 font-black opacity-60 text-xs tracking-tighter',
+      },
+      cell: ({ getValue }) => formatBytes(Number(getValue())),
+    },
+    {
+      id: 'actions',
+      header: '操作',
+      meta: {
+        thClassName: 'px-8 py-5 text-right',
+        tdClassName: 'px-8 py-5 text-right',
+      },
+      cell: ({ row }) => {
+        const policy = row.original;
+        return (
+          <div className="flex justify-end gap-2.5 opacity-40 group-hover:opacity-100 transition-opacity">
+            <button
+              type="button"
+              onClick={() => {
+                setEditingPolicy(policy);
+                setForm(buildInitialForm(policy));
+                setShowForm(true);
+              }}
+              className="p-2 rounded-lg glass-panel hover:bg-white/40 text-gray-500 border-white/20 transition-all"
+              title="编辑策略"
+            >
+              <Edit2 className="h-4 w-4" />
+            </button>
+            {!policy.defaultPolicy ? (
+              <button
+                type="button"
+                onClick={async () => {
+                  await updateStoragePolicyStatus(policy.id, !policy.enabled);
+                  await loadPolicies();
+                }}
+                className={cn(
+                  'p-2 rounded-lg glass-panel border-white/20 transition-all',
+                  policy.enabled ? 'text-amber-500 hover:bg-amber-500/10' : 'text-green-500 hover:bg-green-500/10'
+                )}
+                title={policy.enabled ? '停用' : '启用'}
+              >
+                {policy.enabled ? <Square className="h-4 w-4" /> : <Play className="h-4 w-4" />}
+              </button>
+            ) : null}
+            <button
+              type="button"
+              onClick={() => openMigrationDialog(policy)}
+              className="p-2 rounded-lg glass-panel hover:bg-blue-500/10 text-blue-500 border-white/20 transition-all"
+              title="发起迁移"
+            >
+              <ArrowRightLeft className="h-4 w-4" />
+            </button>
+          </div>
+        );
+      },
+    },
+  ];
+
+  const table = useReactTable({
+    data: policies,
+    columns,
+    getCoreRowModel: getCoreRowModel(),
+  });
 
   async function loadPolicies() {
     setError('');
@@ -96,6 +265,61 @@ export default function AdminStoragePoliciesList() {
       await loadPolicies();
     } catch (err) {
       setError(err instanceof Error ? err.message : '保存策略失败');
+    }
+  }
+
+  function openMigrationDialog(policy: AdminStoragePolicy) {
+    const firstTargetPolicy = policies.find((item) => item.id !== policy.id);
+    setMigratingPolicy(policy);
+    setMigrationTargetPolicyId(firstTargetPolicy ? String(firstTargetPolicy.id) : '');
+    setMigrationNotice(null);
+  }
+
+  function closeMigrationDialog() {
+    setMigratingPolicy(null);
+    setMigrationTargetPolicyId('');
+    setMigrationSubmitting(false);
+  }
+
+  async function submitMigration() {
+    if (!migratingPolicy) {
+      return;
+    }
+
+    const targetPolicyId = Number(migrationTargetPolicyId);
+    if (!Number.isInteger(targetPolicyId) || targetPolicyId <= 0) {
+      setMigrationNotice({
+        type: 'error',
+        message: '请输入有效的目标策略 ID',
+      });
+      return;
+    }
+
+    if (targetPolicyId === migratingPolicy.id) {
+      setMigrationNotice({
+        type: 'error',
+        message: '目标策略不能与源策略相同',
+      });
+      return;
+    }
+
+    setMigrationSubmitting(true);
+    setMigrationNotice(null);
+
+    try {
+      await createStorageMigration(migratingPolicy.id, targetPolicyId);
+      setMigrationNotice({
+        type: 'success',
+        message: `已创建从 PID::${migratingPolicy.id} 到 PID::${targetPolicyId} 的迁移任务`,
+      });
+      closeMigrationDialog();
+      await loadPolicies();
+    } catch (err) {
+      setMigrationNotice({
+        type: 'error',
+        message: err instanceof Error ? err.message : '创建迁移任务失败',
+      });
+      setMigrationSubmitting(false);
     }
   }
 
@@ -138,6 +362,19 @@ export default function AdminStoragePoliciesList() {
         </div>
       </div>
 
+      {migrationNotice ? (
+        <div
+          className={cn(
+            'mb-8 rounded-lg border px-6 py-4 text-xs font-bold backdrop-blur-md',
+            migrationNotice.type === 'success'
+              ? 'border-emerald-500/20 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400'
+              : 'border-red-500/20 bg-red-500/10 text-red-600 dark:text-red-400'
+          )}
+        >
+          {migrationNotice.message}
+        </div>
+      ) : null}
+
       {error ? <div className="mb-8 rounded-lg bg-red-500/10 border border-red-500/20 px-6 py-4 text-xs text-red-600 dark:text-red-400 font-bold backdrop-blur-md">{error}</div> : null}
 
       <div className="flex-1 min-h-0">
@@ -148,93 +385,33 @@ export default function AdminStoragePoliciesList() {
             <div className="overflow-x-auto">
               <table className="min-w-full divide-y divide-white/10 text-sm">
                 <thead className="bg-white/10 dark:bg-black/40 font-black uppercase tracking-[0.15em] text-[9px] opacity-40">
-                  <tr>
-                    <th className="px-8 py-5 text-left">名称</th>
-                    <th className="px-8 py-5 text-left">后端类型</th>
-                    <th className="px-8 py-5 text-left">访问端点</th>
-                    <th className="px-8 py-5 text-left">状态</th>
-                    <th className="px-8 py-5 text-left">对象上限</th>
-                    <th className="px-8 py-5 text-right">操作</th>
-                  </tr>
+                  {table.getHeaderGroups().map((headerGroup) => (
+                    <tr key={headerGroup.id}>
+                      {headerGroup.headers.map((header) => (
+                        <th
+                          key={header.id}
+                          className={cn(header.column.columnDef.meta?.thClassName)}
+                        >
+                          {header.isPlaceholder ? null : flexRender(header.column.columnDef.header, header.getContext())}
+                        </th>
+                      ))}
+                    </tr>
+                  ))}
                 </thead>
                 <tbody className="divide-y divide-white/10 dark:divide-white/5">
-                  {policies.map((policy) => (
-                    <tr key={policy.id} className="hover:bg-white/10 dark:hover:bg-white/5 transition-colors group">
-                      <td className="px-8 py-5">
-                        <div className="flex items-center gap-2 font-black text-[13px] tracking-tight">
-                          {policy.name}
-                          {policy.defaultPolicy ? (
-                            <span className="rounded-sm bg-blue-500/20 text-blue-600 dark:text-blue-400 px-1.5 py-0.5 text-[8px] border border-blue-500/20 uppercase tracking-widest font-black">默认</span>
-                          ) : null}
-                        </div>
-                        <div className="text-[10px] font-bold opacity-30 mt-1 tracking-tighter">PID::{policy.id}</div>
-                      </td>
-                      <td className="px-8 py-5">
-                        <span className="font-black text-[10px] uppercase tracking-widest opacity-60 bg-white/10 px-2 py-0.5 rounded-sm">{policy.type}</span>
-                      </td>
-                      <td className="px-8 py-5">
-                        <div className="truncate max-w-[180px] font-bold opacity-60 text-[11px] tracking-tight">{policy.endpoint || '-'}</div>
-                        <div className="text-[9px] font-black text-blue-500 uppercase tracking-tighter mt-0.5">{policy.bucketName || '私有根路径'}</div>
-                      </td>
-                      <td className="px-8 py-5">
-                        <span className={cn(
-                          "inline-flex items-center gap-1.5 rounded-sm px-2 py-1 text-[9px] font-black uppercase tracking-widest border",
-                          policy.enabled 
-                            ? "bg-green-500/10 text-green-600 dark:text-green-400 border-green-500/20" 
-                            : "bg-red-500/10 text-red-600 dark:text-red-400 border-red-500/20"
-                        )}>
-                          <span className={cn("w-1.5 h-1.5 rounded-full", policy.enabled ? "bg-green-500 animate-pulse" : "bg-red-500")}></span>
-                          {policy.enabled ? '启用' : '停用'}
-                        </span>
-                      </td>
-                      <td className="px-8 py-5 font-black opacity-60 text-xs tracking-tighter">
-                        {formatBytes(policy.maxSizeBytes)}
-                      </td>
-                      <td className="px-8 py-5 text-right">
-                        <div className="flex justify-end gap-2.5 opacity-40 group-hover:opacity-100 transition-opacity">
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setEditingPolicy(policy);
-                              setForm(buildInitialForm(policy));
-                              setShowForm(true);
-                            }}
-                            className="p-2 rounded-lg glass-panel hover:bg-white/40 text-gray-500 border-white/20 transition-all"
-                            title="编辑策略"
-                          >
-                            <Edit2 className="h-4 w-4" />
-                          </button>
-                          {!policy.defaultPolicy ? (
-                            <button
-                              type="button"
-                              onClick={async () => {
-                                await updateStoragePolicyStatus(policy.id, !policy.enabled);
-                                await loadPolicies();
-                              }}
-                              className={cn(
-                                "p-2 rounded-lg glass-panel border-white/20 transition-all",
-                                policy.enabled ? "text-amber-500 hover:bg-amber-500/10" : "text-green-500 hover:bg-green-500/10"
-                              )}
-                              title={policy.enabled ? '停用' : '启用'}
-                            >
-                              {policy.enabled ? <Square className="h-4 w-4" /> : <Play className="h-4 w-4" />}
-                            </button>
-                          ) : null}
-                          <button
-                            type="button"
-                            onClick={async () => {
-                              const targetId = window.prompt('请输入迁移目标策略 ID：');
-                              if (!targetId) return;
-                              await createStorageMigration(policy.id, Number(targetId));
-                              window.alert('已创建迁移任务');
-                            }}
-                            className="p-2 rounded-lg glass-panel hover:bg-blue-500/10 text-blue-500 border-white/20 transition-all"
-                            title="发起迁移"
-                          >
-                            <ArrowRightLeft className="h-4 w-4" />
-                          </button>
-                        </div>
-                      </td>
+                  {table.getRowModel().rows.map((row) => (
+                    <tr key={row.id} className="hover:bg-white/10 dark:hover:bg-white/5 transition-colors group">
+                      {row.getVisibleCells().map((cell) => (
+                        <td
+                          key={cell.id}
+                          className={cn(
+                            cell.column.columnDef.meta?.thClassName,
+                            cell.column.columnDef.meta?.tdClassName
+                          )}
+                        >
+                          {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                        </td>
+                      ))}
                     </tr>
                   ))}
                 </tbody>
@@ -379,6 +556,82 @@ export default function AdminStoragePoliciesList() {
           </motion.div>
         </div>
       ) : null}
+
+      <AnimatePresence>
+        {migratingPolicy ? (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-md px-4 py-8 overflow-y-auto mt-0">
+            <motion.div
+              initial={{ scale: 0.96, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.96, opacity: 0 }}
+              className="w-full max-w-2xl glass-panel-no-hover rounded-lg p-10 shadow-2xl border-white/20"
+            >
+              <h2 className="text-3xl font-black tracking-tighter uppercase">发起迁移</h2>
+              <p className="mt-3 text-[10px] font-black uppercase tracking-[0.2em] opacity-40">仅创建迁移任务，不会立即执行对象复制</p>
+
+              <div className="mt-8 grid gap-4 rounded-lg border border-white/10 bg-white/5 p-5">
+                <div>
+                  <div className="text-[10px] font-black uppercase tracking-[0.2em] opacity-40">源策略</div>
+                  <div className="mt-2 text-sm font-black tracking-tight">{migratingPolicy.name}</div>
+                  <div className="mt-1 text-[10px] font-bold opacity-40">PID::{migratingPolicy.id}</div>
+                </div>
+                <div className="h-px bg-white/10" />
+                <div className="grid gap-4 md:grid-cols-2">
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-black uppercase tracking-[0.2em] opacity-40 ml-1">选择已有目标策略</label>
+                    <select
+                      value={migrationTargetPolicyId}
+                      onChange={(event) => setMigrationTargetPolicyId(event.target.value)}
+                      className="w-full rounded-lg glass-panel bg-white/10 p-4 outline-none border-white/10 focus:border-blue-500/50 transition-all font-bold text-sm"
+                    >
+                      <option value="">请选择目标策略</option>
+                      {policies
+                        .filter((item) => item.id !== migratingPolicy.id)
+                        .map((policy) => (
+                          <option key={policy.id} value={policy.id}>
+                            {policy.name} / PID::{policy.id} / {policy.type}
+                          </option>
+                        ))}
+                    </select>
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-black uppercase tracking-[0.2em] opacity-40 ml-1">或手动输入目标策略 ID</label>
+                    <input
+                      type="number"
+                      min="1"
+                      value={migrationTargetPolicyId}
+                      onChange={(event) => setMigrationTargetPolicyId(event.target.value)}
+                      placeholder="例如 12"
+                      className="w-full rounded-lg glass-panel bg-white/10 p-4 outline-none border-white/10 focus:border-blue-500/50 transition-all font-bold text-sm"
+                    />
+                  </div>
+                </div>
+                <p className="text-[10px] font-bold leading-5 opacity-50">
+                  如果目标策略不在下拉框里，可以直接输入它的策略 ID。当前页面只负责创建迁移任务，不负责迁移进度展示。
+                </p>
+              </div>
+
+              <div className="mt-10 flex justify-end gap-3">
+                <button
+                  type="button"
+                  onClick={closeMigrationDialog}
+                  className="px-8 py-4 rounded-lg glass-panel hover:bg-white/40 text-[11px] font-black uppercase tracking-widest transition-all"
+                >
+                  取消
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void submitMigration()}
+                  disabled={migrationSubmitting}
+                  className="px-10 py-4 rounded-lg bg-blue-600 text-white text-[11px] font-black uppercase tracking-widest shadow-xl hover:bg-blue-500 hover:scale-[1.02] active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60 transition-all"
+                >
+                  {migrationSubmitting ? '创建中...' : '创建迁移任务'}
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        ) : null}
+      </AnimatePresence>
     </motion.div>
   );
 }

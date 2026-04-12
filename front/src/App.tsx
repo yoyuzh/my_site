@@ -23,6 +23,7 @@ const AdminFilesList = lazy(() => import('./admin/files-list'));
 const AdminFileBlobs = lazy(() => import('./admin/fileblobs'));
 const AdminShares = lazy(() => import('./admin/shares'));
 const AdminTasks = lazy(() => import('./admin/tasks'));
+const AdminAudits = lazy(() => import('./admin/audits'));
 const AdminOAuthApps = lazy(() => import('./admin/oauthapps'));
 
 function AnimatedRoutes({ isMobile }: { isMobile: boolean }) {
@@ -55,6 +56,7 @@ function AnimatedRoutes({ isMobile }: { isMobile: boolean }) {
               <Route path="file-blobs" element={<AdminFileBlobs />} />
               <Route path="shares" element={<AdminShares />} />
               <Route path="tasks" element={<AdminTasks />} />
+              <Route path="audits" element={<AdminAudits />} />
               <Route path="oauth-apps" element={<AdminOAuthApps />} />
             </Route>
 

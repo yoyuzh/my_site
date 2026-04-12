@@ -845,3 +845,201 @@
 - `cd front && npm run lint`
 - `cd front && npm run build`
 - build output now shows split chunks with main entry chunk `assets/index-CXR4rSrf.js` at **244.85 kB** (previously reported ~538.17 kB), and no Vite chunk-size warning.
+
+## 2026-04-12 Frontend Refactor Batch 27
+
+- 管理台前端继续补齐第一批治理页：
+- `front/src/admin/settings.tsx` 已从占位页升级为真实页面，现可读取 `/api/admin/settings`。
+- 新增 `front/src/lib/admin-settings.ts`，封装：
+- `GET /api/admin/settings`
+- `PATCH /api/admin/settings/registration/invite-code`
+- `POST /api/admin/settings/registration/invite-code/rotate`
+- `PATCH /api/admin/settings/offline-transfer-storage-limit`
+- 系统设置页当前已支持：
+- 编辑注册邀请码
+- 轮换邀请码
+- 修改离线快传总容量上限
+- 展示注册、会话、媒体处理、队列、服务器等只读快照
+- `front/src/admin/filesystem.tsx` 已从占位页升级为真实页面，现可读取 `/api/admin/filesystem`。
+- 新增 `front/src/lib/admin-filesystem.ts`，封装 `GET /api/admin/filesystem`。
+- 文件系统页当前已支持展示：
+- 存储提供者 / 文件总数 / Blob 总数 / 实体总数
+- 默认存储策略详情与能力矩阵
+- 上传模式矩阵
+- 媒体处理状态
+- 缓存状态
+- WebDAV 状态
+- 本批前端验证通过：
+- `cd front && npm run lint`
+- `cd front && npm run build`
+
+## 2026-04-12 Frontend Refactor Batch 28
+
+- 管理台前端第二批治理页继续补齐：
+- `front/src/admin/fileblobs.tsx` 已从占位页升级为真实页面，现可读取 `/api/admin/file-blobs`。
+- 新增 `front/src/lib/admin-fileblobs.ts`，封装 `GET /api/admin/file-blobs`，支持：
+- `userQuery`
+- `storagePolicyId`
+- `objectKey`
+- `entityType`
+- 对象实体页当前已支持：
+- 多条件筛选
+- 显示对象键、实体/Blob 编号、存储策略、大小/类型、关联信息、时间
+- 显示 `blobMissing`、`orphanRisk`、`referenceMismatch` 风险标签与统计
+- 复制对象键
+- `front/src/admin/shares.tsx` 已从占位页升级为真实页面，现可读取 `/api/admin/shares` 并执行 `DELETE /api/admin/shares/{shareId}`。
+- 新增 `front/src/lib/admin-shares.ts`，封装：
+- `GET /api/admin/shares`
+- `DELETE /api/admin/shares/{shareId}`
+- 分享管理页当前已支持：
+- 按用户、文件名、Token、是否密码保护、是否过期筛选
+- 展示权限、所属用户、文件信息、统计、时间
+- 复制 Token
+- 打开公开分享链接
+- 撤销分享
+- 本批前端验证通过：
+- `cd front && npm run lint`
+- `cd front && npm run build`
+
+## 2026-04-12 Frontend Refactor Batch 29
+
+- 管理台前端第三批治理页继续补齐：
+- `front/src/admin/tasks.tsx` 已从占位页升级为真实页面，现可读取：
+- `GET /api/admin/tasks`
+- `GET /api/admin/tasks/{taskId}`
+- 新增 `front/src/lib/admin-tasks.ts`，封装任务列表与详情查询。
+- 任务监控页当前已支持：
+- 按用户、任务类型、状态、失败分类、租约状态筛选
+- 显示任务总量、当前页数量、进行中数量、失败数量、已安排重试数量
+- 展示任务状态、失败分类、租约状态、所属用户、重试与时间信息
+- 右侧详情面板查看 `publicStateJson`、`errorMessage`、`correlationId`、租约与时间字段
+- 分页切换任务结果
+- 新增 `front/src/lib/admin-audits.ts` 与 `front/src/admin/audits.tsx`，管理台现已支持 `GET /api/admin/audits` 审计日志治理页。
+- `front/src/App.tsx` 与 `front/src/admin/AdminLayout.tsx` 已补上 `/admin/audits` 路由与“审计日志”导航入口。
+- 审计日志页当前已支持：
+- 按操作者、动作类型、目标类型、目标 ID 筛选
+- 展示操作者、权限、动作、目标、摘要、时间
+- 行内展开 `detailsJson` 详情并复制原文
+- 分页切换审计结果，并在空结果时显示明确空态
+- 本批前端验证通过：
+- `cd front && npm run lint`
+- `cd front && npm run build`
+
+## 2026-04-12 Frontend Refactor Batch 30
+
+- 管理台前端第四批治理页继续补齐：
+- `front/src/admin/users-list.tsx` 已补齐后端早已支持但前端未暴露的用户治理动作。
+- 用户管理页当前除原有角色、存储配额、手动设密、封禁/恢复外，新增支持：
+- 修改最大上传限制（调用 `PATCH /api/admin/users/{userId}/max-upload-size`）
+- 生成临时密码（调用 `POST /api/admin/users/{userId}/password/reset`）
+- 在用户行内展示临时密码结果块，并支持复制与关闭
+- 手动设置新密码的文案已明确区分于“生成临时密码”，避免管理动作语义混淆
+- `front/src/admin/oauthapps.tsx` 已从单行占位改为真实规划/状态页：
+- 明确说明当前后端尚无 `/api/admin/oauth-apps` 管理接口
+- 明确说明本页为什么暂不提供可写控件
+- 给出后续 OAuth 应用登记、凭据管理、授权范围与审计追踪的规划能力
+- 本页仍不调用任何不存在的 API，也不伪造表单/写操作
+- 本批前端验证通过：
+- `cd front && npm run lint`
+- `cd front && npm run build`
+
+## 2026-04-12 Frontend Refactor Batch 31
+
+- 为便于实时联调，当前本地开发环境已同时拉起：
+- 前端 Vite 开发服务：`http://127.0.0.1:3000`
+- 后端 dev 服务：`http://127.0.0.1:8080`
+- 本地 Redis：`127.0.0.1:6379`，并已用 `APP_REDIS_ENABLED=true` 重启后端接入
+- 管理台前端第五批交互重构已落地：
+- `front/src/admin/users-list.tsx` 已移除剩余 `window.prompt`，升级为“表格 + 右侧单用户编辑面板”
+- 右侧面板当前可直接编辑：角色、存储配额、最大上传限制、手动设置密码
+- 生成临时密码、复制临时密码、禁用/恢复账号仍保留在表格快捷操作内
+- 手动设置密码与生成临时密码的语义已在 UI 中明确分开
+- `front/src/admin/storage-policies-list.tsx` 已移除迁移任务入口里的 `window.prompt` / `window.alert`
+- 发起迁移现在改为页面内弹层，支持：
+- 从现有策略中选择目标策略
+- 手动输入目标策略 ID
+- 在页面内显示迁移任务创建成功/失败反馈
+- 迁移能力仍然只负责创建后台任务，本页不负责展示任务执行进度
+- 本批前端验证通过：
+- `cd front && npm run lint`
+- `cd front && npm run build`
+
+## 2026-04-12 Frontend Refactor Batch 32
+
+- 管理台信息架构已按“配置优先”方向完成第一轮重排，不再把后台首页定位为纯统计总览。
+- `front/src/admin/dashboard.tsx` 已重写为新的“配置首页”：
+- 首页现在以 `系统配置 / 存储配置 / 用户策略 / 治理工具` 为主轴
+- 首屏强调当前可修改的配置入口，而不是单纯展示遥测卡片
+- 保留邀请码、离线快传上限、总存储量、用户量等当前生效值摘要，作为配置上下文
+- `front/src/admin/AdminLayout.tsx` 左侧导航已重排为四组：
+- `配置控制台`
+- `核心配置`
+- `治理工具`
+- `规划能力`
+- 导航文案也已同步收口：
+- `总览` -> `配置首页`
+- `用户管理` -> `用户策略`
+- `文件审计` -> `文件治理`
+- `对象实体` -> `对象治理`
+- `文件系统` -> `文件系统快照`
+- `front/src/admin/users-list.tsx` 页面标题与面板说明已进一步对齐“用户策略”定位，不再强调只读名单视角。
+- 本批前端验证通过：
+- `cd front && npm run lint`
+- `cd front && npm run build`
+
+## 2026-04-12 Frontend OSS Refactor Batch 33
+
+- 新增执行计划文件 `docs/superpowers/plans/2026-04-12-admin-oss-refactor.md`，用于按复选框推进前端 OSS 组件替换。
+- 当前已完成计划的 Batch 1：使用 `react-hook-form` 替换管理台配置表单的手写状态管理。
+- `front/package.json` / `front/package-lock.json` 已新增 `react-hook-form` 依赖。
+- `front/src/admin/settings.tsx` 已改为 `react-hook-form` 驱动：
+- 注册邀请码编辑改为表单驱动字段与校验
+- 离线快传容量上限编辑改为表单驱动字段与校验
+- 只读快照卡片与旋转邀请码动作仍保留原有交互
+- `front/src/admin/users-list.tsx` 右侧“用户策略”编辑面板已改为 `react-hook-form` 驱动：
+- `role`
+- `storageQuotaBytes`
+- `maxUploadSizeBytes`
+- `manualPassword`
+- 临时密码生成 / 复制、禁用 / 恢复、表格快捷操作均保持不变
+- `front/src/admin/dashboard.tsx` 已顺手修复 `React.ReactNode` 命名空间类型问题，避免挡住前端全量类型检查
+- 本批前端验证通过：
+- `cd front && npm run lint`
+- `cd front && npm run build`
+
+## 2026-04-12 Frontend OSS Refactor Batch 34
+
+- 前端 OSS 替换计划的 Batch 2 已完成第一轮表格层替换。
+- `front/package.json` / `front/package-lock.json` 已新增 `@tanstack/react-table`。
+- `front/src/admin/users-list.tsx` 已将用户策略列表从手写表格渲染切换为 TanStack Table：
+- 列定义、header 渲染、row model 与 visible cell 渲染均改由 `@tanstack/react-table` 驱动
+- 右侧用户策略编辑面板、临时密码操作、禁用/恢复动作保持不变
+- `front/src/admin/storage-policies-list.tsx` 已将存储策略列表从手写表格渲染切换为 TanStack Table：
+- 现有列、编辑按钮、启停按钮、迁移弹层触发均保持不变
+- 新建/编辑策略弹层与迁移弹层逻辑未改
+- 当前这批仅替换表格引擎，不新增排序、分页、筛选状态管理
+- OSS 替换执行计划 `docs/superpowers/plans/2026-04-12-admin-oss-refactor.md` 已同步勾选完成项
+- 本批前端验证通过：
+- `cd front && npm run lint`
+- `cd front && npm run build`
+
+## 2026-04-12 Frontend OSS Refactor Batch 35
+
+- 前端 OSS 替换计划的 Batch 3 已完成，`分享治理` 页面已接入 `@tanstack/react-table`。
+- `front/src/admin/shares.tsx` 已将手写 `<table>` 循环替换为：
+- typed `ColumnDef`
+- `useReactTable`
+- `getCoreRowModel`
+- `flexRender`
+- 当前分享治理页的这些行为均保持不变：
+- 筛选表单
+- 统计计数
+- 空状态
+- 复制 Token
+- 打开公开分享
+- 删除分享
+- 这批仍只替换表格引擎，不改后端接口，也不新增排序、分页或筛选状态管理
+- OSS 替换执行计划 `docs/superpowers/plans/2026-04-12-admin-oss-refactor.md` 已继续打钩更新
+- 本批前端验证通过：
+- `cd front && npm run lint`
+- `cd front && npm run build`
