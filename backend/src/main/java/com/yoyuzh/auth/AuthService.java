@@ -7,6 +7,7 @@ import com.yoyuzh.auth.dto.UpdateUserAvatarRequest;
 import com.yoyuzh.auth.dto.UpdateUserPasswordRequest;
 import com.yoyuzh.auth.dto.UpdateUserProfileRequest;
 import com.yoyuzh.auth.dto.UserProfileResponse;
+import com.yoyuzh.admin.AdminRuntimeSettingsService;
 import com.yoyuzh.common.BusinessException;
 import com.yoyuzh.common.ErrorCode;
 import com.yoyuzh.files.core.FileService;
@@ -49,6 +50,7 @@ public class AuthService {
     private final FileService fileService;
     private final FileContentStorage fileContentStorage;
     private final RegistrationInviteService registrationInviteService;
+    private final AdminRuntimeSettingsService adminRuntimeSettingsService;
 
     @Transactional
     public AuthResponse register(RegisterRequest request) {
@@ -67,7 +69,9 @@ public class AuthService {
             throw new BusinessException(ErrorCode.UNKNOWN, "手机号已存在");
         }
 
-        registrationInviteService.consumeInviteCode(request.inviteCode());
+        if (adminRuntimeSettingsService.isInviteCodeRequired()) {
+            registrationInviteService.consumeInviteCode(request.inviteCode());
+        }
 
         User user = new User();
         user.setUsername(request.username());

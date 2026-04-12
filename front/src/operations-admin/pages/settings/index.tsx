@@ -1,70 +1,41 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { useForm } from 'react-hook-form';
-import { Copy, Database, RefreshCw, RotateCcw, Save, Server, Settings, Shield, Clock3, Layers3 } from 'lucide-react';
+import { Copy, RefreshCw, RotateCcw, Save } from 'lucide-react';
 import { motion } from 'motion/react';
 import { cn } from '@/src/lib/utils';
+import { formatBytes } from '@/src/lib/format';
 import { AdminAlertDialog } from '@/src/components/admin/AdminAlertDialog';
 import { AdminInput } from '@/src/components/admin/AdminInput';
 import {
   getAdminSettings,
   rotateAdminRegistrationInviteCode,
-  updateAdminOfflineTransferStorageLimit,
-  updateAdminRegistrationInviteCode,
+  updateAdminSettings,
   type AdminSettings,
+  type AdminSettingsUpdateRequest,
 } from '@/src/operations-admin/api/settings/settings';
-import { formatBytes } from '@/src/lib/format';
 
-const container = {
-  hidden: { opacity: 0 },
-  show: {
-    opacity: 1,
-    transition: {
-      staggerChildren: 0.06,
-    },
-  },
+type SettingsFormValues = {
+  siteSupported: boolean;
+  inviteCodeRequired: boolean;
+  currentInviteCode: string;
+  managementRolesRaw: string;
+  accessExpirationSeconds: number;
+  refreshExpirationSeconds: number;
+  tokenBlacklistEnabled: boolean;
+  tokenBlacklistTtlBufferSeconds: number;
+  offlineTransferStorageLimitBytes: number;
+  metadataExtractionEnabled: boolean;
+  thumbnailGenerationEnabled: boolean;
+  videoPosterEnabled: boolean;
+  queueBackend: string;
+  queueMediaMetadataFixedDelayMs: number;
+  queueMediaMetadataInitialDelayMs: number;
+  appearanceSupported: boolean;
+  serverStorageProvider: string;
+  serverRedisEnabled: boolean;
 };
 
-const itemVariants = {
-  hidden: { y: 18, opacity: 0 },
-  show: { y: 0, opacity: 1 },
-};
-
-function formatDurationSeconds(seconds: number) {
-  if (!Number.isFinite(seconds) || seconds < 0) {
-    return '-';
-  }
-
-  if (seconds < 60) {
-    return `${seconds} 秒`;
-  }
-
-  const minutes = seconds / 60;
-  if (minutes < 60) {
-    return `${minutes % 1 === 0 ? minutes : minutes.toFixed(1)} 分钟`;
-  }
-
-  const hours = minutes / 60;
-  if (hours < 24) {
-    return `${hours % 1 === 0 ? hours : hours.toFixed(1)} 小时`;
-  }
-
-  const days = hours / 24;
-  return `${days % 1 === 0 ? days : days.toFixed(1)} 天`;
-}
-
-function formatDurationMs(milliseconds: number) {
-  if (!Number.isFinite(milliseconds) || milliseconds < 0) {
-    return '-';
-  }
-
-  if (milliseconds < 1000) {
-    return `${milliseconds} 毫秒`;
-  }
-
-  return formatDurationSeconds(milliseconds / 1000);
-}
-
-function statusPill(value: boolean, trueLabel = '已启用', falseLabel = '未启用') {
+function statusPill(value: boolean, trueLabel = 'Enabled', falseLabel = 'Disabled') {
   return (
     <span
       className={cn(
@@ -79,86 +50,84 @@ function statusPill(value: boolean, trueLabel = '已启用', falseLabel = '未�
   );
 }
 
-function SnapshotRow({
-  label,
-  value,
-  valueClassName,
-}: {
-  label: string;
-  value: ReactNode;
-  valueClassName?: string;
-}) {
+function SectionCard({ title, subtitle, children }: { title: string; subtitle?: string; children: ReactNode }) {
   return (
-    <div className="flex items-start justify-between gap-4 border-b border-white/10 py-3 last:border-0 last:pb-0">
-      <span className="text-[9px] font-black uppercase tracking-[0.2em] opacity-30">{label}</span>
-      <span className={cn('text-right text-[11px] font-bold leading-5', valueClassName)}>{value}</span>
-    </div>
-  );
-}
-
-function SnapshotCard({
-  title,
-  badge,
-  icon,
-  children,
-}: {
-  title: string;
-  badge: string;
-  icon: ReactNode;
-  children: ReactNode;
-}) {
-  return (
-    <motion.section
-      variants={itemVariants}
-      className="glass-panel-no-hover rounded-2xl border border-white/10 p-6 shadow-3xl"
-    >
-      <div className="mb-6 flex items-start justify-between gap-4">
-        <div className="flex items-center gap-3">
-          <div className="flex h-11 w-11 items-center justify-center rounded-xl border border-white/10 bg-white/5 text-blue-500 shadow-inner">
-            {icon}
-          </div>
-          <div>
-            <h3 className="text-[13px] font-black uppercase tracking-[0.18em]">{title}</h3>
-            <p className="mt-1 text-[9px] font-black uppercase tracking-[0.3em] opacity-30">{badge}</p>
-          </div>
-        </div>
+    <section className="glass-panel-no-hover rounded-2xl border border-white/10 p-6 shadow-3xl">
+      <div className="mb-4">
+        <h2 className="text-[12px] font-black uppercase tracking-[0.2em]">{title}</h2>
+        {subtitle ? <p className="mt-2 text-[11px] font-bold opacity-50">{subtitle}</p> : null}
       </div>
-      <div>{children}</div>
-    </motion.section>
+      {children}
+    </section>
   );
 }
 
-type InviteCodeFormValues = {
-  inviteCode: string;
-};
+function toRoleText(roles: string[]) {
+  return roles.join(', ');
+}
 
-type OfflineTransferLimitFormValues = {
-  offlineTransferStorageLimitBytes: number;
-};
+function parseRoleText(raw: string) {
+  return raw
+    .split(/[,\n]/)
+    .map((item) => item.trim())
+    .filter((item, index, list) => item.length > 0 && list.indexOf(item) === index);
+}
+
+function toFormValues(settings: AdminSettings): SettingsFormValues {
+  return {
+    siteSupported: settings.site.supported,
+    inviteCodeRequired: settings.registration.inviteCodeRequired,
+    currentInviteCode: settings.registration.currentInviteCode,
+    managementRolesRaw: toRoleText(settings.registration.managementRoles),
+    accessExpirationSeconds: settings.userSession.accessExpirationSeconds,
+    refreshExpirationSeconds: settings.userSession.refreshExpirationSeconds,
+    tokenBlacklistEnabled: settings.userSession.tokenBlacklistEnabled,
+    tokenBlacklistTtlBufferSeconds: settings.userSession.tokenBlacklistTtlBufferSeconds,
+    offlineTransferStorageLimitBytes: settings.transfer.offlineTransferStorageLimitBytes,
+    metadataExtractionEnabled: settings.mediaProcessing.metadataExtractionEnabled,
+    thumbnailGenerationEnabled: settings.mediaProcessing.thumbnailGenerationEnabled,
+    videoPosterEnabled: settings.mediaProcessing.videoPosterEnabled,
+    queueBackend: settings.queue.backend,
+    queueMediaMetadataFixedDelayMs: settings.queue.mediaMetadataFixedDelayMs,
+    queueMediaMetadataInitialDelayMs: settings.queue.mediaMetadataInitialDelayMs,
+    appearanceSupported: settings.appearance.supported,
+    serverStorageProvider: settings.server.storageProvider,
+    serverRedisEnabled: settings.server.redisEnabled,
+  };
+}
 
 export default function AdminSettingsPage() {
+  const [settings, setSettings] = useState<AdminSettings | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [savingInviteCode, setSavingInviteCode] = useState(false);
-  const [rotatingInviteCode, setRotatingInviteCode] = useState(false);
-  const [rotateInviteDialogOpen, setRotateInviteDialogOpen] = useState(false);
-  const [savingTransferLimit, setSavingTransferLimit] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [rotating, setRotating] = useState(false);
+  const [rotateDialogOpen, setRotateDialogOpen] = useState(false);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
-  const [settings, setSettings] = useState<AdminSettings | null>(null);
-  const inviteCodeForm = useForm<InviteCodeFormValues>({
-    defaultValues: {
-      inviteCode: '',
-    },
+  const form = useForm<SettingsFormValues>({
     mode: 'onSubmit',
     reValidateMode: 'onChange',
-  });
-  const offlineTransferLimitForm = useForm<OfflineTransferLimitFormValues>({
     defaultValues: {
+      siteSupported: false,
+      inviteCodeRequired: true,
+      currentInviteCode: '',
+      managementRolesRaw: 'MODERATOR, ADMIN',
+      accessExpirationSeconds: 900,
+      refreshExpirationSeconds: 1209600,
+      tokenBlacklistEnabled: false,
+      tokenBlacklistTtlBufferSeconds: 60,
       offlineTransferStorageLimitBytes: 1,
+      metadataExtractionEnabled: true,
+      thumbnailGenerationEnabled: false,
+      videoPosterEnabled: false,
+      queueBackend: 'in-memory',
+      queueMediaMetadataFixedDelayMs: 3000,
+      queueMediaMetadataInitialDelayMs: 15000,
+      appearanceSupported: false,
+      serverStorageProvider: 'local',
+      serverRedisEnabled: false,
     },
-    mode: 'onSubmit',
-    reValidateMode: 'onChange',
   });
 
   async function loadSettings(isRefresh = false) {
@@ -169,14 +138,9 @@ export default function AdminSettingsPage() {
     }
     setError('');
     try {
-      const nextSettings = await getAdminSettings();
-      setSettings(nextSettings);
-      inviteCodeForm.reset({
-        inviteCode: nextSettings.registration.currentInviteCode,
-      });
-      offlineTransferLimitForm.reset({
-        offlineTransferStorageLimitBytes: nextSettings.transfer.offlineTransferStorageLimitBytes,
-      });
+      const next = await getAdminSettings();
+      setSettings(next);
+      form.reset(toFormValues(next));
     } catch (err) {
       setError(err instanceof Error ? err.message : '加载系统设置失败');
     } finally {
@@ -189,71 +153,89 @@ export default function AdminSettingsPage() {
     void loadSettings();
   }, []);
 
-  async function handleSaveInviteCode(values: InviteCodeFormValues) {
-    const nextInviteCode = values.inviteCode.trim();
-    if (!nextInviteCode) {
+  async function handleSaveAll(values: SettingsFormValues) {
+    const inviteCode = values.currentInviteCode.trim();
+    const managementRoles = parseRoleText(values.managementRolesRaw);
+    if (!inviteCode) {
       setError('邀请码不能为空');
       return;
     }
+    if (managementRoles.length === 0) {
+      setError('至少保留一个管理角色');
+      return;
+    }
 
-    setSavingInviteCode(true);
+    const payload: AdminSettingsUpdateRequest = {
+      site: {
+        supported: values.siteSupported,
+      },
+      registration: {
+        inviteCodeRequired: values.inviteCodeRequired,
+        currentInviteCode: inviteCode,
+        managementRoles,
+      },
+      userSession: {
+        accessExpirationSeconds: values.accessExpirationSeconds,
+        refreshExpirationSeconds: values.refreshExpirationSeconds,
+        tokenBlacklistEnabled: values.tokenBlacklistEnabled,
+        tokenBlacklistTtlBufferSeconds: values.tokenBlacklistTtlBufferSeconds,
+      },
+      transfer: {
+        offlineTransferStorageLimitBytes: values.offlineTransferStorageLimitBytes,
+      },
+      mediaProcessing: {
+        metadataExtractionEnabled: values.metadataExtractionEnabled,
+        thumbnailGenerationEnabled: values.thumbnailGenerationEnabled,
+        videoPosterEnabled: values.videoPosterEnabled,
+      },
+      queue: {
+        backend: values.queueBackend.trim(),
+        mediaMetadataFixedDelayMs: values.queueMediaMetadataFixedDelayMs,
+        mediaMetadataInitialDelayMs: values.queueMediaMetadataInitialDelayMs,
+      },
+      appearance: {
+        supported: values.appearanceSupported,
+      },
+      server: {
+        storageProvider: values.serverStorageProvider.trim(),
+        redisEnabled: values.serverRedisEnabled,
+      },
+    };
+
+    setSaving(true);
     setError('');
     setNotice('');
     try {
-      await updateAdminRegistrationInviteCode(nextInviteCode);
-      await loadSettings(true);
-      setNotice('邀请码已更新');
+      const next = await updateAdminSettings(payload);
+      setSettings(next);
+      form.reset(toFormValues(next));
+      setNotice('系统设置已保存');
     } catch (err) {
-      setError(err instanceof Error ? err.message : '更新邀请码失败');
+      setError(err instanceof Error ? err.message : '保存系统设置失败');
     } finally {
-      setSavingInviteCode(false);
+      setSaving(false);
     }
   }
 
   async function handleRotateInviteCode() {
-    setRotatingInviteCode(true);
+    setRotating(true);
     setError('');
     setNotice('');
     try {
-      await rotateAdminRegistrationInviteCode();
-      await loadSettings(true);
-      setNotice('邀请码已轮换');
+      const nextInvite = await rotateAdminRegistrationInviteCode();
+      form.setValue('currentInviteCode', nextInvite.currentInviteCode, { shouldDirty: true });
+      setNotice('邀请码已轮换，点击保存即可写入整页设置');
     } catch (err) {
       setError(err instanceof Error ? err.message : '轮换邀请码失败');
     } finally {
-      setRotatingInviteCode(false);
+      setRotating(false);
     }
   }
 
-  async function handleConfirmRotateInviteCode() {
-    setRotateInviteDialogOpen(false);
-    await handleRotateInviteCode();
-  }
-
-  async function handleSaveTransferLimit(values: OfflineTransferLimitFormValues) {
-    const nextLimit = values.offlineTransferStorageLimitBytes;
-    if (!Number.isInteger(nextLimit) || nextLimit <= 0) {
-      setError('离线快传存储上限必须是大于 0 的整数');
-      return;
-    }
-
-    setSavingTransferLimit(true);
-    setError('');
-    setNotice('');
-    try {
-      await updateAdminOfflineTransferStorageLimit(nextLimit);
-      await loadSettings(true);
-      setNotice('离线快传存储上限已更新');
-    } catch (err) {
-      setError(err instanceof Error ? err.message : '更新离线快传存储上限失败');
-    } finally {
-      setSavingTransferLimit(false);
-    }
-  }
-
-  const isBusy = loading || refreshing;
-  const watchedOfflineLimit = offlineTransferLimitForm.watch('offlineTransferStorageLimitBytes');
-  const offlineLimitPreview = Number.isFinite(watchedOfflineLimit) ? watchedOfflineLimit : 0;
+  const watchInviteCode = form.watch('currentInviteCode');
+  const watchOfflineLimit = form.watch('offlineTransferStorageLimitBytes');
+  const rolesPreview = parseRoleText(form.watch('managementRolesRaw')).join(' / ');
+  const busy = loading || refreshing || saving || rotating;
 
   return (
     <motion.div
@@ -262,11 +244,11 @@ export default function AdminSettingsPage() {
       exit={{ opacity: 0 }}
       className="flex h-full flex-col overflow-y-auto p-8 text-gray-900 dark:text-gray-100"
     >
-      <div className="mb-10 flex flex-wrap items-start justify-between gap-4">
+      <div className="mb-8 flex flex-wrap items-start justify-between gap-4">
         <div>
           <h1 className="animate-text-reveal text-4xl font-black tracking-tight text-gray-900 dark:text-white">系统设置</h1>
           <p className="mt-3 text-[10px] font-black uppercase tracking-[0.2em] opacity-40">
-            可编辑设置 / 只读快照 / 后端能力边界
+            全量可编辑模式 / Frontend Writable
           </p>
         </div>
         <button
@@ -274,360 +256,214 @@ export default function AdminSettingsPage() {
           onClick={() => {
             void loadSettings(true);
           }}
-          disabled={isBusy}
+          disabled={busy}
           className="flex items-center gap-3 rounded-lg glass-panel px-6 py-3 text-[11px] font-black uppercase tracking-widest transition-all hover:bg-white/40 disabled:cursor-not-allowed disabled:opacity-60"
         >
           <RefreshCw className={cn('h-4 w-4', refreshing && 'animate-spin')} />
-          刷新设置
+          刷新
         </button>
       </div>
 
       {error ? (
-        <div className="mb-8 rounded-lg border border-red-500/20 bg-red-500/10 px-6 py-4 text-xs font-bold uppercase tracking-widest text-red-600 backdrop-blur-md dark:text-red-400">
+        <div className="mb-6 rounded-lg border border-red-500/20 bg-red-500/10 px-6 py-4 text-xs font-bold uppercase tracking-widest text-red-600 backdrop-blur-md dark:text-red-400">
           {error}
         </div>
       ) : null}
-
       {notice ? (
-        <div className="mb-8 rounded-lg border border-blue-500/20 bg-blue-500/10 px-6 py-4 text-xs font-bold uppercase tracking-widest text-blue-600 backdrop-blur-md dark:text-blue-300">
+        <div className="mb-6 rounded-lg border border-blue-500/20 bg-blue-500/10 px-6 py-4 text-xs font-bold uppercase tracking-widest text-blue-600 backdrop-blur-md dark:text-blue-300">
           {notice}
         </div>
       ) : null}
 
       {loading && !settings ? (
         <div className="glass-panel-no-hover rounded-lg px-4 py-16 text-center text-[10px] font-black uppercase tracking-widest opacity-40">
-          正在读取系统设置快照...
+          正在读取系统设置...
         </div>
-      ) : settings ? (
-        <motion.div variants={container} initial="hidden" animate="show" className="space-y-10">
-          <section>
-            <div className="mb-5 flex items-center justify-between gap-4">
-              <div>
-                <h2 className="text-[10px] font-black uppercase tracking-[0.3em] opacity-30">可编辑设置</h2>
-                <p className="mt-2 text-[11px] font-bold opacity-40">
-                  这里是当前后端明确支持写入的设置项，仅包含邀请码与离线快传容量上限。
-                </p>
-              </div>
-              <span className="rounded-full border border-green-500/20 bg-green-500/10 px-3 py-1 text-[9px] font-black uppercase tracking-[0.2em] text-green-600 dark:text-green-400">
-                PATCH / POST
-              </span>
-            </div>
-
-            <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
-              <motion.section
-                variants={itemVariants}
-                className="glass-panel-no-hover rounded-2xl border border-white/10 p-6 shadow-3xl"
-              >
-                <div className="mb-6 flex items-start justify-between gap-4">
-                  <div className="flex items-center gap-3">
-                    <div className="flex h-11 w-11 items-center justify-center rounded-xl border border-blue-500/20 bg-blue-500/10 text-blue-500 shadow-inner">
-                      <Shield className="h-5 w-5" />
-                    </div>
-                    <div>
-                      <h3 className="text-[13px] font-black uppercase tracking-[0.18em]">注册邀请码</h3>
-                      <p className="mt-1 text-[9px] font-black uppercase tracking-[0.25em] opacity-30">
-                        当前为可写设置，变更后立即生效
-                      </p>
-                    </div>
-                  </div>
-                  {settings.registration.writeSupported ? statusPill(true, '可编辑', '只读') : statusPill(false, '可编辑', '只读')}
-                </div>
-
-                <div className="space-y-5">
-                  <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-                    <div className="rounded-xl border border-white/10 bg-white/5 p-4">
-                      <div className="mb-2 text-[9px] font-black uppercase tracking-[0.25em] opacity-30">是否强制邀请码</div>
-                      <div className="text-sm font-black">{settings.registration.inviteCodeRequired ? '是' : '否'}</div>
-                    </div>
-                    <div className="rounded-xl border border-white/10 bg-white/5 p-4">
-                      <div className="mb-2 text-[9px] font-black uppercase tracking-[0.25em] opacity-30">管理角色</div>
-                      <div className="flex flex-wrap gap-2">
-                        {settings.registration.managementRoles.map((role) => (
-                          <span
-                            key={role}
-                            className="rounded-full border border-white/10 bg-white/5 px-2 py-0.5 text-[9px] font-black uppercase tracking-[0.2em]"
-                          >
-                            {role}
-                          </span>
-                        ))}
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="rounded-xl border border-white/10 bg-black/20 p-4">
-                    <div className="mb-2 flex items-center justify-between gap-3">
-                      <span className="text-[9px] font-black uppercase tracking-[0.25em] opacity-30">当前邀请码</span>
-                      <button
-                        type="button"
-                        onClick={async () => {
-                          try {
-                            await navigator.clipboard.writeText(settings.registration.currentInviteCode);
-                            setNotice('邀请码已复制');
-                          } catch {
-                            setError('复制邀请码失败');
-                          }
-                        }}
-                        className="rounded-lg p-2 text-blue-500 transition-all hover:bg-white/10 hover:text-blue-400"
-                        title="复制邀请码"
-                      >
-                        <Copy className="h-4 w-4" />
-                      </button>
-                    </div>
-                    <div className="break-all rounded-xl border border-white/10 bg-blue-500/5 px-4 py-4 font-mono text-lg font-black tracking-[0.3em] text-blue-500">
-                      {settings.registration.currentInviteCode}
-                    </div>
-                  </div>
-
-                  <form
-                    className="grid grid-cols-1 gap-4 lg:grid-cols-[1fr_auto]"
-                    onSubmit={inviteCodeForm.handleSubmit(handleSaveInviteCode, () => {
-                      setError('');
+      ) : (
+        <form className="space-y-6" onSubmit={form.handleSubmit(handleSaveAll)}>
+          <SectionCard title="注册设置" subtitle="邀请码、角色、是否要求邀请码">
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+              <label className="block">
+                <span className="mb-2 block text-[10px] font-black uppercase tracking-[0.2em] opacity-40">当前邀请码</span>
+                <div className="flex gap-2">
+                  <AdminInput
+                    {...form.register('currentInviteCode', {
+                      required: '邀请码不能为空',
+                      maxLength: {
+                        value: 64,
+                        message: '邀请码长度不能超过 64',
+                      },
+                      validate: (value) => value.trim().length > 0 || '邀请码不能为空',
                     })}
+                    maxLength={64}
+                    placeholder="输入邀请码"
+                  />
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      try {
+                        await navigator.clipboard.writeText(watchInviteCode || '');
+                        setNotice('邀请码已复制');
+                      } catch {
+                        setError('复制邀请码失败');
+                      }
+                    }}
+                    className="rounded-lg border border-white/10 bg-white/5 px-3 text-blue-500 transition-all hover:bg-white/10"
+                    title="复制邀请码"
                   >
-                    <label className="block">
-                      <span className="mb-2 block text-[9px] font-black uppercase tracking-[0.25em] opacity-30">
-                        编辑邀请码
-                      </span>
-                      <AdminInput
-                        {...inviteCodeForm.register('inviteCode', {
-                          required: '邀请码不能为空',
-                          maxLength: {
-                            value: 64,
-                            message: '邀请码不能超过 64 个字符',
-                          },
-                          validate: (value) => value.trim().length > 0 || '邀请码不能为空',
-                        })}
-                        maxLength={64}
-                        placeholder="输入新的邀请码"
-                        aria-invalid={inviteCodeForm.formState.errors.inviteCode ? 'true' : 'false'}
-                      />
-                      {inviteCodeForm.formState.errors.inviteCode ? (
-                        <div className="mt-2 text-[10px] font-bold uppercase tracking-[0.15em] text-red-500 dark:text-red-400">
-                          {inviteCodeForm.formState.errors.inviteCode.message}
-                        </div>
-                      ) : null}
-                    </label>
-                    <div className="flex items-end gap-3">
-                      <button
-                        type="submit"
-                        disabled={savingInviteCode || rotatingInviteCode}
-                        className="inline-flex items-center justify-center gap-2 rounded-lg bg-blue-600 px-5 py-4 text-[11px] font-black uppercase tracking-[0.15em] text-white shadow-lg transition-all hover:bg-blue-500 hover:scale-[1.02] active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60"
-                      >
-                        <Save className="h-4 w-4" />
-                        {savingInviteCode ? '保存中' : '保存'}
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setRotateInviteDialogOpen(true)}
-                        disabled={savingInviteCode || rotatingInviteCode}
-                        className="inline-flex items-center justify-center gap-2 rounded-lg border border-white/10 bg-white/5 px-5 py-4 text-[11px] font-black uppercase tracking-[0.15em] transition-all hover:bg-white/15 disabled:cursor-not-allowed disabled:opacity-60"
-                      >
-                        <RotateCcw className={cn('h-4 w-4', rotatingInviteCode && 'animate-spin')} />
-                        {rotatingInviteCode ? '轮换中' : '轮换'}
-                      </button>
-                    </div>
-                  </form>
-                </div>
-              </motion.section>
-
-              <motion.section
-                variants={itemVariants}
-                className="glass-panel-no-hover rounded-2xl border border-white/10 p-6 shadow-3xl"
-              >
-                <div className="mb-6 flex items-start justify-between gap-4">
-                  <div className="flex items-center gap-3">
-                    <div className="flex h-11 w-11 items-center justify-center rounded-xl border border-amber-500/20 bg-amber-500/10 text-amber-500 shadow-inner">
-                      <Database className="h-5 w-5" />
-                    </div>
-                    <div>
-                      <h3 className="text-[13px] font-black uppercase tracking-[0.18em]">离线快传存储上限</h3>
-                      <p className="mt-1 text-[9px] font-black uppercase tracking-[0.25em] opacity-30">
-                        控制离线快传在站点内可占用的总容量
-                      </p>
-                    </div>
-                  </div>
-                  {settings.transfer.writeSupported ? statusPill(true, '可编辑', '只读') : statusPill(false, '可编辑', '只读')}
-                </div>
-
-                <div className="space-y-5">
-                  <div className="rounded-xl border border-white/10 bg-black/20 p-4">
-                    <div className="mb-2 text-[9px] font-black uppercase tracking-[0.25em] opacity-30">当前上限</div>
-                    <div className="text-3xl font-black tracking-tight text-amber-500">
-                      {formatBytes(settings.transfer.offlineTransferStorageLimitBytes)}
-                    </div>
-                    <div className="mt-2 text-[9px] font-black uppercase tracking-[0.25em] opacity-30">
-                      {settings.transfer.offlineTransferStorageLimitBytes} 字节
-                    </div>
-                  </div>
-
-                  <form
-                    className="space-y-5"
-                    onSubmit={offlineTransferLimitForm.handleSubmit(handleSaveTransferLimit, () => {
-                      setError('');
-                    })}
+                    <Copy className="h-4 w-4" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setRotateDialogOpen(true)}
+                    disabled={rotating}
+                    className="inline-flex items-center gap-2 rounded-lg border border-white/10 bg-white/5 px-3 text-[10px] font-black uppercase tracking-[0.15em] transition-all hover:bg-white/10 disabled:opacity-60"
                   >
-                    <label className="block">
-                      <span className="mb-2 block text-[9px] font-black uppercase tracking-[0.25em] opacity-30">
-                        输入新的字节数
-                      </span>
-                      <AdminInput
-                        type="number"
-                        min={1}
-                        step={1}
-                        {...offlineTransferLimitForm.register('offlineTransferStorageLimitBytes', {
-                          valueAsNumber: true,
-                          required: '离线快传存储上限不能为空',
-                          validate: (value) =>
-                            Number.isInteger(value) && value > 0 ? true : '离线快传存储上限必须是大于 0 的整数',
-                        })}
-                        aria-invalid={offlineTransferLimitForm.formState.errors.offlineTransferStorageLimitBytes ? 'true' : 'false'}
-                      />
-                      {offlineTransferLimitForm.formState.errors.offlineTransferStorageLimitBytes ? (
-                        <div className="mt-2 text-[10px] font-bold uppercase tracking-[0.15em] text-red-500 dark:text-red-400">
-                          {offlineTransferLimitForm.formState.errors.offlineTransferStorageLimitBytes.message}
-                        </div>
-                      ) : null}
-                    </label>
-
-                    <div className="flex flex-wrap items-center justify-between gap-4 rounded-xl border border-amber-500/10 bg-amber-500/5 px-4 py-4">
-                      <div>
-                        <div className="text-[9px] font-black uppercase tracking-[0.25em] opacity-30">容量预览</div>
-                        <div className="mt-1 text-sm font-black">{formatBytes(offlineLimitPreview)}</div>
-                      </div>
-                      <button
-                        type="submit"
-                        disabled={savingTransferLimit || savingInviteCode || rotatingInviteCode}
-                        className="inline-flex items-center justify-center gap-2 rounded-lg bg-amber-500 px-5 py-4 text-[11px] font-black uppercase tracking-[0.15em] text-white shadow-lg transition-all hover:bg-amber-400 hover:scale-[1.02] active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60"
-                      >
-                        <Save className="h-4 w-4" />
-                        {savingTransferLimit ? '保存中' : '保存上限'}
-                      </button>
-                    </div>
-                  </form>
-
-                  <div className="rounded-xl border border-white/10 bg-white/5 p-4">
-                    <div className="mb-2 flex items-center gap-2 text-[9px] font-black uppercase tracking-[0.25em] opacity-30">
-                      <Clock3 className="h-3.5 w-3.5" />
-                      仅供运营参考
-                    </div>
-                    <div className="text-[11px] font-bold leading-6 opacity-70">
-                      该设置只影响离线快传的总存储配额，不会改变文件列表、分享或普通上传的容量规则。
-                    </div>
-                  </div>
+                    <RotateCcw className={cn('h-3.5 w-3.5', rotating && 'animate-spin')} />
+                    轮换
+                  </button>
                 </div>
-              </motion.section>
+              </label>
+              <label className="block">
+                <span className="mb-2 block text-[10px] font-black uppercase tracking-[0.2em] opacity-40">管理角色</span>
+                <AdminInput
+                  {...form.register('managementRolesRaw', {
+                    validate: (value) => parseRoleText(value).length > 0 || '至少保留一个管理角色',
+                  })}
+                  placeholder="示例: MODERATOR, ADMIN"
+                />
+                <div className="mt-2 text-[10px] font-bold opacity-50">预览: {rolesPreview || '-'}</div>
+              </label>
+              <label className="inline-flex items-center gap-3 rounded-xl border border-white/10 bg-white/5 px-4 py-3">
+                <input type="checkbox" className="h-4 w-4" {...form.register('inviteCodeRequired')} />
+                <span className="text-[11px] font-bold">注册必须邀请码</span>
+                {statusPill(form.watch('inviteCodeRequired'), 'Required', 'Optional')}
+              </label>
             </div>
-          </section>
+          </SectionCard>
 
-          <section>
-            <div className="mb-5 flex items-center justify-between gap-4">
-              <div>
-                <h2 className="text-[10px] font-black uppercase tracking-[0.3em] opacity-30">只读快照</h2>
-                <p className="mt-2 text-[11px] font-bold opacity-40">
-                  下列内容全部来自 <span className="font-mono">GET /api/admin/settings</span>，当前不提供前端编辑入口。
-                </p>
-              </div>
-              <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-[9px] font-black uppercase tracking-[0.2em] opacity-70">
-                Snapshot
-              </span>
+          <SectionCard title="会话设置" subtitle="Access/Refresh 过期时间、黑名单开关与缓冲时间">
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-4">
+              <label>
+                <span className="mb-2 block text-[10px] font-black uppercase tracking-[0.2em] opacity-40">Access TTL (秒)</span>
+                <AdminInput type="number" min={1} step={1} {...form.register('accessExpirationSeconds', { valueAsNumber: true, min: 1 })} />
+              </label>
+              <label>
+                <span className="mb-2 block text-[10px] font-black uppercase tracking-[0.2em] opacity-40">Refresh TTL (秒)</span>
+                <AdminInput type="number" min={1} step={1} {...form.register('refreshExpirationSeconds', { valueAsNumber: true, min: 1 })} />
+              </label>
+              <label>
+                <span className="mb-2 block text-[10px] font-black uppercase tracking-[0.2em] opacity-40">黑名单缓冲 (秒)</span>
+                <AdminInput
+                  type="number"
+                  min={1}
+                  step={1}
+                  {...form.register('tokenBlacklistTtlBufferSeconds', { valueAsNumber: true, min: 1 })}
+                />
+              </label>
+              <label className="inline-flex items-center gap-3 rounded-xl border border-white/10 bg-white/5 px-4 py-3">
+                <input type="checkbox" className="h-4 w-4" {...form.register('tokenBlacklistEnabled')} />
+                <span className="text-[11px] font-bold">启用 Token 黑名单</span>
+              </label>
             </div>
+          </SectionCard>
 
-            <div className="grid grid-cols-1 gap-6 md:grid-cols-2 xl:grid-cols-3">
-              <SnapshotCard
-                title="站点设置"
-                badge={settings.site.writeSupported ? '可写快照' : '只读快照'}
-                icon={<Settings className="h-5 w-5" />}
-              >
-                <SnapshotRow label="是否支持" value={statusPill(settings.site.supported, '已接入', '未接入')} />
-                <SnapshotRow label="写入支持" value={statusPill(settings.site.writeSupported, '可写', '只读')} />
-              </SnapshotCard>
-
-              <SnapshotCard
-                title="用户会话"
-                badge={settings.userSession.writeSupported ? '可写快照' : '只读快照'}
-                icon={<Shield className="h-5 w-5" />}
-              >
-                <SnapshotRow label="Access TTL" value={formatDurationSeconds(settings.userSession.accessExpirationSeconds)} />
-                <SnapshotRow label="Refresh TTL" value={formatDurationSeconds(settings.userSession.refreshExpirationSeconds)} />
-                <SnapshotRow
-                  label="Token 黑名单"
-                  value={statusPill(settings.userSession.tokenBlacklistEnabled, '已启用', '未启用')}
+          <SectionCard title="传输与媒体" subtitle="离线快传容量与媒体处理开关">
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-4">
+              <label className="md:col-span-2">
+                <span className="mb-2 block text-[10px] font-black uppercase tracking-[0.2em] opacity-40">离线快传上限 (字节)</span>
+                <AdminInput
+                  type="number"
+                  min={1}
+                  step={1}
+                  {...form.register('offlineTransferStorageLimitBytes', { valueAsNumber: true, min: 1 })}
                 />
-                <SnapshotRow
-                  label="黑名单缓冲"
-                  value={formatDurationSeconds(settings.userSession.tokenBlacklistTtlBufferSeconds)}
-                />
-                <SnapshotRow label="写入支持" value={statusPill(settings.userSession.writeSupported, '可写', '只读')} />
-              </SnapshotCard>
-
-              <SnapshotCard
-                title="媒体处理"
-                badge={settings.mediaProcessing.writeSupported ? '可写快照' : '只读快照'}
-                icon={<Server className="h-5 w-5" />}
-              >
-                <SnapshotRow
-                  label="元数据提取"
-                  value={statusPill(settings.mediaProcessing.metadataExtractionEnabled, '已启用', '未启用')}
-                />
-                <SnapshotRow
-                  label="缩略图生成"
-                  value={statusPill(settings.mediaProcessing.thumbnailGenerationEnabled, '已启用', '未启用')}
-                />
-                <SnapshotRow
-                  label="视频封面"
-                  value={statusPill(settings.mediaProcessing.videoPosterEnabled, '已启用', '未启用')}
-                />
-                <SnapshotRow label="写入支持" value={statusPill(settings.mediaProcessing.writeSupported, '可写', '只读')} />
-              </SnapshotCard>
-
-              <SnapshotCard
-                title="任务队列"
-                badge={settings.queue.writeSupported ? '可写快照' : '只读快照'}
-                icon={<Clock3 className="h-5 w-5" />}
-              >
-                <SnapshotRow label="后端" value={settings.queue.backend} valueClassName="font-mono uppercase tracking-[0.2em]" />
-                <SnapshotRow label="固定延迟" value={formatDurationMs(settings.queue.mediaMetadataFixedDelayMs)} />
-                <SnapshotRow label="初始延迟" value={formatDurationMs(settings.queue.mediaMetadataInitialDelayMs)} />
-                <SnapshotRow label="写入支持" value={statusPill(settings.queue.writeSupported, '可写', '只读')} />
-              </SnapshotCard>
-
-              <SnapshotCard
-                title="外观"
-                badge={settings.appearance.writeSupported ? '可写快照' : '只读快照'}
-                icon={<Layers3 className="h-5 w-5" />}
-              >
-                <SnapshotRow label="是否支持" value={statusPill(settings.appearance.supported, '已接入', '未接入')} />
-                <SnapshotRow label="写入支持" value={statusPill(settings.appearance.writeSupported, '可写', '只读')} />
-              </SnapshotCard>
-
-              <SnapshotCard
-                title="服务器"
-                badge={settings.server.writeSupported ? '可写快照' : '只读快照'}
-                icon={<Server className="h-5 w-5" />}
-              >
-                <SnapshotRow
-                  label="存储提供者"
-                  value={settings.server.storageProvider}
-                  valueClassName="font-mono uppercase tracking-[0.2em]"
-                />
-                <SnapshotRow label="Redis" value={statusPill(settings.server.redisEnabled, '已启用', '未启用')} />
-                <SnapshotRow label="写入支持" value={statusPill(settings.server.writeSupported, '可写', '只读')} />
-              </SnapshotCard>
+                <div className="mt-2 text-[10px] font-bold opacity-60">容量预览: {formatBytes(Number.isFinite(watchOfflineLimit) ? watchOfflineLimit : 0)}</div>
+              </label>
+              <label className="inline-flex items-center gap-3 rounded-xl border border-white/10 bg-white/5 px-4 py-3">
+                <input type="checkbox" className="h-4 w-4" {...form.register('metadataExtractionEnabled')} />
+                <span className="text-[11px] font-bold">元数据提取</span>
+              </label>
+              <label className="inline-flex items-center gap-3 rounded-xl border border-white/10 bg-white/5 px-4 py-3">
+                <input type="checkbox" className="h-4 w-4" {...form.register('thumbnailGenerationEnabled')} />
+                <span className="text-[11px] font-bold">缩略图生成</span>
+              </label>
+              <label className="inline-flex items-center gap-3 rounded-xl border border-white/10 bg-white/5 px-4 py-3">
+                <input type="checkbox" className="h-4 w-4" {...form.register('videoPosterEnabled')} />
+                <span className="text-[11px] font-bold">视频封面</span>
+              </label>
             </div>
-          </section>
-        </motion.div>
-      ) : null}
+          </SectionCard>
+
+          <SectionCard title="队列、站点、外观、服务" subtitle="剩余系统级字段统一在此编辑">
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-4">
+              <label>
+                <span className="mb-2 block text-[10px] font-black uppercase tracking-[0.2em] opacity-40">Queue Backend</span>
+                <AdminInput {...form.register('queueBackend', { required: true })} placeholder="in-memory / redis" />
+              </label>
+              <label>
+                <span className="mb-2 block text-[10px] font-black uppercase tracking-[0.2em] opacity-40">Fixed Delay (ms)</span>
+                <AdminInput
+                  type="number"
+                  min={1}
+                  step={1}
+                  {...form.register('queueMediaMetadataFixedDelayMs', { valueAsNumber: true, min: 1 })}
+                />
+              </label>
+              <label>
+                <span className="mb-2 block text-[10px] font-black uppercase tracking-[0.2em] opacity-40">Initial Delay (ms)</span>
+                <AdminInput
+                  type="number"
+                  min={1}
+                  step={1}
+                  {...form.register('queueMediaMetadataInitialDelayMs', { valueAsNumber: true, min: 1 })}
+                />
+              </label>
+              <label>
+                <span className="mb-2 block text-[10px] font-black uppercase tracking-[0.2em] opacity-40">Storage Provider</span>
+                <AdminInput {...form.register('serverStorageProvider', { required: true })} placeholder="local / s3" />
+              </label>
+              <label className="inline-flex items-center gap-3 rounded-xl border border-white/10 bg-white/5 px-4 py-3">
+                <input type="checkbox" className="h-4 w-4" {...form.register('siteSupported')} />
+                <span className="text-[11px] font-bold">站点支持</span>
+              </label>
+              <label className="inline-flex items-center gap-3 rounded-xl border border-white/10 bg-white/5 px-4 py-3">
+                <input type="checkbox" className="h-4 w-4" {...form.register('appearanceSupported')} />
+                <span className="text-[11px] font-bold">外观支持</span>
+              </label>
+              <label className="inline-flex items-center gap-3 rounded-xl border border-white/10 bg-white/5 px-4 py-3">
+                <input type="checkbox" className="h-4 w-4" {...form.register('serverRedisEnabled')} />
+                <span className="text-[11px] font-bold">服务端 Redis 开关</span>
+              </label>
+            </div>
+          </SectionCard>
+
+          <div className="sticky bottom-0 z-10 mt-4 border border-white/10 bg-black/30 p-4 backdrop-blur-xl">
+            <button
+              type="submit"
+              disabled={busy}
+              className="inline-flex items-center justify-center gap-2 rounded-lg bg-blue-600 px-6 py-3 text-[11px] font-black uppercase tracking-[0.15em] text-white shadow-lg transition-all hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              <Save className="h-4 w-4" />
+              {saving ? '保存中...' : '保存全部设置'}
+            </button>
+          </div>
+        </form>
+      )}
 
       <AdminAlertDialog
-        open={rotateInviteDialogOpen}
+        open={rotateDialogOpen}
         title="轮换邀请码"
-        description="旧邀请码会立即失效，新的邀请码将覆盖当前注册入口。"
+        description="将生成一个全新邀请码。轮换后请记得点击“保存全部设置”。"
         confirmLabel="确认轮换"
         cancelLabel="取消"
         confirmTone="warning"
-        busy={rotatingInviteCode}
-        onConfirm={handleConfirmRotateInviteCode}
-        onCancel={() => setRotateInviteDialogOpen(false)}
+        busy={rotating}
+        onConfirm={async () => {
+          setRotateDialogOpen(false);
+          await handleRotateInviteCode();
+        }}
+        onCancel={() => setRotateDialogOpen(false)}
       />
     </motion.div>
   );

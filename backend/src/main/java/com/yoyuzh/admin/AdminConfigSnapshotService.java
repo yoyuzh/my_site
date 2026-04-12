@@ -4,7 +4,6 @@ import com.yoyuzh.auth.RegistrationInviteService;
 import com.yoyuzh.auth.UserRole;
 import com.yoyuzh.config.AppRedisProperties;
 import com.yoyuzh.config.FileStorageProperties;
-import com.yoyuzh.config.JwtProperties;
 import com.yoyuzh.files.core.FileBlobRepository;
 import com.yoyuzh.files.core.FileEntityRepository;
 import com.yoyuzh.files.core.StoredFileRepository;
@@ -12,11 +11,8 @@ import com.yoyuzh.files.policy.StoragePolicy;
 import com.yoyuzh.files.policy.StoragePolicyCapabilities;
 import com.yoyuzh.files.policy.StoragePolicyService;
 import lombok.RequiredArgsConstructor;
-import org.springframework.core.env.Environment;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
-
-import java.util.List;
 
 @Service
 @RequiredArgsConstructor
@@ -26,45 +22,52 @@ public class AdminConfigSnapshotService {
     private final AdminMetricsService adminMetricsService;
     private final AppRedisProperties redisProperties;
     private final FileStorageProperties fileStorageProperties;
-    private final JwtProperties jwtProperties;
-    private final Environment environment;
+    private final AdminRuntimeSettingsService adminRuntimeSettingsService;
     private final StoragePolicyService storagePolicyService;
     private final StoredFileRepository storedFileRepository;
     private final FileBlobRepository fileBlobRepository;
     private final FileEntityRepository fileEntityRepository;
 
     public AdminSettingsResponse getSettings() {
+        AdminRuntimeSettingsService.State state = adminRuntimeSettingsService.snapshot();
         return new AdminSettingsResponse(
-                new AdminSettingsResponse.SiteSection(false, false),
+                new AdminSettingsResponse.SiteSection(state.siteSupported(), true),
                 new AdminSettingsResponse.RegistrationSection(
-                        true,
+                        state.registrationInviteCodeRequired(),
                         registrationInviteService.getCurrentInviteCode(),
-                        List.of(UserRole.MODERATOR.name(), UserRole.ADMIN.name()),
+                        state.registrationManagementRoles().isEmpty()
+                                ? java.util.List.of(UserRole.MODERATOR.name(), UserRole.ADMIN.name())
+                                : state.registrationManagementRoles(),
                         true
                 ),
                 new AdminSettingsResponse.UserSessionSection(
-                        jwtProperties.getAccessExpirationSeconds(),
-                        jwtProperties.getRefreshExpirationSeconds(),
-                        redisProperties.isEnabled(),
-                        redisProperties.getTtlBufferSeconds(),
-                        false
+                        state.userSessionAccessExpirationSeconds(),
+                        state.userSessionRefreshExpirationSeconds(),
+                        state.userSessionTokenBlacklistEnabled(),
+                        state.userSessionTokenBlacklistTtlBufferSeconds(),
+                        true
                 ),
                 new AdminSettingsResponse.TransferSection(
                         adminMetricsService.getOfflineTransferStorageLimitBytes(),
                         true
                 ),
-                new AdminSettingsResponse.MediaProcessingSection(true, false, false, false),
-                new AdminSettingsResponse.QueueSection(
-                        redisProperties.isEnabled() ? "redis" : "in-memory",
-                        readLongProperty("app.redis.broker.media-meta.fixed-delay-ms", 3000L),
-                        readLongProperty("app.redis.broker.media-meta.initial-delay-ms", 15000L),
-                        false
+                new AdminSettingsResponse.MediaProcessingSection(
+                        state.mediaMetadataExtractionEnabled(),
+                        state.mediaThumbnailGenerationEnabled(),
+                        state.mediaVideoPosterEnabled(),
+                        true
                 ),
-                new AdminSettingsResponse.AppearanceSection(false, false),
+                new AdminSettingsResponse.QueueSection(
+                        state.queueBackend(),
+                        state.queueMediaMetadataFixedDelayMs(),
+                        state.queueMediaMetadataInitialDelayMs(),
+                        true
+                ),
+                new AdminSettingsResponse.AppearanceSection(state.appearanceSupported(), true),
                 new AdminSettingsResponse.ServerSection(
-                        normalizeStorageProvider(fileStorageProperties.getProvider()),
-                        redisProperties.isEnabled(),
-                        false
+                        state.serverStorageProvider(),
+                        state.serverRedisEnabled(),
+                        true
                 )
         );
     }
@@ -115,7 +118,4 @@ public class AdminConfigSnapshotService {
         return effectiveMaxFileSize;
     }
 
-    private long readLongProperty(String key, long defaultValue) {
-        return environment.getProperty(key, Long.class, defaultValue);
-    }
 }

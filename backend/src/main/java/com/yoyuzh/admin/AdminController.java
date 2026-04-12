@@ -55,6 +55,12 @@ public class AdminController {
         return ApiResponse.success(adminConfigSnapshotService.getSettings());
     }
 
+    @PutMapping("/settings")
+    public ApiResponse<AdminSettingsResponse> updateSettings(
+            @Valid @RequestBody AdminSettingsUpdateRequest request) {
+        return ApiResponse.success(adminMutableSettingsService.updateSettings(request));
+    }
+
     @PatchMapping("/settings/registration/invite-code")
     public ApiResponse<AdminRegistrationInviteCodeResponse> updateRegistrationInviteCode(
             @Valid @RequestBody AdminRegistrationInviteCodeUpdateRequest request) {

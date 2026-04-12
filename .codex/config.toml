@@ -1,3 +1,5 @@
+approval_policy = "never"
+sandbox_mode = "workspace-write"
 [features]
 multi_agent = true
 
@@ -35,3 +37,6 @@ nickname_candidates = ["reviewer", "review", "audit"]
 description = "Handles release-style delivery: build and publish the frontend to OSS, and package/upload the backend jar over SSH when deployment details are available."
 config_file = ".codex/agents/deployer.toml"
 nickname_candidates = ["deployer", "deploy", "release", "publish"]
+
+[sandbox_workspace_write]
+network_access = true

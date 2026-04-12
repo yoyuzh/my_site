@@ -98,6 +98,8 @@ class AdminControllerIntegrationTest {
     @Autowired
     private AdminMetricsService adminMetricsService;
     @Autowired
+    private AdminRuntimeSettingsService adminRuntimeSettingsService;
+    @Autowired
     private StoragePolicyRepository storagePolicyRepository;
 
     private User portalUser;
@@ -119,6 +121,7 @@ class AdminControllerIntegrationTest {
         adminMetricsStateRepository.deleteAll();
         registrationInviteStateRepository.deleteAll();
         adminAuditLogRepository.deleteAll();
+        adminRuntimeSettingsService.reset();
 
         Long defaultPolicyId = storagePolicyRepository.findFirstByDefaultPolicyTrueOrderByIdAsc()
                 .map(StoragePolicy::getId)
@@ -379,14 +382,14 @@ class AdminControllerIntegrationTest {
                 .andExpect(jsonPath("$.data.registration.writeSupported").value(true))
                 .andExpect(jsonPath("$.data.userSession.accessExpirationSeconds").value(900))
                 .andExpect(jsonPath("$.data.userSession.refreshExpirationSeconds").value(1209600))
-                .andExpect(jsonPath("$.data.userSession.writeSupported").value(false))
+                .andExpect(jsonPath("$.data.userSession.writeSupported").value(true))
                 .andExpect(jsonPath("$.data.transfer.offlineTransferStorageLimitBytes").isNumber())
                 .andExpect(jsonPath("$.data.transfer.writeSupported").value(true))
                 .andExpect(jsonPath("$.data.queue.backend").value("in-memory"))
-                .andExpect(jsonPath("$.data.queue.writeSupported").value(false))
+                .andExpect(jsonPath("$.data.queue.writeSupported").value(true))
                 .andExpect(jsonPath("$.data.server.storageProvider").value("local"))
                 .andExpect(jsonPath("$.data.server.redisEnabled").value(false))
-                .andExpect(jsonPath("$.data.server.writeSupported").value(false));
+                .andExpect(jsonPath("$.data.server.writeSupported").value(true));
 
         mockMvc.perform(get("/api/admin/filesystem"))
                 .andExpect(status().isOk())
@@ -402,6 +405,80 @@ class AdminControllerIntegrationTest {
                 .andExpect(jsonPath("$.data.mediaProcessing.metadataExtractionEnabled").value(true))
                 .andExpect(jsonPath("$.data.cache.backend").value("disabled"))
                 .andExpect(jsonPath("$.data.webdav.enabled").value(false));
+    }
+
+    @Test
+    @WithMockUser(username = "service-admin", roles = "ADMIN")
+    void shouldAllowAdminToUpdateWholeSettingsFromSingleEndpoint() throws Exception {
+        mockMvc.perform(put("/api/admin/settings")
+                        .contentType("application/json")
+                        .content("""
+                                {
+                                  "site": {
+                                    "supported": true
+                                  },
+                                  "registration": {
+                                    "inviteCodeRequired": false,
+                                    "currentInviteCode": "INV-WHOLE-SETTINGS",
+                                    "managementRoles": ["ADMIN"]
+                                  },
+                                  "userSession": {
+                                    "accessExpirationSeconds": 1200,
+                                    "refreshExpirationSeconds": 86400,
+                                    "tokenBlacklistEnabled": true,
+                                    "tokenBlacklistTtlBufferSeconds": 45
+                                  },
+                                  "transfer": {
+                                    "offlineTransferStorageLimitBytes": 2147483648
+                                  },
+                                  "mediaProcessing": {
+                                    "metadataExtractionEnabled": true,
+                                    "thumbnailGenerationEnabled": true,
+                                    "videoPosterEnabled": true
+                                  },
+                                  "queue": {
+                                    "backend": "redis",
+                                    "mediaMetadataFixedDelayMs": 1000,
+                                    "mediaMetadataInitialDelayMs": 5000
+                                  },
+                                  "appearance": {
+                                    "supported": true
+                                  },
+                                  "server": {
+                                    "storageProvider": "s3",
+                                    "redisEnabled": true
+                                  }
+                                }
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(0))
+                .andExpect(jsonPath("$.data.site.supported").value(true))
+                .andExpect(jsonPath("$.data.registration.inviteCodeRequired").value(false))
+                .andExpect(jsonPath("$.data.registration.currentInviteCode").value("INV-WHOLE-SETTINGS"))
+                .andExpect(jsonPath("$.data.registration.managementRoles.length()").value(1))
+                .andExpect(jsonPath("$.data.registration.managementRoles[0]").value("ADMIN"))
+                .andExpect(jsonPath("$.data.userSession.accessExpirationSeconds").value(1200))
+                .andExpect(jsonPath("$.data.userSession.refreshExpirationSeconds").value(86400))
+                .andExpect(jsonPath("$.data.userSession.tokenBlacklistEnabled").value(true))
+                .andExpect(jsonPath("$.data.userSession.tokenBlacklistTtlBufferSeconds").value(45))
+                .andExpect(jsonPath("$.data.transfer.offlineTransferStorageLimitBytes").value(2147483648L))
+                .andExpect(jsonPath("$.data.mediaProcessing.thumbnailGenerationEnabled").value(true))
+                .andExpect(jsonPath("$.data.mediaProcessing.videoPosterEnabled").value(true))
+                .andExpect(jsonPath("$.data.queue.backend").value("redis"))
+                .andExpect(jsonPath("$.data.queue.mediaMetadataFixedDelayMs").value(1000))
+                .andExpect(jsonPath("$.data.queue.mediaMetadataInitialDelayMs").value(5000))
+                .andExpect(jsonPath("$.data.appearance.supported").value(true))
+                .andExpect(jsonPath("$.data.server.storageProvider").value("s3"))
+                .andExpect(jsonPath("$.data.server.redisEnabled").value(true));
+
+        mockMvc.perform(get("/api/admin/settings"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.site.supported").value(true))
+                .andExpect(jsonPath("$.data.registration.inviteCodeRequired").value(false))
+                .andExpect(jsonPath("$.data.registration.currentInviteCode").value("INV-WHOLE-SETTINGS"))
+                .andExpect(jsonPath("$.data.userSession.accessExpirationSeconds").value(1200))
+                .andExpect(jsonPath("$.data.queue.backend").value("redis"))
+                .andExpect(jsonPath("$.data.server.storageProvider").value("s3"));
     }
 
     @Test

@@ -53,8 +53,52 @@ export type AdminOfflineTransferStorageLimitResponse = {
   offlineTransferStorageLimitBytes: number;
 };
 
+export type AdminSettingsUpdateRequest = {
+  site: {
+    supported: boolean;
+  };
+  registration: {
+    inviteCodeRequired: boolean;
+    currentInviteCode: string;
+    managementRoles: string[];
+  };
+  userSession: {
+    accessExpirationSeconds: number;
+    refreshExpirationSeconds: number;
+    tokenBlacklistEnabled: boolean;
+    tokenBlacklistTtlBufferSeconds: number;
+  };
+  transfer: {
+    offlineTransferStorageLimitBytes: number;
+  };
+  mediaProcessing: {
+    metadataExtractionEnabled: boolean;
+    thumbnailGenerationEnabled: boolean;
+    videoPosterEnabled: boolean;
+  };
+  queue: {
+    backend: string;
+    mediaMetadataFixedDelayMs: number;
+    mediaMetadataInitialDelayMs: number;
+  };
+  appearance: {
+    supported: boolean;
+  };
+  server: {
+    storageProvider: string;
+    redisEnabled: boolean;
+  };
+};
+
 export async function getAdminSettings() {
   return fetchApi<AdminSettings>('/admin/settings');
+}
+
+export async function updateAdminSettings(payload: AdminSettingsUpdateRequest) {
+  return fetchApi<AdminSettings>('/admin/settings', {
+    method: 'PUT',
+    body: JSON.stringify(payload),
+  });
 }
 
 export async function updateAdminRegistrationInviteCode(inviteCode: string) {

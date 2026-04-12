@@ -3,7 +3,6 @@ package com.yoyuzh.admin;
 import com.yoyuzh.auth.RegistrationInviteService;
 import com.yoyuzh.config.AppRedisProperties;
 import com.yoyuzh.config.FileStorageProperties;
-import com.yoyuzh.config.JwtProperties;
 import com.yoyuzh.files.core.FileBlobRepository;
 import com.yoyuzh.files.core.FileEntityRepository;
 import com.yoyuzh.files.core.StoredFileRepository;
@@ -17,7 +16,6 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.mock.env.MockEnvironment;
 
 import java.time.LocalDateTime;
 
@@ -39,26 +37,23 @@ class AdminConfigSnapshotServiceTest {
     private FileBlobRepository fileBlobRepository;
     @Mock
     private FileEntityRepository fileEntityRepository;
+    @Mock
+    private AdminRuntimeSettingsService adminRuntimeSettingsService;
 
     private AppRedisProperties redisProperties;
     private FileStorageProperties fileStorageProperties;
-    private JwtProperties jwtProperties;
-    private MockEnvironment environment;
     private AdminConfigSnapshotService adminConfigSnapshotService;
 
     @BeforeEach
     void setUp() {
         redisProperties = new AppRedisProperties();
         fileStorageProperties = new FileStorageProperties();
-        jwtProperties = new JwtProperties();
-        environment = new MockEnvironment();
         adminConfigSnapshotService = new AdminConfigSnapshotService(
                 registrationInviteService,
                 adminMetricsService,
                 redisProperties,
                 fileStorageProperties,
-                jwtProperties,
-                environment,
+                adminRuntimeSettingsService,
                 storagePolicyService,
                 storedFileRepository,
                 fileBlobRepository,
@@ -68,36 +63,49 @@ class AdminConfigSnapshotServiceTest {
 
     @Test
     void shouldExposeAdminSettingsSnapshot() {
-        redisProperties.setEnabled(true);
-        redisProperties.setTtlBufferSeconds(120);
-        jwtProperties.setAccessExpirationSeconds(1800);
-        jwtProperties.setRefreshExpirationSeconds(604800);
-        fileStorageProperties.setProvider("s3");
-        environment.setProperty("app.redis.broker.media-meta.fixed-delay-ms", "5000");
-        environment.setProperty("app.redis.broker.media-meta.initial-delay-ms", "25000");
+        AdminRuntimeSettingsService.State runtimeState = new AdminRuntimeSettingsService.State(
+                true,
+                false,
+                java.util.List.of("ADMIN"),
+                1800L,
+                604800L,
+                true,
+                120L,
+                true,
+                true,
+                false,
+                "redis",
+                5000L,
+                25000L,
+                true,
+                "s3",
+                true
+        );
+        when(adminRuntimeSettingsService.snapshot()).thenReturn(runtimeState);
         when(registrationInviteService.getCurrentInviteCode()).thenReturn("INV-2026");
         when(adminMetricsService.getOfflineTransferStorageLimitBytes()).thenReturn(20L * 1024 * 1024 * 1024);
 
         AdminSettingsResponse response = adminConfigSnapshotService.getSettings();
 
-        assertThat(response.site().supported()).isFalse();
-        assertThat(response.registration().inviteCodeRequired()).isTrue();
+        assertThat(response.site().supported()).isTrue();
+        assertThat(response.site().writeSupported()).isTrue();
+        assertThat(response.registration().inviteCodeRequired()).isFalse();
         assertThat(response.registration().currentInviteCode()).isEqualTo("INV-2026");
-        assertThat(response.registration().managementRoles()).containsExactly("MODERATOR", "ADMIN");
+        assertThat(response.registration().managementRoles()).containsExactly("ADMIN");
         assertThat(response.registration().writeSupported()).isTrue();
         assertThat(response.userSession().accessExpirationSeconds()).isEqualTo(1800L);
         assertThat(response.userSession().refreshExpirationSeconds()).isEqualTo(604800L);
         assertThat(response.userSession().tokenBlacklistEnabled()).isTrue();
-        assertThat(response.userSession().writeSupported()).isFalse();
+        assertThat(response.userSession().writeSupported()).isTrue();
         assertThat(response.transfer().offlineTransferStorageLimitBytes()).isGreaterThan(0L);
         assertThat(response.transfer().writeSupported()).isTrue();
         assertThat(response.queue().backend()).isEqualTo("redis");
-        assertThat(response.queue().writeSupported()).isFalse();
+        assertThat(response.queue().writeSupported()).isTrue();
         assertThat(response.queue().mediaMetadataFixedDelayMs()).isEqualTo(5000L);
         assertThat(response.queue().mediaMetadataInitialDelayMs()).isEqualTo(25000L);
         assertThat(response.server().storageProvider()).isEqualTo("s3");
         assertThat(response.server().redisEnabled()).isTrue();
-        assertThat(response.server().writeSupported()).isFalse();
+        assertThat(response.server().writeSupported()).isTrue();
     }
 
     @Test
