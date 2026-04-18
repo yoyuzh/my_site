@@ -1,7 +1,11 @@
-import { Suspense, lazy } from 'react';
+import { Suspense, lazy, useEffect, useState } from 'react';
 import { BrowserRouter, Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import { AnimatePresence } from 'motion/react';
 import { useIsMobile } from './hooks/useIsMobile';
+import { useSessionRuntime } from './hooks/use-session-runtime';
+import { ApiError } from './lib/api';
+import { canAccessAdmin } from './lib/session';
+import { getAdminSummary } from './operations-admin/api/core/admin';
 
 const Layout = lazy(() => import('./components/layout/Layout'));
 const MobileLayout = lazy(() => import('./mobile-components/MobileLayout'));
@@ -26,6 +30,12 @@ const AdminTasks = lazy(() => import('./operations-admin/pages/monitoring/tasks'
 const AdminAudits = lazy(() => import('./operations-admin/pages/monitoring/audits'));
 const AdminOAuthApps = lazy(() => import('./operations-admin/pages/settings/oauth-apps'));
 
+type AdminGateState =
+  | { status: 'checking' }
+  | { status: 'allowed' }
+  | { status: 'denied' }
+  | { status: 'error'; message: string };
+
 function AnimatedRoutes({ isMobile }: { isMobile: boolean }) {
   const location = useLocation();
   const AppLayout = isMobile ? MobileLayout : Layout;
@@ -45,7 +55,7 @@ function AnimatedRoutes({ isMobile }: { isMobile: boolean }) {
             <Route path="/recycle-bin" element={<RecycleBin />} />
             <Route path="/transfer" element={<Transfer />} />
 
-            <Route path="/admin" element={isMobile ? <Navigate to="/overview" replace /> : <AdminLayout />}>
+            <Route path="/admin" element={<AdminRouteGate isMobile={isMobile} />}>
               <Route index element={<Navigate to="dashboard" replace />} />
               <Route path="dashboard" element={<AdminDashboard />} />
               <Route path="settings" element={<AdminSettings />} />
@@ -68,11 +78,88 @@ function AnimatedRoutes({ isMobile }: { isMobile: boolean }) {
   );
 }
 
-function RouteLoadingFallback() {
+function AdminRouteGate({ isMobile }: { isMobile: boolean }) {
+  const { session } = useSessionRuntime();
+  const [state, setState] = useState<AdminGateState>({ status: 'checking' });
+
+  useEffect(() => {
+    let cancelled = false;
+
+    if (isMobile || !session || !canAccessAdmin(session.user.role)) {
+      setState({ status: 'denied' });
+      return () => {
+        cancelled = true;
+      };
+    }
+
+    setState({ status: 'checking' });
+
+    void getAdminSummary()
+      .then(() => {
+        if (!cancelled) {
+          setState({ status: 'allowed' });
+        }
+      })
+      .catch((error) => {
+        if (cancelled) {
+          return;
+        }
+
+        if (error instanceof ApiError && (error.status === 401 || error.status === 403)) {
+          setState({ status: 'denied' });
+          return;
+        }
+
+        setState({
+          status: 'error',
+          message: error instanceof Error ? error.message : '管理员权限校验失败',
+        });
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [isMobile, session?.accessToken, session?.user.role]);
+
+  if (isMobile) {
+    return <Navigate to="/overview" replace />;
+  }
+
+  if (!session) {
+    return <Navigate to="/login" replace />;
+  }
+
+  if (!canAccessAdmin(session.user.role) || state.status === 'denied') {
+    return <Navigate to="/overview" replace />;
+  }
+
+  if (state.status === 'error') {
+    return <RouteErrorState message={state.message} />;
+  }
+
+  if (state.status !== 'allowed') {
+    return <RouteLoadingFallback label="Checking admin access..." />;
+  }
+
+  return <AdminLayout />;
+}
+
+function RouteLoadingFallback({ label = 'Loading...' }: { label?: string }) {
   return (
     <div className="flex h-screen w-full items-center justify-center bg-aurora text-gray-900 dark:text-gray-100">
       <div className="rounded-lg border border-white/20 bg-white/40 px-4 py-3 text-sm font-black uppercase tracking-[0.2em] shadow-lg backdrop-blur-xl dark:bg-black/30">
-        Loading...
+        {label}
+      </div>
+    </div>
+  );
+}
+
+function RouteErrorState({ message }: { message: string }) {
+  return (
+    <div className="flex h-screen w-full items-center justify-center bg-aurora px-6 text-gray-900 dark:text-gray-100">
+      <div className="max-w-md rounded-lg border border-red-500/20 bg-white/40 px-6 py-5 text-center shadow-lg backdrop-blur-xl dark:bg-black/30">
+        <div className="text-xs font-black uppercase tracking-[0.3em] text-red-500">Admin Access Check Failed</div>
+        <div className="mt-3 text-sm font-bold opacity-80">{message}</div>
       </div>
     </div>
   );

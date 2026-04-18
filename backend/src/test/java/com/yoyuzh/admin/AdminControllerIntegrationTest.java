@@ -293,6 +293,9 @@ class AdminControllerIntegrationTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.role").value("ADMIN"));
 
+        secondaryUser.setRole(com.yoyuzh.auth.UserRole.MODERATOR);
+        secondaryUser = userRepository.save(secondaryUser);
+
         mockMvc.perform(patch("/api/admin/users/{userId}/status", portalUser.getId())
                         .contentType("application/json")
                         .content("""
@@ -382,14 +385,17 @@ class AdminControllerIntegrationTest {
                 .andExpect(jsonPath("$.data.registration.writeSupported").value(true))
                 .andExpect(jsonPath("$.data.userSession.accessExpirationSeconds").value(900))
                 .andExpect(jsonPath("$.data.userSession.refreshExpirationSeconds").value(1209600))
-                .andExpect(jsonPath("$.data.userSession.writeSupported").value(true))
+                .andExpect(jsonPath("$.data.site.writeSupported").value(false))
+                .andExpect(jsonPath("$.data.userSession.writeSupported").value(false))
                 .andExpect(jsonPath("$.data.transfer.offlineTransferStorageLimitBytes").isNumber())
                 .andExpect(jsonPath("$.data.transfer.writeSupported").value(true))
                 .andExpect(jsonPath("$.data.queue.backend").value("in-memory"))
-                .andExpect(jsonPath("$.data.queue.writeSupported").value(true))
+                .andExpect(jsonPath("$.data.mediaProcessing.writeSupported").value(false))
+                .andExpect(jsonPath("$.data.queue.writeSupported").value(false))
+                .andExpect(jsonPath("$.data.appearance.writeSupported").value(false))
                 .andExpect(jsonPath("$.data.server.storageProvider").value("local"))
                 .andExpect(jsonPath("$.data.server.redisEnabled").value(false))
-                .andExpect(jsonPath("$.data.server.writeSupported").value(true));
+                .andExpect(jsonPath("$.data.server.writeSupported").value(false));
 
         mockMvc.perform(get("/api/admin/filesystem"))
                 .andExpect(status().isOk())
@@ -410,6 +416,10 @@ class AdminControllerIntegrationTest {
     @Test
     @WithMockUser(username = "service-admin", roles = "ADMIN")
     void shouldAllowAdminToUpdateWholeSettingsFromSingleEndpoint() throws Exception {
+        mockMvc.perform(get("/api/admin/settings"))
+                .andExpect(status().isOk());
+        String originalInviteCode = currentInviteCode();
+
         mockMvc.perform(put("/api/admin/settings")
                         .contentType("application/json")
                         .content("""
@@ -452,33 +462,96 @@ class AdminControllerIntegrationTest {
                                 """))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value(0))
-                .andExpect(jsonPath("$.data.site.supported").value(true))
+                .andExpect(jsonPath("$.data.site.supported").value(false))
                 .andExpect(jsonPath("$.data.registration.inviteCodeRequired").value(false))
-                .andExpect(jsonPath("$.data.registration.currentInviteCode").value("INV-WHOLE-SETTINGS"))
+                .andExpect(jsonPath("$.data.registration.currentInviteCode").value(originalInviteCode))
                 .andExpect(jsonPath("$.data.registration.managementRoles.length()").value(1))
                 .andExpect(jsonPath("$.data.registration.managementRoles[0]").value("ADMIN"))
-                .andExpect(jsonPath("$.data.userSession.accessExpirationSeconds").value(1200))
-                .andExpect(jsonPath("$.data.userSession.refreshExpirationSeconds").value(86400))
-                .andExpect(jsonPath("$.data.userSession.tokenBlacklistEnabled").value(true))
-                .andExpect(jsonPath("$.data.userSession.tokenBlacklistTtlBufferSeconds").value(45))
+                .andExpect(jsonPath("$.data.userSession.accessExpirationSeconds").value(900))
+                .andExpect(jsonPath("$.data.userSession.refreshExpirationSeconds").value(1209600))
+                .andExpect(jsonPath("$.data.userSession.tokenBlacklistEnabled").value(false))
+                .andExpect(jsonPath("$.data.userSession.tokenBlacklistTtlBufferSeconds").value(60))
                 .andExpect(jsonPath("$.data.transfer.offlineTransferStorageLimitBytes").value(2147483648L))
-                .andExpect(jsonPath("$.data.mediaProcessing.thumbnailGenerationEnabled").value(true))
-                .andExpect(jsonPath("$.data.mediaProcessing.videoPosterEnabled").value(true))
-                .andExpect(jsonPath("$.data.queue.backend").value("redis"))
-                .andExpect(jsonPath("$.data.queue.mediaMetadataFixedDelayMs").value(1000))
-                .andExpect(jsonPath("$.data.queue.mediaMetadataInitialDelayMs").value(5000))
-                .andExpect(jsonPath("$.data.appearance.supported").value(true))
-                .andExpect(jsonPath("$.data.server.storageProvider").value("s3"))
-                .andExpect(jsonPath("$.data.server.redisEnabled").value(true));
+                .andExpect(jsonPath("$.data.mediaProcessing.thumbnailGenerationEnabled").value(false))
+                .andExpect(jsonPath("$.data.mediaProcessing.videoPosterEnabled").value(false))
+                .andExpect(jsonPath("$.data.queue.backend").value("in-memory"))
+                .andExpect(jsonPath("$.data.queue.mediaMetadataFixedDelayMs").value(3000))
+                .andExpect(jsonPath("$.data.queue.mediaMetadataInitialDelayMs").value(15000))
+                .andExpect(jsonPath("$.data.appearance.supported").value(false))
+                .andExpect(jsonPath("$.data.server.storageProvider").value("local"))
+                .andExpect(jsonPath("$.data.server.redisEnabled").value(false));
 
         mockMvc.perform(get("/api/admin/settings"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.site.supported").value(true))
+                .andExpect(jsonPath("$.data.site.supported").value(false))
                 .andExpect(jsonPath("$.data.registration.inviteCodeRequired").value(false))
-                .andExpect(jsonPath("$.data.registration.currentInviteCode").value("INV-WHOLE-SETTINGS"))
-                .andExpect(jsonPath("$.data.userSession.accessExpirationSeconds").value(1200))
-                .andExpect(jsonPath("$.data.queue.backend").value("redis"))
-                .andExpect(jsonPath("$.data.server.storageProvider").value("s3"));
+                .andExpect(jsonPath("$.data.registration.currentInviteCode").value(originalInviteCode))
+                .andExpect(jsonPath("$.data.userSession.accessExpirationSeconds").value(900))
+                .andExpect(jsonPath("$.data.queue.backend").value("in-memory"))
+                .andExpect(jsonPath("$.data.server.storageProvider").value("local"));
+    }
+
+    @Test
+    @WithMockUser(username = "service-admin", roles = "ADMIN")
+    void shouldAllowWritableOnlySettingsPayload() throws Exception {
+        mockMvc.perform(get("/api/admin/settings"))
+                .andExpect(status().isOk());
+        String originalInviteCode = currentInviteCode();
+
+        mockMvc.perform(put("/api/admin/settings")
+                        .contentType("application/json")
+                        .content("""
+                                {
+                                  "registration": {
+                                    "inviteCodeRequired": false,
+                                    "currentInviteCode": "INV-REG-ONLY",
+                                    "managementRoles": ["ADMIN"]
+                                  }
+                                }
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(0))
+                .andExpect(jsonPath("$.data.registration.inviteCodeRequired").value(false))
+                .andExpect(jsonPath("$.data.registration.currentInviteCode").value(originalInviteCode))
+                .andExpect(jsonPath("$.data.registration.managementRoles[0]").value("ADMIN"))
+                .andExpect(jsonPath("$.data.transfer.offlineTransferStorageLimitBytes").isNumber())
+                .andExpect(jsonPath("$.data.site.supported").value(false))
+                .andExpect(jsonPath("$.data.queue.backend").value("in-memory"));
+    }
+
+    @Test
+    @WithMockUser(username = "service-admin", roles = "ADMIN")
+    void shouldCanonicalizeRolePrefixedManagementRolesFromSettingsEndpoint() throws Exception {
+        mockMvc.perform(put("/api/admin/settings")
+                        .contentType("application/json")
+                        .content("""
+                                {
+                                  "registration": {
+                                    "inviteCodeRequired": true,
+                                    "managementRoles": ["ROLE_ADMIN", " moderator "]
+                                  }
+                                }
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.registration.managementRoles.length()").value(2))
+                .andExpect(jsonPath("$.data.registration.managementRoles[0]").value("ADMIN"))
+                .andExpect(jsonPath("$.data.registration.managementRoles[1]").value("MODERATOR"));
+    }
+
+    @Test
+    @WithMockUser(username = "service-admin", roles = "ADMIN")
+    void shouldRejectSettingsUpdateWithoutWritableSections() throws Exception {
+        mockMvc.perform(put("/api/admin/settings")
+                        .contentType("application/json")
+                        .content("""
+                                {
+                                  "site": {
+                                    "supported": true
+                                  }
+                                }
+                                """))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value(1000));
     }
 
     @Test
@@ -541,6 +614,33 @@ class AdminControllerIntegrationTest {
                 .andExpect(jsonPath("$.msg").isNotEmpty());
 
         assertThat(currentInviteCode()).isEqualTo(originalInviteCode);
+    }
+
+    @Test
+    @WithMockUser(username = "service-admin", roles = "ADMIN")
+    void shouldRejectRemovingLastAdminCapableUser() throws Exception {
+        mockMvc.perform(get("/api/admin/settings"))
+                .andExpect(status().isOk());
+        portalUser.setRole(com.yoyuzh.auth.UserRole.ADMIN);
+        portalUser = userRepository.save(portalUser);
+        adminRuntimeSettingsService.update(new AdminSettingsUpdateRequest(
+                null,
+                new AdminSettingsUpdateRequest.RegistrationSection(true, currentInviteCode(), java.util.List.of("ADMIN")),
+                null,
+                null,
+                null,
+                null,
+                null,
+                null
+        ));
+
+        mockMvc.perform(patch("/api/admin/users/{userId}/role", portalUser.getId())
+                        .contentType("application/json")
+                        .content("""
+                                {"role":"USER"}
+                                """))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.msg").value("at least one unbanned admin-capable user must remain"));
     }
 
     @Test

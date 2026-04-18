@@ -88,7 +88,7 @@ class AdminConfigSnapshotServiceTest {
         AdminSettingsResponse response = adminConfigSnapshotService.getSettings();
 
         assertThat(response.site().supported()).isTrue();
-        assertThat(response.site().writeSupported()).isTrue();
+        assertThat(response.site().writeSupported()).isFalse();
         assertThat(response.registration().inviteCodeRequired()).isFalse();
         assertThat(response.registration().currentInviteCode()).isEqualTo("INV-2026");
         assertThat(response.registration().managementRoles()).containsExactly("ADMIN");
@@ -96,16 +96,16 @@ class AdminConfigSnapshotServiceTest {
         assertThat(response.userSession().accessExpirationSeconds()).isEqualTo(1800L);
         assertThat(response.userSession().refreshExpirationSeconds()).isEqualTo(604800L);
         assertThat(response.userSession().tokenBlacklistEnabled()).isTrue();
-        assertThat(response.userSession().writeSupported()).isTrue();
+        assertThat(response.userSession().writeSupported()).isFalse();
         assertThat(response.transfer().offlineTransferStorageLimitBytes()).isGreaterThan(0L);
         assertThat(response.transfer().writeSupported()).isTrue();
         assertThat(response.queue().backend()).isEqualTo("redis");
-        assertThat(response.queue().writeSupported()).isTrue();
+        assertThat(response.queue().writeSupported()).isFalse();
         assertThat(response.queue().mediaMetadataFixedDelayMs()).isEqualTo(5000L);
         assertThat(response.queue().mediaMetadataInitialDelayMs()).isEqualTo(25000L);
         assertThat(response.server().storageProvider()).isEqualTo("s3");
         assertThat(response.server().redisEnabled()).isTrue();
-        assertThat(response.server().writeSupported()).isTrue();
+        assertThat(response.server().writeSupported()).isFalse();
     }
 
     @Test

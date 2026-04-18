@@ -58,8 +58,9 @@
 
 - 当前由 `@adminAccessEvaluator.isAdmin(authentication)` 统一判定。
 - 实际判定基于认证里的角色 authority，而不是用户名白名单。
-- 当前允许进入 `/api/admin/**` 的角色是 `ROLE_MODERATOR` 与 `ROLE_ADMIN`。
-- 因此这里已经不再依赖 `app.admin.usernames` 作为管理权限来源。
+- 当前允许进入 `/api/admin/**` 的角色集合来自运行时设置 `registration.managementRoles`。
+- 规范化后的默认值为 `MODERATOR` 与 `ADMIN`；接口也接受 `ROLE_MODERATOR` / `ROLE_ADMIN`，保存时会自动归一化为不带前缀的角色名。
+- 因此这里不再依赖 `app.admin.usernames` 作为管理权限来源。
 
 ## 2. 认证与用户模块
 
@@ -549,7 +550,13 @@
 
 控制器：
 
-- `backend/src/main/java/com/yoyuzh/admin/AdminController.java`
+- `backend/src/main/java/com/yoyuzh/admin/AdminOverviewController.java`
+- `backend/src/main/java/com/yoyuzh/admin/AdminSettingsController.java`
+- `backend/src/main/java/com/yoyuzh/admin/AdminUserController.java`
+- `backend/src/main/java/com/yoyuzh/admin/AdminResourceController.java`
+- `backend/src/main/java/com/yoyuzh/admin/AdminTaskController.java`
+- `backend/src/main/java/com/yoyuzh/admin/AdminStoragePolicyController.java`
+- `backend/src/main/java/com/yoyuzh/admin/AdminAuditController.java`
 
 当前管理端覆盖的是真实治理能力，不只是统计看板。
 

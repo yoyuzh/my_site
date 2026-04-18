@@ -4,18 +4,20 @@ This repository is split across a Java backend, a Vite/React frontend, a small `
 
 ## Session startup
 
-- Every new window / new session that starts work in this repository must read `memory.md`, `docs/architecture.md`, and `docs/api-reference.md` first before planning, coding, reviewing, or deploying.
+- Every new window / new session that starts work in this repository must read `memory.md`, `backend-next/archtecture.md`, `backend-next/api-reference.md`, `docs/backend-next/module-dependency-whitelist.md`, `docs/backend-next/directory-responsibilities.md`, and `docs/backend-next/rule-ownership-matrix.md` first before planning, coding, reviewing, or deploying.
 - Treat `memory.md` as the current project memory and continuity handoff unless the user explicitly overrides it.
-- Treat `docs/architecture.md` as the project architecture document and source of truth for module boundaries and runtime structure.
-- Do not edit `docs/architecture.md` during normal implementation, refactor, review, or handoff work. Only change it when the user explicitly asks to update the architecture document itself.
-- Treat `docs/api-reference.md` as the quick reference for backend endpoints and auth/public access boundaries.
+- Treat `backend-next/archtecture.md` as the active architecture document and source of truth for the target module boundaries and runtime structure.
+- Treat `docs/backend-next/module-dependency-whitelist.md`, `docs/backend-next/directory-responsibilities.md`, and `docs/backend-next/rule-ownership-matrix.md` as required startup constraint docs for target-backend work.
+- Treat `docs/architecture.md` as the legacy architecture reference until it is rewritten; do not use it as the default startup architecture document.
+- Do not edit `backend-next/archtecture.md` or `docs/architecture.md` during normal implementation, refactor, review, or handoff work unless the user explicitly asks to update the architecture document itself.
+- Treat `backend-next/api-reference.md` as the active backend API reference for target module ownership, endpoint grouping, and migration boundaries.
+- Treat `docs/api-reference.md` as the legacy runtime API reference until it is rewritten; use it only when current controller-level route details are needed.
 
 ## Real project structure
 
 - `backend/`: Spring Boot 3.3.8, Java 17, Maven, domain packages under `com.yoyuzh.{auth,cqu,files,config,common}`.
 - `front/`: Vite 6, React 19, TypeScript, Tailwind CSS v4, route/page code under `src/pages`, reusable UI under `src/components`, shared logic under `src/lib`.
-- `docs/`: currently contains implementation plans under `docs/superpowers/plans/`.
-- `docs/agents/`: supplementary agent / handoff docs. Keep root `AGENTS.md` as the entrypoint and put extra collaboration notes there instead of scattering more root files.
+- `docs/`: active project docs and active plans under `docs/plans/`; historical implementation plans live under `docs/archive/plans/`.
 - `scripts/`: deployment, migration, smoke, and local startup helpers.
 
 ## Command source of truth
@@ -116,10 +118,18 @@ Important:
 - Do not propose any solution beyond the user's stated requirement if it could shift business logic.
 - Every proposed modification or refactor plan must be logically correct and validated across the full request path before it is presented.
 
+### Clean code standard
+
+- For new code, refactors, and reviews, follow clean-code principles as a hard standard: prefer SOLID, DRY, KISS, YAGNI, clear separation of concerns, composition over inheritance, and dependency inversion where it improves module boundaries.
+- Keep modules cohesive, keep functions small and single-purpose, use intention-revealing names, avoid duplicated logic and magic values, and prefer self-documenting code over explanatory noise.
+- Comments should explain why or document public contracts when needed, not restate what the code already says.
+
 ### Project memory upkeep
 
 - Every time a task causes a major project change, update `memory.md` in the same turn before handing off.
-- Do not update `docs/architecture.md` as part of routine implementation follow-up. That file is reserved for explicit architecture-document changes requested by the user.
+- Only record high-value, durable memory in `memory.md`: long-lived architecture decisions, active source-of-truth docs, stable runtime constraints, migration direction, and ongoing risks.
+- Do not record routine edits, temporary verification results, or low-signal task history in `memory.md`.
+- Do not update `backend-next/archtecture.md` or `docs/architecture.md` as part of routine implementation follow-up. These files are reserved for explicit architecture-document changes requested by the user.
 
 ## Repo-specific guardrails
 

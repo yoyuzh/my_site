@@ -6,6 +6,7 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
+import java.util.Collection;
 import java.util.Optional;
 
 public interface UserRepository extends JpaRepository<User, Long> {
@@ -25,4 +26,6 @@ public interface UserRepository extends JpaRepository<User, Long> {
                 or u.phoneNumber like concat('%', :query, '%'))
             """)
     Page<User> searchByUsernameOrEmail(@Param("query") String query, Pageable pageable);
+
+    long countByBannedFalseAndRoleIn(Collection<UserRole> roles);
 }

@@ -131,7 +131,9 @@ export default function AdminUsersList() {
             "inline-flex items-center gap-2 rounded-sm px-2 py-0.5 text-[9px] font-black uppercase tracking-widest border shadow-inner",
             getValue() === 'ADMIN'
               ? "bg-purple-500/10 text-purple-500 border-purple-500/20"
-              : "bg-blue-500/10 text-blue-500 border-blue-500/20"
+              : getValue() === 'MODERATOR'
+                ? "bg-amber-500/10 text-amber-500 border-amber-500/20"
+                : "bg-blue-500/10 text-blue-500 border-blue-500/20"
           )}>
             <Shield className="h-3 w-3" />
             {user.role}
@@ -338,7 +340,7 @@ export default function AdminUsersList() {
       return;
     }
     try {
-      const isValid = await trigger(['role', 'storageQuotaBytes', 'maxUploadSizeBytes']);
+      const isValid = await trigger(['storageQuotaBytes', 'maxUploadSizeBytes']);
       if (!isValid) {
         return;
       }
@@ -601,6 +603,7 @@ export default function AdminUsersList() {
                       onChange={(event) => field.onChange(event.target.value)}
                       className="w-full text-[11px] font-black uppercase tracking-widest"
                     >
+                      <option value="MODERATOR">MODERATOR - 运营管理</option>
                       <option value="USER">USER - 普通用户</option>
                       <option value="ADMIN">ADMIN - 管理员</option>
                     </AdminSelect>

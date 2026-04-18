@@ -20,6 +20,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.security.SecureRandom;
+import java.util.EnumSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -37,6 +38,7 @@ public class AdminUserGovernanceService {
     private final AuthTokenInvalidationService authTokenInvalidationService;
     private final AuthSessionPolicy authSessionPolicy;
     private final AdminAuditService adminAuditService;
+    private final AdminRuntimeSettingsService adminRuntimeSettingsService;
     private final SecureRandom secureRandom = new SecureRandom();
 
     public PageResponse<AdminUserResponse> listUsers(int page, int size, String query) {
@@ -59,6 +61,7 @@ public class AdminUserGovernanceService {
     @Transactional
     public AdminUserResponse updateUserRole(Long userId, UserRole role) {
         User user = getRequiredUser(userId);
+        ensureAdminAccessRemainsAvailable(user, false, role);
         user.setRole(role);
         AdminUserResponse response = toUserResponse(userRepository.save(user));
         adminAuditService.record(
@@ -74,6 +77,7 @@ public class AdminUserGovernanceService {
     @Transactional
     public AdminUserResponse updateUserBanned(Long userId, boolean banned) {
         User user = getRequiredUser(userId);
+        ensureAdminAccessRemainsAvailable(user, banned, user.getRole());
         user.setBanned(banned);
         authTokenInvalidationService.revokeAccessTokensForUser(user.getId());
         authSessionPolicy.rotateAllActiveSessions(user);
@@ -200,6 +204,40 @@ public class AdminUserGovernanceService {
             return "";
         }
         return query.trim();
+    }
+
+    private void ensureAdminAccessRemainsAvailable(User user, boolean bannedAfterUpdate, UserRole roleAfterUpdate) {
+        Set<UserRole> adminCapableRoles = resolveAdminCapableRoles();
+        if (adminCapableRoles.isEmpty()) {
+            return;
+        }
+
+        boolean currentlyAdminCapable = !user.isBanned() && adminCapableRoles.contains(user.getRole());
+        boolean adminCapableAfterUpdate = !bannedAfterUpdate && adminCapableRoles.contains(roleAfterUpdate);
+        if (!currentlyAdminCapable || adminCapableAfterUpdate) {
+            return;
+        }
+
+        long adminCapableUserCount = userRepository.countByBannedFalseAndRoleIn(adminCapableRoles);
+        if (adminCapableUserCount <= 1) {
+            throw new BusinessException(ErrorCode.UNKNOWN, "at least one unbanned admin-capable user must remain");
+        }
+    }
+
+    private Set<UserRole> resolveAdminCapableRoles() {
+        EnumSet<UserRole> roles = EnumSet.noneOf(UserRole.class);
+        for (String configuredRole : adminRuntimeSettingsService.snapshot().registrationManagementRoles()) {
+            String normalizedRole = AdminRuntimeSettingsService.normalizeManagementRole(configuredRole);
+            if (normalizedRole == null) {
+                continue;
+            }
+            try {
+                roles.add(UserRole.valueOf(normalizedRole));
+            } catch (IllegalArgumentException ignored) {
+                // Ignore unsupported runtime role values; they do not map to a backend user role.
+            }
+        }
+        return roles;
     }
 
     private String generateTemporaryPassword() {

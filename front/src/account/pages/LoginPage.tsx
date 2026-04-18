@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import { motion } from 'motion/react';
 import { useTheme } from '@/src/components/ThemeProvider';
 import { devLogin, login, register } from '@/src/lib/auth';
+import { getDefaultSignedInRoute } from '@/src/lib/session';
 import { cn } from '@/src/lib/utils';
 
 type LoginFormState = {
@@ -43,7 +44,7 @@ export default function Login() {
     setError('');
     try {
       const session = await login(loginForm);
-      navigate(session.user.role === 'ADMIN' ? '/admin/dashboard' : '/overview');
+      navigate(getDefaultSignedInRoute(session.user.role));
     } catch (err) {
       setError(err instanceof Error ? err.message : '登录失败');
     } finally {
@@ -57,7 +58,7 @@ export default function Login() {
     setError('');
     try {
       const session = await register(registerForm);
-      navigate(session.user.role === 'ADMIN' ? '/admin/dashboard' : '/overview');
+      navigate(getDefaultSignedInRoute(session.user.role));
     } catch (err) {
       setError(err instanceof Error ? err.message : '注册失败');
     } finally {
@@ -70,7 +71,7 @@ export default function Login() {
     setError('');
     try {
       const session = await devLogin(username);
-      navigate(session.user.role === 'ADMIN' ? '/admin/dashboard' : '/overview');
+      navigate(getDefaultSignedInRoute(session.user.role));
     } catch (err) {
       setError(err instanceof Error ? err.message : '开发登录失败');
     } finally {

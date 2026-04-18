@@ -1,5 +1,6 @@
 package com.yoyuzh.auth;
 
+import com.yoyuzh.admin.AdminRuntimeSettingsService;
 import com.yoyuzh.auth.dto.AuthResponse;
 import com.yoyuzh.auth.dto.LoginRequest;
 import com.yoyuzh.auth.dto.RegisterRequest;
@@ -65,14 +66,22 @@ class AuthServiceTest {
     @Mock
     private RegistrationInviteService registrationInviteService;
 
+    @Mock
+    private AdminRuntimeSettingsService adminRuntimeSettingsService;
+
     @Spy
     private AuthSessionPolicy authSessionPolicy = new AuthSessionPolicy();
 
     @InjectMocks
     private AuthService authService;
 
+    private void requireInviteCodeForRegistration() {
+        when(adminRuntimeSettingsService.isInviteCodeRequired()).thenReturn(true);
+    }
+
     @Test
     void shouldRegisterUserWithEncryptedPassword() {
+        requireInviteCodeForRegistration();
         RegisterRequest request = new RegisterRequest(
                 "alice",
                 "alice@example.com",
@@ -144,6 +153,7 @@ class AuthServiceTest {
 
     @Test
     void shouldRejectInvalidInviteCodeOnRegister() {
+        requireInviteCodeForRegistration();
         RegisterRequest request = new RegisterRequest(
                 "alice",
                 "alice@example.com",

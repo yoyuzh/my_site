@@ -70,8 +70,7 @@
 .
 ├── backend/      Spring Boot 后端
 ├── front/        React 前端
-├── docs/         计划与文档
-├── docs/agents/  agent 补充交接文档
+├── docs/         活跃文档与归档计划
 ├── scripts/      部署与辅助脚本
 ├── data/         本地数据或辅助文件
 └── 模板/         页面参考模板
@@ -300,7 +299,8 @@ backend/target/yoyuzh-portal-backend-0.0.1-SNAPSHOT.jar
 - [backend/README.md](./backend/README.md)
 - [front/README.md](./front/README.md)
 - [AGENTS.md](./AGENTS.md)
-- `docs/superpowers/plans/`
+- `docs/plans/`
+- `docs/archive/plans/`
 
 ## 当前状态
 

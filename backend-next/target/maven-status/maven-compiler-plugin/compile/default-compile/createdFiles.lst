@@ -1,0 +1,9 @@
+com\yoyuzh\files\workspace\internal\domain\PackageMarker.class
+com\yoyuzh\identity\access\internal\web\PackageMarker.class
+com\yoyuzh\identity\access\api\PackageMarker.class
+com\yoyuzh\transfer\internal\domain\PackageMarker.class
+com\yoyuzh\files\sharing\internal\domain\PackageMarker.class
+com\yoyuzh\ops\admin\internal\application\PackageMarker.class
+com\yoyuzh\platform\job\internal\infra\PackageMarker.class
+com\yoyuzh\platform\storage\internal\domain\PackageMarker.class
+com\yoyuzh\files\upload\internal\application\PackageMarker.class

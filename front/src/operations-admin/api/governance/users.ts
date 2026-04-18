@@ -1,5 +1,6 @@
 ﻿import { fetchApi } from '@/src/lib/api';
 import type { PageResponse } from '@/src/lib/files';
+import type { PortalUserRole } from '@/src/lib/session';
 
 export type AdminUser = {
   id: number;
@@ -7,7 +8,7 @@ export type AdminUser = {
   email: string;
   phoneNumber: string | null;
   createdAt: string;
-  role: 'USER' | 'ADMIN';
+  role: PortalUserRole;
   banned: boolean;
   usedStorageBytes: number;
   storageQuotaBytes: number;

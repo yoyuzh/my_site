@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect } from 'react';
 import { Outlet, NavLink, useLocation, useNavigate } from 'react-router-dom';
 import {
   HardDrive,
@@ -14,7 +14,7 @@ import {
 } from 'lucide-react';
 import { cn } from '@/src/lib/utils';
 import { logout } from '@/src/lib/auth';
-import { getSession, type PortalSession } from '@/src/lib/session';
+import { canAccessAdmin } from '@/src/lib/session';
 import { useTheme } from '../ThemeProvider';
 import { useSessionRuntime } from '@/src/hooks/use-session-runtime';
 import { UploadCenter } from '../upload/UploadCenter';
@@ -52,7 +52,7 @@ export default function Layout() {
     { to: '/shares', icon: Share2, label: '分享' },
     { to: '/recycle-bin', icon: Trash2, label: '回收站' },
     { to: '/transfer', icon: Send, label: '快传' },
-    ...(session?.user.role === 'ADMIN'
+    ...(canAccessAdmin(session?.user.role)
       ? [{ to: '/admin/dashboard', icon: Settings, label: '后台' }]
       : []),
   ];

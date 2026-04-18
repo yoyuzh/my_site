@@ -1,3 +1,5 @@
+export type PortalUserRole = 'USER' | 'MODERATOR' | 'ADMIN';
+
 export type PortalUser = {
   id: number;
   username: string;
@@ -7,7 +9,7 @@ export type PortalUser = {
   bio?: string | null;
   preferredLanguage?: string | null;
   avatarUrl?: string | null;
-  role: 'USER' | 'ADMIN';
+  role: PortalUserRole;
   createdAt: string;
   storageQuotaBytes: number;
   maxUploadSizeBytes: number;
@@ -21,6 +23,25 @@ export type PortalSession = {
 };
 
 const SESSION_KEY = 'portal-session';
+
+export function canAccessAdmin(role?: PortalUserRole | null) {
+  return role === 'MODERATOR' || role === 'ADMIN';
+}
+
+export function getDefaultSignedInRoute(role?: PortalUserRole | null) {
+  return canAccessAdmin(role) ? '/admin/dashboard' : '/overview';
+}
+
+export function getPortalRoleLabel(role?: PortalUserRole | null) {
+  switch (role) {
+    case 'ADMIN':
+      return '管理员';
+    case 'MODERATOR':
+      return '运营管理员';
+    default:
+      return '普通用户';
+  }
+}
 
 export function getSession() {
   const raw = window.localStorage.getItem(SESSION_KEY);

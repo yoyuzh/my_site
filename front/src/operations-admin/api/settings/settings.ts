@@ -54,37 +54,37 @@ export type AdminOfflineTransferStorageLimitResponse = {
 };
 
 export type AdminSettingsUpdateRequest = {
-  site: {
+  site?: {
     supported: boolean;
   };
-  registration: {
+  registration?: {
     inviteCodeRequired: boolean;
     currentInviteCode: string;
     managementRoles: string[];
   };
-  userSession: {
+  userSession?: {
     accessExpirationSeconds: number;
     refreshExpirationSeconds: number;
     tokenBlacklistEnabled: boolean;
     tokenBlacklistTtlBufferSeconds: number;
   };
-  transfer: {
+  transfer?: {
     offlineTransferStorageLimitBytes: number;
   };
-  mediaProcessing: {
+  mediaProcessing?: {
     metadataExtractionEnabled: boolean;
     thumbnailGenerationEnabled: boolean;
     videoPosterEnabled: boolean;
   };
-  queue: {
+  queue?: {
     backend: string;
     mediaMetadataFixedDelayMs: number;
     mediaMetadataInitialDelayMs: number;
   };
-  appearance: {
+  appearance?: {
     supported: boolean;
   };
-  server: {
+  server?: {
     storageProvider: string;
     redisEnabled: boolean;
   };

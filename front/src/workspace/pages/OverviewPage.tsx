@@ -6,7 +6,7 @@ import { getProfile } from '@/src/lib/auth';
 import { getTasks, type BackgroundTask } from '@/src/lib/background-tasks';
 import { formatBytes, formatDateTime } from '@/src/lib/format';
 import { listRecentFiles, type FileItem } from '@/src/lib/files';
-import { getSession } from '@/src/lib/session';
+import { getPortalRoleLabel, getSession } from '@/src/lib/session';
 
 const container = {
   hidden: { opacity: 0 },
@@ -84,7 +84,7 @@ export default function Overview() {
         >
           <motion.div variants={item} className="glass-panel p-8 flex flex-col justify-center gap-3">
             <div className="text-[10px] font-black uppercase tracking-widest opacity-40">账号权限</div>
-            <div className="text-2xl font-black tracking-tight">{profile?.role === 'ADMIN' ? '管理员' : '普通用户'}</div>
+            <div className="text-2xl font-black tracking-tight">{getPortalRoleLabel(profile?.role)}</div>
           </motion.div>
           <motion.div variants={item} className="glass-panel p-8 flex flex-col justify-center gap-3">
             <div className="text-[10px] font-black uppercase tracking-widest opacity-40">存储配额</div>

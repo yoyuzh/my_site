@@ -3,29 +3,36 @@ package com.yoyuzh.admin;
 import com.yoyuzh.config.AppRedisProperties;
 import com.yoyuzh.config.FileStorageProperties;
 import com.yoyuzh.config.JwtProperties;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.core.env.Environment;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Set;
-import java.util.concurrent.atomic.AtomicReference;
 
 @Service
 public class AdminRuntimeSettingsService {
 
+    private static final Long STATE_ID = 1L;
     private static final List<String> DEFAULT_MANAGEMENT_ROLES = List.of("MODERATOR", "ADMIN");
+    private static final String MANAGEMENT_ROLE_DELIMITER = ",";
+    private static final String ROLE_PREFIX = "ROLE_";
 
+    private final AdminRuntimeSettingsStateRepository adminRuntimeSettingsStateRepository;
     private final State defaultState;
-    private final AtomicReference<State> stateRef;
 
-    public AdminRuntimeSettingsService(AppRedisProperties redisProperties,
+    public AdminRuntimeSettingsService(AdminRuntimeSettingsStateRepository adminRuntimeSettingsStateRepository,
+                                       AppRedisProperties redisProperties,
                                        FileStorageProperties fileStorageProperties,
                                        JwtProperties jwtProperties,
                                        Environment environment) {
+        this.adminRuntimeSettingsStateRepository = adminRuntimeSettingsStateRepository;
         boolean redisEnabled = redisProperties.isEnabled();
         defaultState = new State(
                 false,
@@ -45,42 +52,129 @@ public class AdminRuntimeSettingsService {
                 normalizeStorageProvider(fileStorageProperties.getProvider()),
                 redisEnabled
         );
-        stateRef = new AtomicReference<>(defaultState);
     }
 
+    @Transactional(readOnly = true)
     public State snapshot() {
-        return stateRef.get();
+        return toState(ensureCurrentState());
     }
 
+    @Transactional
     public State update(AdminSettingsUpdateRequest request) {
+        if (request.registration() == null) {
+            throw new IllegalArgumentException("registration section is required");
+        }
+        AdminRuntimeSettingsState state = ensureCurrentStateForUpdate();
         State next = new State(
-                request.site().supported(),
+                defaultState.siteSupported(),
                 request.registration().inviteCodeRequired(),
                 normalizeManagementRoles(request.registration().managementRoles()),
-                request.userSession().accessExpirationSeconds(),
-                request.userSession().refreshExpirationSeconds(),
-                request.userSession().tokenBlacklistEnabled(),
-                request.userSession().tokenBlacklistTtlBufferSeconds(),
-                request.mediaProcessing().metadataExtractionEnabled(),
-                request.mediaProcessing().thumbnailGenerationEnabled(),
-                request.mediaProcessing().videoPosterEnabled(),
-                normalizeQueueBackend(request.queue().backend()),
-                request.queue().mediaMetadataFixedDelayMs(),
-                request.queue().mediaMetadataInitialDelayMs(),
-                request.appearance().supported(),
-                normalizeStorageProvider(request.server().storageProvider()),
-                request.server().redisEnabled()
+                defaultState.userSessionAccessExpirationSeconds(),
+                defaultState.userSessionRefreshExpirationSeconds(),
+                defaultState.userSessionTokenBlacklistEnabled(),
+                defaultState.userSessionTokenBlacklistTtlBufferSeconds(),
+                defaultState.mediaMetadataExtractionEnabled(),
+                defaultState.mediaThumbnailGenerationEnabled(),
+                defaultState.mediaVideoPosterEnabled(),
+                defaultState.queueBackend(),
+                defaultState.queueMediaMetadataFixedDelayMs(),
+                defaultState.queueMediaMetadataInitialDelayMs(),
+                defaultState.appearanceSupported(),
+                defaultState.serverStorageProvider(),
+                defaultState.serverRedisEnabled()
         );
-        stateRef.set(next);
-        return next;
+        applyState(state, next);
+        return toState(adminRuntimeSettingsStateRepository.save(state));
     }
 
+    @Transactional(readOnly = true)
     public boolean isInviteCodeRequired() {
-        return stateRef.get().registrationInviteCodeRequired();
+        return snapshot().registrationInviteCodeRequired();
     }
 
+    @Transactional
     public void reset() {
-        stateRef.set(defaultState);
+        AdminRuntimeSettingsState state = ensureCurrentStateForUpdate();
+        applyState(state, defaultState);
+        adminRuntimeSettingsStateRepository.save(state);
+    }
+
+    private AdminRuntimeSettingsState ensureCurrentState() {
+        return adminRuntimeSettingsStateRepository.findById(STATE_ID)
+                .orElseGet(this::createInitialState);
+    }
+
+    private AdminRuntimeSettingsState ensureCurrentStateForUpdate() {
+        return adminRuntimeSettingsStateRepository.findByIdForUpdate(STATE_ID)
+                .orElseGet(() -> {
+                    createInitialState();
+                    return adminRuntimeSettingsStateRepository.findByIdForUpdate(STATE_ID)
+                            .orElseThrow(() -> new IllegalStateException("admin runtime settings state init failed"));
+                });
+    }
+
+    private AdminRuntimeSettingsState createInitialState() {
+        AdminRuntimeSettingsState state = new AdminRuntimeSettingsState();
+        state.setId(STATE_ID);
+        applyState(state, defaultState);
+        try {
+            return adminRuntimeSettingsStateRepository.saveAndFlush(state);
+        } catch (DataIntegrityViolationException ignored) {
+            return adminRuntimeSettingsStateRepository.findById(STATE_ID)
+                    .orElseThrow(() -> ignored);
+        }
+    }
+
+    private State toState(AdminRuntimeSettingsState state) {
+        return new State(
+                defaultState.siteSupported(),
+                state.isRegistrationInviteCodeRequired(),
+                parseManagementRoles(state.getRegistrationManagementRoles()),
+                defaultState.userSessionAccessExpirationSeconds(),
+                defaultState.userSessionRefreshExpirationSeconds(),
+                defaultState.userSessionTokenBlacklistEnabled(),
+                defaultState.userSessionTokenBlacklistTtlBufferSeconds(),
+                defaultState.mediaMetadataExtractionEnabled(),
+                defaultState.mediaThumbnailGenerationEnabled(),
+                defaultState.mediaVideoPosterEnabled(),
+                normalizeQueueBackend(defaultState.queueBackend()),
+                defaultState.queueMediaMetadataFixedDelayMs(),
+                defaultState.queueMediaMetadataInitialDelayMs(),
+                defaultState.appearanceSupported(),
+                normalizeStorageProvider(defaultState.serverStorageProvider()),
+                defaultState.serverRedisEnabled()
+        );
+    }
+
+    private void applyState(AdminRuntimeSettingsState target, State state) {
+        target.setSiteSupported(state.siteSupported());
+        target.setRegistrationInviteCodeRequired(state.registrationInviteCodeRequired());
+        target.setRegistrationManagementRoles(serializeManagementRoles(state.registrationManagementRoles()));
+        target.setUserSessionAccessExpirationSeconds(state.userSessionAccessExpirationSeconds());
+        target.setUserSessionRefreshExpirationSeconds(state.userSessionRefreshExpirationSeconds());
+        target.setUserSessionTokenBlacklistEnabled(state.userSessionTokenBlacklistEnabled());
+        target.setUserSessionTokenBlacklistTtlBufferSeconds(state.userSessionTokenBlacklistTtlBufferSeconds());
+        target.setMediaMetadataExtractionEnabled(state.mediaMetadataExtractionEnabled());
+        target.setMediaThumbnailGenerationEnabled(state.mediaThumbnailGenerationEnabled());
+        target.setMediaVideoPosterEnabled(state.mediaVideoPosterEnabled());
+        target.setQueueBackend(normalizeQueueBackend(state.queueBackend()));
+        target.setQueueMediaMetadataFixedDelayMs(state.queueMediaMetadataFixedDelayMs());
+        target.setQueueMediaMetadataInitialDelayMs(state.queueMediaMetadataInitialDelayMs());
+        target.setAppearanceSupported(state.appearanceSupported());
+        target.setServerStorageProvider(normalizeStorageProvider(state.serverStorageProvider()));
+        target.setServerRedisEnabled(state.serverRedisEnabled());
+    }
+
+    private static String serializeManagementRoles(List<String> roles) {
+        List<String> normalizedRoles = normalizeManagementRoles(roles);
+        return String.join(MANAGEMENT_ROLE_DELIMITER, normalizedRoles);
+    }
+
+    private static List<String> parseManagementRoles(String persistedRoles) {
+        if (!StringUtils.hasText(persistedRoles)) {
+            return DEFAULT_MANAGEMENT_ROLES;
+        }
+        return normalizeManagementRoles(Arrays.asList(persistedRoles.split(MANAGEMENT_ROLE_DELIMITER)));
     }
 
     private static String normalizeQueueBackend(String backend) {
@@ -99,18 +193,29 @@ public class AdminRuntimeSettingsService {
         }
         Set<String> normalized = new LinkedHashSet<>();
         for (String role : roles) {
-            if (role == null) {
-                continue;
-            }
-            String trimmed = role.trim();
-            if (!trimmed.isEmpty()) {
-                normalized.add(trimmed.toUpperCase(Locale.ROOT));
+            String normalizedRole = normalizeManagementRole(role);
+            if (normalizedRole != null) {
+                normalized.add(normalizedRole);
             }
         }
         if (normalized.isEmpty()) {
             return DEFAULT_MANAGEMENT_ROLES;
         }
         return List.copyOf(new ArrayList<>(normalized));
+    }
+
+    static String normalizeManagementRole(String role) {
+        if (role == null) {
+            return null;
+        }
+        String normalized = role.trim().toUpperCase(Locale.ROOT);
+        if (normalized.isEmpty()) {
+            return null;
+        }
+        if (normalized.startsWith(ROLE_PREFIX)) {
+            normalized = normalized.substring(ROLE_PREFIX.length()).trim();
+        }
+        return normalized.isEmpty() ? null : normalized;
     }
 
     public record State(

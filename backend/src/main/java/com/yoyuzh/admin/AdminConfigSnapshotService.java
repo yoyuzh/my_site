@@ -30,44 +30,46 @@ public class AdminConfigSnapshotService {
 
     public AdminSettingsResponse getSettings() {
         AdminRuntimeSettingsService.State state = adminRuntimeSettingsService.snapshot();
+        boolean registrationWriteSupported = true;
+        boolean transferWriteSupported = true;
         return new AdminSettingsResponse(
-                new AdminSettingsResponse.SiteSection(state.siteSupported(), true),
+                new AdminSettingsResponse.SiteSection(state.siteSupported(), false),
                 new AdminSettingsResponse.RegistrationSection(
                         state.registrationInviteCodeRequired(),
                         registrationInviteService.getCurrentInviteCode(),
                         state.registrationManagementRoles().isEmpty()
                                 ? java.util.List.of(UserRole.MODERATOR.name(), UserRole.ADMIN.name())
                                 : state.registrationManagementRoles(),
-                        true
+                        registrationWriteSupported
                 ),
                 new AdminSettingsResponse.UserSessionSection(
                         state.userSessionAccessExpirationSeconds(),
                         state.userSessionRefreshExpirationSeconds(),
                         state.userSessionTokenBlacklistEnabled(),
                         state.userSessionTokenBlacklistTtlBufferSeconds(),
-                        true
+                        false
                 ),
                 new AdminSettingsResponse.TransferSection(
                         adminMetricsService.getOfflineTransferStorageLimitBytes(),
-                        true
+                        transferWriteSupported
                 ),
                 new AdminSettingsResponse.MediaProcessingSection(
                         state.mediaMetadataExtractionEnabled(),
                         state.mediaThumbnailGenerationEnabled(),
                         state.mediaVideoPosterEnabled(),
-                        true
+                        false
                 ),
                 new AdminSettingsResponse.QueueSection(
                         state.queueBackend(),
                         state.queueMediaMetadataFixedDelayMs(),
                         state.queueMediaMetadataInitialDelayMs(),
-                        true
+                        false
                 ),
-                new AdminSettingsResponse.AppearanceSection(state.appearanceSupported(), true),
+                new AdminSettingsResponse.AppearanceSection(state.appearanceSupported(), false),
                 new AdminSettingsResponse.ServerSection(
                         state.serverStorageProvider(),
                         state.serverRedisEnabled(),
-                        true
+                        false
                 )
         );
     }

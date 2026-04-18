@@ -25,6 +25,7 @@ import java.util.Optional;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyCollection;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
@@ -47,6 +48,8 @@ class AdminUserGovernanceServiceTest {
     private AuthTokenInvalidationService authTokenInvalidationService;
     @Mock
     private AdminAuditService adminAuditService;
+    @Mock
+    private AdminRuntimeSettingsService adminRuntimeSettingsService;
 
     private AuthSessionPolicy authSessionPolicy;
     private AdminUserGovernanceService adminUserGovernanceService;
@@ -61,7 +64,8 @@ class AdminUserGovernanceServiceTest {
                 refreshTokenService,
                 authTokenInvalidationService,
                 authSessionPolicy,
-                adminAuditService
+                adminAuditService,
+                adminRuntimeSettingsService
         );
     }
 
@@ -96,6 +100,7 @@ class AdminUserGovernanceServiceTest {
     void shouldUpdateUserRole() {
         User user = createUser(1L, "alice", "alice@example.com");
         when(userRepository.findById(1L)).thenReturn(Optional.of(user));
+        when(adminRuntimeSettingsService.snapshot()).thenReturn(runtimeState("MODERATOR", "ADMIN"));
         when(userRepository.save(user)).thenReturn(user);
 
         AdminUserResponse response = adminUserGovernanceService.updateUserRole(1L, UserRole.MODERATOR);
@@ -121,6 +126,7 @@ class AdminUserGovernanceServiceTest {
         String previousDesktopSessionId = user.getDesktopActiveSessionId();
         String previousMobileSessionId = user.getMobileActiveSessionId();
         when(userRepository.findById(1L)).thenReturn(Optional.of(user));
+        when(adminRuntimeSettingsService.snapshot()).thenReturn(runtimeState("MODERATOR", "ADMIN"));
         when(userRepository.save(user)).thenReturn(user);
 
         adminUserGovernanceService.updateUserBanned(1L, true);
@@ -142,6 +148,7 @@ class AdminUserGovernanceServiceTest {
         String previousDesktopSessionId = user.getDesktopActiveSessionId();
         String previousMobileSessionId = user.getMobileActiveSessionId();
         when(userRepository.findById(1L)).thenReturn(Optional.of(user));
+        when(adminRuntimeSettingsService.snapshot()).thenReturn(runtimeState("MODERATOR", "ADMIN"));
         when(userRepository.save(user)).thenReturn(user);
 
         adminUserGovernanceService.updateUserBanned(1L, false);
@@ -221,6 +228,51 @@ class AdminUserGovernanceServiceTest {
         verify(refreshTokenService).revokeAllForUser(1L);
     }
 
+    @Test
+    void shouldRejectDemotingLastAdminCapableUser() {
+        User user = createUser(1L, "alice", "alice@example.com");
+        user.setRole(UserRole.ADMIN);
+        when(userRepository.findById(1L)).thenReturn(Optional.of(user));
+        when(adminRuntimeSettingsService.snapshot()).thenReturn(runtimeState("ADMIN"));
+        when(userRepository.countByBannedFalseAndRoleIn(anyCollection())).thenReturn(1L);
+
+        assertThatThrownBy(() -> adminUserGovernanceService.updateUserRole(1L, UserRole.USER))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("at least one unbanned admin-capable user must remain");
+
+        verify(userRepository, never()).save(user);
+    }
+
+    @Test
+    void shouldAllowDemotingAdminWhenAnotherAdminCapableUserRemains() {
+        User user = createUser(1L, "alice", "alice@example.com");
+        user.setRole(UserRole.ADMIN);
+        when(userRepository.findById(1L)).thenReturn(Optional.of(user));
+        when(userRepository.countByBannedFalseAndRoleIn(anyCollection())).thenReturn(2L);
+        when(adminRuntimeSettingsService.snapshot()).thenReturn(runtimeState("ADMIN"));
+        when(userRepository.save(user)).thenReturn(user);
+
+        AdminUserResponse response = adminUserGovernanceService.updateUserRole(1L, UserRole.USER);
+
+        assertThat(response.role()).isEqualTo(UserRole.USER);
+        verify(userRepository).save(user);
+    }
+
+    @Test
+    void shouldRejectBanningLastAdminCapableUser() {
+        User user = createUser(1L, "alice", "alice@example.com");
+        user.setRole(UserRole.ADMIN);
+        when(userRepository.findById(1L)).thenReturn(Optional.of(user));
+        when(adminRuntimeSettingsService.snapshot()).thenReturn(runtimeState("ADMIN"));
+        when(userRepository.countByBannedFalseAndRoleIn(anyCollection())).thenReturn(1L);
+
+        assertThatThrownBy(() -> adminUserGovernanceService.updateUserBanned(1L, true))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("at least one unbanned admin-capable user must remain");
+
+        verify(userRepository, never()).save(user);
+    }
+
     private User createUser(Long id, String username, String email) {
         User user = new User();
         user.setId(id);
@@ -233,5 +285,26 @@ class AdminUserGovernanceServiceTest {
         user.setMobileActiveSessionId("mobile-session-" + id);
         user.setCreatedAt(LocalDateTime.now());
         return user;
+    }
+
+    private AdminRuntimeSettingsService.State runtimeState(String... managementRoles) {
+        return new AdminRuntimeSettingsService.State(
+                false,
+                true,
+                List.of(managementRoles),
+                900L,
+                1209600L,
+                false,
+                60L,
+                true,
+                false,
+                false,
+                "in-memory",
+                3000L,
+                15000L,
+                false,
+                "local",
+                false
+        );
     }
 }
