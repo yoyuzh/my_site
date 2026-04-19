@@ -5,33 +5,34 @@ import com.yoyuzh.common.BusinessException;
 import com.yoyuzh.common.ErrorCode;
 import com.yoyuzh.files.policy.StoragePolicy;
 import com.yoyuzh.files.policy.StoragePolicyCapabilities;
+import com.yoyuzh.platform.storage.api.UploadConstraintPolicy;
+import com.yoyuzh.platform.storage.api.UploadModePolicy;
+import com.yoyuzh.platform.storage.internal.application.RuntimeUploadConstraintPolicy;
+import com.yoyuzh.platform.storage.internal.application.RuntimeUploadModePolicy;
+import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
 @Component
+@RequiredArgsConstructor
 public class UploadPolicyResolver {
 
+    private final UploadModePolicy uploadModePolicy;
+    private final UploadConstraintPolicy uploadConstraintPolicy;
+
+    public UploadPolicyResolver() {
+        this.uploadModePolicy = new RuntimeUploadModePolicy();
+        this.uploadConstraintPolicy = new RuntimeUploadConstraintPolicy();
+    }
+
     public UploadSessionUploadMode resolveUploadMode(StoragePolicyCapabilities capabilities) {
-        if (!capabilities.directUpload()) {
-            return UploadSessionUploadMode.PROXY;
-        }
-        if (capabilities.multipartUpload()) {
-            return UploadSessionUploadMode.DIRECT_MULTIPART;
-        }
-        return UploadSessionUploadMode.DIRECT_SINGLE;
+        return uploadModePolicy.resolveUploadMode(capabilities);
     }
 
     public long resolveEffectiveMaxUploadSize(long systemMaxFileSize,
                                               User user,
                                               StoragePolicy policy,
                                               StoragePolicyCapabilities capabilities) {
-        long effectiveMaxUploadSize = Math.min(systemMaxFileSize, user.getMaxUploadSizeBytes());
-        if (policy.getMaxSizeBytes() > 0) {
-            effectiveMaxUploadSize = Math.min(effectiveMaxUploadSize, policy.getMaxSizeBytes());
-        }
-        if (capabilities.maxObjectSize() > 0) {
-            effectiveMaxUploadSize = Math.min(effectiveMaxUploadSize, capabilities.maxObjectSize());
-        }
-        return effectiveMaxUploadSize;
+        return uploadConstraintPolicy.resolveEffectiveMaxUploadSize(systemMaxFileSize, user, policy, capabilities);
     }
 
     public int calculateChunkCount(long size, long chunkSize) {

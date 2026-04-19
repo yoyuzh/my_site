@@ -1,5 +1,6 @@
 package com.yoyuzh.files.tasks;
 
+import com.yoyuzh.platform.job.api.BackgroundTaskExecutionGateway;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -23,7 +24,7 @@ import static org.mockito.Mockito.when;
 class BackgroundTaskWorkerTest {
 
     @Mock
-    private BackgroundTaskExecutionService backgroundTaskExecutionService;
+    private BackgroundTaskExecutionGateway backgroundTaskExecutionGateway;
     @Mock
     private BackgroundTaskHandler backgroundTaskHandler;
 
@@ -31,14 +32,14 @@ class BackgroundTaskWorkerTest {
 
     @BeforeEach
     void setUp() {
-        backgroundTaskWorker = new BackgroundTaskWorker(backgroundTaskExecutionService, List.of(backgroundTaskHandler));
+        backgroundTaskWorker = new BackgroundTaskWorker(backgroundTaskExecutionGateway, List.of(backgroundTaskHandler));
     }
 
     @Test
     void shouldClaimAndCompleteQueuedTaskThroughNoopHandler() {
         BackgroundTask task = createTask(1L, BackgroundTaskType.ARCHIVE, BackgroundTaskStatus.RUNNING);
-        when(backgroundTaskExecutionService.findQueuedTaskIds(5)).thenReturn(List.of(1L));
-        when(backgroundTaskExecutionService.claimQueuedTask(eq(1L), anyString(), anyLong())).thenReturn(Optional.of(task));
+        when(backgroundTaskExecutionGateway.findQueuedTaskIds(5)).thenReturn(List.of(1L));
+        when(backgroundTaskExecutionGateway.claimQueuedTask(eq(1L), anyString(), anyLong())).thenReturn(Optional.of(task));
         when(backgroundTaskHandler.supports(BackgroundTaskType.ARCHIVE)).thenReturn(true);
         when(backgroundTaskHandler.handle(eq(task), any(BackgroundTaskProgressReporter.class)))
                 .thenReturn(new BackgroundTaskHandlerResult(Map.of("worker", "noop")));
@@ -46,15 +47,15 @@ class BackgroundTaskWorkerTest {
         int processedCount = backgroundTaskWorker.processQueuedTasks(5);
 
         assertThat(processedCount).isEqualTo(1);
-        verify(backgroundTaskExecutionService).markWorkerTaskProgress(eq(1L), anyString(), eq(Map.of("phase", "archiving")), anyLong());
+        verify(backgroundTaskExecutionGateway).markWorkerTaskProgress(eq(1L), anyString(), eq(Map.of("phase", "archiving")), anyLong());
         verify(backgroundTaskHandler).handle(eq(task), any(BackgroundTaskProgressReporter.class));
-        verify(backgroundTaskExecutionService).markWorkerTaskCompleted(eq(1L), anyString(), eq(Map.of("worker", "noop")), anyLong());
+        verify(backgroundTaskExecutionGateway).markWorkerTaskCompleted(eq(1L), anyString(), eq(Map.of("worker", "noop")), anyLong());
     }
 
     @Test
     void shouldSkipTaskThatWasNotClaimed() {
-        when(backgroundTaskExecutionService.findQueuedTaskIds(5)).thenReturn(List.of(1L));
-        when(backgroundTaskExecutionService.claimQueuedTask(eq(1L), anyString(), anyLong())).thenReturn(Optional.empty());
+        when(backgroundTaskExecutionGateway.findQueuedTaskIds(5)).thenReturn(List.of(1L));
+        when(backgroundTaskExecutionGateway.claimQueuedTask(eq(1L), anyString(), anyLong())).thenReturn(Optional.empty());
 
         int processedCount = backgroundTaskWorker.processQueuedTasks(5);
 
@@ -65,8 +66,8 @@ class BackgroundTaskWorkerTest {
     @Test
     void shouldMarkTaskFailedWhenHandlerThrows() {
         BackgroundTask task = createTask(2L, BackgroundTaskType.MEDIA_META, BackgroundTaskStatus.RUNNING);
-        when(backgroundTaskExecutionService.findQueuedTaskIds(5)).thenReturn(List.of(2L));
-        when(backgroundTaskExecutionService.claimQueuedTask(eq(2L), anyString(), anyLong())).thenReturn(Optional.of(task));
+        when(backgroundTaskExecutionGateway.findQueuedTaskIds(5)).thenReturn(List.of(2L));
+        when(backgroundTaskExecutionGateway.claimQueuedTask(eq(2L), anyString(), anyLong())).thenReturn(Optional.of(task));
         when(backgroundTaskHandler.supports(BackgroundTaskType.MEDIA_META)).thenReturn(true);
         when(backgroundTaskHandler.handle(eq(task), any(BackgroundTaskProgressReporter.class)))
                 .thenThrow(new IllegalStateException("media parser unavailable"));
@@ -74,8 +75,8 @@ class BackgroundTaskWorkerTest {
         int processedCount = backgroundTaskWorker.processQueuedTasks(5);
 
         assertThat(processedCount).isEqualTo(1);
-        verify(backgroundTaskExecutionService).markWorkerTaskProgress(eq(2L), anyString(), eq(Map.of("phase", "extracting-metadata")), anyLong());
-        verify(backgroundTaskExecutionService).markWorkerTaskFailed(
+        verify(backgroundTaskExecutionGateway).markWorkerTaskProgress(eq(2L), anyString(), eq(Map.of("phase", "extracting-metadata")), anyLong());
+        verify(backgroundTaskExecutionGateway).markWorkerTaskFailed(
                 eq(2L),
                 anyString(),
                 eq("media parser unavailable"),
@@ -87,8 +88,8 @@ class BackgroundTaskWorkerTest {
     @Test
     void shouldAutoRetryUnexpectedWorkerFailure() {
         BackgroundTask task = createTask(3L, BackgroundTaskType.ARCHIVE, BackgroundTaskStatus.RUNNING);
-        when(backgroundTaskExecutionService.findQueuedTaskIds(5)).thenReturn(List.of(3L));
-        when(backgroundTaskExecutionService.claimQueuedTask(eq(3L), anyString(), anyLong())).thenReturn(Optional.of(task));
+        when(backgroundTaskExecutionGateway.findQueuedTaskIds(5)).thenReturn(List.of(3L));
+        when(backgroundTaskExecutionGateway.claimQueuedTask(eq(3L), anyString(), anyLong())).thenReturn(Optional.of(task));
         when(backgroundTaskHandler.supports(BackgroundTaskType.ARCHIVE)).thenReturn(true);
         when(backgroundTaskHandler.handle(eq(task), any(BackgroundTaskProgressReporter.class)))
                 .thenThrow(new RuntimeException("storage timeout"));
@@ -96,7 +97,7 @@ class BackgroundTaskWorkerTest {
         int processedCount = backgroundTaskWorker.processQueuedTasks(5);
 
         assertThat(processedCount).isEqualTo(1);
-        verify(backgroundTaskExecutionService).markWorkerTaskFailed(
+        verify(backgroundTaskExecutionGateway).markWorkerTaskFailed(
                 eq(3L),
                 anyString(),
                 eq("storage timeout"),
@@ -108,8 +109,8 @@ class BackgroundTaskWorkerTest {
     @Test
     void shouldClassifyRateLimitedFailureSeparately() {
         BackgroundTask task = createTask(4L, BackgroundTaskType.EXTRACT, BackgroundTaskStatus.RUNNING);
-        when(backgroundTaskExecutionService.findQueuedTaskIds(5)).thenReturn(List.of(4L));
-        when(backgroundTaskExecutionService.claimQueuedTask(eq(4L), anyString(), anyLong())).thenReturn(Optional.of(task));
+        when(backgroundTaskExecutionGateway.findQueuedTaskIds(5)).thenReturn(List.of(4L));
+        when(backgroundTaskExecutionGateway.claimQueuedTask(eq(4L), anyString(), anyLong())).thenReturn(Optional.of(task));
         when(backgroundTaskHandler.supports(BackgroundTaskType.EXTRACT)).thenReturn(true);
         when(backgroundTaskHandler.handle(eq(task), any(BackgroundTaskProgressReporter.class)))
                 .thenThrow(new RuntimeException("429 Too Many Requests"));
@@ -117,7 +118,7 @@ class BackgroundTaskWorkerTest {
         int processedCount = backgroundTaskWorker.processQueuedTasks(5);
 
         assertThat(processedCount).isEqualTo(1);
-        verify(backgroundTaskExecutionService).markWorkerTaskFailed(
+        verify(backgroundTaskExecutionGateway).markWorkerTaskFailed(
                 eq(4L),
                 anyString(),
                 eq("429 Too Many Requests"),

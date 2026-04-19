@@ -5,8 +5,8 @@ import com.yoyuzh.auth.CustomUserDetailsService;
 import com.yoyuzh.auth.User;
 import com.yoyuzh.common.PageResponse;
 import com.yoyuzh.files.core.FileMetadataResponse;
-import com.yoyuzh.files.search.FileSearchQuery;
-import com.yoyuzh.files.search.FileSearchService;
+import com.yoyuzh.files.search.api.FileSearchApi;
+import com.yoyuzh.files.search.api.SearchFilesQuery;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.core.MethodParameter;
@@ -34,15 +34,15 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 class FileSearchV2ControllerTest {
 
-    private FileSearchService fileSearchService;
+    private FileSearchApi fileSearchApi;
     private CustomUserDetailsService userDetailsService;
     private MockMvc mockMvc;
 
     @BeforeEach
     void setUp() {
-        fileSearchService = mock(FileSearchService.class);
+        fileSearchApi = mock(FileSearchApi.class);
         userDetailsService = mock(CustomUserDetailsService.class);
-        mockMvc = MockMvcBuilders.standaloneSetup(new FileSearchV2Controller(fileSearchService, userDetailsService))
+        mockMvc = MockMvcBuilders.standaloneSetup(new FileSearchV2Controller(fileSearchApi, userDetailsService))
                 .setControllerAdvice(new ApiV2ExceptionHandler())
                 .setCustomArgumentResolvers(authenticationPrincipalResolver())
                 .build();
@@ -52,7 +52,7 @@ class FileSearchV2ControllerTest {
     void shouldSearchFilesWithV2Envelope() throws Exception {
         User user = createUser(7L);
         when(userDetailsService.loadDomainUser("alice")).thenReturn(user);
-        when(fileSearchService.search(eq(user), any(FileSearchQuery.class))).thenReturn(new PageResponse<>(
+        when(fileSearchApi.search(eq(user), any(SearchFilesQuery.class))).thenReturn(new PageResponse<>(
                 List.of(new FileMetadataResponse(
                         10L,
                         "notes.txt",

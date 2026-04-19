@@ -6,6 +6,7 @@ import com.yoyuzh.files.policy.StoragePolicy;
 import com.yoyuzh.files.policy.StoragePolicyCapabilities;
 import com.yoyuzh.files.policy.StoragePolicyService;
 import com.yoyuzh.files.storage.FileContentStorage;
+import com.yoyuzh.platform.storage.api.DefaultStoragePolicySnapshot;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
@@ -44,8 +45,7 @@ class FileUploadRulesServiceTest {
         StoragePolicyCapabilities capabilities = new StoragePolicyCapabilities(
                 true, true, true, true, false, true, true, false, 900L
         );
-        when(storagePolicyService.ensureDefaultPolicy()).thenReturn(defaultPolicy);
-        when(storagePolicyService.readCapabilities(defaultPolicy)).thenReturn(capabilities);
+        when(storagePolicyService.readDefaultPolicySnapshot()).thenReturn(new DefaultStoragePolicySnapshot(defaultPolicy, capabilities));
 
         assertThatThrownBy(() -> service.validateUpload(user, "/docs", "a.txt", 901L))
                 .isInstanceOf(BusinessException.class);

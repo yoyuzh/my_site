@@ -26,13 +26,20 @@ public final class FileUploadRulesService {
 
     public void validateUpload(User user, String normalizedPath, String filename, long size) {
         long effectiveMaxUploadSize = Math.min(maxFileSize, user.getMaxUploadSizeBytes());
-        StoragePolicy defaultPolicy = storagePolicyService == null ? null : storagePolicyService.ensureDefaultPolicy();
-        StoragePolicyCapabilities capabilities = defaultPolicy == null ? null : storagePolicyService.readCapabilities(defaultPolicy);
-        if (defaultPolicy != null && defaultPolicy.getMaxSizeBytes() > 0) {
-            effectiveMaxUploadSize = Math.min(effectiveMaxUploadSize, defaultPolicy.getMaxSizeBytes());
+        StoragePolicy defaultPolicy = null;
+        StoragePolicyCapabilities capabilities = null;
+        if (storagePolicyService != null) {
+            var defaultPolicySnapshot = storagePolicyService.readDefaultPolicySnapshot();
+            defaultPolicy = defaultPolicySnapshot.policy();
+            capabilities = defaultPolicySnapshot.capabilities();
         }
-        if (capabilities != null && capabilities.maxObjectSize() > 0) {
-            effectiveMaxUploadSize = Math.min(effectiveMaxUploadSize, capabilities.maxObjectSize());
+        if (storagePolicyService != null && defaultPolicy != null) {
+            effectiveMaxUploadSize = storagePolicyService.resolveEffectiveMaxUploadSize(
+                    maxFileSize,
+                    user,
+                    defaultPolicy,
+                    capabilities
+            );
         }
         if (size > effectiveMaxUploadSize) {
             throw new BusinessException(ErrorCode.UNKNOWN, "文件大小超出限制");

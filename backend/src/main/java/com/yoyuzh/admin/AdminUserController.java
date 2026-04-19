@@ -2,6 +2,7 @@ package com.yoyuzh.admin;
 
 import com.yoyuzh.common.ApiResponse;
 import com.yoyuzh.common.PageResponse;
+import com.yoyuzh.ops.admin.api.AdminUserGovernanceApi;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -21,47 +22,47 @@ import org.springframework.web.bind.annotation.RestController;
 @PreAuthorize("@adminAccessEvaluator.isAdmin(authentication)")
 public class AdminUserController {
 
-    private final AdminUserGovernanceService adminUserGovernanceService;
+    private final AdminUserGovernanceApi adminUserGovernanceApi;
 
     @GetMapping("/users")
     public ApiResponse<PageResponse<AdminUserResponse>> users(@RequestParam(defaultValue = "0") int page,
                                                               @RequestParam(defaultValue = "10") int size,
                                                               @RequestParam(defaultValue = "") String query) {
-        return ApiResponse.success(adminUserGovernanceService.listUsers(page, size, query));
+        return ApiResponse.success(adminUserGovernanceApi.listUsers(page, size, query));
     }
 
     @PatchMapping("/users/{userId}/role")
     public ApiResponse<AdminUserResponse> updateUserRole(@PathVariable Long userId,
                                                          @Valid @RequestBody AdminUserRoleUpdateRequest request) {
-        return ApiResponse.success(adminUserGovernanceService.updateUserRole(userId, request.role()));
+        return ApiResponse.success(adminUserGovernanceApi.updateUserRole(userId, request.role()));
     }
 
     @PatchMapping("/users/{userId}/status")
     public ApiResponse<AdminUserResponse> updateUserStatus(@PathVariable Long userId,
                                                            @Valid @RequestBody AdminUserStatusUpdateRequest request) {
-        return ApiResponse.success(adminUserGovernanceService.updateUserBanned(userId, request.banned()));
+        return ApiResponse.success(adminUserGovernanceApi.updateUserBanned(userId, request.banned()));
     }
 
     @PutMapping("/users/{userId}/password")
     public ApiResponse<AdminUserResponse> updateUserPassword(@PathVariable Long userId,
                                                              @Valid @RequestBody AdminUserPasswordUpdateRequest request) {
-        return ApiResponse.success(adminUserGovernanceService.updateUserPassword(userId, request.newPassword()));
+        return ApiResponse.success(adminUserGovernanceApi.updateUserPassword(userId, request.newPassword()));
     }
 
     @PatchMapping("/users/{userId}/storage-quota")
     public ApiResponse<AdminUserResponse> updateUserStorageQuota(@PathVariable Long userId,
                                                                  @Valid @RequestBody AdminUserStorageQuotaUpdateRequest request) {
-        return ApiResponse.success(adminUserGovernanceService.updateUserStorageQuota(userId, request.storageQuotaBytes()));
+        return ApiResponse.success(adminUserGovernanceApi.updateUserStorageQuota(userId, request.storageQuotaBytes()));
     }
 
     @PatchMapping("/users/{userId}/max-upload-size")
     public ApiResponse<AdminUserResponse> updateUserMaxUploadSize(@PathVariable Long userId,
                                                                   @Valid @RequestBody AdminUserMaxUploadSizeUpdateRequest request) {
-        return ApiResponse.success(adminUserGovernanceService.updateUserMaxUploadSize(userId, request.maxUploadSizeBytes()));
+        return ApiResponse.success(adminUserGovernanceApi.updateUserMaxUploadSize(userId, request.maxUploadSizeBytes()));
     }
 
     @PostMapping("/users/{userId}/password/reset")
     public ApiResponse<AdminPasswordResetResponse> resetUserPassword(@PathVariable Long userId) {
-        return ApiResponse.success(adminUserGovernanceService.resetUserPassword(userId));
+        return ApiResponse.success(adminUserGovernanceApi.resetUserPassword(userId));
     }
 }

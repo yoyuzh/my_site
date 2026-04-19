@@ -11,6 +11,7 @@ import com.yoyuzh.files.policy.StoragePolicyCapabilities;
 import com.yoyuzh.files.policy.StoragePolicyCredentialMode;
 import com.yoyuzh.files.policy.StoragePolicyService;
 import com.yoyuzh.files.policy.StoragePolicyType;
+import com.yoyuzh.platform.storage.api.DefaultStoragePolicySnapshot;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -131,8 +132,7 @@ class AdminConfigSnapshotServiceTest {
                 false,
                 300_000L
         );
-        when(storagePolicyService.ensureDefaultPolicy()).thenReturn(policy);
-        when(storagePolicyService.readCapabilities(policy)).thenReturn(capabilities);
+        when(storagePolicyService.readDefaultPolicySnapshot()).thenReturn(new DefaultStoragePolicySnapshot(policy, capabilities));
         when(storedFileRepository.count()).thenReturn(12L);
         when(fileBlobRepository.count()).thenReturn(8L);
         when(fileEntityRepository.count()).thenReturn(9L);

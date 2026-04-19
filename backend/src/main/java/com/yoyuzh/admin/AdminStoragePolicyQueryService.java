@@ -23,7 +23,10 @@ public class AdminStoragePolicyQueryService {
                         .and(Sort.by(Sort.Direction.DESC, "enabled"))
                         .and(Sort.by(Sort.Direction.ASC, "id")))
                 .stream()
-                .map(policy -> AdminStoragePolicyResponses.from(storagePolicyService, policy))
+                .map(policy -> AdminStoragePolicyResponses.from(
+                        policy,
+                        storagePolicyService.readCapabilities(policy)
+                ))
                 .toList();
     }
 }

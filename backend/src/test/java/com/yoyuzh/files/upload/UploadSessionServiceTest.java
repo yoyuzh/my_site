@@ -2,15 +2,17 @@ package com.yoyuzh.files.upload;
 
 import com.yoyuzh.auth.User;
 import com.yoyuzh.common.BusinessException;
-import com.yoyuzh.config.FileStorageProperties;
-import com.yoyuzh.files.core.FileService;
-import com.yoyuzh.files.core.StoredFileRepository;
 import com.yoyuzh.files.policy.StoragePolicy;
 import com.yoyuzh.files.policy.StoragePolicyCapabilities;
 import com.yoyuzh.files.policy.StoragePolicyService;
 import com.yoyuzh.files.policy.StoragePolicyType;
 import com.yoyuzh.files.storage.FileContentStorage;
 import com.yoyuzh.files.storage.PreparedUpload;
+import com.yoyuzh.files.upload.api.UploadCompletionApi;
+import com.yoyuzh.files.upload.api.UploadCompletionCommand;
+import com.yoyuzh.files.upload.api.UploadTargetPolicy;
+import com.yoyuzh.files.upload.api.ValidatedUploadTarget;
+import com.yoyuzh.platform.storage.api.DefaultStoragePolicySnapshot;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -42,29 +44,26 @@ class UploadSessionServiceTest {
     @Mock
     private UploadSessionRepository uploadSessionRepository;
     @Mock
-    private StoredFileRepository storedFileRepository;
-    @Mock
-    private FileService fileService;
-    @Mock
     private FileContentStorage fileContentStorage;
     @Mock
     private StoragePolicyService storagePolicyService;
     @Mock
     private UploadSessionRuntimeStateService uploadSessionRuntimeStateService;
+    @Mock
+    private UploadTargetPolicy uploadTargetPolicy;
+    @Mock
+    private UploadCompletionApi uploadCompletionApi;
 
     private UploadSessionService uploadSessionService;
 
     @BeforeEach
     void setUp() {
-        FileStorageProperties properties = new FileStorageProperties();
-        properties.setMaxFileSize(500L * 1024 * 1024);
         uploadSessionService = new UploadSessionService(
                 uploadSessionRepository,
-                storedFileRepository,
-                fileService,
+                uploadTargetPolicy,
+                uploadCompletionApi,
                 fileContentStorage,
                 storagePolicyService,
-                properties,
                 Clock.fixed(Instant.parse("2026-04-08T06:00:00Z"), ZoneOffset.UTC)
         );
         ReflectionTestUtils.setField(uploadSessionService, "uploadSessionRuntimeStateService", uploadSessionRuntimeStateService);
@@ -73,10 +72,8 @@ class UploadSessionServiceTest {
     @Test
     void shouldCreateUploadSessionWithoutChangingLegacyUploadPath() {
         User user = createUser(7L);
-        when(storedFileRepository.existsByUserIdAndPathAndFilename(7L, "/docs", "movie.mp4")).thenReturn(false);
         StoragePolicy policy = createDefaultStoragePolicy();
-        when(storagePolicyService.ensureDefaultPolicy()).thenReturn(policy);
-        when(storagePolicyService.readCapabilities(policy)).thenReturn(new StoragePolicyCapabilities(
+        StoragePolicyCapabilities capabilities = new StoragePolicyCapabilities(
                 true,
                 true,
                 true,
@@ -86,7 +83,13 @@ class UploadSessionServiceTest {
                 true,
                 false,
                 500L * 1024 * 1024
-        ));
+        );
+        when(uploadTargetPolicy.validateUpload(user, "/docs", "movie.mp4", 20L * 1024 * 1024))
+                .thenReturn(new ValidatedUploadTarget(
+                        "/docs",
+                        "movie.mp4",
+                        new DefaultStoragePolicySnapshot(policy, capabilities)
+                ));
         when(fileContentStorage.createMultipartUpload(any(), eq("video/mp4"))).thenReturn("upload-123");
         when(uploadSessionRepository.save(any(UploadSession.class))).thenAnswer(invocation -> {
             UploadSession session = invocation.getArgument(0);
@@ -162,6 +165,7 @@ class UploadSessionServiceTest {
                 false,
                 500L * 1024 * 1024
         ));
+        when(storagePolicyService.resolveUploadMode(any())).thenReturn(UploadSessionUploadMode.DIRECT_SINGLE);
         when(fileContentStorage.prepareBlobUpload("/docs", "movie.mp4", "blobs/session-1", "video/mp4", 20L))
                 .thenReturn(new PreparedUpload(
                         true,
@@ -201,6 +205,7 @@ class UploadSessionServiceTest {
                 false,
                 500L * 1024 * 1024
         ));
+        when(storagePolicyService.resolveUploadMode(any())).thenReturn(UploadSessionUploadMode.PROXY);
         when(uploadSessionRepository.save(any(UploadSession.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
         UploadSession result = uploadSessionService.uploadOwnedContent(
@@ -216,20 +221,23 @@ class UploadSessionServiceTest {
     @Test
     void shouldCreateProxyUploadSessionWhenPolicyDisablesDirectUpload() {
         User user = createUser(7L);
-        when(storedFileRepository.existsByUserIdAndPathAndFilename(7L, "/docs", "movie.mp4")).thenReturn(false);
         StoragePolicy policy = createDefaultStoragePolicy();
-        when(storagePolicyService.ensureDefaultPolicy()).thenReturn(policy);
-        when(storagePolicyService.readCapabilities(policy)).thenReturn(new StoragePolicyCapabilities(
-                false,
-                false,
-                false,
-                true,
-                false,
-                true,
-                false,
-                false,
-                500L * 1024 * 1024
-        ));
+        when(uploadTargetPolicy.validateUpload(user, "/docs", "movie.mp4", 20L))
+                .thenReturn(new ValidatedUploadTarget(
+                        "/docs",
+                        "movie.mp4",
+                        new DefaultStoragePolicySnapshot(policy, new StoragePolicyCapabilities(
+                                false,
+                                false,
+                                false,
+                                true,
+                                false,
+                                true,
+                                false,
+                                false,
+                                500L * 1024 * 1024
+                        ))
+                ));
         when(uploadSessionRepository.save(any(UploadSession.class))).thenAnswer(invocation -> {
             UploadSession saved = invocation.getArgument(0);
             saved.setId(100L);
@@ -263,20 +271,8 @@ class UploadSessionServiceTest {
     @Test
     void shouldRejectDuplicateTargetWhenCreatingSession() {
         User user = createUser(7L);
-        when(storedFileRepository.existsByUserIdAndPathAndFilename(7L, "/docs", "movie.mp4")).thenReturn(true);
-        StoragePolicy policy = createDefaultStoragePolicy();
-        when(storagePolicyService.ensureDefaultPolicy()).thenReturn(policy);
-        when(storagePolicyService.readCapabilities(policy)).thenReturn(new StoragePolicyCapabilities(
-                true,
-                true,
-                true,
-                true,
-                false,
-                true,
-                true,
-                false,
-                500L * 1024 * 1024
-        ));
+        when(uploadTargetPolicy.validateUpload(user, "/docs", "movie.mp4", 20L))
+                .thenThrow(new BusinessException(com.yoyuzh.common.ErrorCode.UNKNOWN, "duplicate"));
 
         assertThatThrownBy(() -> uploadSessionService.createSession(
                 user,
@@ -285,7 +281,7 @@ class UploadSessionServiceTest {
     }
 
     @Test
-    void shouldCompleteOwnedSessionThroughLegacyFileCommitPath() {
+    void shouldCompleteOwnedSessionThroughUploadCompletionApi() {
         User user = createUser(7L);
         UploadSession session = createSession(user);
         session.setMultipartUploadId("upload-123");
@@ -306,13 +302,13 @@ class UploadSessionServiceTest {
         assertThat(result.getStatus()).isEqualTo(UploadSessionStatus.COMPLETED);
         assertThat(result.getUpdatedAt()).isEqualTo(LocalDateTime.of(2026, 4, 8, 6, 0));
         verify(fileContentStorage).completeMultipartUpload(eq("blobs/session-1"), eq("upload-123"), anyList());
-        ArgumentCaptor<CompleteUploadRequest> requestCaptor = ArgumentCaptor.forClass(CompleteUploadRequest.class);
-        verify(fileService).completeUpload(eq(user), requestCaptor.capture());
-        assertThat(requestCaptor.getValue().path()).isEqualTo("/docs");
-        assertThat(requestCaptor.getValue().filename()).isEqualTo("movie.mp4");
-        assertThat(requestCaptor.getValue().storageName()).isEqualTo("blobs/session-1");
-        assertThat(requestCaptor.getValue().contentType()).isEqualTo("video/mp4");
-        assertThat(requestCaptor.getValue().size()).isEqualTo(20L);
+        ArgumentCaptor<UploadCompletionCommand> commandCaptor = ArgumentCaptor.forClass(UploadCompletionCommand.class);
+        verify(uploadCompletionApi).completeStoredBlob(commandCaptor.capture());
+        assertThat(commandCaptor.getValue().normalizedPath()).isEqualTo("/docs");
+        assertThat(commandCaptor.getValue().filename()).isEqualTo("movie.mp4");
+        assertThat(commandCaptor.getValue().objectKey()).isEqualTo("blobs/session-1");
+        assertThat(commandCaptor.getValue().contentType()).isEqualTo("video/mp4");
+        assertThat(commandCaptor.getValue().size()).isEqualTo(20L);
         verify(uploadSessionRuntimeStateService).markCompleted(result, LocalDateTime.of(2026, 4, 8, 6, 0));
     }
 

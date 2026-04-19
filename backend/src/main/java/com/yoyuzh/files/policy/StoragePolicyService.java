@@ -1,9 +1,15 @@
 package com.yoyuzh.files.policy;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.yoyuzh.auth.User;
 import com.yoyuzh.common.BusinessException;
 import com.yoyuzh.common.ErrorCode;
 import com.yoyuzh.config.FileStorageProperties;
+import com.yoyuzh.files.upload.UploadSessionUploadMode;
+import com.yoyuzh.platform.storage.api.DefaultStoragePolicySnapshot;
+import com.yoyuzh.platform.storage.api.StoragePolicyQuery;
+import com.yoyuzh.platform.storage.api.UploadConstraintPolicy;
+import com.yoyuzh.platform.storage.api.UploadModePolicy;
 import lombok.RequiredArgsConstructor;
 import org.springframework.boot.CommandLineRunner;
 import org.springframework.core.annotation.Order;
@@ -14,10 +20,12 @@ import org.springframework.util.StringUtils;
 @Service
 @Order(-1)
 @RequiredArgsConstructor
-public class StoragePolicyService implements CommandLineRunner {
+public class StoragePolicyService implements CommandLineRunner, StoragePolicyQuery {
 
     private final StoragePolicyRepository storagePolicyRepository;
     private final FileStorageProperties properties;
+    private final UploadModePolicy uploadModePolicy;
+    private final UploadConstraintPolicy uploadConstraintPolicy;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     @Override
@@ -40,12 +48,29 @@ public class StoragePolicyService implements CommandLineRunner {
         }
     }
 
+    @Override
+    public DefaultStoragePolicySnapshot readDefaultPolicySnapshot() {
+        StoragePolicy policy = ensureDefaultPolicy();
+        return new DefaultStoragePolicySnapshot(policy, readCapabilities(policy));
+    }
+
     public String writeCapabilities(StoragePolicyCapabilities capabilities) {
         try {
             return objectMapper.writeValueAsString(capabilities);
         } catch (Exception ex) {
             throw new IllegalStateException("Storage policy capabilities cannot be serialized", ex);
         }
+    }
+
+    public UploadSessionUploadMode resolveUploadMode(StoragePolicyCapabilities capabilities) {
+        return uploadModePolicy.resolveUploadMode(capabilities);
+    }
+
+    public long resolveEffectiveMaxUploadSize(long systemMaxFileSize,
+                                              User user,
+                                              StoragePolicy policy,
+                                              StoragePolicyCapabilities capabilities) {
+        return uploadConstraintPolicy.resolveEffectiveMaxUploadSize(systemMaxFileSize, user, policy, capabilities);
     }
 
     public StoragePolicy getRequiredPolicy(Long policyId) {

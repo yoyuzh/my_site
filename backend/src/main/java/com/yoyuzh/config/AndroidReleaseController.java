@@ -1,5 +1,6 @@
 package com.yoyuzh.config;
 
+import com.yoyuzh.app.android.api.AndroidReleaseQueryApi;
 import com.yoyuzh.common.ApiResponse;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.CacheControl;
@@ -19,21 +20,21 @@ import java.nio.charset.StandardCharsets;
 @RequiredArgsConstructor
 public class AndroidReleaseController {
 
-    private final AndroidReleaseService androidReleaseService;
+    private final AndroidReleaseQueryApi androidReleaseQueryApi;
 
     @GetMapping("/latest")
     public ApiResponse<AndroidReleaseResponse> getLatestRelease() {
-        return ApiResponse.success(androidReleaseService.getLatestRelease());
+        return ApiResponse.success(androidReleaseQueryApi.getLatestRelease());
     }
 
     @GetMapping("/download")
     public ResponseEntity<byte[]> downloadLatestRelease() {
-        return buildDownloadResponse(androidReleaseService.downloadLatestRelease());
+        return buildDownloadResponse(androidReleaseQueryApi.downloadLatestRelease());
     }
 
     @GetMapping("/download/{fileName:.+}")
     public ResponseEntity<byte[]> downloadVersionedRelease(@PathVariable String fileName) {
-        AndroidReleaseDownload download = androidReleaseService.downloadLatestRelease();
+        AndroidReleaseDownload download = androidReleaseQueryApi.downloadLatestRelease();
         if (!download.fileName().equals(fileName)) {
             return ResponseEntity.notFound().build();
         }

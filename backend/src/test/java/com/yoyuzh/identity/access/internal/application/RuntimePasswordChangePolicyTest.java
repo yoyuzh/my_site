@@ -1,0 +1,95 @@
+package com.yoyuzh.identity.access.internal.application;
+
+import com.yoyuzh.auth.AuthClientType;
+import com.yoyuzh.auth.User;
+import com.yoyuzh.common.BusinessException;
+import com.yoyuzh.identity.access.api.IdentityCredentialIssuer;
+import com.yoyuzh.identity.access.api.IdentityCredentialRevocationPolicy;
+import com.yoyuzh.identity.access.api.IssuedAuthCredentials;
+import com.yoyuzh.identity.access.api.PasswordChangeAttempt;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.security.crypto.password.PasswordEncoder;
+
+import java.time.LocalDateTime;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
+
+@ExtendWith(MockitoExtension.class)
+class RuntimePasswordChangePolicyTest {
+
+    @Mock
+    private PasswordEncoder passwordEncoder;
+
+    @Mock
+    private IdentityCredentialRevocationPolicy identityCredentialRevocationPolicy;
+
+    @Mock
+    private IdentityCredentialIssuer identityCredentialIssuer;
+
+    @Test
+    void shouldRotateAllSessionsAndIssueFreshCredentialsAfterPasswordChange() {
+        RuntimePasswordChangePolicy policy = new RuntimePasswordChangePolicy(
+                passwordEncoder,
+                identityCredentialRevocationPolicy,
+                identityCredentialIssuer);
+        User user = createUser(1L, "alice");
+        String previousDesktopSessionId = user.getDesktopActiveSessionId();
+        String previousMobileSessionId = user.getMobileActiveSessionId();
+
+        when(passwordEncoder.matches("OldPass1!", "encoded-old")).thenReturn(true);
+        when(passwordEncoder.encode("NewPass1!A")).thenReturn("encoded-new");
+        when(identityCredentialIssuer.issueFresh(user, AuthClientType.DESKTOP))
+                .thenReturn(new IssuedAuthCredentials(user, "new-access", "new-refresh"));
+
+        IssuedAuthCredentials issued = policy.changePassword(
+                user,
+                new PasswordChangeAttempt("OldPass1!", "NewPass1!A", AuthClientType.DESKTOP));
+
+        assertThat(user.getPasswordHash()).isEqualTo("encoded-new");
+        assertThat(user.getDesktopActiveSessionId()).isEqualTo(previousDesktopSessionId);
+        assertThat(user.getMobileActiveSessionId()).isEqualTo(previousMobileSessionId);
+        verify(identityCredentialRevocationPolicy).revokeAll(user);
+        verify(identityCredentialIssuer).issueFresh(user, AuthClientType.DESKTOP);
+        assertThat(issued.accessToken()).isEqualTo("new-access");
+        assertThat(issued.refreshToken()).isEqualTo("new-refresh");
+    }
+
+    @Test
+    void shouldRejectPasswordChangeWhenCurrentPasswordIsWrong() {
+        RuntimePasswordChangePolicy policy = new RuntimePasswordChangePolicy(
+                passwordEncoder,
+                identityCredentialRevocationPolicy,
+                identityCredentialIssuer);
+        User user = createUser(2L, "bob");
+
+        when(passwordEncoder.matches("WrongPass1!", "encoded-old")).thenReturn(false);
+
+        assertThatThrownBy(() -> policy.changePassword(
+                user,
+                new PasswordChangeAttempt("WrongPass1!", "NewPass1!A", AuthClientType.DESKTOP)))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("当前密码错误");
+
+        verify(identityCredentialRevocationPolicy, never()).revokeAll(user);
+        verify(identityCredentialIssuer, never()).issueFresh(user, AuthClientType.DESKTOP);
+    }
+
+    private static User createUser(Long id, String username) {
+        User user = new User();
+        user.setId(id);
+        user.setUsername(username);
+        user.setEmail(username + "@example.com");
+        user.setPasswordHash("encoded-old");
+        user.setCreatedAt(LocalDateTime.now());
+        user.setDesktopActiveSessionId("desktop-" + id);
+        user.setMobileActiveSessionId("mobile-" + id);
+        return user;
+    }
+}

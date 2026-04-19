@@ -1,5 +1,6 @@
 package com.yoyuzh.config;
 
+import com.yoyuzh.app.android.api.AndroidReleaseQueryApi;
 import com.yoyuzh.common.GlobalExceptionHandler;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -21,13 +22,13 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 class AndroidReleaseControllerTest {
 
     @Mock
-    private AndroidReleaseService androidReleaseService;
+    private AndroidReleaseQueryApi androidReleaseQueryApi;
 
     private MockMvc mockMvc;
 
     @BeforeEach
     void setUp() {
-        mockMvc = MockMvcBuilders.standaloneSetup(new AndroidReleaseController(androidReleaseService))
+        mockMvc = MockMvcBuilders.standaloneSetup(new AndroidReleaseController(androidReleaseQueryApi))
                 .setControllerAdvice(new GlobalExceptionHandler())
                 .build();
     }
@@ -41,7 +42,7 @@ class AndroidReleaseControllerTest {
                 "2026.04.03.1754",
                 "2026-04-03T08:33:54Z"
         );
-        when(androidReleaseService.getLatestRelease()).thenReturn(response);
+        when(androidReleaseQueryApi.getLatestRelease()).thenReturn(response);
 
         mockMvc.perform(get("/api/app/android/latest"))
                 .andExpect(status().isOk())
@@ -52,18 +53,18 @@ class AndroidReleaseControllerTest {
                 .andExpect(jsonPath("$.data.versionName").value("2026.04.03.1754"))
                 .andExpect(jsonPath("$.data.publishedAt").value("2026-04-03T08:33:54Z"));
 
-        verify(androidReleaseService).getLatestRelease();
+        verify(androidReleaseQueryApi).getLatestRelease();
     }
 
     @Test
     void shouldRedirectAndroidDownloadWithoutAuthentication() throws Exception {
-        when(androidReleaseService.downloadLatestRelease())
+        when(androidReleaseQueryApi.downloadLatestRelease())
                 .thenReturn(new AndroidReleaseDownload("yoyuzh-portal-2026.04.03.1754.apk", "apk-binary".getBytes()));
 
         mockMvc.perform(get("/api/app/android/download"))
                 .andExpect(status().isOk())
                 .andExpect(header().string(HttpHeaders.CONTENT_DISPOSITION, org.hamcrest.Matchers.containsString("filename*=UTF-8''yoyuzh-portal-2026.04.03.1754.apk")));
 
-        verify(androidReleaseService).downloadLatestRelease();
+        verify(androidReleaseQueryApi).downloadLatestRelease();
     }
 }

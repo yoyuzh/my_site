@@ -1,2 +1,2 @@
-com\yoyuzh\architecture\BackendNextArchitectureRulesTest.class
-com\yoyuzh\architecture\BackendNextStructureTest.class
+com/yoyuzh/architecture/BackendLegacyToTargetMappingTest.class
+com/yoyuzh/architecture/BackendPackageLayeringRuleTest.class

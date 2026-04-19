@@ -12,16 +12,22 @@ import com.yoyuzh.files.core.FileService;
 import com.yoyuzh.files.upload.InitiateUploadResponse;
 import com.yoyuzh.files.storage.FileContentStorage;
 import com.yoyuzh.files.storage.PreparedUpload;
+import com.yoyuzh.identity.access.api.DevLoginRoleResolver;
+import com.yoyuzh.identity.access.api.IdentityCredentialIssuer;
+import com.yoyuzh.identity.access.api.IdentityRoleName;
+import com.yoyuzh.identity.access.api.IssuedAuthCredentials;
+import com.yoyuzh.identity.access.api.LoginAdmissionPolicy;
+import com.yoyuzh.identity.access.api.PasswordChangeAttempt;
+import com.yoyuzh.identity.access.api.PasswordChangePolicy;
+import com.yoyuzh.identity.access.api.ProfileUpdateAdmissionPolicy;
+import com.yoyuzh.identity.access.api.RegistrationAdmissionPolicy;
+import com.yoyuzh.identity.access.internal.domain.RandomIdentitySessionPolicy;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.Spy;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.security.authentication.AuthenticationManager;
-import org.springframework.security.authentication.BadCredentialsException;
-import org.springframework.security.authentication.DisabledException;
-import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.crypto.password.PasswordEncoder;
 
 import java.time.LocalDateTime;
@@ -32,6 +38,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -46,10 +53,7 @@ class AuthServiceTest {
     private PasswordEncoder passwordEncoder;
 
     @Mock
-    private AuthenticationManager authenticationManager;
-
-    @Mock
-    private JwtTokenProvider jwtTokenProvider;
+    private LoginAdmissionPolicy loginAdmissionPolicy;
 
     @Mock
     private RefreshTokenService refreshTokenService;
@@ -64,24 +68,28 @@ class AuthServiceTest {
     private FileContentStorage fileContentStorage;
 
     @Mock
-    private RegistrationInviteService registrationInviteService;
+    private RegistrationAdmissionPolicy registrationAdmissionPolicy;
 
     @Mock
-    private AdminRuntimeSettingsService adminRuntimeSettingsService;
+    private DevLoginRoleResolver devLoginRoleResolver;
+
+    @Mock
+    private ProfileUpdateAdmissionPolicy profileUpdateAdmissionPolicy;
+
+    @Mock
+    private PasswordChangePolicy passwordChangePolicy;
+
+    @Mock
+    private IdentityCredentialIssuer identityCredentialIssuer;
 
     @Spy
-    private AuthSessionPolicy authSessionPolicy = new AuthSessionPolicy();
+    private AuthSessionPolicy authSessionPolicy = new AuthSessionPolicy(new RandomIdentitySessionPolicy());
 
     @InjectMocks
     private AuthService authService;
 
-    private void requireInviteCodeForRegistration() {
-        when(adminRuntimeSettingsService.isInviteCodeRequired()).thenReturn(true);
-    }
-
     @Test
     void shouldRegisterUserWithEncryptedPassword() {
-        requireInviteCodeForRegistration();
         RegisterRequest request = new RegisterRequest(
                 "alice",
                 "alice@example.com",
@@ -90,9 +98,6 @@ class AuthServiceTest {
                 "StrongPass1!",
                 "invite-code"
         );
-        when(userRepository.existsByUsername("alice")).thenReturn(false);
-        when(userRepository.existsByEmail("alice@example.com")).thenReturn(false);
-        when(userRepository.existsByPhoneNumber("13800138000")).thenReturn(false);
         when(passwordEncoder.encode("StrongPass1!")).thenReturn("encoded-password");
         when(userRepository.save(any(User.class))).thenAnswer(invocation -> {
             User user = invocation.getArgument(0);
@@ -100,8 +105,11 @@ class AuthServiceTest {
             user.setCreatedAt(LocalDateTime.now());
             return user;
         });
-        when(jwtTokenProvider.generateAccessToken(eq(1L), eq("alice"), anyString(), eq(AuthClientType.DESKTOP))).thenReturn("access-token");
-        when(refreshTokenService.issueRefreshToken(any(User.class), eq(AuthClientType.DESKTOP))).thenReturn("refresh-token");
+        when(identityCredentialIssuer.issueFresh(any(User.class), eq(AuthClientType.DESKTOP)))
+                .thenAnswer(invocation -> {
+                    User issuedUser = invocation.getArgument(0);
+                    return new IssuedAuthCredentials(issuedUser, "access-token", "refresh-token");
+                });
 
         AuthResponse response = authService.register(request);
 
@@ -110,7 +118,7 @@ class AuthServiceTest {
         assertThat(response.refreshToken()).isEqualTo("refresh-token");
         assertThat(response.user().username()).isEqualTo("alice");
         assertThat(response.user().phoneNumber()).isEqualTo("13800138000");
-        verify(registrationInviteService).consumeInviteCode("invite-code");
+        verify(registrationAdmissionPolicy).assertAllowed(any());
         verify(passwordEncoder).encode("StrongPass1!");
         verify(fileService).ensureDefaultDirectories(any(User.class));
     }
@@ -125,7 +133,9 @@ class AuthServiceTest {
                 "StrongPass1!",
                 "invite-code"
         );
-        when(userRepository.existsByUsername("alice")).thenReturn(true);
+        org.mockito.Mockito.doThrow(new BusinessException(com.yoyuzh.common.ErrorCode.UNKNOWN, "用户名已存在"))
+                .when(registrationAdmissionPolicy)
+                .assertAllowed(any());
 
         assertThatThrownBy(() -> authService.register(request))
                 .isInstanceOf(BusinessException.class)
@@ -142,9 +152,9 @@ class AuthServiceTest {
                 "StrongPass1!",
                 "invite-code"
         );
-        when(userRepository.existsByUsername("alice")).thenReturn(false);
-        when(userRepository.existsByEmail("alice@example.com")).thenReturn(false);
-        when(userRepository.existsByPhoneNumber("13800138000")).thenReturn(true);
+        org.mockito.Mockito.doThrow(new BusinessException(com.yoyuzh.common.ErrorCode.UNKNOWN, "手机号已存在"))
+                .when(registrationAdmissionPolicy)
+                .assertAllowed(any());
 
         assertThatThrownBy(() -> authService.register(request))
                 .isInstanceOf(BusinessException.class)
@@ -153,7 +163,6 @@ class AuthServiceTest {
 
     @Test
     void shouldRejectInvalidInviteCodeOnRegister() {
-        requireInviteCodeForRegistration();
         RegisterRequest request = new RegisterRequest(
                 "alice",
                 "alice@example.com",
@@ -164,8 +173,8 @@ class AuthServiceTest {
         );
         var invalidInviteCode = new BusinessException(com.yoyuzh.common.ErrorCode.PERMISSION_DENIED, "邀请码错误");
         org.mockito.Mockito.doThrow(invalidInviteCode)
-                .when(registrationInviteService)
-                .consumeInviteCode("wrong-code");
+                .when(registrationAdmissionPolicy)
+                .assertAllowed(any());
 
         assertThatThrownBy(() -> authService.register(request))
                 .isInstanceOf(BusinessException.class)
@@ -182,14 +191,12 @@ class AuthServiceTest {
         user.setPasswordHash("encoded-password");
         user.setCreatedAt(LocalDateTime.now());
         when(userRepository.findByUsername("alice")).thenReturn(Optional.of(user));
-        when(userRepository.save(user)).thenReturn(user);
-        when(jwtTokenProvider.generateAccessToken(eq(1L), eq("alice"), anyString(), eq(AuthClientType.DESKTOP))).thenReturn("access-token");
-        when(refreshTokenService.issueRefreshToken(user, AuthClientType.DESKTOP)).thenReturn("refresh-token");
+        when(identityCredentialIssuer.issueFresh(user, AuthClientType.DESKTOP))
+                .thenReturn(new IssuedAuthCredentials(user, "access-token", "refresh-token"));
 
         AuthResponse response = authService.login(request);
 
-        verify(authenticationManager).authenticate(
-                new UsernamePasswordAuthenticationToken("alice", "plain-password"));
+        verify(loginAdmissionPolicy).assertAllowed("alice", "plain-password");
         assertThat(response.token()).isEqualTo("access-token");
         assertThat(response.accessToken()).isEqualTo("access-token");
         assertThat(response.refreshToken()).isEqualTo("refresh-token");
@@ -204,10 +211,8 @@ class AuthServiceTest {
         user.setUsername("alice");
         user.setEmail("alice@example.com");
         user.setCreatedAt(LocalDateTime.now());
-        when(refreshTokenService.rotateRefreshToken("old-refresh"))
-                .thenReturn(new RefreshTokenService.RotatedRefreshToken(user, "new-refresh", AuthClientType.DESKTOP));
-        when(userRepository.save(user)).thenReturn(user);
-        when(jwtTokenProvider.generateAccessToken(eq(1L), eq("alice"), anyString(), eq(AuthClientType.DESKTOP))).thenReturn("new-access");
+        when(identityCredentialIssuer.refresh("old-refresh", AuthClientType.DESKTOP))
+                .thenReturn(new IssuedAuthCredentials(user, "new-access", "new-refresh"));
 
         AuthResponse response = authService.refresh("old-refresh");
 
@@ -220,8 +225,10 @@ class AuthServiceTest {
     @Test
     void shouldThrowBusinessExceptionWhenAuthenticationFails() {
         LoginRequest request = new LoginRequest("alice", "wrong-password");
-        when(authenticationManager.authenticate(any()))
-                .thenThrow(new BadCredentialsException("bad credentials"));
+        org.mockito.Mockito.doThrow(
+                        new BusinessException(com.yoyuzh.common.ErrorCode.NOT_LOGGED_IN, "用户名或密码错误"))
+                .when(loginAdmissionPolicy)
+                .assertAllowed("alice", "wrong-password");
 
         assertThatThrownBy(() -> authService.login(request))
                 .isInstanceOf(BusinessException.class)
@@ -231,8 +238,10 @@ class AuthServiceTest {
     @Test
     void shouldRejectBannedUserLogin() {
         LoginRequest request = new LoginRequest("alice", "plain-password");
-        when(authenticationManager.authenticate(any()))
-                .thenThrow(new DisabledException("disabled"));
+        org.mockito.Mockito.doThrow(
+                        new BusinessException(com.yoyuzh.common.ErrorCode.PERMISSION_DENIED, "账号已被封禁"))
+                .when(loginAdmissionPolicy)
+                .assertAllowed("alice", "plain-password");
 
         assertThatThrownBy(() -> authService.login(request))
                 .isInstanceOf(BusinessException.class)
@@ -241,6 +250,7 @@ class AuthServiceTest {
 
     @Test
     void shouldCreateDefaultDirectoriesForDevLoginUser() {
+        when(devLoginRoleResolver.resolveRoleForUsername("demo")).thenReturn(IdentityRoleName.USER);
         when(userRepository.findByUsername("demo")).thenReturn(Optional.empty());
         when(passwordEncoder.encode("1")).thenReturn("encoded-password");
         when(userRepository.save(any(User.class))).thenAnswer(invocation -> {
@@ -249,8 +259,11 @@ class AuthServiceTest {
             user.setCreatedAt(LocalDateTime.now());
             return user;
         });
-        when(jwtTokenProvider.generateAccessToken(eq(9L), eq("demo"), anyString(), eq(AuthClientType.DESKTOP))).thenReturn("access-token");
-        when(refreshTokenService.issueRefreshToken(any(User.class), eq(AuthClientType.DESKTOP))).thenReturn("refresh-token");
+        when(identityCredentialIssuer.issueFresh(any(User.class), eq(AuthClientType.DESKTOP)))
+                .thenAnswer(invocation -> {
+                    User issuedUser = invocation.getArgument(0);
+                    return new IssuedAuthCredentials(issuedUser, "access-token", "refresh-token");
+                });
 
         AuthResponse response = authService.devLogin("demo");
 
@@ -263,6 +276,7 @@ class AuthServiceTest {
 
     @Test
     void shouldUpgradeAdminDevLoginUserToAdminRole() {
+        when(devLoginRoleResolver.resolveRoleForUsername("admin")).thenReturn(IdentityRoleName.ADMIN);
         User existing = new User();
         existing.setId(18L);
         existing.setUsername("admin");
@@ -274,8 +288,8 @@ class AuthServiceTest {
 
         when(userRepository.findByUsername("admin")).thenReturn(Optional.of(existing));
         when(userRepository.save(existing)).thenReturn(existing);
-        when(jwtTokenProvider.generateAccessToken(eq(18L), eq("admin"), anyString(), eq(AuthClientType.DESKTOP))).thenReturn("admin-access-token");
-        when(refreshTokenService.issueRefreshToken(existing, AuthClientType.DESKTOP)).thenReturn("admin-refresh-token");
+        when(identityCredentialIssuer.issueFresh(existing, AuthClientType.DESKTOP))
+                .thenReturn(new IssuedAuthCredentials(existing, "admin-access-token", "admin-refresh-token"));
 
         AuthResponse response = authService.devLogin("admin");
 
@@ -286,6 +300,7 @@ class AuthServiceTest {
 
     @Test
     void shouldUpgradeOperatorDevLoginUserToModeratorRole() {
+        when(devLoginRoleResolver.resolveRoleForUsername("operator")).thenReturn(IdentityRoleName.MODERATOR);
         User existing = new User();
         existing.setId(19L);
         existing.setUsername("operator");
@@ -297,8 +312,8 @@ class AuthServiceTest {
 
         when(userRepository.findByUsername("operator")).thenReturn(Optional.of(existing));
         when(userRepository.save(existing)).thenReturn(existing);
-        when(jwtTokenProvider.generateAccessToken(eq(19L), eq("operator"), anyString(), eq(AuthClientType.DESKTOP))).thenReturn("operator-access-token");
-        when(refreshTokenService.issueRefreshToken(existing, AuthClientType.DESKTOP)).thenReturn("operator-refresh-token");
+        when(identityCredentialIssuer.issueFresh(existing, AuthClientType.DESKTOP))
+                .thenReturn(new IssuedAuthCredentials(existing, "operator-access-token", "operator-refresh-token"));
 
         AuthResponse response = authService.devLogin("operator");
 
@@ -329,12 +344,11 @@ class AuthServiceTest {
         );
 
         when(userRepository.findByUsername("alice")).thenReturn(Optional.of(user));
-        when(userRepository.existsByEmail("newalice@example.com")).thenReturn(false);
-        when(userRepository.existsByPhoneNumber("13900139000")).thenReturn(false);
         when(userRepository.save(user)).thenReturn(user);
 
         var response = authService.updateProfile("alice", request);
 
+        verify(profileUpdateAdmissionPolicy).assertAllowed(any());
         assertThat(response.displayName()).isEqualTo("Alicia");
         assertThat(response.email()).isEqualTo("newalice@example.com");
         assertThat(response.phoneNumber()).isEqualTo("13900139000");
@@ -357,19 +371,19 @@ class AuthServiceTest {
         UpdateUserPasswordRequest request = new UpdateUserPasswordRequest("OldPass1!", "NewPass1!A");
 
         when(userRepository.findByUsername("alice")).thenReturn(Optional.of(user));
-        when(passwordEncoder.matches("OldPass1!", "encoded-old")).thenReturn(true);
-        when(passwordEncoder.encode("NewPass1!A")).thenReturn("encoded-new");
-        when(userRepository.save(user)).thenReturn(user);
-        when(jwtTokenProvider.generateAccessToken(eq(1L), eq("alice"), anyString(), eq(AuthClientType.DESKTOP))).thenReturn("new-access");
-        when(refreshTokenService.issueRefreshToken(user)).thenReturn("new-refresh");
+        when(passwordChangePolicy.changePassword(eq(user), argThat(attempt ->
+                attempt.currentPassword().equals("OldPass1!")
+                        && attempt.newPassword().equals("NewPass1!A")
+                        && attempt.clientType() == AuthClientType.DESKTOP)))
+                .thenReturn(new IssuedAuthCredentials(user, "new-access", "new-refresh"));
 
         AuthResponse response = authService.changePassword("alice", request);
 
         assertThat(response.accessToken()).isEqualTo("new-access");
         assertThat(response.refreshToken()).isEqualTo("new-refresh");
-        verify(authTokenInvalidationService).revokeAccessTokensForUser(1L);
-        verify(refreshTokenService).revokeAllForUser(1L);
-        verify(passwordEncoder).encode("NewPass1!A");
+        verify(passwordChangePolicy).changePassword(
+                eq(user),
+                eq(new PasswordChangeAttempt("OldPass1!", "NewPass1!A", AuthClientType.DESKTOP)));
     }
 
     @Test
@@ -380,7 +394,10 @@ class AuthServiceTest {
         user.setPasswordHash("encoded-old");
 
         when(userRepository.findByUsername("alice")).thenReturn(Optional.of(user));
-        when(passwordEncoder.matches("WrongPass1!", "encoded-old")).thenReturn(false);
+        when(passwordChangePolicy.changePassword(
+                eq(user),
+                eq(new PasswordChangeAttempt("WrongPass1!", "NewPass1!A", AuthClientType.DESKTOP))))
+                .thenThrow(new BusinessException(com.yoyuzh.common.ErrorCode.UNKNOWN, "当前密码错误"));
 
         assertThatThrownBy(() -> authService.changePassword("alice", new UpdateUserPasswordRequest("WrongPass1!", "NewPass1!A")))
                 .isInstanceOf(BusinessException.class)

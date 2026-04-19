@@ -1,9 +1,6 @@
 package com.yoyuzh.admin;
 
-import com.yoyuzh.auth.AuthSessionPolicy;
-import com.yoyuzh.auth.AuthTokenInvalidationService;
 import com.yoyuzh.auth.PasswordPolicy;
-import com.yoyuzh.auth.RefreshTokenService;
 import com.yoyuzh.auth.User;
 import com.yoyuzh.auth.UserRepository;
 import com.yoyuzh.auth.UserRole;
@@ -11,6 +8,8 @@ import com.yoyuzh.common.BusinessException;
 import com.yoyuzh.common.ErrorCode;
 import com.yoyuzh.common.PageResponse;
 import com.yoyuzh.files.core.StoredFileRepository;
+import com.yoyuzh.identity.access.api.AdminAccessContinuityGuard;
+import com.yoyuzh.identity.access.api.IdentityCredentialRevocationPolicy;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
@@ -20,7 +19,6 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.security.SecureRandom;
-import java.util.EnumSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -34,11 +32,9 @@ public class AdminUserGovernanceService {
     private final UserRepository userRepository;
     private final StoredFileRepository storedFileRepository;
     private final PasswordEncoder passwordEncoder;
-    private final RefreshTokenService refreshTokenService;
-    private final AuthTokenInvalidationService authTokenInvalidationService;
-    private final AuthSessionPolicy authSessionPolicy;
+    private final IdentityCredentialRevocationPolicy identityCredentialRevocationPolicy;
     private final AdminAuditService adminAuditService;
-    private final AdminRuntimeSettingsService adminRuntimeSettingsService;
+    private final AdminAccessContinuityGuard adminAccessContinuityGuard;
     private final SecureRandom secureRandom = new SecureRandom();
 
     public PageResponse<AdminUserResponse> listUsers(int page, int size, String query) {
@@ -79,9 +75,7 @@ public class AdminUserGovernanceService {
         User user = getRequiredUser(userId);
         ensureAdminAccessRemainsAvailable(user, banned, user.getRole());
         user.setBanned(banned);
-        authTokenInvalidationService.revokeAccessTokensForUser(user.getId());
-        authSessionPolicy.rotateAllActiveSessions(user);
-        refreshTokenService.revokeAllForUser(user.getId());
+        identityCredentialRevocationPolicy.revokeAll(user);
         AdminUserResponse response = toUserResponse(userRepository.save(user));
         adminAuditService.record(
                 AdminAuditAction.UPDATE_USER_BANNED,
@@ -141,9 +135,7 @@ public class AdminUserGovernanceService {
         }
         User user = getRequiredUser(userId);
         user.setPasswordHash(passwordEncoder.encode(newPassword));
-        authTokenInvalidationService.revokeAccessTokensForUser(user.getId());
-        authSessionPolicy.rotateAllActiveSessions(user);
-        refreshTokenService.revokeAllForUser(user.getId());
+        identityCredentialRevocationPolicy.revokeAll(user);
         AdminUserResponse response = toUserResponse(userRepository.save(user));
         Map<String, Object> details = new LinkedHashMap<>();
         details.put("passwordLength", newPassword.length());
@@ -207,37 +199,11 @@ public class AdminUserGovernanceService {
     }
 
     private void ensureAdminAccessRemainsAvailable(User user, boolean bannedAfterUpdate, UserRole roleAfterUpdate) {
-        Set<UserRole> adminCapableRoles = resolveAdminCapableRoles();
-        if (adminCapableRoles.isEmpty()) {
-            return;
-        }
-
-        boolean currentlyAdminCapable = !user.isBanned() && adminCapableRoles.contains(user.getRole());
-        boolean adminCapableAfterUpdate = !bannedAfterUpdate && adminCapableRoles.contains(roleAfterUpdate);
-        if (!currentlyAdminCapable || adminCapableAfterUpdate) {
-            return;
-        }
-
-        long adminCapableUserCount = userRepository.countByBannedFalseAndRoleIn(adminCapableRoles);
-        if (adminCapableUserCount <= 1) {
-            throw new BusinessException(ErrorCode.UNKNOWN, "at least one unbanned admin-capable user must remain");
-        }
-    }
-
-    private Set<UserRole> resolveAdminCapableRoles() {
-        EnumSet<UserRole> roles = EnumSet.noneOf(UserRole.class);
-        for (String configuredRole : adminRuntimeSettingsService.snapshot().registrationManagementRoles()) {
-            String normalizedRole = AdminRuntimeSettingsService.normalizeManagementRole(configuredRole);
-            if (normalizedRole == null) {
-                continue;
-            }
-            try {
-                roles.add(UserRole.valueOf(normalizedRole));
-            } catch (IllegalArgumentException ignored) {
-                // Ignore unsupported runtime role values; they do not map to a backend user role.
-            }
-        }
-        return roles;
+        adminAccessContinuityGuard.ensureAdminAccessRemainsAvailable(
+                user.getRole() == null ? null : user.getRole().name(),
+                user.isBanned(),
+                roleAfterUpdate == null ? null : roleAfterUpdate.name(),
+                bannedAfterUpdate);
     }
 
     private String generateTemporaryPassword() {

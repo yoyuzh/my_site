@@ -39,7 +39,11 @@ public class AdminStorageGovernanceService {
         StoragePolicy policy = new StoragePolicy();
         policy.setDefaultPolicy(false);
         applyStoragePolicyUpsert(policy, request);
-        AdminStoragePolicyResponse response = AdminStoragePolicyResponses.from(storagePolicyService, storagePolicyRepository.save(policy));
+        StoragePolicy savedPolicy = storagePolicyRepository.save(policy);
+        AdminStoragePolicyResponse response = AdminStoragePolicyResponses.from(
+                savedPolicy,
+                storagePolicyService.readCapabilities(savedPolicy)
+        );
         adminAuditService.record(
                 AdminAuditAction.CREATE_STORAGE_POLICY,
                 "STORAGE_POLICY",
@@ -59,7 +63,11 @@ public class AdminStorageGovernanceService {
     public AdminStoragePolicyResponse updateStoragePolicy(Long policyId, AdminStoragePolicyUpsertRequest request) {
         StoragePolicy policy = getRequiredStoragePolicy(policyId);
         applyStoragePolicyUpsert(policy, request);
-        AdminStoragePolicyResponse response = AdminStoragePolicyResponses.from(storagePolicyService, storagePolicyRepository.save(policy));
+        StoragePolicy savedPolicy = storagePolicyRepository.save(policy);
+        AdminStoragePolicyResponse response = AdminStoragePolicyResponses.from(
+                savedPolicy,
+                storagePolicyService.readCapabilities(savedPolicy)
+        );
         adminAuditService.record(
                 AdminAuditAction.UPDATE_STORAGE_POLICY,
                 "STORAGE_POLICY",
@@ -82,7 +90,11 @@ public class AdminStorageGovernanceService {
             throw new BusinessException(ErrorCode.UNKNOWN, "姒涙顓荤€涙ê鍋嶇粵鏍殣娑撳秷鍏橀崑婊呮暏");
         }
         policy.setEnabled(enabled);
-        AdminStoragePolicyResponse response = AdminStoragePolicyResponses.from(storagePolicyService, storagePolicyRepository.save(policy));
+        StoragePolicy savedPolicy = storagePolicyRepository.save(policy);
+        AdminStoragePolicyResponse response = AdminStoragePolicyResponses.from(
+                savedPolicy,
+                storagePolicyService.readCapabilities(savedPolicy)
+        );
         adminAuditService.record(
                 AdminAuditAction.UPDATE_STORAGE_POLICY_STATUS,
                 "STORAGE_POLICY",

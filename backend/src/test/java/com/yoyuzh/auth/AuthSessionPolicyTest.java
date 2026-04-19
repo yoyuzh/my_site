@@ -1,12 +1,13 @@
 package com.yoyuzh.auth;
 
+import com.yoyuzh.identity.access.internal.domain.RandomIdentitySessionPolicy;
 import org.junit.jupiter.api.Test;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
 class AuthSessionPolicyTest {
 
-    private final AuthSessionPolicy authSessionPolicy = new AuthSessionPolicy();
+    private final AuthSessionPolicy authSessionPolicy = new AuthSessionPolicy(new RandomIdentitySessionPolicy());
 
     @Test
     void shouldRotateOnlyRequestedClientSession() {

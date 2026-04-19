@@ -7,20 +7,26 @@ import com.yoyuzh.auth.dto.UpdateUserAvatarRequest;
 import com.yoyuzh.auth.dto.UpdateUserPasswordRequest;
 import com.yoyuzh.auth.dto.UpdateUserProfileRequest;
 import com.yoyuzh.auth.dto.UserProfileResponse;
-import com.yoyuzh.admin.AdminRuntimeSettingsService;
 import com.yoyuzh.common.BusinessException;
 import com.yoyuzh.common.ErrorCode;
 import com.yoyuzh.files.core.FileService;
 import com.yoyuzh.files.upload.InitiateUploadResponse;
 import com.yoyuzh.files.storage.FileContentStorage;
+import com.yoyuzh.identity.access.api.DevLoginRoleResolver;
+import com.yoyuzh.identity.access.api.IdentityRoleName;
+import com.yoyuzh.identity.access.api.IdentityCredentialIssuer;
+import com.yoyuzh.identity.access.api.IssuedAuthCredentials;
+import com.yoyuzh.identity.access.api.LoginAdmissionPolicy;
+import com.yoyuzh.identity.access.api.PasswordChangeAttempt;
+import com.yoyuzh.identity.access.api.PasswordChangePolicy;
+import com.yoyuzh.identity.access.api.ProfileUpdateAdmissionPolicy;
+import com.yoyuzh.identity.access.api.ProfileUpdateAttempt;
+import com.yoyuzh.identity.access.api.RegistrationAdmissionPolicy;
+import com.yoyuzh.identity.access.api.RegistrationAttempt;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import lombok.RequiredArgsConstructor;
-import org.springframework.security.authentication.AuthenticationManager;
-import org.springframework.security.authentication.BadCredentialsException;
-import org.springframework.security.authentication.DisabledException;
-import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -42,15 +48,14 @@ public class AuthService {
 
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
-    private final AuthenticationManager authenticationManager;
-    private final JwtTokenProvider jwtTokenProvider;
-    private final RefreshTokenService refreshTokenService;
-    private final AuthTokenInvalidationService authTokenInvalidationService;
-    private final AuthSessionPolicy authSessionPolicy;
     private final FileService fileService;
     private final FileContentStorage fileContentStorage;
-    private final RegistrationInviteService registrationInviteService;
-    private final AdminRuntimeSettingsService adminRuntimeSettingsService;
+    private final RegistrationAdmissionPolicy registrationAdmissionPolicy;
+    private final DevLoginRoleResolver devLoginRoleResolver;
+    private final ProfileUpdateAdmissionPolicy profileUpdateAdmissionPolicy;
+    private final LoginAdmissionPolicy loginAdmissionPolicy;
+    private final PasswordChangePolicy passwordChangePolicy;
+    private final IdentityCredentialIssuer identityCredentialIssuer;
 
     @Transactional
     public AuthResponse register(RegisterRequest request) {
@@ -59,19 +64,12 @@ public class AuthService {
 
     @Transactional
     public AuthResponse register(RegisterRequest request, AuthClientType clientType) {
-        if (userRepository.existsByUsername(request.username())) {
-            throw new BusinessException(ErrorCode.UNKNOWN, "用户名已存在");
-        }
-        if (userRepository.existsByEmail(request.email())) {
-            throw new BusinessException(ErrorCode.UNKNOWN, "邮箱已存在");
-        }
-        if (userRepository.existsByPhoneNumber(request.phoneNumber())) {
-            throw new BusinessException(ErrorCode.UNKNOWN, "手机号已存在");
-        }
-
-        if (adminRuntimeSettingsService.isInviteCodeRequired()) {
-            registrationInviteService.consumeInviteCode(request.inviteCode());
-        }
+        registrationAdmissionPolicy.assertAllowed(
+                new RegistrationAttempt(
+                        request.username(),
+                        request.email(),
+                        request.phoneNumber(),
+                        request.inviteCode()));
 
         User user = new User();
         user.setUsername(request.username());
@@ -83,7 +81,7 @@ public class AuthService {
         user.setPreferredLanguage("zh-CN");
         User saved = userRepository.save(user);
         fileService.ensureDefaultDirectories(saved);
-        return issueFreshTokens(saved, clientType);
+        return toAuthResponse(identityCredentialIssuer.issueFresh(saved, clientType));
     }
 
     @Transactional
@@ -93,19 +91,12 @@ public class AuthService {
 
     @Transactional
     public AuthResponse login(LoginRequest request, AuthClientType clientType) {
-        try {
-            authenticationManager.authenticate(
-                    new UsernamePasswordAuthenticationToken(request.username(), request.password()));
-        } catch (DisabledException ex) {
-            throw new BusinessException(ErrorCode.PERMISSION_DENIED, "账号已被封禁");
-        } catch (BadCredentialsException ex) {
-            throw new BusinessException(ErrorCode.NOT_LOGGED_IN, "用户名或密码错误");
-        }
+        loginAdmissionPolicy.assertAllowed(request.username(), request.password());
 
         User user = userRepository.findByUsername(request.username())
                 .orElseThrow(() -> new BusinessException(ErrorCode.NOT_LOGGED_IN, "用户不存在"));
         fileService.ensureDefaultDirectories(user);
-        return issueFreshTokens(user, clientType);
+        return toAuthResponse(identityCredentialIssuer.issueFresh(user, clientType));
     }
 
     @Transactional
@@ -121,7 +112,7 @@ public class AuthService {
         }
 
         final String finalCandidate = candidate;
-        UserRole desiredRole = resolveDevLoginRole(finalCandidate);
+        UserRole desiredRole = toUserRole(devLoginRoleResolver.resolveRoleForUsername(finalCandidate));
         User user = userRepository.findByUsername(finalCandidate).map(existing -> {
             if (existing.getRole() != desiredRole) {
                 existing.setRole(desiredRole);
@@ -139,7 +130,7 @@ public class AuthService {
             return userRepository.save(created);
         });
         fileService.ensureDefaultDirectories(user);
-        return issueFreshTokens(user, clientType);
+        return toAuthResponse(identityCredentialIssuer.issueFresh(user, clientType));
     }
 
     @Transactional
@@ -149,9 +140,7 @@ public class AuthService {
 
     @Transactional
     public AuthResponse refresh(String refreshToken, AuthClientType defaultClientType) {
-        RefreshTokenService.RotatedRefreshToken rotated = refreshTokenService.rotateRefreshToken(refreshToken);
-        AuthClientType clientType = rotated.clientType() == null ? defaultClientType : rotated.clientType();
-        return issueTokens(rotated.user(), rotated.refreshToken(), clientType);
+        return toAuthResponse(identityCredentialIssuer.refresh(refreshToken, defaultClientType));
     }
 
     public UserProfileResponse getProfile(String username) {
@@ -166,13 +155,9 @@ public class AuthService {
                 .orElseThrow(() -> new BusinessException(ErrorCode.NOT_LOGGED_IN, "用户不存在"));
 
         String nextEmail = request.email().trim();
-        if (!user.getEmail().equalsIgnoreCase(nextEmail) && userRepository.existsByEmail(nextEmail)) {
-            throw new BusinessException(ErrorCode.UNKNOWN, "邮箱已存在");
-        }
         String nextPhoneNumber = request.phoneNumber().trim();
-        if (!nextPhoneNumber.equals(user.getPhoneNumber()) && userRepository.existsByPhoneNumber(nextPhoneNumber)) {
-            throw new BusinessException(ErrorCode.UNKNOWN, "手机号已存在");
-        }
+        profileUpdateAdmissionPolicy.assertAllowed(
+                new ProfileUpdateAttempt(user.getEmail(), user.getPhoneNumber(), nextEmail, nextPhoneNumber));
 
         user.setDisplayName(request.displayName().trim());
         user.setEmail(nextEmail);
@@ -186,15 +171,9 @@ public class AuthService {
     public AuthResponse changePassword(String username, UpdateUserPasswordRequest request) {
         User user = userRepository.findByUsername(username)
                 .orElseThrow(() -> new BusinessException(ErrorCode.NOT_LOGGED_IN, "用户不存在"));
-
-        if (!passwordEncoder.matches(request.currentPassword(), user.getPasswordHash())) {
-            throw new BusinessException(ErrorCode.UNKNOWN, "当前密码错误");
-        }
-
-        user.setPasswordHash(passwordEncoder.encode(request.newPassword()));
-        rotateAllActiveSessions(user);
-        refreshTokenService.revokeAllForUser(user.getId());
-        return issueTokens(userRepository.save(user), refreshTokenService.issueRefreshToken(user), AuthClientType.DESKTOP);
+        return toAuthResponse(passwordChangePolicy.changePassword(
+                user,
+                new PasswordChangeAttempt(request.currentPassword(), request.newPassword(), AuthClientType.DESKTOP)));
     }
 
     public InitiateUploadResponse initiateAvatarUpload(String username, UpdateUserAvatarRequest request) {
@@ -303,31 +282,11 @@ public class AuthService {
         );
     }
 
-    private AuthResponse issueFreshTokens(User user, AuthClientType clientType) {
-        authTokenInvalidationService.revokeAccessTokensForUser(user.getId(), clientType);
-        refreshTokenService.revokeAllForUser(user.getId(), clientType);
-        return issueTokens(user, refreshTokenService.issueRefreshToken(user, clientType), clientType);
-    }
-
-    private AuthResponse issueTokens(User user, String refreshToken, AuthClientType clientType) {
-        User sessionUser = rotateActiveSession(user, clientType);
-        String accessToken = jwtTokenProvider.generateAccessToken(
-                sessionUser.getId(),
-                sessionUser.getUsername(),
-                authSessionPolicy.getActiveSessionId(sessionUser, clientType),
-                clientType
-        );
-        return AuthResponse.issued(accessToken, refreshToken, toProfile(sessionUser));
-    }
-
-    private User rotateActiveSession(User user, AuthClientType clientType) {
-        authSessionPolicy.rotateActiveSession(user, clientType);
-        return userRepository.save(user);
-    }
-
-    private void rotateAllActiveSessions(User user) {
-        authTokenInvalidationService.revokeAccessTokensForUser(user.getId());
-        authSessionPolicy.rotateAllActiveSessions(user);
+    private AuthResponse toAuthResponse(IssuedAuthCredentials issuedAuthCredentials) {
+        return AuthResponse.issued(
+                issuedAuthCredentials.accessToken(),
+                issuedAuthCredentials.refreshToken(),
+                toProfile(issuedAuthCredentials.user()));
     }
 
     private String normalizeOptionalText(String value) {
@@ -338,14 +297,15 @@ public class AuthService {
         return trimmed.isEmpty() ? null : trimmed;
     }
 
-    private UserRole resolveDevLoginRole(String username) {
-        if ("admin".equalsIgnoreCase(username)) {
-            return UserRole.ADMIN;
+    private UserRole toUserRole(IdentityRoleName roleName) {
+        if (roleName == null) {
+            return UserRole.USER;
         }
-        if ("operator".equalsIgnoreCase(username) || "moderator".equalsIgnoreCase(username)) {
-            return UserRole.MODERATOR;
-        }
-        return UserRole.USER;
+        return switch (roleName) {
+            case ADMIN -> UserRole.ADMIN;
+            case MODERATOR -> UserRole.MODERATOR;
+            case USER -> UserRole.USER;
+        };
     }
 
     private String normalizePreferredLanguage(String preferredLanguage) {

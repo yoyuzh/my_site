@@ -5,7 +5,9 @@ import com.yoyuzh.auth.CustomUserDetailsService;
 import com.yoyuzh.auth.User;
 import com.yoyuzh.common.PageResponse;
 import com.yoyuzh.files.core.FileMetadataResponse;
-import com.yoyuzh.files.share.ShareV2Service;
+import com.yoyuzh.files.sharing.api.CreateShareCommand;
+import com.yoyuzh.files.sharing.api.ImportShareCommand;
+import com.yoyuzh.files.sharing.api.SharingApi;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
@@ -29,31 +31,39 @@ import org.springframework.web.bind.annotation.RestController;
 @RequiredArgsConstructor
 public class ShareV2Controller {
 
-    private final ShareV2Service shareV2Service;
+    private final SharingApi sharingApi;
     private final CustomUserDetailsService userDetailsService;
 
     @PostMapping
     public ApiV2Response<ShareV2Response> createShare(@AuthenticationPrincipal UserDetails userDetails,
                                                       @Valid @RequestBody CreateShareV2Request request) {
         User user = userDetailsService.loadDomainUser(userDetails.getUsername());
-        return ApiV2Response.success(shareV2Service.createShare(user, request));
+        return ApiV2Response.success(sharingApi.createShare(user, new CreateShareCommand(
+                request.fileId(),
+                request.password(),
+                request.shareName(),
+                request.allowImport(),
+                request.allowDownload(),
+                request.expiresAt(),
+                request.maxDownloads()
+        )));
     }
 
     @GetMapping("/{token}")
     public ApiV2Response<ShareV2Response> getShare(@PathVariable String token) {
-        return ApiV2Response.success(shareV2Service.getShare(token));
+        return ApiV2Response.success(sharingApi.getShare(token));
     }
 
     @GetMapping(value = "/{token}", params = "download")
     public ResponseEntity<?> downloadShare(@PathVariable String token,
                                            @RequestParam(required = false) String password) {
-        return shareV2Service.downloadSharedFile(token, password);
+        return sharingApi.downloadSharedFile(token, password);
     }
 
     @PostMapping("/{token}/verify-password")
     public ApiV2Response<ShareV2Response> verifyPassword(@PathVariable String token,
                                                           @Valid @RequestBody VerifySharePasswordV2Request request) {
-        return ApiV2Response.success(shareV2Service.verifyPassword(token, request));
+        return ApiV2Response.success(sharingApi.verifyPassword(token, request.password()));
     }
 
     @PostMapping("/{token}/import")
@@ -61,7 +71,7 @@ public class ShareV2Controller {
                                                                 @PathVariable String token,
                                                                 @Valid @RequestBody ImportShareV2Request request) {
         User user = userDetailsService.loadDomainUser(userDetails.getUsername());
-        return ApiV2Response.success(shareV2Service.importSharedFile(user, token, request));
+        return ApiV2Response.success(sharingApi.importSharedFile(user, token, new ImportShareCommand(request.path(), request.password())));
     }
 
     @GetMapping("/mine")
@@ -69,7 +79,7 @@ public class ShareV2Controller {
                                                              @RequestParam(defaultValue = "0") @Min(0) int page,
                                                              @RequestParam(defaultValue = "20") @Min(1) @Max(100) int size) {
         User user = userDetailsService.loadDomainUser(userDetails.getUsername());
-        var result = shareV2Service.listOwnedShares(user, PageRequest.of(page, size, Sort.by(Sort.Direction.DESC, "createdAt")));
+        var result = sharingApi.listOwnedShares(user, PageRequest.of(page, size, Sort.by(Sort.Direction.DESC, "createdAt")));
         return ApiV2Response.success(new PageResponse<>(result.getContent(), result.getTotalElements(), result.getNumber(), result.getSize()));
     }
 
@@ -77,7 +87,7 @@ public class ShareV2Controller {
     public ApiV2Response<Void> deleteShare(@AuthenticationPrincipal UserDetails userDetails,
                                            @PathVariable Long id) {
         User user = userDetailsService.loadDomainUser(userDetails.getUsername());
-        shareV2Service.deleteOwnedShare(user, id);
+        sharingApi.deleteOwnedShare(user, id);
         return ApiV2Response.success(null);
     }
 }

@@ -6,11 +6,24 @@ import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.noClasses;
 import com.tngtech.archunit.core.domain.JavaClasses;
 import com.tngtech.archunit.core.importer.ClassFileImporter;
 import com.tngtech.archunit.lang.ArchRule;
+import java.util.List;
 import org.junit.jupiter.api.Test;
 
 class BackendNextArchitectureRulesTest {
 
     private final JavaClasses classes = new ClassFileImporter().importPackages("com.yoyuzh");
+    private static final List<String> MODULE_ROOTS = List.of(
+            "com.yoyuzh.identity.access",
+            "com.yoyuzh.files.workspace",
+            "com.yoyuzh.files.content",
+            "com.yoyuzh.files.upload",
+            "com.yoyuzh.files.sharing",
+            "com.yoyuzh.files.search",
+            "com.yoyuzh.transfer",
+            "com.yoyuzh.platform.job",
+            "com.yoyuzh.platform.storage",
+            "com.yoyuzh.ops.admin",
+            "com.yoyuzh.app.android");
 
     @Test
     void apiPackagesMustNotDependOnInternalPackages() {
@@ -53,36 +66,15 @@ class BackendNextArchitectureRulesTest {
 
     @Test
     void internalPackagesMustNotBeAccessedAcrossModuleBoundaries() {
-        ArchRule rule = classes()
-                .that()
-                .resideInAnyPackage(
-                        "com.yoyuzh.identity.access.internal..",
-                        "com.yoyuzh.files.workspace.internal..",
-                        "com.yoyuzh.files.content.internal..",
-                        "com.yoyuzh.files.upload.internal..",
-                        "com.yoyuzh.files.sharing.internal..",
-                        "com.yoyuzh.files.search.internal..",
-                        "com.yoyuzh.transfer.internal..",
-                        "com.yoyuzh.platform.job.internal..",
-                        "com.yoyuzh.platform.storage.internal..",
-                        "com.yoyuzh.ops.admin.internal..",
-                        "com.yoyuzh.app.android.internal..")
-                .should()
-                .onlyBeAccessed()
-                .byAnyPackage(
-                        "com.yoyuzh.identity.access..",
-                        "com.yoyuzh.files.workspace..",
-                        "com.yoyuzh.files.content..",
-                        "com.yoyuzh.files.upload..",
-                        "com.yoyuzh.files.sharing..",
-                        "com.yoyuzh.files.search..",
-                        "com.yoyuzh.transfer..",
-                        "com.yoyuzh.platform.job..",
-                        "com.yoyuzh.platform.storage..",
-                        "com.yoyuzh.ops.admin..",
-                        "com.yoyuzh.app.android..",
-                        "com.yoyuzh.boot..");
+        for (String moduleRoot : MODULE_ROOTS) {
+            ArchRule rule = noClasses()
+                    .that()
+                    .resideOutsideOfPackages(moduleRoot + "..", "com.yoyuzh.boot..")
+                    .should()
+                    .dependOnClassesThat()
+                    .resideInAnyPackage(moduleRoot + ".internal..");
 
-        rule.check(classes);
+            rule.check(classes);
+        }
     }
 }

@@ -1,35 +1,43 @@
 package com.yoyuzh.auth;
 
+import com.yoyuzh.identity.access.api.IdentityClientType;
+import com.yoyuzh.identity.access.api.IdentitySessionPolicy;
+import com.yoyuzh.identity.access.api.SessionState;
+import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
-import java.util.UUID;
-
 @Component
+@RequiredArgsConstructor
 public class AuthSessionPolicy {
 
+    private final IdentitySessionPolicy identitySessionPolicy;
+
     public void rotateActiveSession(User user, AuthClientType clientType) {
-        String nextSessionId = nextSessionId();
-        if (clientType == AuthClientType.MOBILE) {
-            user.setMobileActiveSessionId(nextSessionId);
-            return;
-        }
-        user.setDesktopActiveSessionId(nextSessionId);
-        user.setActiveSessionId(nextSessionId);
+        apply(user, identitySessionPolicy.rotateForClient(toSessionState(user), toIdentityClientType(clientType)));
     }
 
     public void rotateAllActiveSessions(User user) {
-        user.setActiveSessionId(nextSessionId());
-        user.setDesktopActiveSessionId(nextSessionId());
-        user.setMobileActiveSessionId(nextSessionId());
+        apply(user, identitySessionPolicy.rotateAll(toSessionState(user)));
     }
 
     public String getActiveSessionId(User user, AuthClientType clientType) {
-        return clientType == AuthClientType.MOBILE
-                ? user.getMobileActiveSessionId()
-                : user.getDesktopActiveSessionId();
+        return identitySessionPolicy.getActiveSessionId(toSessionState(user), toIdentityClientType(clientType));
     }
 
-    private String nextSessionId() {
-        return UUID.randomUUID().toString();
+    private SessionState toSessionState(User user) {
+        return new SessionState(
+                user.getActiveSessionId(),
+                user.getDesktopActiveSessionId(),
+                user.getMobileActiveSessionId());
+    }
+
+    private IdentityClientType toIdentityClientType(AuthClientType clientType) {
+        return clientType == AuthClientType.MOBILE ? IdentityClientType.MOBILE : IdentityClientType.DESKTOP;
+    }
+
+    private void apply(User user, SessionState sessionState) {
+        user.setActiveSessionId(sessionState.activeSessionId());
+        user.setDesktopActiveSessionId(sessionState.desktopActiveSessionId());
+        user.setMobileActiveSessionId(sessionState.mobileActiveSessionId());
     }
 }

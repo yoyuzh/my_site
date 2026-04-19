@@ -30,6 +30,21 @@
   - `docs/backend-next/directory-responsibilities.md`
   - `docs/backend-next/rule-ownership-matrix.md`
 - `backend-next/` already has ArchUnit-based guardrails and marker packages, but it is still structure-only. No production code migration has happened there yet.
+- The actual folder skeleton under `backend-next/src/main/java/com/yoyuzh/**` is now the concrete destination map for migration naming; if the gradual-migration plan drifts from that tree, the tree wins and the plan should be updated in the same turn.
+
+## Live backend migration progress
+
+- Task 1 guardrails are now executable in `backend-next` via structure, mapping, layering, and cross-module-internal tests.
+- The first live `identity.access` slice has landed in `backend/`:
+  - `identity.access.api.AdminAccessPolicy` now owns admin-capability evaluation used by legacy `AdminAccessEvaluator`
+  - `identity.access.api.IdentitySessionPolicy` now owns session rotation rules used by legacy `AuthSessionPolicy`
+  - `identity.access.api.AdminAccessContinuityGuard` now owns the "at least one unbanned admin-capable user must remain" rule used by legacy `AdminUserGovernanceService`
+  - `identity.access.api.RegistrationAdmissionPolicy` now owns registration duplicate/invite admission used by `AuthService`
+  - `identity.access.api.DevLoginRoleResolver` now owns dev-login role assignment used by `AuthService`
+  - `identity.access.api.ProfileUpdateAdmissionPolicy` now owns email/phone uniqueness admission used by `AuthService.updateProfile`
+  - `identity.access.api.LoginAdmissionPolicy` now owns login credential admission and auth-failure translation used by `AuthService.login`
+  - `identity.access.api.IdentityCredentialIssuer` now owns fresh credential issuance, refresh-token rotation issuance, and session-rotation persistence used by `AuthService`
+- `AuthService` and `AdminUserGovernanceService` still call legacy compatibility shells where needed, but the rule ownership for admin access, admin continuity, session rotation, registration admission, dev-login role assignment, profile-update admission, login admission, and credential issuance has started moving out of `auth` and `admin`.
 
 ## Migration direction
 

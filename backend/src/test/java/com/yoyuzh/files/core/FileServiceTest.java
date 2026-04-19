@@ -5,9 +5,11 @@ import com.yoyuzh.auth.User;
 import com.yoyuzh.common.BusinessException;
 import com.yoyuzh.config.FileStorageProperties;
 import com.yoyuzh.files.policy.StoragePolicy;
+import com.yoyuzh.files.policy.StoragePolicyCapabilities;
 import com.yoyuzh.files.policy.StoragePolicyCredentialMode;
 import com.yoyuzh.files.policy.StoragePolicyService;
 import com.yoyuzh.files.policy.StoragePolicyType;
+import com.yoyuzh.platform.storage.api.DefaultStoragePolicySnapshot;
 import com.yoyuzh.files.share.CreateFileShareLinkResponse;
 import com.yoyuzh.files.share.FileShareLink;
 import com.yoyuzh.files.share.FileShareLinkRepository;
@@ -220,7 +222,13 @@ class FileServiceTest {
             entity.setId(200L);
             return entity;
         });
-        when(storagePolicyService.ensureDefaultPolicy()).thenReturn(createDefaultStoragePolicy());
+        when(storagePolicyService.readDefaultPolicySnapshot()).thenReturn(new DefaultStoragePolicySnapshot(
+                createDefaultStoragePolicy(),
+                defaultCapabilities()
+        ));
+        when(storagePolicyService.readDefaultPolicyId()).thenReturn(42L);
+        when(storagePolicyService.resolveEffectiveMaxUploadSize(anyLong(), any(User.class), any(StoragePolicy.class), any()))
+                .thenReturn(500L * 1024 * 1024);
         when(storedFileRepository.save(any(StoredFile.class))).thenAnswer(invocation -> {
             StoredFile file = invocation.getArgument(0);
             file.setId(10L);
@@ -290,8 +298,7 @@ class FileServiceTest {
         User user = createUser(7L);
         when(storedFileRepository.existsByUserIdAndPathAndFilename(7L, "/docs", "notes.txt")).thenReturn(false);
         StoragePolicy policy = createDefaultStoragePolicy();
-        when(storagePolicyService.ensureDefaultPolicy()).thenReturn(policy);
-        when(storagePolicyService.readCapabilities(policy)).thenReturn(new com.yoyuzh.files.policy.StoragePolicyCapabilities(
+        when(storagePolicyService.readDefaultPolicySnapshot()).thenReturn(new DefaultStoragePolicySnapshot(policy, new StoragePolicyCapabilities(
                 false,
                 false,
                 false,
@@ -301,7 +308,9 @@ class FileServiceTest {
                 false,
                 false,
                 500L * 1024 * 1024
-        ));
+        )));
+        when(storagePolicyService.resolveEffectiveMaxUploadSize(anyLong(), any(User.class), any(StoragePolicy.class), any()))
+                .thenReturn(500L * 1024 * 1024);
 
         InitiateUploadResponse response = fileService.initiateUpload(user,
                 new InitiateUploadRequest("/docs", "notes.txt", "text/plain", 12L));
@@ -1082,6 +1091,20 @@ class FileServiceTest {
         policy.setEnabled(true);
         policy.setDefaultPolicy(true);
         return policy;
+    }
+
+    private StoragePolicyCapabilities defaultCapabilities() {
+        return new StoragePolicyCapabilities(
+                false,
+                false,
+                false,
+                true,
+                false,
+                true,
+                false,
+                false,
+                500L * 1024 * 1024
+        );
     }
 
     private Map<String, String> readZipEntries(byte[] archiveBytes) throws Exception {

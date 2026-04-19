@@ -4,8 +4,8 @@ This repository is split across a Java backend, a Vite/React frontend, a small `
 
 ## Session startup
 
-- Every new window / new session that starts work in this repository must read `memory.md`, `backend-next/archtecture.md`, `backend-next/api-reference.md`, `docs/backend-next/module-dependency-whitelist.md`, `docs/backend-next/directory-responsibilities.md`, and `docs/backend-next/rule-ownership-matrix.md` first before planning, coding, reviewing, or deploying.
-- Treat `memory.md` as the current project memory and continuity handoff unless the user explicitly overrides it.
+- Every new window / new session that starts work in this repository must read `backend-next/archtecture.md`, `backend-next/api-reference.md`, `docs/backend-next/module-dependency-whitelist.md`, `docs/backend-next/directory-responsibilities.md`, and `docs/backend-next/rule-ownership-matrix.md` first before planning, coding, reviewing, or deploying.
+- Do not treat repository-local `memory.md` as the default project memory or continuity handoff. Ignore it unless the user explicitly asks to use or update it.
 - Treat `backend-next/archtecture.md` as the active architecture document and source of truth for the target module boundaries and runtime structure.
 - Treat `docs/backend-next/module-dependency-whitelist.md`, `docs/backend-next/directory-responsibilities.md`, and `docs/backend-next/rule-ownership-matrix.md` as required startup constraint docs for target-backend work.
 - Treat `docs/architecture.md` as the legacy architecture reference until it is rewritten; do not use it as the default startup architecture document.
@@ -126,9 +126,8 @@ Important:
 
 ### Project memory upkeep
 
-- Every time a task causes a major project change, update `memory.md` in the same turn before handing off.
-- Only record high-value, durable memory in `memory.md`: long-lived architecture decisions, active source-of-truth docs, stable runtime constraints, migration direction, and ongoing risks.
-- Do not record routine edits, temporary verification results, or low-signal task history in `memory.md`.
+- Do not update repository-local `memory.md` as part of normal implementation, refactor, review, or handoff work.
+- If a durable project decision needs to be written down in the repo, put it in the relevant plan, architecture, API, or module-constraint document instead of `memory.md`.
 - Do not update `backend-next/archtecture.md` or `docs/architecture.md` as part of routine implementation follow-up. These files are reserved for explicit architecture-document changes requested by the user.
 
 ## Repo-specific guardrails

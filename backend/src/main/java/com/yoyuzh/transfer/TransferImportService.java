@@ -2,7 +2,8 @@ package com.yoyuzh.transfer;
 
 import com.yoyuzh.auth.User;
 import com.yoyuzh.files.core.FileMetadataResponse;
-import com.yoyuzh.files.core.FileService;
+import com.yoyuzh.transfer.api.TransferImportApi;
+import com.yoyuzh.transfer.api.TransferImportCommand;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -11,19 +12,10 @@ import org.springframework.transaction.annotation.Transactional;
 @RequiredArgsConstructor
 public class TransferImportService {
 
-    private final OfflineTransferService offlineTransferService;
-    private final FileService fileService;
+    private final TransferImportApi transferImportApi;
 
     @Transactional
     public FileMetadataResponse importOfflineFile(User recipient, String sessionId, String fileId, String path) {
-        OfflineTransferService.ReadyOfflineTransferFile readyFile = offlineTransferService.readReadyFile(sessionId, fileId);
-        return fileService.importExternalFile(
-                recipient,
-                path,
-                readyFile.filename(),
-                readyFile.contentType(),
-                readyFile.size(),
-                readyFile.content()
-        );
+        return transferImportApi.importOfflineFile(recipient, sessionId, fileId, new TransferImportCommand(path));
     }
 }

@@ -7,6 +7,9 @@ import com.yoyuzh.common.BusinessException;
 import com.yoyuzh.common.ErrorCode;
 import com.yoyuzh.files.core.FileMetadataResponse;
 import com.yoyuzh.files.share.ImportSharedFileRequest;
+import com.yoyuzh.transfer.api.CreateTransferSessionCommand;
+import com.yoyuzh.transfer.api.TransferImportCommand;
+import com.yoyuzh.transfer.api.TransferSessionApi;
 import io.swagger.v3.oas.annotations.Operation;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -28,7 +31,7 @@ import org.springframework.web.multipart.MultipartFile;
 @RequiredArgsConstructor
 public class TransferController {
 
-    private final TransferService transferService;
+    private final TransferSessionApi transferSessionApi;
     private final CustomUserDetailsService userDetailsService;
 
     @Operation(summary = "创建快传会话")
@@ -36,26 +39,29 @@ public class TransferController {
     public ApiResponse<TransferSessionResponse> createSession(@AuthenticationPrincipal UserDetails userDetails,
                                                               @Valid @RequestBody CreateTransferSessionRequest request) {
         User sender = loadAuthenticatedUser(userDetails);
-        return ApiResponse.success(transferService.createSession(sender, request));
+        return ApiResponse.success(transferSessionApi.createSession(sender, new CreateTransferSessionCommand(
+                request.mode(),
+                request.files()
+        )));
     }
 
     @Operation(summary = "通过取件码查找快传会话")
     @GetMapping("/sessions/lookup")
     public ApiResponse<LookupTransferSessionResponse> lookupSession(@RequestParam String pickupCode) {
-        return ApiResponse.success(transferService.lookupSession(pickupCode));
+        return ApiResponse.success(transferSessionApi.lookupSession(pickupCode));
     }
 
     @Operation(summary = "加入快传会话")
     @PostMapping("/sessions/{sessionId}/join")
     public ApiResponse<TransferSessionResponse> joinSession(@PathVariable String sessionId) {
-        return ApiResponse.success(transferService.joinSession(sessionId));
+        return ApiResponse.success(transferSessionApi.joinSession(sessionId));
     }
 
     @Operation(summary = "查看当前用户的离线快传列表")
     @GetMapping("/sessions/offline/mine")
     public ApiResponse<java.util.List<TransferSessionResponse>> listOfflineSessions(@AuthenticationPrincipal UserDetails userDetails) {
         requireAuthenticatedUser(userDetails);
-        return ApiResponse.success(transferService.listOfflineSessions(
+        return ApiResponse.success(transferSessionApi.listOfflineSessions(
                 userDetailsService.loadDomainUser(userDetails.getUsername())
         ));
     }
@@ -67,7 +73,7 @@ public class TransferController {
                                                @PathVariable String fileId,
                                                @RequestPart("file") MultipartFile file) {
         requireAuthenticatedUser(userDetails);
-        transferService.uploadOfflineFile(
+        transferSessionApi.uploadOfflineFile(
                 userDetailsService.loadDomainUser(userDetails.getUsername()),
                 sessionId,
                 fileId,
@@ -80,7 +86,7 @@ public class TransferController {
     @GetMapping("/sessions/{sessionId}/files/{fileId}/download")
     public ResponseEntity<?> downloadOfflineFile(@PathVariable String sessionId,
                                                  @PathVariable String fileId) {
-        return transferService.downloadOfflineFile(sessionId, fileId);
+        return transferSessionApi.downloadOfflineFile(sessionId, fileId);
     }
 
     @Operation(summary = "把离线快传文件存入网盘")
@@ -90,11 +96,11 @@ public class TransferController {
                                                                @PathVariable String fileId,
                                                                @Valid @RequestBody ImportSharedFileRequest request) {
         requireAuthenticatedUser(userDetails);
-        return ApiResponse.success(transferService.importOfflineFile(
+        return ApiResponse.success(transferSessionApi.importOfflineFile(
                 userDetailsService.loadDomainUser(userDetails.getUsername()),
                 sessionId,
                 fileId,
-                request.path()
+                new TransferImportCommand(request.path())
         ));
     }
 
@@ -103,7 +109,7 @@ public class TransferController {
     public ApiResponse<Void> postSignal(@PathVariable String sessionId,
                                         @RequestParam String role,
                                         @Valid @RequestBody TransferSignalRequest request) {
-        transferService.postSignal(sessionId, role, request);
+        transferSessionApi.postSignal(sessionId, role, request);
         return ApiResponse.success();
     }
 
@@ -112,7 +118,7 @@ public class TransferController {
     public ApiResponse<PollTransferSignalsResponse> pollSignals(@PathVariable String sessionId,
                                                                 @RequestParam String role,
                                                                 @RequestParam(defaultValue = "0") long after) {
-        return ApiResponse.success(transferService.pollSignals(sessionId, role, after));
+        return ApiResponse.success(transferSessionApi.pollSignals(sessionId, role, after));
     }
 
     private void requireAuthenticatedUser(UserDetails userDetails) {

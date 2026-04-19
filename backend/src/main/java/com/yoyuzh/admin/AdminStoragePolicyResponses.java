@@ -1,14 +1,14 @@
 package com.yoyuzh.admin;
 
 import com.yoyuzh.files.policy.StoragePolicy;
-import com.yoyuzh.files.policy.StoragePolicyService;
+import com.yoyuzh.files.policy.StoragePolicyCapabilities;
 
 final class AdminStoragePolicyResponses {
 
     private AdminStoragePolicyResponses() {
     }
 
-    static AdminStoragePolicyResponse from(StoragePolicyService storagePolicyService, StoragePolicy policy) {
+    static AdminStoragePolicyResponse from(StoragePolicy policy, StoragePolicyCapabilities capabilities) {
         return new AdminStoragePolicyResponse(
                 policy.getId(),
                 policy.getName(),
@@ -20,7 +20,7 @@ final class AdminStoragePolicyResponses {
                 policy.getPrefix(),
                 policy.getCredentialMode(),
                 policy.getMaxSizeBytes(),
-                storagePolicyService.readCapabilities(policy),
+                capabilities,
                 policy.isEnabled(),
                 policy.isDefaultPolicy(),
                 policy.getCreatedAt(),

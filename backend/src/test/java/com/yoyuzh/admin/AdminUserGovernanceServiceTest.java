@@ -1,15 +1,15 @@
 package com.yoyuzh.admin;
 
-import com.yoyuzh.auth.AuthSessionPolicy;
-import com.yoyuzh.auth.AuthTokenInvalidationService;
 import com.yoyuzh.auth.PasswordPolicy;
-import com.yoyuzh.auth.RefreshTokenService;
 import com.yoyuzh.auth.User;
 import com.yoyuzh.auth.UserRepository;
 import com.yoyuzh.auth.UserRole;
 import com.yoyuzh.common.BusinessException;
 import com.yoyuzh.common.PageResponse;
 import com.yoyuzh.files.core.StoredFileRepository;
+import com.yoyuzh.identity.access.api.AdminAccessContinuityGuard;
+import com.yoyuzh.identity.access.api.IdentityCredentialRevocationPolicy;
+import com.yoyuzh.identity.access.internal.application.RuntimeAdminAccessContinuityGuard;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -43,29 +43,26 @@ class AdminUserGovernanceServiceTest {
     @Mock
     private PasswordEncoder passwordEncoder;
     @Mock
-    private RefreshTokenService refreshTokenService;
-    @Mock
-    private AuthTokenInvalidationService authTokenInvalidationService;
+    private IdentityCredentialRevocationPolicy identityCredentialRevocationPolicy;
     @Mock
     private AdminAuditService adminAuditService;
     @Mock
     private AdminRuntimeSettingsService adminRuntimeSettingsService;
 
-    private AuthSessionPolicy authSessionPolicy;
+    private AdminAccessContinuityGuard adminAccessContinuityGuard;
     private AdminUserGovernanceService adminUserGovernanceService;
 
     @BeforeEach
     void setUp() {
-        authSessionPolicy = new AuthSessionPolicy();
+        adminAccessContinuityGuard =
+                new RuntimeAdminAccessContinuityGuard(userRepository, adminRuntimeSettingsService);
         adminUserGovernanceService = new AdminUserGovernanceService(
                 userRepository,
                 storedFileRepository,
                 passwordEncoder,
-                refreshTokenService,
-                authTokenInvalidationService,
-                authSessionPolicy,
+                identityCredentialRevocationPolicy,
                 adminAuditService,
-                adminRuntimeSettingsService
+                adminAccessContinuityGuard
         );
     }
 
@@ -122,9 +119,6 @@ class AdminUserGovernanceServiceTest {
     @Test
     void shouldBanUserAndRevokeTokens() {
         User user = createUser(1L, "alice", "alice@example.com");
-        String previousActiveSessionId = user.getActiveSessionId();
-        String previousDesktopSessionId = user.getDesktopActiveSessionId();
-        String previousMobileSessionId = user.getMobileActiveSessionId();
         when(userRepository.findById(1L)).thenReturn(Optional.of(user));
         when(adminRuntimeSettingsService.snapshot()).thenReturn(runtimeState("MODERATOR", "ADMIN"));
         when(userRepository.save(user)).thenReturn(user);
@@ -132,11 +126,7 @@ class AdminUserGovernanceServiceTest {
         adminUserGovernanceService.updateUserBanned(1L, true);
 
         assertThat(user.isBanned()).isTrue();
-        assertThat(user.getActiveSessionId()).isNotEqualTo(previousActiveSessionId);
-        assertThat(user.getDesktopActiveSessionId()).isNotEqualTo(previousDesktopSessionId);
-        assertThat(user.getMobileActiveSessionId()).isNotEqualTo(previousMobileSessionId);
-        verify(authTokenInvalidationService).revokeAccessTokensForUser(1L);
-        verify(refreshTokenService).revokeAllForUser(1L);
+        verify(identityCredentialRevocationPolicy).revokeAll(user);
         verify(userRepository).save(user);
     }
 
@@ -144,9 +134,6 @@ class AdminUserGovernanceServiceTest {
     void shouldUnbanUserAndRevokeExistingTokens() {
         User user = createUser(1L, "alice", "alice@example.com");
         user.setBanned(true);
-        String previousActiveSessionId = user.getActiveSessionId();
-        String previousDesktopSessionId = user.getDesktopActiveSessionId();
-        String previousMobileSessionId = user.getMobileActiveSessionId();
         when(userRepository.findById(1L)).thenReturn(Optional.of(user));
         when(adminRuntimeSettingsService.snapshot()).thenReturn(runtimeState("MODERATOR", "ADMIN"));
         when(userRepository.save(user)).thenReturn(user);
@@ -154,19 +141,12 @@ class AdminUserGovernanceServiceTest {
         adminUserGovernanceService.updateUserBanned(1L, false);
 
         assertThat(user.isBanned()).isFalse();
-        assertThat(user.getActiveSessionId()).isNotEqualTo(previousActiveSessionId);
-        assertThat(user.getDesktopActiveSessionId()).isNotEqualTo(previousDesktopSessionId);
-        assertThat(user.getMobileActiveSessionId()).isNotEqualTo(previousMobileSessionId);
-        verify(authTokenInvalidationService).revokeAccessTokensForUser(1L);
-        verify(refreshTokenService).revokeAllForUser(1L);
+        verify(identityCredentialRevocationPolicy).revokeAll(user);
     }
 
     @Test
     void shouldUpdateUserPasswordAndRevokeTokens() {
         User user = createUser(1L, "alice", "alice@example.com");
-        String previousActiveSessionId = user.getActiveSessionId();
-        String previousDesktopSessionId = user.getDesktopActiveSessionId();
-        String previousMobileSessionId = user.getMobileActiveSessionId();
         when(userRepository.findById(1L)).thenReturn(Optional.of(user));
         when(passwordEncoder.encode("NewStr0ng!Pass")).thenReturn("hashed");
         when(userRepository.save(user)).thenReturn(user);
@@ -174,11 +154,7 @@ class AdminUserGovernanceServiceTest {
         adminUserGovernanceService.updateUserPassword(1L, "NewStr0ng!Pass");
 
         assertThat(user.getPasswordHash()).isEqualTo("hashed");
-        assertThat(user.getActiveSessionId()).isNotEqualTo(previousActiveSessionId);
-        assertThat(user.getDesktopActiveSessionId()).isNotEqualTo(previousDesktopSessionId);
-        assertThat(user.getMobileActiveSessionId()).isNotEqualTo(previousMobileSessionId);
-        verify(authTokenInvalidationService).revokeAccessTokensForUser(1L);
-        verify(refreshTokenService).revokeAllForUser(1L);
+        verify(identityCredentialRevocationPolicy).revokeAll(user);
     }
 
     @Test
@@ -224,8 +200,7 @@ class AdminUserGovernanceServiceTest {
 
         assertThat(response.temporaryPassword()).isNotBlank();
         assertThat(PasswordPolicy.isStrong(response.temporaryPassword())).isTrue();
-        verify(authTokenInvalidationService).revokeAccessTokensForUser(1L);
-        verify(refreshTokenService).revokeAllForUser(1L);
+        verify(identityCredentialRevocationPolicy).revokeAll(user);
     }
 
     @Test

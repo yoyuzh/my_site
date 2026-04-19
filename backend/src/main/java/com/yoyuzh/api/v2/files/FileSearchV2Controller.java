@@ -7,8 +7,8 @@ import com.yoyuzh.auth.CustomUserDetailsService;
 import com.yoyuzh.auth.User;
 import com.yoyuzh.common.PageResponse;
 import com.yoyuzh.files.core.FileMetadataResponse;
-import com.yoyuzh.files.search.FileSearchQuery;
-import com.yoyuzh.files.search.FileSearchService;
+import com.yoyuzh.files.search.api.FileSearchApi;
+import com.yoyuzh.files.search.api.SearchFilesQuery;
 import lombok.RequiredArgsConstructor;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
@@ -27,7 +27,7 @@ import java.util.Locale;
 @RequiredArgsConstructor
 public class FileSearchV2Controller {
 
-    private final FileSearchService fileSearchService;
+    private final FileSearchApi fileSearchApi;
     private final CustomUserDetailsService userDetailsService;
 
     @GetMapping("/search")
@@ -51,9 +51,9 @@ public class FileSearchV2Controller {
                                                                     @RequestParam(defaultValue = "0") int page,
                                                                     @RequestParam(defaultValue = "20") int size) {
         User user = userDetailsService.loadDomainUser(userDetails.getUsername());
-        return ApiV2Response.success(fileSearchService.search(
+        return ApiV2Response.success(fileSearchApi.search(
                 user,
-                new FileSearchQuery(name, parseType(type), sizeGte, sizeLte, createdGte, createdLte, updatedGte, updatedLte, page, size)
+                new SearchFilesQuery(name, parseType(type), sizeGte, sizeLte, createdGte, createdLte, updatedGte, updatedLte, page, size)
         ));
     }
 

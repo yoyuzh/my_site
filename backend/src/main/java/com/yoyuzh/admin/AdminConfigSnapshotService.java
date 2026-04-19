@@ -9,7 +9,7 @@ import com.yoyuzh.files.core.FileEntityRepository;
 import com.yoyuzh.files.core.StoredFileRepository;
 import com.yoyuzh.files.policy.StoragePolicy;
 import com.yoyuzh.files.policy.StoragePolicyCapabilities;
-import com.yoyuzh.files.policy.StoragePolicyService;
+import com.yoyuzh.platform.storage.api.StoragePolicyQuery;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
@@ -23,7 +23,7 @@ public class AdminConfigSnapshotService {
     private final AppRedisProperties redisProperties;
     private final FileStorageProperties fileStorageProperties;
     private final AdminRuntimeSettingsService adminRuntimeSettingsService;
-    private final StoragePolicyService storagePolicyService;
+    private final StoragePolicyQuery storagePolicyQuery;
     private final StoredFileRepository storedFileRepository;
     private final FileBlobRepository fileBlobRepository;
     private final FileEntityRepository fileEntityRepository;
@@ -75,8 +75,9 @@ public class AdminConfigSnapshotService {
     }
 
     public AdminFilesystemResponse getFilesystem() {
-        StoragePolicy defaultPolicy = storagePolicyService.ensureDefaultPolicy();
-        StoragePolicyCapabilities capabilities = storagePolicyService.readCapabilities(defaultPolicy);
+        var defaultPolicySnapshot = storagePolicyQuery.readDefaultPolicySnapshot();
+        StoragePolicy defaultPolicy = defaultPolicySnapshot.policy();
+        StoragePolicyCapabilities capabilities = defaultPolicySnapshot.capabilities();
         boolean directUpload = capabilities.directUpload();
         return new AdminFilesystemResponse(
                 new AdminFilesystemResponse.OverviewSection(
@@ -85,7 +86,7 @@ public class AdminConfigSnapshotService {
                         fileBlobRepository.count(),
                         fileEntityRepository.count()
                 ),
-                AdminStoragePolicyResponses.from(storagePolicyService, defaultPolicy),
+                AdminStoragePolicyResponses.from(defaultPolicy, capabilities),
                 new AdminFilesystemResponse.UploadSection(
                         !directUpload,
                         directUpload && !capabilities.multipartUpload(),

@@ -7,6 +7,12 @@ import com.yoyuzh.common.ErrorCode;
 import com.yoyuzh.common.PageResponse;
 import com.yoyuzh.common.lock.DistributedLockService;
 import com.yoyuzh.config.FileStorageProperties;
+import com.yoyuzh.files.content.api.ContentAssetApi;
+import com.yoyuzh.files.content.api.ContentRegistrationApi;
+import com.yoyuzh.files.content.api.ContentRegistrationCommand;
+import com.yoyuzh.files.content.api.RegisteredContentFile;
+import com.yoyuzh.files.content.internal.application.RuntimeContentAssetApi;
+import com.yoyuzh.files.content.internal.application.RuntimeContentRegistrationApi;
 import com.yoyuzh.files.events.FileEventService;
 import com.yoyuzh.files.events.FileEventType;
 import com.yoyuzh.files.policy.StoragePolicy;
@@ -22,6 +28,19 @@ import com.yoyuzh.files.tasks.MediaMetadataTaskBrokerPublisher;
 import com.yoyuzh.files.upload.CompleteUploadRequest;
 import com.yoyuzh.files.upload.InitiateUploadRequest;
 import com.yoyuzh.files.upload.InitiateUploadResponse;
+import com.yoyuzh.files.upload.api.UploadCompletionApi;
+import com.yoyuzh.files.upload.api.UploadCompletionCommand;
+import com.yoyuzh.files.upload.internal.application.RuntimeUploadCompletionApi;
+import com.yoyuzh.files.workspace.api.WorkspaceDirectoryApi;
+import com.yoyuzh.files.workspace.api.WorkspaceLifecycleApi;
+import com.yoyuzh.files.workspace.api.WorkspaceLifecycleResult;
+import com.yoyuzh.files.workspace.api.WorkspaceMutationApi;
+import com.yoyuzh.files.workspace.api.WorkspaceMutationResult;
+import com.yoyuzh.files.workspace.api.WorkspacePathPolicy;
+import com.yoyuzh.files.workspace.internal.application.RuntimeWorkspaceDirectoryApi;
+import com.yoyuzh.files.workspace.internal.application.RuntimeWorkspaceLifecycleApi;
+import com.yoyuzh.files.workspace.internal.application.RuntimeWorkspaceMutationApi;
+import com.yoyuzh.files.workspace.internal.application.RuntimeWorkspacePathPolicy;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
@@ -63,7 +82,6 @@ import java.util.zip.ZipOutputStream;
 @Service
 public class FileService {
     private static final List<String> DEFAULT_DIRECTORIES = List.of("下载", "文档", "图片");
-    private static final String RECYCLE_BIN_PATH_PREFIX = "/.recycle";
     private static final long RECYCLE_BIN_RETENTION_DAYS = 10L;
 
     private final StoredFileRepository storedFileRepository;
@@ -79,9 +97,14 @@ public class FileService {
     private final long packageDownloadTtlSeconds;
     private final Clock clock;
     private final WorkspaceNodeRulesService workspaceNodeRulesService;
+    private final WorkspaceDirectoryApi workspaceDirectoryApi;
+    private final WorkspaceMutationApi workspaceMutationApi;
+    private final WorkspaceLifecycleApi workspaceLifecycleApi;
     private final FileUploadRulesService fileUploadRulesService;
     private final ExternalImportRulesService externalImportRulesService;
-    private final ContentAssetBindingService contentAssetBindingService;
+    private final ContentAssetApi contentAssetApi;
+    private final ContentRegistrationApi contentRegistrationApi;
+    private final UploadCompletionApi uploadCompletionApi;
     private final ContentBlobLifecycleService contentBlobLifecycleService;
     @Autowired(required = false)
     private FileEventService fileEventService;
@@ -101,8 +124,21 @@ public class FileService {
                        FileShareLinkRepository fileShareLinkRepository,
                        AdminMetricsService adminMetricsService,
                        StoragePolicyService storagePolicyService,
+                       UploadCompletionApi uploadCompletionApi,
                        FileStorageProperties properties) {
-        this(storedFileRepository, fileBlobRepository, fileEntityRepository, storedFileEntityRepository, fileContentStorage, fileShareLinkRepository, adminMetricsService, storagePolicyService, properties, Clock.systemUTC());
+        this(storedFileRepository, fileBlobRepository, fileEntityRepository, storedFileEntityRepository, fileContentStorage, fileShareLinkRepository, adminMetricsService, storagePolicyService, uploadCompletionApi, properties, Clock.systemUTC());
+    }
+
+    public FileService(StoredFileRepository storedFileRepository,
+                       FileBlobRepository fileBlobRepository,
+                       FileEntityRepository fileEntityRepository,
+                       StoredFileEntityRepository storedFileEntityRepository,
+                       FileContentStorage fileContentStorage,
+                       FileShareLinkRepository fileShareLinkRepository,
+                       AdminMetricsService adminMetricsService,
+                       StoragePolicyService storagePolicyService,
+                       FileStorageProperties properties) {
+        this(storedFileRepository, fileBlobRepository, fileEntityRepository, storedFileEntityRepository, fileContentStorage, fileShareLinkRepository, adminMetricsService, storagePolicyService, null, properties, Clock.systemUTC());
     }
 
     FileService(StoredFileRepository storedFileRepository,
@@ -113,6 +149,7 @@ public class FileService {
                 FileShareLinkRepository fileShareLinkRepository,
                 AdminMetricsService adminMetricsService,
                 StoragePolicyService storagePolicyService,
+                UploadCompletionApi uploadCompletionApi,
                 FileStorageProperties properties,
                 Clock clock) {
         this.storedFileRepository = storedFileRepository;
@@ -131,10 +168,37 @@ public class FileService {
                 : null;
         this.packageDownloadTtlSeconds = Math.max(1, properties.getS3().getPackageDownloadTtlSeconds());
         this.clock = clock;
+        WorkspacePathPolicy workspacePathPolicy = new RuntimeWorkspacePathPolicy(storedFileRepository, fileContentStorage);
         this.workspaceNodeRulesService = new WorkspaceNodeRulesService(storedFileRepository, fileContentStorage);
+        this.workspaceDirectoryApi = new RuntimeWorkspaceDirectoryApi(storedFileRepository, fileContentStorage);
+        this.workspaceMutationApi = new RuntimeWorkspaceMutationApi(storedFileRepository, fileContentStorage);
         this.fileUploadRulesService = new FileUploadRulesService(storedFileRepository, storagePolicyService, workspaceNodeRulesService, maxFileSize);
         this.externalImportRulesService = new ExternalImportRulesService(workspaceNodeRulesService, fileUploadRulesService);
-        this.contentAssetBindingService = new ContentAssetBindingService(fileEntityRepository, storedFileEntityRepository, storagePolicyService);
+        RuntimeContentAssetApi runtimeContentAssetApi = new RuntimeContentAssetApi(
+                storedFileRepository,
+                fileEntityRepository,
+                storedFileEntityRepository,
+                storagePolicyService
+        );
+        this.contentAssetApi = runtimeContentAssetApi;
+        RuntimeContentRegistrationApi runtimeContentRegistrationApi = new RuntimeContentRegistrationApi(
+                storedFileRepository,
+                runtimeContentAssetApi
+        );
+        this.contentRegistrationApi = runtimeContentRegistrationApi;
+        this.workspaceLifecycleApi = new RuntimeWorkspaceLifecycleApi(
+                storedFileRepository,
+                fileContentStorage,
+                runtimeContentRegistrationApi
+        );
+        this.uploadCompletionApi = uploadCompletionApi != null
+                ? uploadCompletionApi
+                : new RuntimeUploadCompletionApi(
+                        workspacePathPolicy,
+                        runtimeContentRegistrationApi,
+                        fileBlobRepository,
+                        fileContentStorage
+                );
         this.contentBlobLifecycleService = new ContentBlobLifecycleService(storedFileRepository, fileBlobRepository, fileContentStorage);
     }
 
@@ -144,7 +208,7 @@ public class FileService {
                 FileShareLinkRepository fileShareLinkRepository,
                 AdminMetricsService adminMetricsService,
                 FileStorageProperties properties) {
-        this(storedFileRepository, fileBlobRepository, null, null, fileContentStorage, fileShareLinkRepository, adminMetricsService, null, properties, Clock.systemUTC());
+        this(storedFileRepository, fileBlobRepository, null, null, fileContentStorage, fileShareLinkRepository, adminMetricsService, null, null, properties, Clock.systemUTC());
     }
 
     FileService(StoredFileRepository storedFileRepository,
@@ -154,7 +218,7 @@ public class FileService {
                 AdminMetricsService adminMetricsService,
                 FileStorageProperties properties,
                 Clock clock) {
-        this(storedFileRepository, fileBlobRepository, null, null, fileContentStorage, fileShareLinkRepository, adminMetricsService, null, properties, clock);
+        this(storedFileRepository, fileBlobRepository, null, null, fileContentStorage, fileShareLinkRepository, adminMetricsService, null, null, properties, clock);
     }
 
     @Transactional
@@ -178,7 +242,7 @@ public class FileService {
         fileUploadRulesService.validateUpload(user, normalizedPath, filename, request.size());
 
         String objectKey = createBlobObjectKey();
-        StoragePolicyCapabilities capabilities = contentAssetBindingService.resolveDefaultStoragePolicyCapabilities();
+        StoragePolicyCapabilities capabilities = contentAssetApi.resolveDefaultStoragePolicyCapabilities();
         if (capabilities != null && !capabilities.directUpload()) {
             return new InitiateUploadResponse(false, "", "POST", Map.of(), objectKey);
         }
@@ -205,48 +269,35 @@ public class FileService {
         String filename = normalizeLeafName(request.filename());
         String objectKey = normalizeBlobObjectKey(request.storageName());
         fileUploadRulesService.validateUpload(user, normalizedPath, filename, request.size());
-        ensureDirectoryHierarchy(user, normalizedPath);
-
-        return contentBlobLifecycleService.executeAfterBlobStored(objectKey, () -> {
-            fileContentStorage.completeBlobUpload(objectKey, request.contentType(), request.size());
-            FileBlob blob = contentBlobLifecycleService.createAndSaveBlob(objectKey, request.contentType(), request.size());
-            return saveFileMetadata(user, normalizedPath, filename, request.contentType(), request.size(), blob);
-        });
+        RegisteredContentFile savedFile = uploadCompletionApi.completeStoredBlob(new UploadCompletionCommand(
+                user,
+                normalizedPath,
+                filename,
+                objectKey,
+                request.contentType(),
+                request.size()
+        ));
+        return finalizeUploadedFile(user, normalizedPath, savedFile);
     }
 
     @Transactional
     public FileMetadataResponse mkdir(User user, String path) {
         String normalizedPath = normalizeDirectoryPath(path);
-        if ("/".equals(normalizedPath)) {
-            throw new BusinessException(ErrorCode.UNKNOWN, "根目录无需创建");
-        }
+        FileMetadataResponse response = workspaceDirectoryApi.createDirectory(user, normalizedPath);
         String parentPath = extractParentPath(normalizedPath);
-        String directoryName = extractLeafName(normalizedPath);
-        workspaceNodeRulesService.ensureNodeNameAvailable(user.getId(), parentPath, directoryName, "目录已存在");
-
-        fileContentStorage.createDirectory(user.getId(), normalizedPath);
-
-        StoredFile storedFile = new StoredFile();
-        storedFile.setUser(user);
-        storedFile.setFilename(directoryName);
-        storedFile.setPath(parentPath);
-        storedFile.setLegacyStorageName(directoryName);
-        storedFile.setContentType("directory");
-        storedFile.setSize(0L);
-        storedFile.setDirectory(true);
-        FileMetadataResponse response = toResponse(storedFileRepository.save(storedFile));
         touchDirectoryListings(user, parentPath);
         return response;
     }
 
     public PageResponse<FileMetadataResponse> list(User user, String path, int page, int size) {
         String normalizedPath = normalizeDirectoryPath(path);
-        return fileListDirectoryCacheService.getOrLoad(user.getId(), normalizedPath, page, size, () -> {
-            Page<StoredFile> result = storedFileRepository.findByUserIdAndPathOrderByDirectoryDescCreatedAtDesc(
-                    user.getId(), normalizedPath, PageRequest.of(page, size));
-            List<FileMetadataResponse> items = result.getContent().stream().map(this::toResponse).toList();
-            return new PageResponse<>(items, result.getTotalElements(), page, size);
-        });
+        return fileListDirectoryCacheService.getOrLoad(
+                user.getId(),
+                normalizedPath,
+                page,
+                size,
+                () -> workspaceDirectoryApi.loadDirectoryPage(user, normalizedPath, page, size)
+        );
     }
 
     public List<FileMetadataResponse> recent(User user) {
@@ -291,18 +342,11 @@ public class FileService {
 
     @Transactional
     public void delete(User user, Long fileId) {
-        StoredFile storedFile = getOwnedActiveFile(user, fileId, "删除");
-        String fromPath = buildLogicalPath(storedFile);
-        List<StoredFile> filesToRecycle = new ArrayList<>();
-        filesToRecycle.add(storedFile);
-        if (storedFile.isDirectory()) {
-            String logicalPath = buildLogicalPath(storedFile);
-            List<StoredFile> descendants = storedFileRepository.findByUserIdAndPathEqualsOrDescendant(user.getId(), logicalPath);
-            filesToRecycle.addAll(descendants);
+        WorkspaceLifecycleResult result = workspaceLifecycleApi.recycle(user, fileId);
+        if (!result.affectedPaths().isEmpty()) {
+            touchDirectoryListings(user, result.affectedPaths().toArray(String[]::new));
         }
-        moveToRecycleBin(filesToRecycle, storedFile.getId());
-        touchDirectoryListings(user, extractParentPath(fromPath));
-        recordFileEvent(user, FileEventType.DELETED, storedFile, fromPath, buildLogicalPath(storedFile));
+        recordFileEvent(user, FileEventType.DELETED, result.file(), result.fromPath(), result.toPath());
     }
 
     @Transactional
@@ -311,30 +355,16 @@ public class FileService {
                 "files:recycle-restore:" + fileId,
                 Duration.ofSeconds(120),
                 () -> {
-                    StoredFile recycleRoot = getOwnedRecycleRootFile(user, fileId);
-                    String fromPath = buildLogicalPath(recycleRoot);
-                    String restoreParentPath = requireRecycleOriginalPath(recycleRoot);
-                    String toPath = buildTargetLogicalPath(restoreParentPath, recycleRoot.getFilename());
-                    List<StoredFile> recycleGroupItems = loadRecycleGroupItems(recycleRoot);
-                    long additionalBytes = recycleGroupItems.stream()
-                            .filter(item -> !item.isDirectory())
-                            .mapToLong(StoredFile::getSize)
-                            .sum();
-                    fileUploadRulesService.ensureWithinStorageQuota(user, additionalBytes);
-                    validateRecycleRestoreTargets(user.getId(), recycleGroupItems);
-                    ensureRecycleRestoreParentHierarchy(user, recycleRoot);
-
-                    for (StoredFile item : recycleGroupItems) {
-                        item.setPath(requireRecycleOriginalPath(item));
-                        item.setDeletedAt(null);
-                        item.setRecycleOriginalPath(null);
-                        item.setRecycleGroupId(null);
-                        item.setRecycleRoot(false);
+                    WorkspaceLifecycleResult result = workspaceLifecycleApi.restore(
+                            user,
+                            fileId,
+                            additionalBytes -> fileUploadRulesService.ensureWithinStorageQuota(user, additionalBytes)
+                    );
+                    if (!result.affectedPaths().isEmpty()) {
+                        touchDirectoryListings(user, result.affectedPaths().toArray(String[]::new));
                     }
-                    storedFileRepository.saveAll(recycleGroupItems);
-                    touchDirectoryListings(user, restoreParentPath);
-                    recordFileEvent(user, FileEventType.RESTORED, recycleRoot, fromPath, toPath);
-                    return toResponse(recycleRoot);
+                    recordFileEvent(user, FileEventType.RESTORED, result.file(), result.fromPath(), result.toPath());
+                    return result.file();
                 }
         );
     }
@@ -356,135 +386,43 @@ public class FileService {
 
     @Transactional
     public FileMetadataResponse rename(User user, Long fileId, String nextFilename) {
-        StoredFile storedFile = getOwnedActiveFile(user, fileId, "重命名");
-        String fromPath = buildLogicalPath(storedFile);
         String sanitizedFilename = normalizeLeafName(nextFilename);
-        if (sanitizedFilename.equals(storedFile.getFilename())) {
-            return toResponse(storedFile);
+        WorkspaceMutationResult result = workspaceMutationApi.rename(user, fileId, sanitizedFilename);
+        if (!result.affectedPaths().isEmpty()) {
+            touchDirectoryListings(user, result.affectedPaths().toArray(String[]::new));
         }
-        workspaceNodeRulesService.ensureNodeNameAvailable(user.getId(), storedFile.getPath(), sanitizedFilename, "同目录下文件已存在");
-
-        if (storedFile.isDirectory()) {
-            String oldLogicalPath = buildLogicalPath(storedFile);
-            String newLogicalPath = "/".equals(storedFile.getPath())
-                    ? "/" + sanitizedFilename
-                    : storedFile.getPath() + "/" + sanitizedFilename;
-
-            List<StoredFile> descendants = storedFileRepository.findByUserIdAndPathEqualsOrDescendant(user.getId(), oldLogicalPath);
-            for (StoredFile descendant : descendants) {
-                if (descendant.getPath().equals(oldLogicalPath)) {
-                    descendant.setPath(newLogicalPath);
-                    continue;
-                }
-
-                descendant.setPath(newLogicalPath + descendant.getPath().substring(oldLogicalPath.length()));
-            }
-            if (!descendants.isEmpty()) {
-                storedFileRepository.saveAll(descendants);
-            }
+        if (!result.fromPath().equals(result.toPath())) {
+            recordFileEvent(user, FileEventType.RENAMED, result.file(), result.fromPath(), result.toPath());
         }
-
-        storedFile.setFilename(sanitizedFilename);
-        FileMetadataResponse response = toResponse(storedFileRepository.save(storedFile));
-        touchDirectoryListings(user, storedFile.getPath());
-        recordFileEvent(user, FileEventType.RENAMED, storedFile, fromPath, buildLogicalPath(storedFile));
-        return response;
+        return result.file();
     }
 
     @Transactional
     public FileMetadataResponse move(User user, Long fileId, String nextPath) {
-        StoredFile storedFile = getOwnedActiveFile(user, fileId, "移动");
-        String fromPath = buildLogicalPath(storedFile);
         String normalizedTargetPath = normalizeDirectoryPath(nextPath);
-        if (normalizedTargetPath.equals(storedFile.getPath())) {
-            return toResponse(storedFile);
+        WorkspaceMutationResult result = workspaceMutationApi.move(user, fileId, normalizedTargetPath);
+        if (!result.affectedPaths().isEmpty()) {
+            touchDirectoryListings(user, result.affectedPaths().toArray(String[]::new));
         }
-
-        ensureExistingDirectoryPath(user.getId(), normalizedTargetPath);
-        workspaceNodeRulesService.ensureNodeNameAvailable(user.getId(), normalizedTargetPath, storedFile.getFilename(), "目标目录已存在同名文件");
-
-        if (storedFile.isDirectory()) {
-            String oldLogicalPath = buildLogicalPath(storedFile);
-            String newLogicalPath = "/".equals(normalizedTargetPath)
-                    ? "/" + storedFile.getFilename()
-                    : normalizedTargetPath + "/" + storedFile.getFilename();
-            if (newLogicalPath.equals(oldLogicalPath) || newLogicalPath.startsWith(oldLogicalPath + "/")) {
-                throw new BusinessException(ErrorCode.UNKNOWN, "不能移动到当前目录或其子目录");
-            }
-
-            List<StoredFile> descendants = storedFileRepository.findByUserIdAndPathEqualsOrDescendant(user.getId(), oldLogicalPath);
-            for (StoredFile descendant : descendants) {
-                if (descendant.getPath().equals(oldLogicalPath)) {
-                    descendant.setPath(newLogicalPath);
-                    continue;
-                }
-
-                descendant.setPath(newLogicalPath + descendant.getPath().substring(oldLogicalPath.length()));
-            }
-            if (!descendants.isEmpty()) {
-                storedFileRepository.saveAll(descendants);
-            }
+        if (!result.fromPath().equals(result.toPath())) {
+            recordFileEvent(user, FileEventType.MOVED, result.file(), result.fromPath(), result.toPath());
         }
-
-        storedFile.setPath(normalizedTargetPath);
-        FileMetadataResponse response = toResponse(storedFileRepository.save(storedFile));
-        touchDirectoryListings(user, extractParentPath(fromPath), normalizedTargetPath);
-        recordFileEvent(user, FileEventType.MOVED, storedFile, fromPath, buildLogicalPath(storedFile));
-        return response;
+        return result.file();
     }
 
     @Transactional
     public FileMetadataResponse copy(User user, Long fileId, String nextPath) {
-        StoredFile storedFile = getOwnedActiveFile(user, fileId, "复制");
         String normalizedTargetPath = normalizeDirectoryPath(nextPath);
-        ensureExistingDirectoryPath(user.getId(), normalizedTargetPath);
-        workspaceNodeRulesService.ensureNodeNameAvailable(user.getId(), normalizedTargetPath, storedFile.getFilename(), "目标目录已存在同名文件");
-
-        if (!storedFile.isDirectory()) {
-            fileUploadRulesService.ensureWithinStorageQuota(user, storedFile.getSize());
-            FileMetadataResponse response = toResponse(saveCopiedStoredFile(copyStoredFile(storedFile, user, normalizedTargetPath), user));
-            touchDirectoryListings(user, normalizedTargetPath);
-            return response;
+        WorkspaceLifecycleResult result = workspaceLifecycleApi.copy(
+                user,
+                fileId,
+                normalizedTargetPath,
+                additionalBytes -> fileUploadRulesService.ensureWithinStorageQuota(user, additionalBytes)
+        );
+        if (!result.affectedPaths().isEmpty()) {
+            touchDirectoryListings(user, result.affectedPaths().toArray(String[]::new));
         }
-
-        String oldLogicalPath = buildLogicalPath(storedFile);
-        String newLogicalPath = buildTargetLogicalPath(normalizedTargetPath, storedFile.getFilename());
-        if (newLogicalPath.equals(oldLogicalPath) || newLogicalPath.startsWith(oldLogicalPath + "/")) {
-            throw new BusinessException(ErrorCode.UNKNOWN, "不能复制到当前目录或其子目录");
-        }
-
-        List<StoredFile> descendants = storedFileRepository.findByUserIdAndPathEqualsOrDescendant(user.getId(), oldLogicalPath);
-        long additionalBytes = descendants.stream()
-                .filter(descendant -> !descendant.isDirectory())
-                .mapToLong(StoredFile::getSize)
-                .sum();
-        fileUploadRulesService.ensureWithinStorageQuota(user, additionalBytes);
-        List<StoredFile> copiedEntries = new ArrayList<>();
-
-        StoredFile copiedRoot = copyStoredFile(storedFile, user, normalizedTargetPath);
-        copiedEntries.add(copiedRoot);
-
-        descendants.stream()
-                .sorted(Comparator
-                        .comparingInt((StoredFile descendant) -> descendant.getPath().length())
-                        .thenComparing(descendant -> descendant.isDirectory() ? 0 : 1)
-                        .thenComparing(StoredFile::getFilename))
-                .forEach(descendant -> {
-                    String copiedPath = remapCopiedPath(descendant.getPath(), oldLogicalPath, newLogicalPath);
-                    workspaceNodeRulesService.ensureNodeNameAvailable(user.getId(), copiedPath, descendant.getFilename(), "目标目录已存在同名文件");
-
-                    copiedEntries.add(copyStoredFile(descendant, user, copiedPath));
-                });
-
-        StoredFile savedRoot = null;
-        for (StoredFile copiedEntry : copiedEntries) {
-            StoredFile savedEntry = saveCopiedStoredFile(copiedEntry, user);
-            if (savedRoot == null) {
-                savedRoot = savedEntry;
-            }
-        }
-        touchDirectoryListings(user, normalizedTargetPath);
-        return toResponse(savedRoot == null ? copiedRoot : savedRoot);
+        return result.file();
     }
 
     public ResponseEntity<?> download(User user, Long fileId) {
@@ -841,38 +779,30 @@ public class FileService {
                                                   String contentType,
                                                   long size,
                                                   FileBlob blob) {
-        StoredFile storedFile = new StoredFile();
-        storedFile.setUser(user);
-        storedFile.setFilename(filename);
-        storedFile.setPath(normalizedPath);
-        storedFile.setContentType(contentType);
-        storedFile.setSize(size);
-        storedFile.setDirectory(false);
-        storedFile.setBlob(blob);
-        storedFile.setLegacyStorageName(blob.getObjectKey());
-        FileEntity primaryEntity = createOrReferencePrimaryEntity(user, blob);
-        storedFile.setPrimaryEntity(primaryEntity);
-        StoredFile savedFile = storedFileRepository.save(storedFile);
-        savePrimaryEntityRelation(savedFile, primaryEntity);
+        RegisteredContentFile savedFile = contentRegistrationApi.registerBlob(
+                new ContentRegistrationCommand(user, normalizedPath, filename, contentType, size, blob)
+        );
+        return finalizeUploadedFile(user, normalizedPath, savedFile);
+    }
+
+    private FileMetadataResponse finalizeUploadedFile(User user,
+                                                      String normalizedPath,
+                                                      RegisteredContentFile savedFile) {
         touchDirectoryListings(user, normalizedPath);
         publishMediaMetadataTrigger(savedFile);
-        recordFileEvent(user, FileEventType.CREATED, savedFile, null, buildLogicalPath(savedFile));
+        recordFileEvent(user, FileEventType.CREATED, savedFile, null, buildLogicalPath(savedFile.path(), savedFile.filename()));
         return toResponse(savedFile);
     }
 
-    private FileEntity createOrReferencePrimaryEntity(User user, FileBlob blob) {
-        return contentAssetBindingService.createOrReferencePrimaryEntity(user, blob);
-    }
-
-    private void savePrimaryEntityRelation(StoredFile storedFile, FileEntity primaryEntity) {
-        contentAssetBindingService.savePrimaryEntityRelation(storedFile, primaryEntity);
-    }
-
-    private void publishMediaMetadataTrigger(StoredFile storedFile) {
+    private void publishMediaMetadataTrigger(RegisteredContentFile storedFile) {
         if (mediaMetadataTaskBrokerPublisher == null) {
             return;
         }
-        mediaMetadataTaskBrokerPublisher.publishAfterCommit(storedFile);
+        StoredFile payload = new StoredFile();
+        payload.setId(storedFile.id());
+        payload.setFilename(storedFile.filename());
+        payload.setContentType(storedFile.contentType());
+        mediaMetadataTaskBrokerPublisher.publishAfterCommit(payload);
     }
 
     private FileShareLink getShareLink(String token) {
@@ -916,30 +846,19 @@ public class FileService {
         return storedFile;
     }
 
-    private StoredFile getOwnedRecycleRootFile(User user, Long fileId) {
-        StoredFile storedFile = getOwnedFile(user, fileId, "恢复");
-        if (storedFile.getDeletedAt() == null || !storedFile.isRecycleRoot()) {
-            throw new BusinessException(ErrorCode.FILE_NOT_FOUND, "回收站文件不存在");
-        }
-        return storedFile;
-    }
-
-    private List<StoredFile> loadRecycleGroupItems(StoredFile recycleRoot) {
-        List<StoredFile> items = storedFileRepository.findByRecycleGroupId(recycleRoot.getRecycleGroupId());
-        if (items.isEmpty()) {
-            throw new BusinessException(ErrorCode.FILE_NOT_FOUND, "回收站文件不存在");
-        }
-        return items;
-    }
-
     private void validateUpload(User user, String normalizedPath, String filename, long size) {
         if (fileUploadRulesService != null) {
             fileUploadRulesService.validateUpload(user, normalizedPath, filename, size);
             return;
         }
         long effectiveMaxUploadSize = Math.min(maxFileSize, user.getMaxUploadSizeBytes());
-        StoragePolicy defaultPolicy = storagePolicyService == null ? null : storagePolicyService.ensureDefaultPolicy();
-        StoragePolicyCapabilities capabilities = defaultPolicy == null ? null : storagePolicyService.readCapabilities(defaultPolicy);
+        StoragePolicy defaultPolicy = null;
+        StoragePolicyCapabilities capabilities = null;
+        if (storagePolicyService != null) {
+            var defaultPolicySnapshot = storagePolicyService.readDefaultPolicySnapshot();
+            defaultPolicy = defaultPolicySnapshot.policy();
+            capabilities = defaultPolicySnapshot.capabilities();
+        }
         if (defaultPolicy != null && defaultPolicy.getMaxSizeBytes() > 0) {
             effectiveMaxUploadSize = Math.min(effectiveMaxUploadSize, defaultPolicy.getMaxSizeBytes());
         }
@@ -1044,67 +963,11 @@ public class FileService {
         );
     }
 
-    private void moveToRecycleBin(List<StoredFile> filesToRecycle, Long recycleRootId) {
-        if (filesToRecycle.isEmpty()) {
-            return;
-        }
-
-        StoredFile recycleRoot = filesToRecycle.stream()
-                .filter(item -> recycleRootId.equals(item.getId()))
-                .findFirst()
-                .orElseThrow(() -> new BusinessException(ErrorCode.FILE_NOT_FOUND, "文件不存在"));
-        String recycleGroupId = UUID.randomUUID().toString().replace("-", "");
-        LocalDateTime deletedAt = LocalDateTime.now();
-        String rootLogicalPath = buildLogicalPath(recycleRoot);
-        String recycleRootPath = buildRecycleBinPath(recycleGroupId, recycleRoot.getPath());
-        String recycleRootLogicalPath = buildTargetLogicalPath(recycleRootPath, recycleRoot.getFilename());
-
-        List<StoredFile> orderedItems = filesToRecycle.stream()
-                .sorted(Comparator
-                        .comparingInt((StoredFile item) -> buildLogicalPath(item).length())
-                        .thenComparing(item -> item.isDirectory() ? 0 : 1)
-                        .thenComparing(StoredFile::getFilename))
-                .toList();
-
-        for (StoredFile item : orderedItems) {
-            String originalPath = item.getPath();
-            String recyclePath = recycleRootId.equals(item.getId())
-                    ? recycleRootPath
-                    : remapCopiedPath(item.getPath(), rootLogicalPath, recycleRootLogicalPath);
-            item.setDeletedAt(deletedAt);
-            item.setRecycleOriginalPath(originalPath);
-            item.setRecycleGroupId(recycleGroupId);
-            item.setRecycleRoot(recycleRootId.equals(item.getId()));
-            item.setPath(recyclePath);
-        }
-
-        storedFileRepository.saveAll(orderedItems);
-    }
-
-    private String buildRecycleBinPath(String recycleGroupId, String originalPath) {
-        if ("/".equals(originalPath)) {
-            return RECYCLE_BIN_PATH_PREFIX + "/" + recycleGroupId;
-        }
-        return RECYCLE_BIN_PATH_PREFIX + "/" + recycleGroupId + originalPath;
-    }
-
     private String requireRecycleOriginalPath(StoredFile storedFile) {
         if (!StringUtils.hasText(storedFile.getRecycleOriginalPath())) {
             throw new BusinessException(ErrorCode.FILE_NOT_FOUND, "回收站文件不存在");
         }
         return storedFile.getRecycleOriginalPath();
-    }
-
-    private void validateRecycleRestoreTargets(Long userId, List<StoredFile> recycleGroupItems) {
-        workspaceNodeRulesService.validateRecycleRestoreTargets(userId, recycleGroupItems, this::requireRecycleOriginalPath);
-    }
-
-    private void ensureRecycleRestoreParentHierarchy(User user, StoredFile recycleRoot) {
-        ensureDirectoryHierarchy(user, requireRecycleOriginalPath(recycleRoot));
-    }
-
-    private void ensureExistingDirectoryPath(Long userId, String normalizedPath) {
-        workspaceNodeRulesService.ensureExistingDirectoryPath(userId, normalizedPath);
     }
 
     private String normalizeUploadFilename(String originalFilename) {
@@ -1123,6 +986,18 @@ public class FileService {
                 storedFile.getCreatedAt());
     }
 
+    private FileMetadataResponse toResponse(RegisteredContentFile storedFile) {
+        return new FileMetadataResponse(
+                storedFile.id(),
+                storedFile.filename(),
+                storedFile.path(),
+                storedFile.size(),
+                storedFile.contentType(),
+                storedFile.directory(),
+                storedFile.createdAt()
+        );
+    }
+
     private String normalizeDirectoryPath(String path) {
         return workspaceNodeRulesService.normalizeDirectoryPath(path);
     }
@@ -1136,44 +1011,17 @@ public class FileService {
     }
 
     private String buildLogicalPath(StoredFile storedFile) {
-        return "/".equals(storedFile.getPath())
-                ? "/" + storedFile.getFilename()
-                : storedFile.getPath() + "/" + storedFile.getFilename();
+        return buildLogicalPath(storedFile.getPath(), storedFile.getFilename());
+    }
+
+    private String buildLogicalPath(String path, String filename) {
+        return "/".equals(path)
+                ? "/" + filename
+                : path + "/" + filename;
     }
 
     private String buildTargetLogicalPath(String normalizedTargetPath, String filename) {
         return workspaceNodeRulesService.buildTargetLogicalPath(normalizedTargetPath, filename);
-    }
-
-    private String remapCopiedPath(String currentPath, String oldLogicalPath, String newLogicalPath) {
-        if (currentPath.equals(oldLogicalPath)) {
-            return newLogicalPath;
-        }
-        return newLogicalPath + currentPath.substring(oldLogicalPath.length());
-    }
-
-    private StoredFile copyStoredFile(StoredFile source, User owner, String nextPath) {
-        StoredFile copiedFile = new StoredFile();
-        copiedFile.setUser(owner);
-        copiedFile.setFilename(source.getFilename());
-        copiedFile.setPath(nextPath);
-        copiedFile.setContentType(source.getContentType());
-        copiedFile.setSize(source.getSize());
-        copiedFile.setDirectory(source.isDirectory());
-        copiedFile.setBlob(source.getBlob());
-        return copiedFile;
-    }
-
-    private StoredFile saveCopiedStoredFile(StoredFile copiedFile, User owner) {
-        if (!copiedFile.isDirectory() && copiedFile.getBlob() != null && copiedFile.getPrimaryEntity() == null) {
-            copiedFile.setPrimaryEntity(createOrReferencePrimaryEntity(owner, copiedFile.getBlob()));
-        }
-        StoredFile savedFile = storedFileRepository.save(copiedFile);
-        if (!savedFile.isDirectory() && savedFile.getPrimaryEntity() != null) {
-            savePrimaryEntityRelation(savedFile, savedFile.getPrimaryEntity());
-        }
-        recordFileEvent(owner, FileEventType.CREATED, savedFile, null, buildLogicalPath(savedFile));
-        return savedFile;
     }
 
     private void writeDirectoryArchiveEntries(ZipOutputStream zipOutputStream,
@@ -1401,6 +1249,58 @@ public class FileService {
             payload.put("toPath", toPath);
         }
         fileEventService.record(user, eventType, storedFile.getId(), fromPath, toPath, payload);
+    }
+
+    private void recordFileEvent(User user,
+                                 FileEventType eventType,
+                                 FileMetadataResponse storedFile,
+                                 String fromPath,
+                                 String toPath) {
+        if (fileEventService == null || storedFile == null || storedFile.id() == null) {
+            return;
+        }
+
+        Map<String, Object> payload = new HashMap<>();
+        payload.put("action", eventType.name());
+        payload.put("fileId", storedFile.id());
+        payload.put("filename", storedFile.filename());
+        payload.put("path", storedFile.path());
+        payload.put("directory", storedFile.directory());
+        payload.put("contentType", storedFile.contentType());
+        payload.put("size", storedFile.size());
+        if (fromPath != null) {
+            payload.put("fromPath", fromPath);
+        }
+        if (toPath != null) {
+            payload.put("toPath", toPath);
+        }
+        fileEventService.record(user, eventType, storedFile.id(), fromPath, toPath, payload);
+    }
+
+    private void recordFileEvent(User user,
+                                 FileEventType eventType,
+                                 RegisteredContentFile storedFile,
+                                 String fromPath,
+                                 String toPath) {
+        if (fileEventService == null || storedFile == null || storedFile.id() == null) {
+            return;
+        }
+
+        Map<String, Object> payload = new HashMap<>();
+        payload.put("action", eventType.name());
+        payload.put("fileId", storedFile.id());
+        payload.put("filename", storedFile.filename());
+        payload.put("path", storedFile.path());
+        payload.put("directory", storedFile.directory());
+        payload.put("contentType", storedFile.contentType());
+        payload.put("size", storedFile.size());
+        if (fromPath != null) {
+            payload.put("fromPath", fromPath);
+        }
+        if (toPath != null) {
+            payload.put("toPath", toPath);
+        }
+        fileEventService.record(user, eventType, storedFile.id(), fromPath, toPath, payload);
     }
 
     private void touchDirectoryListings(User user, String... paths) {

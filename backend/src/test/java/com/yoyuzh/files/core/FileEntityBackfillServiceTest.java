@@ -57,7 +57,7 @@ class FileEntityBackfillServiceTest {
             entity.setId(100L);
             return entity;
         });
-        when(storagePolicyService.ensureDefaultPolicy()).thenReturn(createDefaultStoragePolicy());
+        when(storagePolicyService.readDefaultPolicyId()).thenReturn(42L);
 
         backfillService.backfillPrimaryEntities();
 

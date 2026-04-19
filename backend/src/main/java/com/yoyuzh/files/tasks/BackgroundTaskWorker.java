@@ -1,6 +1,7 @@
 package com.yoyuzh.files.tasks;
 
 import com.yoyuzh.common.BusinessException;
+import com.yoyuzh.platform.job.api.BackgroundTaskExecutionGateway;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
@@ -19,13 +20,13 @@ public class BackgroundTaskWorker {
     private static final int DEFAULT_BATCH_SIZE = 5;
     private static final long DEFAULT_LEASE_DURATION_SECONDS = 120L;
 
-    private final BackgroundTaskExecutionService backgroundTaskExecutionService;
+    private final BackgroundTaskExecutionGateway backgroundTaskExecutionGateway;
     private final List<BackgroundTaskHandler> handlers;
     private final String workerOwner;
 
-    public BackgroundTaskWorker(BackgroundTaskExecutionService backgroundTaskExecutionService,
+    public BackgroundTaskWorker(BackgroundTaskExecutionGateway backgroundTaskExecutionGateway,
                                 List<BackgroundTaskHandler> handlers) {
-        this.backgroundTaskExecutionService = backgroundTaskExecutionService;
+        this.backgroundTaskExecutionGateway = backgroundTaskExecutionGateway;
         this.handlers = List.copyOf(handlers);
         this.workerOwner = UUID.randomUUID().toString().replace("-", "");
     }
@@ -39,10 +40,10 @@ public class BackgroundTaskWorker {
     }
 
     public int processQueuedTasks(int maxTasks) {
-        backgroundTaskExecutionService.requeueExpiredRunningTasks();
+        backgroundTaskExecutionGateway.requeueExpiredRunningTasks();
         int processedCount = 0;
-        for (Long taskId : backgroundTaskExecutionService.findQueuedTaskIds(maxTasks)) {
-            var claimedTask = backgroundTaskExecutionService.claimQueuedTask(taskId, workerOwner, DEFAULT_LEASE_DURATION_SECONDS);
+        for (Long taskId : backgroundTaskExecutionGateway.findQueuedTaskIds(maxTasks)) {
+            var claimedTask = backgroundTaskExecutionGateway.claimQueuedTask(taskId, workerOwner, DEFAULT_LEASE_DURATION_SECONDS);
             if (claimedTask.isEmpty()) {
                 continue;
             }
@@ -55,7 +56,7 @@ public class BackgroundTaskWorker {
 
     private void execute(BackgroundTask task) {
         try {
-            backgroundTaskExecutionService.markWorkerTaskProgress(
+            backgroundTaskExecutionGateway.markWorkerTaskProgress(
                     task.getId(),
                     workerOwner,
                     Map.of(BackgroundTaskStateKeys.PHASE, resolveRunningPhase(task.getType())),
@@ -63,13 +64,13 @@ public class BackgroundTaskWorker {
             );
             BackgroundTaskHandler handler = findHandler(task);
             BackgroundTaskHandlerResult result = handler.handle(task, publicStatePatch ->
-                    backgroundTaskExecutionService.markWorkerTaskProgress(
+                    backgroundTaskExecutionGateway.markWorkerTaskProgress(
                             task.getId(),
                             workerOwner,
                             publicStatePatch,
                             DEFAULT_LEASE_DURATION_SECONDS
                     ));
-            backgroundTaskExecutionService.markWorkerTaskCompleted(
+            backgroundTaskExecutionGateway.markWorkerTaskCompleted(
                     task.getId(),
                     workerOwner,
                     result.publicStatePatch(),
@@ -80,7 +81,7 @@ public class BackgroundTaskWorker {
         } catch (Exception ex) {
             String message = ex.getMessage() == null ? ex.getClass().getSimpleName() : ex.getMessage();
             try {
-                backgroundTaskExecutionService.markWorkerTaskFailed(
+                backgroundTaskExecutionGateway.markWorkerTaskFailed(
                         task.getId(),
                         workerOwner,
                         message,

@@ -5,17 +5,16 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.yoyuzh.auth.User;
 import com.yoyuzh.common.BusinessException;
 import com.yoyuzh.common.ErrorCode;
-import com.yoyuzh.config.FileStorageProperties;
-import com.yoyuzh.files.core.FileUploadRulesService;
-import com.yoyuzh.files.core.FileService;
-import com.yoyuzh.files.core.StoredFileRepository;
-import com.yoyuzh.files.core.WorkspaceNodeRulesService;
 import com.yoyuzh.files.policy.StoragePolicy;
 import com.yoyuzh.files.policy.StoragePolicyCapabilities;
 import com.yoyuzh.files.policy.StoragePolicyService;
 import com.yoyuzh.files.storage.FileContentStorage;
 import com.yoyuzh.files.storage.MultipartCompletedPart;
 import com.yoyuzh.files.storage.PreparedUpload;
+import com.yoyuzh.files.upload.api.UploadCompletionApi;
+import com.yoyuzh.files.upload.api.UploadCompletionCommand;
+import com.yoyuzh.files.upload.api.UploadTargetPolicy;
+import com.yoyuzh.files.upload.api.ValidatedUploadTarget;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
@@ -45,34 +44,31 @@ public class UploadSessionService {
     };
 
     private final UploadSessionRepository uploadSessionRepository;
-    private final FileService fileService;
+    private final UploadTargetPolicy uploadTargetPolicy;
+    private final UploadCompletionApi uploadCompletionApi;
     private final FileContentStorage fileContentStorage;
     private final StoragePolicyService storagePolicyService;
     private final ObjectMapper objectMapper = new ObjectMapper();
     private final UploadPolicyResolver uploadPolicyResolver;
     private final UploadSessionStateMachine uploadSessionStateMachine;
-    private final WorkspaceNodeRulesService workspaceNodeRulesService;
-    private final FileUploadRulesService fileUploadRulesService;
     private final Clock clock;
     @Autowired(required = false)
     private UploadSessionRuntimeStateService uploadSessionRuntimeStateService = UploadSessionRuntimeStateService.noOp();
 
     @Autowired
     public UploadSessionService(UploadSessionRepository uploadSessionRepository,
-                                StoredFileRepository storedFileRepository,
-                                FileService fileService,
+                                UploadTargetPolicy uploadTargetPolicy,
+                                UploadCompletionApi uploadCompletionApi,
                                 FileContentStorage fileContentStorage,
                                 StoragePolicyService storagePolicyService,
-                                FileStorageProperties properties,
                                 UploadPolicyResolver uploadPolicyResolver,
                                 UploadSessionStateMachine uploadSessionStateMachine) {
         this(
                 uploadSessionRepository,
-                storedFileRepository,
-                fileService,
+                uploadTargetPolicy,
+                uploadCompletionApi,
                 fileContentStorage,
                 storagePolicyService,
-                properties,
                 Clock.systemUTC(),
                 uploadPolicyResolver,
                 uploadSessionStateMachine
@@ -80,19 +76,17 @@ public class UploadSessionService {
     }
 
     UploadSessionService(UploadSessionRepository uploadSessionRepository,
-                         StoredFileRepository storedFileRepository,
-                         FileService fileService,
+                         UploadTargetPolicy uploadTargetPolicy,
+                         UploadCompletionApi uploadCompletionApi,
                          FileContentStorage fileContentStorage,
                          StoragePolicyService storagePolicyService,
-                         FileStorageProperties properties,
                          Clock clock) {
         this(
                 uploadSessionRepository,
-                storedFileRepository,
-                fileService,
+                uploadTargetPolicy,
+                uploadCompletionApi,
                 fileContentStorage,
                 storagePolicyService,
-                properties,
                 clock,
                 new UploadPolicyResolver(),
                 new UploadSessionStateMachine()
@@ -100,44 +94,36 @@ public class UploadSessionService {
     }
 
     UploadSessionService(UploadSessionRepository uploadSessionRepository,
-                         StoredFileRepository storedFileRepository,
-                         FileService fileService,
+                         UploadTargetPolicy uploadTargetPolicy,
+                         UploadCompletionApi uploadCompletionApi,
                          FileContentStorage fileContentStorage,
                          StoragePolicyService storagePolicyService,
-                         FileStorageProperties properties,
                          Clock clock,
                          UploadPolicyResolver uploadPolicyResolver,
                          UploadSessionStateMachine uploadSessionStateMachine) {
         this.uploadSessionRepository = uploadSessionRepository;
-        this.fileService = fileService;
+        this.uploadTargetPolicy = uploadTargetPolicy;
+        this.uploadCompletionApi = uploadCompletionApi;
         this.fileContentStorage = fileContentStorage;
         this.storagePolicyService = storagePolicyService;
         this.clock = clock;
         this.uploadPolicyResolver = uploadPolicyResolver;
         this.uploadSessionStateMachine = uploadSessionStateMachine;
-        this.workspaceNodeRulesService = new WorkspaceNodeRulesService(storedFileRepository, fileContentStorage);
-        this.fileUploadRulesService = new FileUploadRulesService(
-                storedFileRepository,
-                storagePolicyService,
-                workspaceNodeRulesService,
-                properties.getMaxFileSize()
-        );
     }
 
     @Transactional
     public UploadSession createSession(User user, UploadSessionCreateCommand command) {
-        String normalizedPath = workspaceNodeRulesService.normalizeDirectoryPath(command.path());
-        String filename = workspaceNodeRulesService.normalizeLeafName(command.filename());
-        StoragePolicy policy = storagePolicyService.ensureDefaultPolicy();
-        StoragePolicyCapabilities capabilities = storagePolicyService.readCapabilities(policy);
-        validateTarget(user, normalizedPath, filename, command.size());
+        ValidatedUploadTarget target = uploadTargetPolicy.validateUpload(user, command.path(), command.filename(), command.size());
+        var defaultPolicySnapshot = target.defaultPolicySnapshot();
+        StoragePolicy policy = defaultPolicySnapshot.policy();
+        StoragePolicyCapabilities capabilities = defaultPolicySnapshot.capabilities();
         UploadSessionUploadMode uploadMode = uploadPolicyResolver.resolveUploadMode(capabilities);
 
         UploadSession session = new UploadSession();
         session.setSessionId(UUID.randomUUID().toString());
         session.setUser(user);
-        session.setTargetPath(normalizedPath);
-        session.setFilename(filename);
+        session.setTargetPath(target.normalizedPath());
+        session.setFilename(target.filename());
         session.setContentType(command.contentType());
         session.setSize(command.size());
         session.setObjectKey(createBlobObjectKey());
@@ -319,7 +305,8 @@ public class UploadSessionService {
                         toCompletedParts(session)
                 );
             }
-            fileService.completeUpload(user, new CompleteUploadRequest(
+            uploadCompletionApi.completeStoredBlob(new UploadCompletionCommand(
+                    user,
                     session.getTargetPath(),
                     session.getFilename(),
                     session.getObjectKey(),
@@ -373,14 +360,7 @@ public class UploadSessionService {
             return UploadSessionUploadMode.PROXY;
         }
         StoragePolicy policy = storagePolicyService.getRequiredPolicy(session.getStoragePolicyId());
-        return uploadPolicyResolver.resolveUploadMode(storagePolicyService.readCapabilities(policy));
-    }
-
-    private void validateTarget(User user,
-                                String normalizedPath,
-                                String filename,
-                                long size) {
-        fileUploadRulesService.validateUpload(user, normalizedPath, filename, size);
+        return storagePolicyService.resolveUploadMode(storagePolicyService.readCapabilities(policy));
     }
 
     private void ensureSessionCanReceiveContent(UploadSession session, LocalDateTime now) {

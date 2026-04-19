@@ -1,6 +1,11 @@
 package com.yoyuzh.files.policy;
 
 import com.yoyuzh.config.FileStorageProperties;
+import com.yoyuzh.auth.User;
+import com.yoyuzh.files.upload.UploadSessionUploadMode;
+import com.yoyuzh.platform.storage.api.DefaultStoragePolicySnapshot;
+import com.yoyuzh.platform.storage.api.UploadConstraintPolicy;
+import com.yoyuzh.platform.storage.api.UploadModePolicy;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -20,6 +25,10 @@ class StoragePolicyServiceTest {
 
     @Mock
     private StoragePolicyRepository storagePolicyRepository;
+    @Mock
+    private UploadModePolicy uploadModePolicy;
+    @Mock
+    private UploadConstraintPolicy uploadConstraintPolicy;
 
     private FileStorageProperties properties;
     private StoragePolicyService storagePolicyService;
@@ -27,7 +36,7 @@ class StoragePolicyServiceTest {
     @BeforeEach
     void setUp() {
         properties = new FileStorageProperties();
-        storagePolicyService = new StoragePolicyService(storagePolicyRepository, properties);
+        storagePolicyService = new StoragePolicyService(storagePolicyRepository, properties, uploadModePolicy, uploadConstraintPolicy);
     }
 
     @Test
@@ -99,5 +108,65 @@ class StoragePolicyServiceTest {
 
         assertThat(policy).isSameAs(existingPolicy);
         verify(storagePolicyRepository, never()).save(any(StoragePolicy.class));
+    }
+
+    @Test
+    void shouldReadDefaultPolicySnapshot() {
+        StoragePolicy existingPolicy = new StoragePolicy();
+        existingPolicy.setId(7L);
+        existingPolicy.setCapabilitiesJson(storagePolicyService.writeCapabilities(new StoragePolicyCapabilities(
+                true,
+                false,
+                false,
+                true,
+                false,
+                true,
+                true,
+                false,
+                4096L
+        )));
+        when(storagePolicyRepository.findFirstByDefaultPolicyTrueOrderByIdAsc()).thenReturn(Optional.of(existingPolicy));
+
+        DefaultStoragePolicySnapshot snapshot = storagePolicyService.readDefaultPolicySnapshot();
+
+        assertThat(snapshot.policy()).isSameAs(existingPolicy);
+        assertThat(snapshot.capabilities().maxObjectSize()).isEqualTo(4096L);
+        assertThat(storagePolicyService.readDefaultPolicyId()).isEqualTo(7L);
+    }
+
+    @Test
+    void shouldDelegateUploadModeResolution() {
+        StoragePolicyCapabilities capabilities = new StoragePolicyCapabilities(
+                true,
+                true,
+                true,
+                true,
+                false,
+                true,
+                true,
+                false,
+                4096L
+        );
+        when(uploadModePolicy.resolveUploadMode(capabilities)).thenReturn(UploadSessionUploadMode.DIRECT_MULTIPART);
+
+        UploadSessionUploadMode uploadMode = storagePolicyService.resolveUploadMode(capabilities);
+
+        assertThat(uploadMode).isEqualTo(UploadSessionUploadMode.DIRECT_MULTIPART);
+        verify(uploadModePolicy).resolveUploadMode(capabilities);
+    }
+
+    @Test
+    void shouldDelegateEffectiveMaxUploadSizeResolution() {
+        User user = new User();
+        StoragePolicy policy = new StoragePolicy();
+        StoragePolicyCapabilities capabilities = new StoragePolicyCapabilities(
+                true, true, true, true, false, true, true, false, 4096L
+        );
+        when(uploadConstraintPolicy.resolveEffectiveMaxUploadSize(10_000L, user, policy, capabilities)).thenReturn(4096L);
+
+        long effectiveMax = storagePolicyService.resolveEffectiveMaxUploadSize(10_000L, user, policy, capabilities);
+
+        assertThat(effectiveMax).isEqualTo(4096L);
+        verify(uploadConstraintPolicy).resolveEffectiveMaxUploadSize(10_000L, user, policy, capabilities);
     }
 }
