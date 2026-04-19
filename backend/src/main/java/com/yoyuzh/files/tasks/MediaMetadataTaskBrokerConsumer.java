@@ -1,6 +1,7 @@
 package com.yoyuzh.files.tasks;
 
-import com.yoyuzh.common.broker.LightweightBrokerService;
+import com.yoyuzh.infra.broker.LightweightBrokerGateway;
+import com.yoyuzh.platform.job.api.BackgroundTaskLifecycleApi;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
@@ -12,13 +13,13 @@ public class MediaMetadataTaskBrokerConsumer {
 
     private static final int DEFAULT_BATCH_SIZE = 10;
 
-    private final LightweightBrokerService lightweightBrokerService;
-    private final BackgroundTaskCommandService backgroundTaskCommandService;
+    private final LightweightBrokerGateway lightweightBrokerGateway;
+    private final BackgroundTaskLifecycleApi backgroundTaskLifecycleApi;
 
-    public MediaMetadataTaskBrokerConsumer(LightweightBrokerService lightweightBrokerService,
-                                           BackgroundTaskCommandService backgroundTaskCommandService) {
-        this.lightweightBrokerService = lightweightBrokerService;
-        this.backgroundTaskCommandService = backgroundTaskCommandService;
+    public MediaMetadataTaskBrokerConsumer(LightweightBrokerGateway lightweightBrokerGateway,
+                                           BackgroundTaskLifecycleApi backgroundTaskLifecycleApi) {
+        this.lightweightBrokerGateway = lightweightBrokerGateway;
+        this.backgroundTaskLifecycleApi = backgroundTaskLifecycleApi;
     }
 
     @Scheduled(
@@ -33,7 +34,7 @@ public class MediaMetadataTaskBrokerConsumer {
         int safeLimit = Math.max(0, maxMessages);
         int processed = 0;
         for (int i = 0; i < safeLimit; i++) {
-            var payload = lightweightBrokerService.poll(MediaMetadataTaskBrokerPublisher.TOPIC);
+            var payload = lightweightBrokerGateway.poll(MediaMetadataTaskBrokerPublisher.TOPIC);
             if (payload.isEmpty()) {
                 break;
             }
@@ -42,7 +43,7 @@ public class MediaMetadataTaskBrokerConsumer {
                     processed += 1;
                 }
             } catch (RuntimeException ex) {
-                lightweightBrokerService.requeue(MediaMetadataTaskBrokerPublisher.TOPIC, payload.get());
+                lightweightBrokerGateway.requeue(MediaMetadataTaskBrokerPublisher.TOPIC, payload.get());
                 break;
             }
         }
@@ -56,7 +57,7 @@ public class MediaMetadataTaskBrokerConsumer {
         if (userId == null || fileId == null) {
             return false;
         }
-        backgroundTaskCommandService.createQueuedAutoMediaMetadataTask(userId, fileId, correlationId);
+        backgroundTaskLifecycleApi.createQueuedAutoMediaMetadataTask(userId, fileId, correlationId);
         return true;
     }
 

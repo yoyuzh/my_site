@@ -1,6 +1,7 @@
 package com.yoyuzh.files.core;
 
-import com.yoyuzh.common.PageResponse;
+import com.yoyuzh.shared.kernel.PageResponse;
+import com.yoyuzh.files.workspace.api.FileMetadataResponse;
 
 import java.util.Collection;
 import java.util.function.Supplier;

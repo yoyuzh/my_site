@@ -3,7 +3,7 @@ package com.yoyuzh.auth;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.yoyuzh.auth.dto.AuthResponse;
 import com.yoyuzh.auth.dto.UserProfileResponse;
-import com.yoyuzh.common.GlobalExceptionHandler;
+import com.yoyuzh.boot.web.GlobalExceptionHandler;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mock;

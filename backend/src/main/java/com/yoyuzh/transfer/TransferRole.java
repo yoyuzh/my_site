@@ -1,7 +1,7 @@
 package com.yoyuzh.transfer;
 
-import com.yoyuzh.common.BusinessException;
-import com.yoyuzh.common.ErrorCode;
+import com.yoyuzh.shared.kernel.BusinessException;
+import com.yoyuzh.shared.kernel.ErrorCode;
 
 import java.util.Locale;
 import java.util.Objects;

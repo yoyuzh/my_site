@@ -1,13 +1,11 @@
 package com.yoyuzh.ops.admin.internal.application;
 
-import com.yoyuzh.admin.AdminFileBlobResponse;
-import com.yoyuzh.admin.AdminFileResponse;
-import com.yoyuzh.admin.AdminInspectionQueryService;
-import com.yoyuzh.admin.AdminResourceGovernanceService;
-import com.yoyuzh.admin.AdminShareResponse;
-import com.yoyuzh.common.PageResponse;
-import com.yoyuzh.files.core.FileEntityType;
+import com.yoyuzh.ops.admin.api.AdminFileEntityType;
+import com.yoyuzh.ops.admin.api.AdminFileBlobResponse;
+import com.yoyuzh.ops.admin.api.AdminFileResponse;
 import com.yoyuzh.ops.admin.api.AdminResourceGovernanceApi;
+import com.yoyuzh.ops.admin.api.AdminShareResponse;
+import com.yoyuzh.shared.kernel.PageResponse;
 import org.springframework.stereotype.Service;
 
 @Service
@@ -33,7 +31,7 @@ public class RuntimeAdminResourceGovernanceApi implements AdminResourceGovernanc
                                                              String userQuery,
                                                              Long storagePolicyId,
                                                              String objectKey,
-                                                             FileEntityType entityType) {
+                                                             AdminFileEntityType entityType) {
         return adminInspectionQueryService.listFileBlobs(page, size, userQuery, storagePolicyId, objectKey, entityType);
     }
 

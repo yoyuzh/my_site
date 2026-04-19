@@ -1,7 +1,11 @@
 package com.yoyuzh.files.tasks;
 
-import com.yoyuzh.common.BusinessException;
-import com.yoyuzh.common.ErrorCode;
+import com.yoyuzh.platform.job.api.BackgroundTaskFailureCategory;
+import com.yoyuzh.platform.job.api.BackgroundTaskStatus;
+import com.yoyuzh.platform.job.api.BackgroundTaskType;
+
+import com.yoyuzh.shared.kernel.BusinessException;
+import com.yoyuzh.shared.kernel.ErrorCode;
 import com.yoyuzh.files.core.FileBlob;
 import com.yoyuzh.files.core.FileBlobRepository;
 import com.yoyuzh.files.core.FileEntity;

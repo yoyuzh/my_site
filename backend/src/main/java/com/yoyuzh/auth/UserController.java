@@ -1,6 +1,6 @@
 package com.yoyuzh.auth;
 
-import com.yoyuzh.common.ApiResponse;
+import com.yoyuzh.shared.kernel.ApiResponse;
 import io.swagger.v3.oas.annotations.Operation;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;

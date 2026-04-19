@@ -1,5 +1,9 @@
 package com.yoyuzh.files.tasks;
 
+import com.yoyuzh.platform.job.api.BackgroundTaskFailureCategory;
+import com.yoyuzh.platform.job.api.BackgroundTaskStatus;
+import com.yoyuzh.platform.job.api.BackgroundTaskType;
+
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;

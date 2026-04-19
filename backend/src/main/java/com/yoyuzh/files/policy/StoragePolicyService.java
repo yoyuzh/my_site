@@ -2,9 +2,9 @@ package com.yoyuzh.files.policy;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.yoyuzh.auth.User;
-import com.yoyuzh.common.BusinessException;
-import com.yoyuzh.common.ErrorCode;
-import com.yoyuzh.config.FileStorageProperties;
+import com.yoyuzh.shared.kernel.BusinessException;
+import com.yoyuzh.shared.kernel.ErrorCode;
+import com.yoyuzh.platform.storage.internal.infra.FileStorageProperties;
 import com.yoyuzh.files.upload.UploadSessionUploadMode;
 import com.yoyuzh.platform.storage.api.DefaultStoragePolicySnapshot;
 import com.yoyuzh.platform.storage.api.StoragePolicyQuery;

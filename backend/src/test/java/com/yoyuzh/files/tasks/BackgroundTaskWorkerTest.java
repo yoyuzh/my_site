@@ -1,6 +1,9 @@
 package com.yoyuzh.files.tasks;
 
-import com.yoyuzh.platform.job.api.BackgroundTaskExecutionGateway;
+import com.yoyuzh.platform.job.api.BackgroundTaskFailureCategory;
+import com.yoyuzh.platform.job.api.BackgroundTaskStatus;
+import com.yoyuzh.platform.job.api.BackgroundTaskType;
+
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;

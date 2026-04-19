@@ -2,6 +2,8 @@ package com.yoyuzh.architecture;
 
 import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.classes;
 import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.noClasses;
+import static org.assertj.core.api.Assertions.assertThatCode;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.tngtech.archunit.core.domain.JavaClasses;
 import com.tngtech.archunit.core.importer.ClassFileImporter;
@@ -80,5 +82,13 @@ class Task4ABridgeArchitectureTest {
         workspaceRule.check(classes);
         workspaceMutationRule.check(classes);
         contentRule.check(classes);
+    }
+
+    @Test
+    void fileMetadataResponseMustBeOwnedByWorkspaceApiPackage() {
+        assertThatCode(() -> Class.forName("com.yoyuzh.files.workspace.api.FileMetadataResponse"))
+                .doesNotThrowAnyException();
+        assertThatThrownBy(() -> Class.forName("com.yoyuzh.files.core.FileMetadataResponse"))
+                .isInstanceOf(ClassNotFoundException.class);
     }
 }

@@ -1,10 +1,6 @@
 package com.yoyuzh.ops.admin.api;
 
-import com.yoyuzh.admin.AdminFileBlobResponse;
-import com.yoyuzh.admin.AdminFileResponse;
-import com.yoyuzh.admin.AdminShareResponse;
-import com.yoyuzh.common.PageResponse;
-import com.yoyuzh.files.core.FileEntityType;
+import com.yoyuzh.shared.kernel.PageResponse;
 
 public interface AdminResourceGovernanceApi {
 
@@ -15,7 +11,7 @@ public interface AdminResourceGovernanceApi {
                                                       String userQuery,
                                                       Long storagePolicyId,
                                                       String objectKey,
-                                                      FileEntityType entityType);
+                                                      AdminFileEntityType entityType);
 
     PageResponse<AdminShareResponse> listShares(int page,
                                                 int size,

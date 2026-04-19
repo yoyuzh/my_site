@@ -1,6 +1,5 @@
 package com.yoyuzh.files.tasks;
 
-import com.yoyuzh.platform.job.api.BackgroundTaskExecutionGateway;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.context.event.ApplicationReadyEvent;

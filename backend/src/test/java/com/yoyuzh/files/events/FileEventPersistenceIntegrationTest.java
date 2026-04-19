@@ -1,13 +1,12 @@
 package com.yoyuzh.files.events;
 
 import com.yoyuzh.PortalBackendApplication;
-import com.yoyuzh.admin.AdminMetricsService;
+import com.yoyuzh.ops.admin.internal.application.AdminMetricsService;
 import com.yoyuzh.auth.User;
-import com.yoyuzh.common.BusinessException;
-import com.yoyuzh.config.FileStorageProperties;
+import com.yoyuzh.shared.kernel.BusinessException;
+import com.yoyuzh.platform.storage.internal.infra.FileStorageProperties;
 import com.yoyuzh.files.core.FileBlobRepository;
 import com.yoyuzh.files.core.FileEntityRepository;
-import com.yoyuzh.files.core.FileMetadataResponse;
 import com.yoyuzh.files.core.FileService;
 import com.yoyuzh.files.core.StoredFile;
 import com.yoyuzh.files.core.StoredFileEntityRepository;
@@ -15,6 +14,7 @@ import com.yoyuzh.files.core.StoredFileRepository;
 import com.yoyuzh.files.policy.StoragePolicyService;
 import com.yoyuzh.files.share.FileShareLinkRepository;
 import com.yoyuzh.files.storage.FileContentStorage;
+import com.yoyuzh.files.workspace.api.FileMetadataResponse;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;

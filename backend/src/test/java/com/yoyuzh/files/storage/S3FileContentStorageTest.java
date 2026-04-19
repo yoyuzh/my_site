@@ -1,7 +1,7 @@
 package com.yoyuzh.files.storage;
 
-import com.yoyuzh.common.BusinessException;
-import com.yoyuzh.config.FileStorageProperties;
+import com.yoyuzh.shared.kernel.BusinessException;
+import com.yoyuzh.platform.storage.internal.infra.FileStorageProperties;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;

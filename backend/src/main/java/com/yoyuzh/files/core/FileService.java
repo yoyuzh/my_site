@@ -1,12 +1,11 @@
 package com.yoyuzh.files.core;
 
-import com.yoyuzh.admin.AdminMetricsService;
+import com.yoyuzh.ops.admin.internal.application.AdminMetricsService;
 import com.yoyuzh.auth.User;
-import com.yoyuzh.common.BusinessException;
-import com.yoyuzh.common.ErrorCode;
-import com.yoyuzh.common.PageResponse;
-import com.yoyuzh.common.lock.DistributedLockService;
-import com.yoyuzh.config.FileStorageProperties;
+import com.yoyuzh.shared.kernel.BusinessException;
+import com.yoyuzh.shared.kernel.ErrorCode;
+import com.yoyuzh.shared.kernel.PageResponse;
+import com.yoyuzh.platform.storage.internal.infra.FileStorageProperties;
 import com.yoyuzh.files.content.api.ContentAssetApi;
 import com.yoyuzh.files.content.api.ContentRegistrationApi;
 import com.yoyuzh.files.content.api.ContentRegistrationCommand;
@@ -32,6 +31,7 @@ import com.yoyuzh.files.upload.api.UploadCompletionApi;
 import com.yoyuzh.files.upload.api.UploadCompletionCommand;
 import com.yoyuzh.files.upload.internal.application.RuntimeUploadCompletionApi;
 import com.yoyuzh.files.workspace.api.WorkspaceDirectoryApi;
+import com.yoyuzh.files.workspace.api.FileMetadataResponse;
 import com.yoyuzh.files.workspace.api.WorkspaceLifecycleApi;
 import com.yoyuzh.files.workspace.api.WorkspaceLifecycleResult;
 import com.yoyuzh.files.workspace.api.WorkspaceMutationApi;
@@ -41,6 +41,7 @@ import com.yoyuzh.files.workspace.internal.application.RuntimeWorkspaceDirectory
 import com.yoyuzh.files.workspace.internal.application.RuntimeWorkspaceLifecycleApi;
 import com.yoyuzh.files.workspace.internal.application.RuntimeWorkspaceMutationApi;
 import com.yoyuzh.files.workspace.internal.application.RuntimeWorkspacePathPolicy;
+import com.yoyuzh.infra.lock.DistributedLockGateway;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
@@ -111,7 +112,7 @@ public class FileService {
     @Autowired(required = false)
     private FileListDirectoryCacheService fileListDirectoryCacheService = FileListDirectoryCacheService.noOp();
     @Autowired(required = false)
-    private DistributedLockService distributedLockService = DistributedLockService.noOp();
+    private DistributedLockGateway distributedLockGateway = DistributedLockGateway.noOp();
     @Autowired(required = false)
     private MediaMetadataTaskBrokerPublisher mediaMetadataTaskBrokerPublisher;
 
@@ -351,7 +352,7 @@ public class FileService {
 
     @Transactional
     public FileMetadataResponse restoreFromRecycleBin(User user, Long fileId) {
-        return distributedLockService.executeWithLock(
+        return distributedLockGateway.executeWithLock(
                 "files:recycle-restore:" + fileId,
                 Duration.ofSeconds(120),
                 () -> {

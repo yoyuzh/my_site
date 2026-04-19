@@ -2,11 +2,11 @@ package com.yoyuzh.transfer;
 
 import com.yoyuzh.auth.CustomUserDetailsService;
 import com.yoyuzh.auth.User;
-import com.yoyuzh.common.ApiResponse;
-import com.yoyuzh.common.BusinessException;
-import com.yoyuzh.common.ErrorCode;
-import com.yoyuzh.files.core.FileMetadataResponse;
+import com.yoyuzh.shared.kernel.ApiResponse;
+import com.yoyuzh.shared.kernel.BusinessException;
+import com.yoyuzh.shared.kernel.ErrorCode;
 import com.yoyuzh.files.share.ImportSharedFileRequest;
+import com.yoyuzh.files.workspace.api.FileMetadataResponse;
 import com.yoyuzh.transfer.api.CreateTransferSessionCommand;
 import com.yoyuzh.transfer.api.TransferImportCommand;
 import com.yoyuzh.transfer.api.TransferSessionApi;

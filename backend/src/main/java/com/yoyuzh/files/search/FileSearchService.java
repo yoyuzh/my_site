@@ -1,12 +1,12 @@
 package com.yoyuzh.files.search;
 
 import com.yoyuzh.auth.User;
-import com.yoyuzh.common.PageResponse;
-import com.yoyuzh.files.core.FileMetadataResponse;
+import com.yoyuzh.shared.kernel.PageResponse;
 import com.yoyuzh.files.core.StoredFileRepository;
 import com.yoyuzh.files.search.api.FileSearchApi;
 import com.yoyuzh.files.search.api.SearchFilesQuery;
 import com.yoyuzh.files.search.internal.application.RuntimeFileSearchApi;
+import com.yoyuzh.files.workspace.api.FileMetadataResponse;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 

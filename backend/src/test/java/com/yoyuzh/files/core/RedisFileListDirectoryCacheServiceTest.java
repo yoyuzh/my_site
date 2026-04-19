@@ -1,9 +1,10 @@
 package com.yoyuzh.files.core;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.yoyuzh.common.PageResponse;
-import com.yoyuzh.config.AppRedisProperties;
-import com.yoyuzh.config.RedisCacheNames;
+import com.yoyuzh.shared.kernel.PageResponse;
+import com.yoyuzh.infra.cache.AppRedisProperties;
+import com.yoyuzh.infra.cache.RedisCacheNames;
+import com.yoyuzh.files.workspace.api.FileMetadataResponse;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.cache.Cache;

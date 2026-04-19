@@ -1,10 +1,10 @@
 package com.yoyuzh.identity.access.internal.application;
 
-import com.yoyuzh.admin.AdminRuntimeSettingsService;
+import com.yoyuzh.ops.admin.internal.application.AdminRuntimeSettingsService;
 import com.yoyuzh.auth.UserRepository;
 import com.yoyuzh.auth.UserRole;
-import com.yoyuzh.common.BusinessException;
-import com.yoyuzh.common.ErrorCode;
+import com.yoyuzh.shared.kernel.BusinessException;
+import com.yoyuzh.shared.kernel.ErrorCode;
 import com.yoyuzh.identity.access.api.AdminAccessContinuityGuard;
 import com.yoyuzh.identity.access.internal.domain.ManagementRolePolicy;
 import lombok.RequiredArgsConstructor;

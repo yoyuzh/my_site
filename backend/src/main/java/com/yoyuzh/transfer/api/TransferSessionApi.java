@@ -1,7 +1,7 @@
 package com.yoyuzh.transfer.api;
 
 import com.yoyuzh.auth.User;
-import com.yoyuzh.files.core.FileMetadataResponse;
+import com.yoyuzh.files.workspace.api.FileMetadataResponse;
 import com.yoyuzh.transfer.LookupTransferSessionResponse;
 import com.yoyuzh.transfer.PollTransferSignalsResponse;
 import com.yoyuzh.transfer.TransferSessionResponse;

@@ -1,6 +1,6 @@
 package com.yoyuzh.auth;
 
-import com.yoyuzh.config.JwtProperties;
+import com.yoyuzh.boot.security.JwtProperties;
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.security.Keys;
 import org.junit.jupiter.api.Test;

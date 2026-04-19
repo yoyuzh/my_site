@@ -1,8 +1,7 @@
 package com.yoyuzh.platform.job.internal.application;
 
-import com.yoyuzh.files.tasks.BackgroundTask;
-import com.yoyuzh.files.tasks.BackgroundTaskFailureCategory;
-import com.yoyuzh.files.tasks.BackgroundTaskType;
+import com.yoyuzh.platform.job.api.BackgroundTaskFailureCategory;
+import com.yoyuzh.platform.job.api.BackgroundTaskType;
 import org.junit.jupiter.api.Test;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -42,10 +41,6 @@ class RuntimeAsyncJobRetryPolicyTest {
 
     @Test
     void shouldDetectRemainingAttempts() {
-        BackgroundTask task = new BackgroundTask();
-        task.setAttemptCount(1);
-        task.setMaxAttempts(2);
-
-        assertThat(retryPolicy.hasRemainingAttempts(task)).isTrue();
+        assertThat(retryPolicy.hasRemainingAttempts(1, 2)).isTrue();
     }
 }

@@ -1,9 +1,9 @@
 package com.yoyuzh.files.storage;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.yoyuzh.common.BusinessException;
-import com.yoyuzh.common.ErrorCode;
-import com.yoyuzh.config.FileStorageProperties;
+import com.yoyuzh.shared.kernel.BusinessException;
+import com.yoyuzh.shared.kernel.ErrorCode;
+import com.yoyuzh.platform.storage.internal.infra.FileStorageProperties;
 import org.springframework.util.StringUtils;
 import org.springframework.web.multipart.MultipartFile;
 import software.amazon.awssdk.core.ResponseBytes;

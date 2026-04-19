@@ -1,6 +1,6 @@
 package com.yoyuzh.files.policy;
 
-import com.yoyuzh.config.FileStorageProperties;
+import com.yoyuzh.platform.storage.internal.infra.FileStorageProperties;
 import com.yoyuzh.auth.User;
 import com.yoyuzh.files.upload.UploadSessionUploadMode;
 import com.yoyuzh.platform.storage.api.DefaultStoragePolicySnapshot;

@@ -1,7 +1,7 @@
 package com.yoyuzh.auth;
 
 import com.yoyuzh.auth.dto.AuthResponse;
-import com.yoyuzh.common.ApiResponse;
+import com.yoyuzh.shared.kernel.ApiResponse;
 import io.swagger.v3.oas.annotations.Operation;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Profile;

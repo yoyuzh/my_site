@@ -1,7 +1,7 @@
 package com.yoyuzh.transfer;
 
 import com.yoyuzh.auth.User;
-import com.yoyuzh.files.core.FileMetadataResponse;
+import com.yoyuzh.files.workspace.api.FileMetadataResponse;
 import com.yoyuzh.transfer.api.TransferImportApi;
 import com.yoyuzh.transfer.api.TransferImportCommand;
 import lombok.RequiredArgsConstructor;

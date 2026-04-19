@@ -1,7 +1,7 @@
 package com.yoyuzh.auth;
 
-import com.yoyuzh.common.BusinessException;
-import com.yoyuzh.common.ErrorCode;
+import com.yoyuzh.shared.kernel.BusinessException;
+import com.yoyuzh.shared.kernel.ErrorCode;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.security.core.userdetails.UserDetailsService;

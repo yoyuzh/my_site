@@ -1,11 +1,15 @@
 package com.yoyuzh.files.tasks;
 
+import com.yoyuzh.platform.job.api.BackgroundTaskFailureCategory;
+import com.yoyuzh.platform.job.api.BackgroundTaskStatus;
+import com.yoyuzh.platform.job.api.BackgroundTaskType;
+
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.yoyuzh.api.v2.ApiV2Exception;
 import com.yoyuzh.auth.User;
-import com.yoyuzh.common.lock.DistributedLockService;
 import com.yoyuzh.files.core.StoredFile;
 import com.yoyuzh.files.core.StoredFileRepository;
+import com.yoyuzh.infra.lock.DistributedLockGateway;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -37,7 +41,7 @@ class BackgroundTaskServiceTest {
     private StoredFileRepository storedFileRepository;
 
     @Mock
-    private DistributedLockService distributedLockService;
+    private DistributedLockGateway distributedLockGateway;
 
     private BackgroundTaskService backgroundTaskService;
     private BackgroundTaskExecutionService backgroundTaskExecutionService;
@@ -48,14 +52,14 @@ class BackgroundTaskServiceTest {
                 backgroundTaskRepository,
                 storedFileRepository,
                 new ObjectMapper(),
-                distributedLockService
+                distributedLockGateway
         );
         backgroundTaskExecutionService = new BackgroundTaskExecutionService(
                 backgroundTaskRepository,
                 new BackgroundTaskRetryPolicy(),
                 new BackgroundTaskStateManager(new ObjectMapper())
         );
-        lenient().when(distributedLockService.executeWithLock(any(), any(), any())).thenAnswer(invocation -> {
+        lenient().when(distributedLockGateway.executeWithLock(any(), any(), any())).thenAnswer(invocation -> {
             @SuppressWarnings("unchecked")
             Supplier<Object> action = (Supplier<Object>) invocation.getArgument(2);
             return action.get();
@@ -611,7 +615,7 @@ class BackgroundTaskServiceTest {
         assertThat(result.orElseThrow().getCorrelationId()).isEqualTo("media-meta:auto:file:19");
         assertThat(result.orElseThrow().getPublicStateJson()).contains("\"path\":\"/docs/photo.png\"");
         assertThat(result.orElseThrow().getPublicStateJson()).contains("\"phase\":\"queued\"");
-        verify(distributedLockService).executeWithLock(eq("background-task-correlation:media-meta:auto:file:19"), any(), any());
+        verify(distributedLockGateway).executeWithLock(eq("background-task-correlation:media-meta:auto:file:19"), any(), any());
     }
 
     @Test

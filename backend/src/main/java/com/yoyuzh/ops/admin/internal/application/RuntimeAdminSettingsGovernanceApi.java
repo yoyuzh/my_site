@@ -1,11 +1,9 @@
 package com.yoyuzh.ops.admin.internal.application;
 
-import com.yoyuzh.admin.AdminConfigSnapshotService;
-import com.yoyuzh.admin.AdminMutableSettingsService;
-import com.yoyuzh.admin.AdminOfflineTransferStorageLimitResponse;
-import com.yoyuzh.admin.AdminRegistrationInviteCodeResponse;
-import com.yoyuzh.admin.AdminSettingsResponse;
-import com.yoyuzh.admin.AdminSettingsUpdateRequest;
+import com.yoyuzh.ops.admin.api.AdminOfflineTransferStorageLimitResponse;
+import com.yoyuzh.ops.admin.api.AdminRegistrationInviteCodeResponse;
+import com.yoyuzh.ops.admin.api.AdminSettingsResponse;
+import com.yoyuzh.ops.admin.api.AdminSettingsUpdateRequest;
 import com.yoyuzh.ops.admin.api.AdminSettingsGovernanceApi;
 import org.springframework.stereotype.Service;
 

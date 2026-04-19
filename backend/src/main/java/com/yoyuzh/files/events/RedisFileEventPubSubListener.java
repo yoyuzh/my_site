@@ -2,7 +2,7 @@ package com.yoyuzh.files.events;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.yoyuzh.config.AppRedisProperties;
+import com.yoyuzh.infra.cache.AppRedisProperties;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.data.redis.connection.Message;

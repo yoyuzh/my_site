@@ -1,8 +1,10 @@
 package com.yoyuzh.architecture;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.classes;
 import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.noClasses;
 
+import com.tngtech.archunit.core.domain.JavaClass;
 import com.tngtech.archunit.core.domain.JavaClasses;
 import com.tngtech.archunit.core.importer.ClassFileImporter;
 import com.tngtech.archunit.lang.ArchRule;
@@ -16,21 +18,21 @@ class Task8OpsAdminArchitectureTest {
     void adminControllersMustDependOnOpsAdminApis() {
         ArchRule settingsRule = classes()
                 .that()
-                .haveFullyQualifiedName("com.yoyuzh.admin.AdminSettingsController")
+                .haveFullyQualifiedName("com.yoyuzh.ops.admin.internal.web.AdminSettingsController")
                 .should()
                 .dependOnClassesThat()
                 .haveFullyQualifiedName("com.yoyuzh.ops.admin.api.AdminSettingsGovernanceApi");
 
         ArchRule userRule = classes()
                 .that()
-                .haveFullyQualifiedName("com.yoyuzh.admin.AdminUserController")
+                .haveFullyQualifiedName("com.yoyuzh.ops.admin.internal.web.AdminUserController")
                 .should()
                 .dependOnClassesThat()
                 .haveFullyQualifiedName("com.yoyuzh.ops.admin.api.AdminUserGovernanceApi");
 
         ArchRule resourceRule = classes()
                 .that()
-                .haveFullyQualifiedName("com.yoyuzh.admin.AdminResourceController")
+                .haveFullyQualifiedName("com.yoyuzh.ops.admin.internal.web.AdminResourceController")
                 .should()
                 .dependOnClassesThat()
                 .haveFullyQualifiedName("com.yoyuzh.ops.admin.api.AdminResourceGovernanceApi");
@@ -44,30 +46,476 @@ class Task8OpsAdminArchitectureTest {
     void adminControllersMustStopDependingOnLegacyGovernanceServices() {
         ArchRule noLegacySettingsRule = noClasses()
                 .that()
-                .haveFullyQualifiedName("com.yoyuzh.admin.AdminSettingsController")
+                .haveFullyQualifiedName("com.yoyuzh.ops.admin.internal.web.AdminSettingsController")
                 .should()
                 .dependOnClassesThat()
-                .haveFullyQualifiedName("com.yoyuzh.admin.AdminMutableSettingsService");
+                .haveFullyQualifiedName("com.yoyuzh.ops.admin.internal.application.AdminMutableSettingsService");
 
         ArchRule noLegacyUserRule = noClasses()
                 .that()
-                .haveFullyQualifiedName("com.yoyuzh.admin.AdminUserController")
+                .haveFullyQualifiedName("com.yoyuzh.ops.admin.internal.web.AdminUserController")
                 .should()
                 .dependOnClassesThat()
-                .haveFullyQualifiedName("com.yoyuzh.admin.AdminUserGovernanceService");
+                .haveFullyQualifiedName("com.yoyuzh.ops.admin.internal.application.AdminUserGovernanceService");
 
         ArchRule noLegacyResourceRule = noClasses()
                 .that()
-                .haveFullyQualifiedName("com.yoyuzh.admin.AdminResourceController")
+                .haveFullyQualifiedName("com.yoyuzh.ops.admin.internal.web.AdminResourceController")
                 .should()
                 .dependOnClassesThat()
-                .haveFullyQualifiedName("com.yoyuzh.admin.AdminInspectionQueryService")
+                .haveFullyQualifiedName("com.yoyuzh.ops.admin.internal.application.AdminInspectionQueryService")
                 .orShould()
                 .dependOnClassesThat()
-                .haveFullyQualifiedName("com.yoyuzh.admin.AdminResourceGovernanceService");
+                .haveFullyQualifiedName("com.yoyuzh.ops.admin.internal.application.AdminResourceGovernanceService");
 
         noLegacySettingsRule.check(classes);
         noLegacyUserRule.check(classes);
         noLegacyResourceRule.check(classes);
+    }
+
+    @Test
+    void adminTaskQueryMustDependOnPlatformJobApiAndAvoidLegacyTaskInternals() {
+        ArchRule dependencyRule = classes()
+                .that()
+                .haveFullyQualifiedName("com.yoyuzh.ops.admin.internal.application.AdminTaskQueryService")
+                .should()
+                .dependOnClassesThat()
+                .haveFullyQualifiedName("com.yoyuzh.platform.job.api.BackgroundTaskAdminQueryApi");
+
+        ArchRule identityDependencyRule = classes()
+                .that()
+                .haveFullyQualifiedName("com.yoyuzh.ops.admin.internal.application.AdminTaskQueryService")
+                .should()
+                .dependOnClassesThat()
+                .haveFullyQualifiedName("com.yoyuzh.identity.access.api.IdentityUserDirectoryApi");
+
+        ArchRule noLegacyRule = noClasses()
+                .that()
+                .haveFullyQualifiedName("com.yoyuzh.ops.admin.internal.application.AdminTaskQueryService")
+                .should()
+                .dependOnClassesThat()
+                .resideInAnyPackage("com.yoyuzh.files.tasks..");
+
+        ArchRule noLegacyIdentityRepoRule = noClasses()
+                .that()
+                .haveFullyQualifiedName("com.yoyuzh.ops.admin.internal.application.AdminTaskQueryService")
+                .should()
+                .dependOnClassesThat()
+                .haveFullyQualifiedName("com.yoyuzh.auth.UserRepository");
+
+        dependencyRule.check(classes);
+        identityDependencyRule.check(classes);
+        noLegacyRule.check(classes);
+        noLegacyIdentityRepoRule.check(classes);
+    }
+
+    @Test
+    void adminAuditServiceMustUseIdentityUserDirectoryApi() {
+        ArchRule dependencyRule = classes()
+                .that()
+                .haveFullyQualifiedName("com.yoyuzh.ops.admin.internal.application.AdminAuditService")
+                .should()
+                .dependOnClassesThat()
+                .haveFullyQualifiedName("com.yoyuzh.identity.access.api.IdentityUserDirectoryApi");
+
+        ArchRule noLegacyRule = noClasses()
+                .that()
+                .haveFullyQualifiedName("com.yoyuzh.ops.admin.internal.application.AdminAuditService")
+                .should()
+                .dependOnClassesThat()
+                .haveFullyQualifiedName("com.yoyuzh.auth.UserRepository");
+
+        dependencyRule.check(classes);
+        noLegacyRule.check(classes);
+    }
+
+    @Test
+    void adminResourceGovernanceServiceMustUseWorkspaceAndSharingApis() {
+        ArchRule workspaceDependencyRule = classes()
+                .that()
+                .haveFullyQualifiedName("com.yoyuzh.ops.admin.internal.application.AdminResourceGovernanceService")
+                .should()
+                .dependOnClassesThat()
+                .haveFullyQualifiedName("com.yoyuzh.files.workspace.api.WorkspaceAdminGovernanceApi");
+
+        ArchRule sharingDependencyRule = classes()
+                .that()
+                .haveFullyQualifiedName("com.yoyuzh.ops.admin.internal.application.AdminResourceGovernanceService")
+                .should()
+                .dependOnClassesThat()
+                .haveFullyQualifiedName("com.yoyuzh.files.sharing.api.SharingApi");
+
+        ArchRule noLegacyRepositoryBypassRule = noClasses()
+                .that()
+                .haveFullyQualifiedName("com.yoyuzh.ops.admin.internal.application.AdminResourceGovernanceService")
+                .should()
+                .dependOnClassesThat()
+                .resideInAnyPackage("com.yoyuzh.files.core..", "com.yoyuzh.files.share..");
+
+        workspaceDependencyRule.check(classes);
+        sharingDependencyRule.check(classes);
+        noLegacyRepositoryBypassRule.check(classes);
+    }
+
+    @Test
+    void adminInspectionQueryServiceMustUseModuleApisForFileAndShareReadModels() {
+        ArchRule workspaceDependencyRule = classes()
+                .that()
+                .haveFullyQualifiedName("com.yoyuzh.ops.admin.internal.application.AdminInspectionQueryService")
+                .should()
+                .dependOnClassesThat()
+                .haveFullyQualifiedName("com.yoyuzh.files.workspace.api.WorkspaceAdminGovernanceApi");
+
+        ArchRule contentDependencyRule = classes()
+                .that()
+                .haveFullyQualifiedName("com.yoyuzh.ops.admin.internal.application.AdminInspectionQueryService")
+                .should()
+                .dependOnClassesThat()
+                .haveFullyQualifiedName("com.yoyuzh.files.content.api.ContentAdminInspectionApi");
+
+        ArchRule sharingDependencyRule = classes()
+                .that()
+                .haveFullyQualifiedName("com.yoyuzh.ops.admin.internal.application.AdminInspectionQueryService")
+                .should()
+                .dependOnClassesThat()
+                .haveFullyQualifiedName("com.yoyuzh.files.sharing.api.SharingApi");
+
+        ArchRule identityDependencyRule = classes()
+                .that()
+                .haveFullyQualifiedName("com.yoyuzh.ops.admin.internal.application.AdminInspectionQueryService")
+                .should()
+                .dependOnClassesThat()
+                .haveFullyQualifiedName("com.yoyuzh.identity.access.api.IdentityAdminSummaryApi");
+
+        ArchRule transferDependencyRule = classes()
+                .that()
+                .haveFullyQualifiedName("com.yoyuzh.ops.admin.internal.application.AdminInspectionQueryService")
+                .should()
+                .dependOnClassesThat()
+                .haveFullyQualifiedName("com.yoyuzh.transfer.api.TransferAdminMetricsApi");
+
+        ArchRule noLegacyStoredFileEntityRule = noClasses()
+                .that()
+                .haveFullyQualifiedName("com.yoyuzh.ops.admin.internal.application.AdminInspectionQueryService")
+                .should()
+                .dependOnClassesThat()
+                .haveFullyQualifiedName("com.yoyuzh.files.core.StoredFile");
+
+        ArchRule noLegacyFileEntityRepositoryRule = noClasses()
+                .that()
+                .haveFullyQualifiedName("com.yoyuzh.ops.admin.internal.application.AdminInspectionQueryService")
+                .should()
+                .dependOnClassesThat()
+                .haveFullyQualifiedName("com.yoyuzh.files.core.FileEntityRepository");
+
+        ArchRule noLegacyStoredFileRepositoryRule = noClasses()
+                .that()
+                .haveFullyQualifiedName("com.yoyuzh.ops.admin.internal.application.AdminInspectionQueryService")
+                .should()
+                .dependOnClassesThat()
+                .haveFullyQualifiedName("com.yoyuzh.files.core.StoredFileRepository");
+
+        ArchRule noLegacyFileBlobRepositoryRule = noClasses()
+                .that()
+                .haveFullyQualifiedName("com.yoyuzh.ops.admin.internal.application.AdminInspectionQueryService")
+                .should()
+                .dependOnClassesThat()
+                .haveFullyQualifiedName("com.yoyuzh.files.core.FileBlobRepository");
+
+        ArchRule noLegacyStoredFileEntityRepositoryRule = noClasses()
+                .that()
+                .haveFullyQualifiedName("com.yoyuzh.ops.admin.internal.application.AdminInspectionQueryService")
+                .should()
+                .dependOnClassesThat()
+                .haveFullyQualifiedName("com.yoyuzh.files.core.StoredFileEntityRepository");
+
+        ArchRule noLegacyShareRepositoryRule = noClasses()
+                .that()
+                .haveFullyQualifiedName("com.yoyuzh.ops.admin.internal.application.AdminInspectionQueryService")
+                .should()
+                .dependOnClassesThat()
+                .resideInAnyPackage("com.yoyuzh.files.share..");
+
+        ArchRule noLegacyUserRepositoryRule = noClasses()
+                .that()
+                .haveFullyQualifiedName("com.yoyuzh.ops.admin.internal.application.AdminInspectionQueryService")
+                .should()
+                .dependOnClassesThat()
+                .haveFullyQualifiedName("com.yoyuzh.auth.UserRepository");
+
+        ArchRule noLegacyRegistrationInviteServiceRule = noClasses()
+                .that()
+                .haveFullyQualifiedName("com.yoyuzh.ops.admin.internal.application.AdminInspectionQueryService")
+                .should()
+                .dependOnClassesThat()
+                .haveFullyQualifiedName("com.yoyuzh.auth.RegistrationInviteService");
+
+        ArchRule noLegacyOfflineTransferRepositoryRule = noClasses()
+                .that()
+                .haveFullyQualifiedName("com.yoyuzh.ops.admin.internal.application.AdminInspectionQueryService")
+                .should()
+                .dependOnClassesThat()
+                .haveFullyQualifiedName("com.yoyuzh.transfer.OfflineTransferSessionRepository");
+
+        workspaceDependencyRule.check(classes);
+        contentDependencyRule.check(classes);
+        sharingDependencyRule.check(classes);
+        identityDependencyRule.check(classes);
+        transferDependencyRule.check(classes);
+        noLegacyStoredFileEntityRule.check(classes);
+        noLegacyFileEntityRepositoryRule.check(classes);
+        noLegacyStoredFileRepositoryRule.check(classes);
+        noLegacyFileBlobRepositoryRule.check(classes);
+        noLegacyStoredFileEntityRepositoryRule.check(classes);
+        noLegacyShareRepositoryRule.check(classes);
+        noLegacyUserRepositoryRule.check(classes);
+        noLegacyRegistrationInviteServiceRule.check(classes);
+        noLegacyOfflineTransferRepositoryRule.check(classes);
+    }
+
+    @Test
+    void adminConfigSnapshotServiceMustUseModuleApisForSettingsAndFilesystemSummary() {
+        ArchRule identityDependencyRule = classes()
+                .that()
+                .haveFullyQualifiedName("com.yoyuzh.ops.admin.internal.application.AdminConfigSnapshotService")
+                .should()
+                .dependOnClassesThat()
+                .haveFullyQualifiedName("com.yoyuzh.identity.access.api.IdentityAdminSummaryApi");
+
+        ArchRule workspaceDependencyRule = classes()
+                .that()
+                .haveFullyQualifiedName("com.yoyuzh.ops.admin.internal.application.AdminConfigSnapshotService")
+                .should()
+                .dependOnClassesThat()
+                .haveFullyQualifiedName("com.yoyuzh.files.workspace.api.WorkspaceAdminGovernanceApi");
+
+        ArchRule contentDependencyRule = classes()
+                .that()
+                .haveFullyQualifiedName("com.yoyuzh.ops.admin.internal.application.AdminConfigSnapshotService")
+                .should()
+                .dependOnClassesThat()
+                .haveFullyQualifiedName("com.yoyuzh.files.content.api.ContentAdminInspectionApi");
+
+        ArchRule noLegacyUserRepositoryRule = noClasses()
+                .that()
+                .haveFullyQualifiedName("com.yoyuzh.ops.admin.internal.application.AdminConfigSnapshotService")
+                .should()
+                .dependOnClassesThat()
+                .haveFullyQualifiedName("com.yoyuzh.auth.UserRepository");
+
+        ArchRule noLegacyInviteServiceRule = noClasses()
+                .that()
+                .haveFullyQualifiedName("com.yoyuzh.ops.admin.internal.application.AdminConfigSnapshotService")
+                .should()
+                .dependOnClassesThat()
+                .haveFullyQualifiedName("com.yoyuzh.auth.RegistrationInviteService");
+
+        ArchRule noLegacyStoredFileRepositoryRule = noClasses()
+                .that()
+                .haveFullyQualifiedName("com.yoyuzh.ops.admin.internal.application.AdminConfigSnapshotService")
+                .should()
+                .dependOnClassesThat()
+                .haveFullyQualifiedName("com.yoyuzh.files.core.StoredFileRepository");
+
+        ArchRule noLegacyFileBlobRepositoryRule = noClasses()
+                .that()
+                .haveFullyQualifiedName("com.yoyuzh.ops.admin.internal.application.AdminConfigSnapshotService")
+                .should()
+                .dependOnClassesThat()
+                .haveFullyQualifiedName("com.yoyuzh.files.core.FileBlobRepository");
+
+        ArchRule noLegacyFileEntityRepositoryRule = noClasses()
+                .that()
+                .haveFullyQualifiedName("com.yoyuzh.ops.admin.internal.application.AdminConfigSnapshotService")
+                .should()
+                .dependOnClassesThat()
+                .haveFullyQualifiedName("com.yoyuzh.files.core.FileEntityRepository");
+
+        identityDependencyRule.check(classes);
+        workspaceDependencyRule.check(classes);
+        contentDependencyRule.check(classes);
+        noLegacyUserRepositoryRule.check(classes);
+        noLegacyInviteServiceRule.check(classes);
+        noLegacyStoredFileRepositoryRule.check(classes);
+        noLegacyFileBlobRepositoryRule.check(classes);
+        noLegacyFileEntityRepositoryRule.check(classes);
+    }
+
+    @Test
+    void adminMutableSettingsServiceMustUseIdentityAdminSummaryApi() {
+        ArchRule identityDependencyRule = classes()
+                .that()
+                .haveFullyQualifiedName("com.yoyuzh.ops.admin.internal.application.AdminMutableSettingsService")
+                .should()
+                .dependOnClassesThat()
+                .haveFullyQualifiedName("com.yoyuzh.identity.access.api.IdentityAdminSummaryApi");
+
+        ArchRule noLegacyInviteServiceRule = noClasses()
+                .that()
+                .haveFullyQualifiedName("com.yoyuzh.ops.admin.internal.application.AdminMutableSettingsService")
+                .should()
+                .dependOnClassesThat()
+                .haveFullyQualifiedName("com.yoyuzh.auth.RegistrationInviteService");
+
+        identityDependencyRule.check(classes);
+        noLegacyInviteServiceRule.check(classes);
+    }
+
+    @Test
+    void opsAdminApiMustOwnAdminGovernanceContracts() {
+        assertThat(classes.get("com.yoyuzh.ops.admin.api.AdminPasswordResetResponse")).isNotNull();
+        assertThat(classes.get("com.yoyuzh.ops.admin.api.AdminUserResponse")).isNotNull();
+        assertThat(classes.get("com.yoyuzh.ops.admin.api.AdminFileBlobResponse")).isNotNull();
+        assertThat(classes.get("com.yoyuzh.ops.admin.api.AdminFileResponse")).isNotNull();
+        assertThat(classes.get("com.yoyuzh.ops.admin.api.AdminShareResponse")).isNotNull();
+        assertThat(classes.get("com.yoyuzh.ops.admin.api.AdminOfflineTransferStorageLimitResponse")).isNotNull();
+        assertThat(classes.get("com.yoyuzh.ops.admin.api.AdminRegistrationInviteCodeResponse")).isNotNull();
+        assertThat(classes.get("com.yoyuzh.ops.admin.api.AdminSettingsResponse")).isNotNull();
+        assertThat(classes.get("com.yoyuzh.ops.admin.api.AdminSettingsUpdateRequest")).isNotNull();
+
+        assertThat(classes.stream().map(JavaClass::getFullName))
+                .doesNotContain(
+                        "com.yoyuzh.admin.AdminPasswordResetResponse",
+                        "com.yoyuzh.admin.AdminUserResponse",
+                        "com.yoyuzh.admin.AdminFileBlobResponse",
+                        "com.yoyuzh.admin.AdminFileResponse",
+                        "com.yoyuzh.admin.AdminShareResponse",
+                        "com.yoyuzh.admin.AdminOfflineTransferStorageLimitResponse",
+                        "com.yoyuzh.admin.AdminRegistrationInviteCodeResponse",
+                        "com.yoyuzh.admin.AdminSettingsResponse",
+                        "com.yoyuzh.admin.AdminSettingsUpdateRequest"
+                );
+    }
+
+    @Test
+    void opsAdminApiMustNotDependOnLegacyFilesCoreTypes() {
+        ArchRule rule = noClasses()
+                .that()
+                .resideInAnyPackage("com.yoyuzh.ops.admin.api..")
+                .should()
+                .dependOnClassesThat()
+                .resideInAnyPackage("com.yoyuzh.files.core..");
+
+        rule.check(classes);
+    }
+
+    @Test
+    void opsAdminApiMustNotDependOnLegacyAuthRoleTypes() {
+        ArchRule rule = noClasses()
+                .that()
+                .resideInAnyPackage("com.yoyuzh.ops.admin.api..")
+                .should()
+                .dependOnClassesThat()
+                .resideInAnyPackage("com.yoyuzh.auth..");
+
+        rule.check(classes);
+    }
+
+    @Test
+    void opsAdminWebMustOwnMovedAdminWebAdapters() {
+        assertThat(classes.get("com.yoyuzh.ops.admin.internal.web.AdminSettingsController")).isNotNull();
+        assertThat(classes.get("com.yoyuzh.ops.admin.internal.web.AdminUserController")).isNotNull();
+        assertThat(classes.get("com.yoyuzh.ops.admin.internal.web.AdminResourceController")).isNotNull();
+        assertThat(classes.get("com.yoyuzh.ops.admin.internal.web.AdminOverviewController")).isNotNull();
+        assertThat(classes.get("com.yoyuzh.ops.admin.internal.web.AdminAuditController")).isNotNull();
+        assertThat(classes.get("com.yoyuzh.ops.admin.internal.web.AdminTaskController")).isNotNull();
+        assertThat(classes.get("com.yoyuzh.ops.admin.internal.web.AdminStoragePolicyController")).isNotNull();
+        assertThat(classes.get("com.yoyuzh.ops.admin.internal.web.AdminAccessEvaluator")).isNotNull();
+        assertThat(classes.get("com.yoyuzh.ops.admin.internal.web.ApiRequestMetricsFilter")).isNotNull();
+
+        assertThat(classes.stream().map(JavaClass::getFullName))
+                .doesNotContain(
+                        "com.yoyuzh.admin.AdminSettingsController",
+                        "com.yoyuzh.admin.AdminUserController",
+                        "com.yoyuzh.admin.AdminResourceController",
+                        "com.yoyuzh.admin.AdminOverviewController",
+                        "com.yoyuzh.admin.AdminAuditController",
+                        "com.yoyuzh.admin.AdminTaskController",
+                        "com.yoyuzh.admin.AdminStoragePolicyController",
+                        "com.yoyuzh.admin.AdminAccessEvaluator",
+                        "com.yoyuzh.admin.ApiRequestMetricsFilter"
+                );
+    }
+
+    @Test
+    void opsAdminInfraMustOwnMovedAdminPersistenceTypes() {
+        assertThat(classes.get("com.yoyuzh.ops.admin.internal.infra.AdminAuditLogEntity")).isNotNull();
+        assertThat(classes.get("com.yoyuzh.ops.admin.internal.infra.AdminAuditLogRepository")).isNotNull();
+        assertThat(classes.get("com.yoyuzh.ops.admin.internal.infra.AdminDailyActiveUserEntity")).isNotNull();
+        assertThat(classes.get("com.yoyuzh.ops.admin.internal.infra.AdminDailyActiveUserRepository")).isNotNull();
+        assertThat(classes.get("com.yoyuzh.ops.admin.internal.infra.AdminMetricsState")).isNotNull();
+        assertThat(classes.get("com.yoyuzh.ops.admin.internal.infra.AdminMetricsStateRepository")).isNotNull();
+        assertThat(classes.get("com.yoyuzh.ops.admin.internal.infra.AdminRequestTimelinePointEntity")).isNotNull();
+        assertThat(classes.get("com.yoyuzh.ops.admin.internal.infra.AdminRequestTimelinePointRepository")).isNotNull();
+        assertThat(classes.get("com.yoyuzh.ops.admin.internal.infra.AdminRuntimeSettingsState")).isNotNull();
+        assertThat(classes.get("com.yoyuzh.ops.admin.internal.infra.AdminRuntimeSettingsStateRepository")).isNotNull();
+
+        assertThat(classes.stream().map(JavaClass::getFullName))
+                .doesNotContain(
+                        "com.yoyuzh.admin.AdminAuditLogEntity",
+                        "com.yoyuzh.admin.AdminAuditLogRepository",
+                        "com.yoyuzh.admin.AdminDailyActiveUserEntity",
+                        "com.yoyuzh.admin.AdminDailyActiveUserRepository",
+                        "com.yoyuzh.admin.AdminMetricsState",
+                        "com.yoyuzh.admin.AdminMetricsStateRepository",
+                        "com.yoyuzh.admin.AdminRequestTimelinePointEntity",
+                        "com.yoyuzh.admin.AdminRequestTimelinePointRepository",
+                        "com.yoyuzh.admin.AdminRuntimeSettingsState",
+                        "com.yoyuzh.admin.AdminRuntimeSettingsStateRepository"
+                );
+    }
+
+    @Test
+    void opsAdminApplicationMustOwnMovedAdminOrchestrationServices() {
+        assertThat(classes.get("com.yoyuzh.ops.admin.internal.application.AdminAuditQueryService")).isNotNull();
+        assertThat(classes.get("com.yoyuzh.ops.admin.internal.application.AdminAuditService")).isNotNull();
+        assertThat(classes.get("com.yoyuzh.ops.admin.internal.application.AdminConfigSnapshotService")).isNotNull();
+        assertThat(classes.get("com.yoyuzh.ops.admin.internal.application.AdminInspectionQueryService")).isNotNull();
+        assertThat(classes.get("com.yoyuzh.ops.admin.internal.application.AdminMetricsService")).isNotNull();
+        assertThat(classes.get("com.yoyuzh.ops.admin.internal.application.AdminMutableSettingsService")).isNotNull();
+        assertThat(classes.get("com.yoyuzh.ops.admin.internal.application.AdminResourceGovernanceService")).isNotNull();
+        assertThat(classes.get("com.yoyuzh.ops.admin.internal.application.AdminRuntimeSettingsService")).isNotNull();
+        assertThat(classes.get("com.yoyuzh.ops.admin.internal.application.AdminStorageGovernanceService")).isNotNull();
+        assertThat(classes.get("com.yoyuzh.ops.admin.internal.application.AdminStoragePolicyQueryService")).isNotNull();
+        assertThat(classes.get("com.yoyuzh.ops.admin.internal.application.AdminTaskQueryService")).isNotNull();
+        assertThat(classes.get("com.yoyuzh.ops.admin.internal.application.AdminUserGovernanceService")).isNotNull();
+        assertThat(classes.get("com.yoyuzh.ops.admin.internal.application.AdminAuditAction")).isNotNull();
+        assertThat(classes.get("com.yoyuzh.ops.admin.internal.application.AdminAuditLogResponse")).isNotNull();
+        assertThat(classes.get("com.yoyuzh.ops.admin.internal.application.AdminDailyActiveUserSummary")).isNotNull();
+        assertThat(classes.get("com.yoyuzh.ops.admin.internal.application.AdminFilesystemResponse")).isNotNull();
+        assertThat(classes.get("com.yoyuzh.ops.admin.internal.application.AdminMetricsSnapshot")).isNotNull();
+        assertThat(classes.get("com.yoyuzh.ops.admin.internal.application.AdminRequestTimelinePoint")).isNotNull();
+        assertThat(classes.get("com.yoyuzh.ops.admin.internal.application.AdminStoragePolicyResponse")).isNotNull();
+        assertThat(classes.get("com.yoyuzh.ops.admin.internal.application.AdminStoragePolicyResponses")).isNotNull();
+        assertThat(classes.get("com.yoyuzh.ops.admin.internal.application.AdminSummaryResponse")).isNotNull();
+        assertThat(classes.get("com.yoyuzh.ops.admin.internal.application.AdminTaskLeaseState")).isNotNull();
+        assertThat(classes.get("com.yoyuzh.ops.admin.internal.application.AdminTaskResponse")).isNotNull();
+
+        assertThat(classes.stream().map(JavaClass::getFullName))
+                .doesNotContain(
+                        "com.yoyuzh.admin.AdminAuditQueryService",
+                        "com.yoyuzh.admin.AdminAuditService",
+                        "com.yoyuzh.admin.AdminConfigSnapshotService",
+                        "com.yoyuzh.admin.AdminInspectionQueryService",
+                        "com.yoyuzh.admin.AdminMetricsService",
+                        "com.yoyuzh.admin.AdminMutableSettingsService",
+                        "com.yoyuzh.admin.AdminResourceGovernanceService",
+                        "com.yoyuzh.admin.AdminRuntimeSettingsService",
+                        "com.yoyuzh.admin.AdminStorageGovernanceService",
+                        "com.yoyuzh.admin.AdminStoragePolicyQueryService",
+                        "com.yoyuzh.admin.AdminTaskQueryService",
+                        "com.yoyuzh.admin.AdminUserGovernanceService",
+                        "com.yoyuzh.admin.AdminAuditAction",
+                        "com.yoyuzh.admin.AdminAuditLogResponse",
+                        "com.yoyuzh.admin.AdminDailyActiveUserSummary",
+                        "com.yoyuzh.admin.AdminFilesystemResponse",
+                        "com.yoyuzh.admin.AdminMetricsSnapshot",
+                        "com.yoyuzh.admin.AdminRequestTimelinePoint",
+                        "com.yoyuzh.admin.AdminStoragePolicyResponse",
+                        "com.yoyuzh.admin.AdminStoragePolicyResponses",
+                        "com.yoyuzh.admin.AdminSummaryResponse",
+                        "com.yoyuzh.admin.AdminTaskLeaseState",
+                        "com.yoyuzh.admin.AdminTaskResponse"
+                );
     }
 }

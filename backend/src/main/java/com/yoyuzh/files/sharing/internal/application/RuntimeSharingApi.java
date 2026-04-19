@@ -4,20 +4,27 @@ import com.yoyuzh.api.v2.ApiV2ErrorCode;
 import com.yoyuzh.api.v2.ApiV2Exception;
 import com.yoyuzh.api.v2.shares.ShareV2Response;
 import com.yoyuzh.auth.User;
-import com.yoyuzh.files.core.FileMetadataResponse;
 import com.yoyuzh.files.core.FileService;
 import com.yoyuzh.files.core.StoredFile;
 import com.yoyuzh.files.core.StoredFileRepository;
 import com.yoyuzh.files.share.FileShareLink;
 import com.yoyuzh.files.share.FileShareLinkRepository;
 import com.yoyuzh.files.sharing.api.CreateShareCommand;
+import com.yoyuzh.files.sharing.api.SharingAdminShareQuery;
 import com.yoyuzh.files.sharing.api.ImportShareCommand;
+import com.yoyuzh.files.sharing.api.SharingAdminShareSnapshot;
+import com.yoyuzh.files.sharing.api.SharingAdminShareView;
 import com.yoyuzh.files.sharing.api.SharingApi;
+import com.yoyuzh.files.workspace.api.FileMetadataResponse;
+import com.yoyuzh.shared.kernel.PageResponse;
 import jakarta.transaction.Transactional;
 import java.time.LocalDateTime;
+import java.util.Optional;
 import java.util.UUID;
 import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
@@ -130,6 +137,41 @@ public class RuntimeSharingApi implements SharingApi {
         fileShareLinkRepository.delete(shareLink);
     }
 
+    @Override
+    @Transactional
+    public Optional<SharingAdminShareSnapshot> deleteShareAsAdmin(Long id) {
+        Optional<FileShareLink> shareLink = fileShareLinkRepository.findById(id);
+        if (shareLink.isEmpty()) {
+            return Optional.empty();
+        }
+        FileShareLink target = shareLink.get();
+        SharingAdminShareSnapshot snapshot = new SharingAdminShareSnapshot(target.getId(), target.getToken());
+        fileShareLinkRepository.delete(target);
+        return Optional.of(snapshot);
+    }
+
+    @Override
+    @Transactional
+    public PageResponse<SharingAdminShareView> listSharesAsAdmin(SharingAdminShareQuery query) {
+        int page = query.page();
+        int size = query.size();
+        Page<FileShareLink> result = fileShareLinkRepository.searchAdminShares(
+                normalizeQuery(query.userQuery()),
+                normalizeQuery(query.fileName()),
+                normalizeQuery(query.token()),
+                query.passwordProtected(),
+                query.expired(),
+                LocalDateTime.now(),
+                PageRequest.of(page, size, Sort.by(Sort.Direction.DESC, "createdAt"))
+        );
+        return new PageResponse<>(
+                result.getContent().stream().map(this::toAdminShareView).toList(),
+                result.getTotalElements(),
+                page,
+                size
+        );
+    }
+
     private FileShareLink getShareLink(String token) {
         return fileShareLinkRepository.findByToken(token)
                 .orElseThrow(() -> new ApiV2Exception(ApiV2ErrorCode.FILE_NOT_FOUND, "share not found"));
@@ -199,6 +241,35 @@ public class RuntimeSharingApi implements SharingApi {
         );
     }
 
+    private SharingAdminShareView toAdminShareView(FileShareLink shareLink) {
+        StoredFile file = shareLink.getFile();
+        User owner = shareLink.getOwner();
+        boolean expired = shareLink.getExpiresAt() != null && shareLink.getExpiresAt().isBefore(LocalDateTime.now());
+        return new SharingAdminShareView(
+                shareLink.getId(),
+                shareLink.getToken(),
+                shareLink.getShareNameOrDefault(),
+                shareLink.hasPassword(),
+                expired,
+                shareLink.getCreatedAt(),
+                shareLink.getExpiresAt(),
+                shareLink.getMaxDownloads(),
+                shareLink.getDownloadCountOrZero(),
+                shareLink.getViewCountOrZero(),
+                shareLink.isAllowImportEnabled(),
+                shareLink.isAllowDownloadEnabled(),
+                owner == null ? null : owner.getId(),
+                owner == null ? null : owner.getUsername(),
+                owner == null ? null : owner.getEmail(),
+                file == null ? null : file.getId(),
+                file == null ? null : file.getFilename(),
+                file == null ? null : file.getPath(),
+                file == null ? null : file.getContentType(),
+                file == null ? null : file.getSize(),
+                file != null && file.isDirectory()
+        );
+    }
+
     private FileMetadataResponse toFileMetadataResponse(StoredFile file) {
         return new FileMetadataResponse(
                 file.getId(),
@@ -209,5 +280,12 @@ public class RuntimeSharingApi implements SharingApi {
                 file.isDirectory(),
                 file.getCreatedAt()
         );
+    }
+
+    private String normalizeQuery(String value) {
+        if (!StringUtils.hasText(value)) {
+            return "";
+        }
+        return value.trim();
     }
 }

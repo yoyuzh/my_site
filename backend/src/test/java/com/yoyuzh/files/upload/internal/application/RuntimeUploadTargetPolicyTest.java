@@ -5,7 +5,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.when;
 
 import com.yoyuzh.auth.User;
-import com.yoyuzh.common.BusinessException;
+import com.yoyuzh.shared.kernel.BusinessException;
 import com.yoyuzh.files.core.StoredFileRepository;
 import com.yoyuzh.files.policy.StoragePolicy;
 import com.yoyuzh.files.policy.StoragePolicyCapabilities;

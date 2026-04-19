@@ -1,14 +1,13 @@
 package com.yoyuzh.platform.job.api;
 
-import com.yoyuzh.files.tasks.BackgroundTask;
-import com.yoyuzh.files.tasks.BackgroundTaskFailureCategory;
-import com.yoyuzh.files.tasks.BackgroundTaskType;
+import com.yoyuzh.platform.job.api.BackgroundTaskFailureCategory;
+import com.yoyuzh.platform.job.api.BackgroundTaskType;
 
 public interface AsyncJobRetryPolicy {
 
     int resolveMaxAttempts(BackgroundTaskType type);
 
-    boolean hasRemainingAttempts(BackgroundTask task);
+    boolean hasRemainingAttempts(Integer attemptCount, Integer maxAttempts);
 
     long resolveRetryDelaySeconds(BackgroundTaskType type,
                                   BackgroundTaskFailureCategory failureCategory,

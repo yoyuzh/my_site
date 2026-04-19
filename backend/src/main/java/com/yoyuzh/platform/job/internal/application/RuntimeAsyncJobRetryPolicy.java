@@ -1,8 +1,7 @@
 package com.yoyuzh.platform.job.internal.application;
 
-import com.yoyuzh.files.tasks.BackgroundTask;
-import com.yoyuzh.files.tasks.BackgroundTaskFailureCategory;
-import com.yoyuzh.files.tasks.BackgroundTaskType;
+import com.yoyuzh.platform.job.api.BackgroundTaskFailureCategory;
+import com.yoyuzh.platform.job.api.BackgroundTaskType;
 import com.yoyuzh.platform.job.api.AsyncJobRetryPolicy;
 import org.springframework.stereotype.Service;
 
@@ -20,10 +19,10 @@ public class RuntimeAsyncJobRetryPolicy implements AsyncJobRetryPolicy {
     }
 
     @Override
-    public boolean hasRemainingAttempts(BackgroundTask task) {
-        return task.getAttemptCount() != null
-                && task.getMaxAttempts() != null
-                && task.getAttemptCount() < task.getMaxAttempts();
+    public boolean hasRemainingAttempts(Integer attemptCount, Integer maxAttempts) {
+        return attemptCount != null
+                && maxAttempts != null
+                && attemptCount < maxAttempts;
     }
 
     @Override

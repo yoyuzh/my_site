@@ -1,8 +1,8 @@
 package com.yoyuzh.auth;
 
-import com.yoyuzh.common.BusinessException;
-import com.yoyuzh.common.ErrorCode;
-import com.yoyuzh.config.RegistrationProperties;
+import com.yoyuzh.shared.kernel.BusinessException;
+import com.yoyuzh.shared.kernel.ErrorCode;
+import com.yoyuzh.identity.access.internal.infra.RegistrationProperties;
 import lombok.RequiredArgsConstructor;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;

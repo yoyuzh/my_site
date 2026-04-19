@@ -1,10 +1,10 @@
 package com.yoyuzh.transfer;
 
 import com.yoyuzh.auth.User;
-import com.yoyuzh.files.core.FileMetadataResponse;
 import com.yoyuzh.transfer.api.CreateTransferSessionCommand;
 import com.yoyuzh.transfer.api.TransferImportCommand;
 import com.yoyuzh.transfer.api.TransferSessionApi;
+import com.yoyuzh.files.workspace.api.FileMetadataResponse;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.ResponseEntity;

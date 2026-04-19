@@ -1,8 +1,8 @@
 package com.yoyuzh.files.core;
 
-import com.yoyuzh.admin.AdminMetricsService;
+import com.yoyuzh.ops.admin.internal.application.AdminMetricsService;
 import com.yoyuzh.auth.User;
-import com.yoyuzh.config.FileStorageProperties;
+import com.yoyuzh.platform.storage.internal.infra.FileStorageProperties;
 import com.yoyuzh.files.share.FileShareLinkRepository;
 import com.yoyuzh.files.storage.FileContentStorage;
 import org.junit.jupiter.api.BeforeEach;

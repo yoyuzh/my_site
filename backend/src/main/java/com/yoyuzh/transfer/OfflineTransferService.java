@@ -1,9 +1,9 @@
 package com.yoyuzh.transfer;
 
 import com.yoyuzh.auth.User;
-import com.yoyuzh.common.BusinessException;
-import com.yoyuzh.common.ErrorCode;
-import com.yoyuzh.config.FileStorageProperties;
+import com.yoyuzh.shared.kernel.BusinessException;
+import com.yoyuzh.shared.kernel.ErrorCode;
+import com.yoyuzh.platform.storage.internal.infra.FileStorageProperties;
 import com.yoyuzh.files.storage.FileContentStorage;
 import jakarta.transaction.Transactional;
 import org.springframework.http.HttpHeaders;

@@ -1,8 +1,12 @@
 package com.yoyuzh.files.tasks;
 
+import com.yoyuzh.platform.job.api.BackgroundTaskFailureCategory;
+import com.yoyuzh.platform.job.api.BackgroundTaskStatus;
+import com.yoyuzh.platform.job.api.BackgroundTaskType;
+
 import com.yoyuzh.auth.User;
 import com.yoyuzh.auth.UserRepository;
-import com.yoyuzh.common.BusinessException;
+import com.yoyuzh.shared.kernel.BusinessException;
 import com.yoyuzh.files.core.FileService;
 import com.yoyuzh.files.core.StoredFile;
 import com.yoyuzh.files.core.StoredFileRepository;

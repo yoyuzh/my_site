@@ -1,6 +1,8 @@
 package com.yoyuzh.files.tasks;
 
-import com.yoyuzh.common.broker.LightweightBrokerService;
+import com.yoyuzh.infra.broker.LightweightBrokerGateway;
+import com.yoyuzh.platform.job.api.BackgroundTaskLifecycleApi;
+import com.yoyuzh.platform.job.api.BackgroundTaskView;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -20,34 +22,36 @@ import static org.mockito.Mockito.when;
 class MediaMetadataTaskBrokerConsumerTest {
 
     @Mock
-    private LightweightBrokerService lightweightBrokerService;
+    private LightweightBrokerGateway lightweightBrokerGateway;
 
     @Mock
-    private BackgroundTaskCommandService backgroundTaskCommandService;
+    private BackgroundTaskLifecycleApi backgroundTaskLifecycleApi;
 
     private MediaMetadataTaskBrokerConsumer consumer;
 
     @BeforeEach
     void setUp() {
-        consumer = new MediaMetadataTaskBrokerConsumer(lightweightBrokerService, backgroundTaskCommandService);
+        consumer = new MediaMetadataTaskBrokerConsumer(lightweightBrokerGateway, backgroundTaskLifecycleApi);
     }
 
     @Test
     void shouldDrainQueuedBrokerMessageIntoAutoMediaMetadataTask() {
-        when(lightweightBrokerService.poll(MediaMetadataTaskBrokerPublisher.TOPIC))
+        when(lightweightBrokerGateway.poll(MediaMetadataTaskBrokerPublisher.TOPIC))
                 .thenReturn(Optional.of(Map.of(
                         "userId", 7L,
                         "fileId", 11L,
                         "correlationId", "media-meta:auto:file:11"
                 )))
                 .thenReturn(Optional.empty());
-        when(backgroundTaskCommandService.createQueuedAutoMediaMetadataTask(7L, 11L, "media-meta:auto:file:11"))
-                .thenReturn(Optional.of(new BackgroundTask()));
+        when(backgroundTaskLifecycleApi.createQueuedAutoMediaMetadataTask(7L, 11L, "media-meta:auto:file:11"))
+                .thenReturn(Optional.of(new BackgroundTaskView(
+                        99L, null, null, 7L, "{}", "media-meta:auto:file:11", null, null, null, null
+                )));
 
         int processed = consumer.drainQueuedMessages(5);
 
         assertThat(processed).isEqualTo(1);
-        verify(backgroundTaskCommandService).createQueuedAutoMediaMetadataTask(7L, 11L, "media-meta:auto:file:11");
+        verify(backgroundTaskLifecycleApi).createQueuedAutoMediaMetadataTask(7L, 11L, "media-meta:auto:file:11");
     }
 
     @Test
@@ -57,21 +61,21 @@ class MediaMetadataTaskBrokerConsumerTest {
                 "fileId", 11L,
                 "correlationId", "media-meta:auto:file:11"
         );
-        when(lightweightBrokerService.poll(MediaMetadataTaskBrokerPublisher.TOPIC))
+        when(lightweightBrokerGateway.poll(MediaMetadataTaskBrokerPublisher.TOPIC))
                 .thenReturn(Optional.of(payload));
         doThrow(new IllegalStateException("db unavailable"))
-                .when(backgroundTaskCommandService)
+                .when(backgroundTaskLifecycleApi)
                 .createQueuedAutoMediaMetadataTask(7L, 11L, "media-meta:auto:file:11");
 
         int processed = consumer.drainQueuedMessages(1);
 
         assertThat(processed).isEqualTo(0);
-        verify(lightweightBrokerService).requeue(MediaMetadataTaskBrokerPublisher.TOPIC, payload);
+        verify(lightweightBrokerGateway).requeue(MediaMetadataTaskBrokerPublisher.TOPIC, payload);
     }
 
     @Test
     void shouldDropMalformedPayloadWithoutRequeue() {
-        when(lightweightBrokerService.poll(MediaMetadataTaskBrokerPublisher.TOPIC))
+        when(lightweightBrokerGateway.poll(MediaMetadataTaskBrokerPublisher.TOPIC))
                 .thenReturn(Optional.of(Map.of(
                         "userId", "bad-user-id",
                         "fileId", 11L
@@ -81,7 +85,7 @@ class MediaMetadataTaskBrokerConsumerTest {
         int processed = consumer.drainQueuedMessages(2);
 
         assertThat(processed).isEqualTo(0);
-        verify(backgroundTaskCommandService, never()).createQueuedAutoMediaMetadataTask(org.mockito.ArgumentMatchers.anyLong(), org.mockito.ArgumentMatchers.anyLong(), org.mockito.ArgumentMatchers.any());
-        verify(lightweightBrokerService, never()).requeue(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any());
+        verify(backgroundTaskLifecycleApi, never()).createQueuedAutoMediaMetadataTask(org.mockito.ArgumentMatchers.anyLong(), org.mockito.ArgumentMatchers.anyLong(), org.mockito.ArgumentMatchers.any());
+        verify(lightweightBrokerGateway, never()).requeue(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any());
     }
 }

@@ -1,15 +1,12 @@
 package com.yoyuzh.ops.admin.api;
 
-import com.yoyuzh.admin.AdminPasswordResetResponse;
-import com.yoyuzh.admin.AdminUserResponse;
-import com.yoyuzh.auth.UserRole;
-import com.yoyuzh.common.PageResponse;
+import com.yoyuzh.shared.kernel.PageResponse;
 
 public interface AdminUserGovernanceApi {
 
     PageResponse<AdminUserResponse> listUsers(int page, int size, String query);
 
-    AdminUserResponse updateUserRole(Long userId, UserRole role);
+    AdminUserResponse updateUserRole(Long userId, AdminUserRole role);
 
     AdminUserResponse updateUserBanned(Long userId, boolean banned);
 

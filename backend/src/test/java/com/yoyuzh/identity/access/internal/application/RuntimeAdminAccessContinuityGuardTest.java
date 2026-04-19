@@ -1,9 +1,9 @@
 package com.yoyuzh.identity.access.internal.application;
 
-import com.yoyuzh.admin.AdminRuntimeSettingsService;
+import com.yoyuzh.ops.admin.internal.application.AdminRuntimeSettingsService;
 import com.yoyuzh.auth.UserRole;
 import com.yoyuzh.auth.UserRepository;
-import com.yoyuzh.common.BusinessException;
+import com.yoyuzh.shared.kernel.BusinessException;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;

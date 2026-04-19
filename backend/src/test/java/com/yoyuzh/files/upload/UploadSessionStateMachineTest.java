@@ -1,6 +1,6 @@
 package com.yoyuzh.files.upload;
 
-import com.yoyuzh.common.BusinessException;
+import com.yoyuzh.shared.kernel.BusinessException;
 import org.junit.jupiter.api.Test;
 
 import java.time.LocalDateTime;

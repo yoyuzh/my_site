@@ -1,7 +1,7 @@
 package com.yoyuzh.files.core;
 
 import com.yoyuzh.auth.User;
-import com.yoyuzh.common.BusinessException;
+import com.yoyuzh.shared.kernel.BusinessException;
 import com.yoyuzh.files.policy.StoragePolicy;
 import com.yoyuzh.files.policy.StoragePolicyCapabilities;
 import com.yoyuzh.files.policy.StoragePolicyService;

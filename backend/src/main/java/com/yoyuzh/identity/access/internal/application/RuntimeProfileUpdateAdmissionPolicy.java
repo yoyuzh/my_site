@@ -1,8 +1,8 @@
 package com.yoyuzh.identity.access.internal.application;
 
 import com.yoyuzh.auth.UserRepository;
-import com.yoyuzh.common.BusinessException;
-import com.yoyuzh.common.ErrorCode;
+import com.yoyuzh.shared.kernel.BusinessException;
+import com.yoyuzh.shared.kernel.ErrorCode;
 import com.yoyuzh.identity.access.api.ProfileUpdateAdmissionPolicy;
 import com.yoyuzh.identity.access.api.ProfileUpdateAttempt;
 import lombok.RequiredArgsConstructor;

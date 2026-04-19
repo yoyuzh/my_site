@@ -1,9 +1,9 @@
 package com.yoyuzh.platform.job.internal.application;
 
 import com.yoyuzh.files.tasks.BackgroundTask;
+import com.yoyuzh.files.tasks.BackgroundTaskExecutionGateway;
 import com.yoyuzh.files.tasks.BackgroundTaskExecutionService;
-import com.yoyuzh.files.tasks.BackgroundTaskFailureCategory;
-import com.yoyuzh.platform.job.api.BackgroundTaskExecutionGateway;
+import com.yoyuzh.platform.job.api.BackgroundTaskFailureCategory;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 

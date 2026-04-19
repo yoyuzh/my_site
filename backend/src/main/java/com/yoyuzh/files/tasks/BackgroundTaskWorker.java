@@ -1,7 +1,10 @@
 package com.yoyuzh.files.tasks;
 
-import com.yoyuzh.common.BusinessException;
-import com.yoyuzh.platform.job.api.BackgroundTaskExecutionGateway;
+import com.yoyuzh.platform.job.api.BackgroundTaskFailureCategory;
+import com.yoyuzh.platform.job.api.BackgroundTaskStatus;
+import com.yoyuzh.platform.job.api.BackgroundTaskType;
+
+import com.yoyuzh.shared.kernel.BusinessException;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 

@@ -2,8 +2,8 @@ package com.yoyuzh.transfer;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.yoyuzh.common.lock.DistributedLockService;
-import com.yoyuzh.config.AppRedisProperties;
+import com.yoyuzh.infra.cache.AppRedisProperties;
+import com.yoyuzh.infra.lock.DistributedLockGateway;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.data.redis.core.StringRedisTemplate;
@@ -30,29 +30,29 @@ public class TransferSessionStore {
     private final StringRedisTemplate stringRedisTemplate;
     private final ObjectMapper objectMapper;
     private final AppRedisProperties redisProperties;
-    private final DistributedLockService distributedLockService;
+    private final DistributedLockGateway distributedLockGateway;
 
     @Autowired
     public TransferSessionStore(ObjectProvider<StringRedisTemplate> stringRedisTemplateProvider,
                                 ObjectMapper objectMapper,
                                 AppRedisProperties redisProperties,
-                                ObjectProvider<DistributedLockService> distributedLockServiceProvider) {
+                                ObjectProvider<DistributedLockGateway> distributedLockGatewayProvider) {
         this(
                 stringRedisTemplateProvider.getIfAvailable(),
                 objectMapper,
                 redisProperties,
-                distributedLockServiceProvider.getIfAvailable(DistributedLockService::noOp)
+                distributedLockGatewayProvider.getIfAvailable(DistributedLockGateway::noOp)
         );
     }
 
     TransferSessionStore(StringRedisTemplate stringRedisTemplate,
                          ObjectMapper objectMapper,
                          AppRedisProperties redisProperties,
-                         DistributedLockService distributedLockService) {
+                         DistributedLockGateway distributedLockGateway) {
         this.stringRedisTemplate = stringRedisTemplate;
         this.objectMapper = objectMapper;
         this.redisProperties = redisProperties;
-        this.distributedLockService = distributedLockService == null ? DistributedLockService.noOp() : distributedLockService;
+        this.distributedLockGateway = distributedLockGateway == null ? DistributedLockGateway.noOp() : distributedLockGateway;
     }
 
     public void save(TransferSession session) {
@@ -186,7 +186,7 @@ public class TransferSessionStore {
         if (!StringUtils.hasText(sessionId)) {
             return action.get();
         }
-        return distributedLockService.executeWithLock("transfer-session:" + sessionId.trim(), SESSION_LOCK_TTL, action);
+        return distributedLockGateway.executeWithLock("transfer-session:" + sessionId.trim(), SESSION_LOCK_TTL, action);
     }
 
     public <T> T withSession(String sessionId, Function<TransferSession, T> action) {

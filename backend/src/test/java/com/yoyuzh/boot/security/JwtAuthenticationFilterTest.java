@@ -1,0 +1,224 @@
+package com.yoyuzh.boot.security;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
+
+import com.yoyuzh.ops.admin.internal.application.AdminMetricsService;
+import com.yoyuzh.auth.AuthClientType;
+import com.yoyuzh.auth.AuthTokenInvalidationService;
+import com.yoyuzh.auth.CustomUserDetailsService;
+import com.yoyuzh.auth.JwtTokenProvider;
+import com.yoyuzh.auth.User;
+import com.yoyuzh.shared.kernel.BusinessException;
+import com.yoyuzh.shared.kernel.ErrorCode;
+import jakarta.servlet.FilterChain;
+import java.time.Instant;
+import java.time.LocalDateTime;
+import java.util.List;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.mock.web.MockHttpServletRequest;
+import org.springframework.mock.web.MockHttpServletResponse;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
+import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.security.core.userdetails.UserDetails;
+
+@ExtendWith(MockitoExtension.class)
+class JwtAuthenticationFilterTest {
+
+    @Mock
+    private JwtTokenProvider jwtTokenProvider;
+    @Mock
+    private AuthTokenInvalidationService authTokenInvalidationService;
+    @Mock
+    private CustomUserDetailsService userDetailsService;
+    @Mock
+    private AdminMetricsService adminMetricsService;
+    @Mock
+    private FilterChain filterChain;
+
+    private JwtAuthenticationFilter filter;
+
+    @BeforeEach
+    void setUp() {
+        filter = new JwtAuthenticationFilter(
+                jwtTokenProvider,
+                authTokenInvalidationService,
+                userDetailsService,
+                adminMetricsService
+        );
+        SecurityContextHolder.clearContext();
+    }
+
+    @Test
+    void shouldPassThroughRequestWithNoAuthorizationHeader() throws Exception {
+        MockHttpServletRequest request = new MockHttpServletRequest();
+        MockHttpServletResponse response = new MockHttpServletResponse();
+
+        filter.doFilterInternal(request, response, filterChain);
+
+        verify(filterChain).doFilter(request, response);
+        verify(jwtTokenProvider, never()).validateToken(any());
+        assertThat(SecurityContextHolder.getContext().getAuthentication()).isNull();
+    }
+
+    @Test
+    void shouldPassThroughRequestWithNonBearerAuthorizationHeader() throws Exception {
+        MockHttpServletRequest request = new MockHttpServletRequest();
+        request.addHeader("Authorization", "Basic dXNlcjpwYXNz");
+        MockHttpServletResponse response = new MockHttpServletResponse();
+
+        filter.doFilterInternal(request, response, filterChain);
+
+        verify(filterChain).doFilter(request, response);
+        verify(jwtTokenProvider, never()).validateToken(any());
+    }
+
+    @Test
+    void shouldPassThroughRequestWithInvalidToken() throws Exception {
+        MockHttpServletRequest request = new MockHttpServletRequest();
+        request.addHeader("Authorization", "Bearer invalid-token");
+        MockHttpServletResponse response = new MockHttpServletResponse();
+        when(jwtTokenProvider.validateToken("invalid-token")).thenReturn(false);
+
+        filter.doFilterInternal(request, response, filterChain);
+
+        verify(filterChain).doFilter(request, response);
+        assertThat(SecurityContextHolder.getContext().getAuthentication()).isNull();
+    }
+
+    @Test
+    void shouldPassThroughWhenAccessTokenWasRevokedInRedis() throws Exception {
+        MockHttpServletRequest request = new MockHttpServletRequest();
+        request.addHeader("Authorization", "Bearer valid-token");
+        MockHttpServletResponse response = new MockHttpServletResponse();
+        Instant issuedAt = Instant.now().minusSeconds(30);
+        when(jwtTokenProvider.validateToken("valid-token")).thenReturn(true);
+        when(jwtTokenProvider.getUserId("valid-token")).thenReturn(1L);
+        when(jwtTokenProvider.getClientType("valid-token")).thenReturn(AuthClientType.DESKTOP);
+        when(jwtTokenProvider.getIssuedAt("valid-token")).thenReturn(issuedAt);
+        when(authTokenInvalidationService.isAccessTokenRevoked(1L, AuthClientType.DESKTOP, issuedAt)).thenReturn(true);
+
+        filter.doFilterInternal(request, response, filterChain);
+
+        verify(filterChain).doFilter(request, response);
+        verify(userDetailsService, never()).loadDomainUser(any());
+        assertThat(SecurityContextHolder.getContext().getAuthentication()).isNull();
+    }
+
+    @Test
+    void shouldPassThroughWhenUserNotFound() throws Exception {
+        MockHttpServletRequest request = new MockHttpServletRequest();
+        request.addHeader("Authorization", "Bearer valid-token");
+        MockHttpServletResponse response = new MockHttpServletResponse();
+        when(jwtTokenProvider.validateToken("valid-token")).thenReturn(true);
+        when(jwtTokenProvider.getUserId("valid-token")).thenReturn(1L);
+        when(jwtTokenProvider.getClientType("valid-token")).thenReturn(AuthClientType.DESKTOP);
+        when(jwtTokenProvider.getIssuedAt("valid-token")).thenReturn(Instant.now());
+        when(jwtTokenProvider.getUsername("valid-token")).thenReturn("alice");
+        when(userDetailsService.loadDomainUser("alice"))
+                .thenThrow(new BusinessException(ErrorCode.NOT_LOGGED_IN, "user not found"));
+
+        filter.doFilterInternal(request, response, filterChain);
+
+        verify(filterChain).doFilter(request, response);
+        assertThat(SecurityContextHolder.getContext().getAuthentication()).isNull();
+    }
+
+    @Test
+    void shouldPassThroughWhenSessionIdDoesNotMatch() throws Exception {
+        MockHttpServletRequest request = new MockHttpServletRequest();
+        request.addHeader("Authorization", "Bearer valid-token");
+        MockHttpServletResponse response = new MockHttpServletResponse();
+        User domainUser = createDomainUser("alice", "session-1", null);
+        when(jwtTokenProvider.validateToken("valid-token")).thenReturn(true);
+        when(jwtTokenProvider.getUserId("valid-token")).thenReturn(1L);
+        when(jwtTokenProvider.getClientType("valid-token")).thenReturn(AuthClientType.DESKTOP);
+        when(jwtTokenProvider.getIssuedAt("valid-token")).thenReturn(Instant.now());
+        when(jwtTokenProvider.getUsername("valid-token")).thenReturn("alice");
+        when(userDetailsService.loadDomainUser("alice")).thenReturn(domainUser);
+        when(jwtTokenProvider.hasMatchingSession("valid-token", domainUser)).thenReturn(false);
+
+        filter.doFilterInternal(request, response, filterChain);
+
+        verify(filterChain).doFilter(request, response);
+        assertThat(SecurityContextHolder.getContext().getAuthentication()).isNull();
+    }
+
+    @Test
+    void shouldPassThroughWhenUserIsDisabled() throws Exception {
+        MockHttpServletRequest request = new MockHttpServletRequest();
+        request.addHeader("Authorization", "Bearer valid-token");
+        MockHttpServletResponse response = new MockHttpServletResponse();
+        User domainUser = createDomainUser("alice", "session-1", null);
+        UserDetails disabledUserDetails = org.springframework.security.core.userdetails.User.builder()
+                .username("alice")
+                .password("hashed")
+                .disabled(true)
+                .authorities(List.of(new SimpleGrantedAuthority("ROLE_USER")))
+                .build();
+        when(jwtTokenProvider.validateToken("valid-token")).thenReturn(true);
+        when(jwtTokenProvider.getUserId("valid-token")).thenReturn(1L);
+        when(jwtTokenProvider.getClientType("valid-token")).thenReturn(AuthClientType.DESKTOP);
+        when(jwtTokenProvider.getIssuedAt("valid-token")).thenReturn(Instant.now());
+        when(jwtTokenProvider.getUsername("valid-token")).thenReturn("alice");
+        when(userDetailsService.loadDomainUser("alice")).thenReturn(domainUser);
+        when(jwtTokenProvider.hasMatchingSession("valid-token", domainUser)).thenReturn(true);
+        when(userDetailsService.loadUserByUsername("alice")).thenReturn(disabledUserDetails);
+
+        filter.doFilterInternal(request, response, filterChain);
+
+        verify(filterChain).doFilter(request, response);
+        assertThat(SecurityContextHolder.getContext().getAuthentication()).isNull();
+    }
+
+    @Test
+    void shouldSetAuthenticationWhenTokenIsValidAndUserIsActive() throws Exception {
+        MockHttpServletRequest request = new MockHttpServletRequest();
+        request.addHeader("Authorization", "Bearer valid-token");
+        MockHttpServletResponse response = new MockHttpServletResponse();
+        User domainUser = createDomainUser("alice", "session-1", null);
+        UserDetails activeUserDetails = org.springframework.security.core.userdetails.User.builder()
+                .username("alice")
+                .password("hashed")
+                .authorities(List.of(new SimpleGrantedAuthority("ROLE_USER")))
+                .build();
+        when(jwtTokenProvider.validateToken("valid-token")).thenReturn(true);
+        when(jwtTokenProvider.getUserId("valid-token")).thenReturn(1L);
+        when(jwtTokenProvider.getClientType("valid-token")).thenReturn(AuthClientType.DESKTOP);
+        when(jwtTokenProvider.getIssuedAt("valid-token")).thenReturn(Instant.now());
+        when(jwtTokenProvider.getUsername("valid-token")).thenReturn("alice");
+        when(userDetailsService.loadDomainUser("alice")).thenReturn(domainUser);
+        when(jwtTokenProvider.hasMatchingSession("valid-token", domainUser)).thenReturn(true);
+        when(userDetailsService.loadUserByUsername("alice")).thenReturn(activeUserDetails);
+
+        filter.doFilterInternal(request, response, filterChain);
+
+        verify(filterChain).doFilter(request, response);
+        assertThat(SecurityContextHolder.getContext().getAuthentication()).isNotNull();
+        assertThat(SecurityContextHolder.getContext().getAuthentication().getName()).isEqualTo("alice");
+        verify(adminMetricsService).recordUserOnline(1L, "alice");
+    }
+
+    private User createDomainUser(String username, String desktopSessionId, String mobileSessionId) {
+        User user = new User();
+        user.setId(1L);
+        user.setUsername(username);
+        user.setEmail(username + "@example.com");
+        user.setPasswordHash("hashed");
+        user.setActiveSessionId(desktopSessionId);
+        user.setDesktopActiveSessionId(desktopSessionId);
+        user.setMobileActiveSessionId(mobileSessionId);
+        user.setCreatedAt(LocalDateTime.now());
+        return user;
+    }
+
+    private static <T> T any() {
+        return org.mockito.ArgumentMatchers.any();
+    }
+}

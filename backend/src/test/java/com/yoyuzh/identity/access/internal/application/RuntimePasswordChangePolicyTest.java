@@ -2,7 +2,7 @@ package com.yoyuzh.identity.access.internal.application;
 
 import com.yoyuzh.auth.AuthClientType;
 import com.yoyuzh.auth.User;
-import com.yoyuzh.common.BusinessException;
+import com.yoyuzh.shared.kernel.BusinessException;
 import com.yoyuzh.identity.access.api.IdentityCredentialIssuer;
 import com.yoyuzh.identity.access.api.IdentityCredentialRevocationPolicy;
 import com.yoyuzh.identity.access.api.IssuedAuthCredentials;

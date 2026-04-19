@@ -1,12 +1,13 @@
 package com.yoyuzh.files.core;
 
-import com.yoyuzh.admin.AdminMetricsService;
+import com.yoyuzh.ops.admin.internal.application.AdminMetricsService;
 import com.yoyuzh.auth.User;
-import com.yoyuzh.common.BusinessException;
-import com.yoyuzh.config.FileStorageProperties;
+import com.yoyuzh.shared.kernel.BusinessException;
+import com.yoyuzh.platform.storage.internal.infra.FileStorageProperties;
 import com.yoyuzh.files.share.FileShareLinkRepository;
 import com.yoyuzh.files.upload.InitiateUploadRequest;
 import com.yoyuzh.files.storage.FileContentStorage;
+import com.yoyuzh.files.workspace.api.FileMetadataResponse;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -82,7 +83,8 @@ class FileServiceEdgeCaseTest {
         // backslash should be treated as path separator and normalized
         FileMetadataResponse response = fileService.mkdir(user, "\\docs");
 
-        assertThat(response.path()).isEqualTo("/docs");
+        assertThat(response.path()).isEqualTo("/");
+        assertThat(response.filename()).isEqualTo("docs");
     }
 
     @Test
@@ -97,7 +99,8 @@ class FileServiceEdgeCaseTest {
 
         FileMetadataResponse response = fileService.mkdir(user, "/docs/");
 
-        assertThat(response.path()).isEqualTo("/docs");
+        assertThat(response.path()).isEqualTo("/");
+        assertThat(response.filename()).isEqualTo("docs");
     }
 
     @Test
@@ -112,7 +115,8 @@ class FileServiceEdgeCaseTest {
 
         FileMetadataResponse response = fileService.mkdir(user, "//docs");
 
-        assertThat(response.path()).isEqualTo("/docs");
+        assertThat(response.path()).isEqualTo("/");
+        assertThat(response.filename()).isEqualTo("docs");
     }
 
     // --- mkdir edge cases ---

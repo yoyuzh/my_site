@@ -1,8 +1,8 @@
 package com.yoyuzh.files.workspace.internal.application;
 
 import com.yoyuzh.auth.User;
-import com.yoyuzh.common.BusinessException;
-import com.yoyuzh.common.ErrorCode;
+import com.yoyuzh.shared.kernel.BusinessException;
+import com.yoyuzh.shared.kernel.ErrorCode;
 import com.yoyuzh.files.core.StoredFile;
 import com.yoyuzh.files.core.StoredFileRepository;
 import com.yoyuzh.files.storage.FileContentStorage;

@@ -1,11 +1,15 @@
 package com.yoyuzh.files.tasks;
 
+import com.yoyuzh.platform.job.api.BackgroundTaskFailureCategory;
+import com.yoyuzh.platform.job.api.BackgroundTaskStatus;
+import com.yoyuzh.platform.job.api.BackgroundTaskType;
+
 import com.yoyuzh.auth.User;
 import com.yoyuzh.auth.UserRepository;
-import com.yoyuzh.files.core.FileMetadataResponse;
 import com.yoyuzh.files.core.FileService;
 import com.yoyuzh.files.core.StoredFile;
 import com.yoyuzh.files.core.StoredFileRepository;
+import com.yoyuzh.files.workspace.api.FileMetadataResponse;
 import jakarta.transaction.Transactional;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;

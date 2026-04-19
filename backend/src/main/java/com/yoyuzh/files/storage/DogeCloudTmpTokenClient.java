@@ -2,7 +2,7 @@ package com.yoyuzh.files.storage;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.yoyuzh.config.FileStorageProperties;
+import com.yoyuzh.platform.storage.internal.infra.FileStorageProperties;
 import org.springframework.util.StringUtils;
 
 import javax.crypto.Mac;

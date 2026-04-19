@@ -1,11 +1,15 @@
 package com.yoyuzh.files.tasks;
 
+import com.yoyuzh.platform.job.api.BackgroundTaskFailureCategory;
+import com.yoyuzh.platform.job.api.BackgroundTaskStatus;
+import com.yoyuzh.platform.job.api.BackgroundTaskType;
+
 import com.yoyuzh.api.v2.ApiV2ErrorCode;
 import com.yoyuzh.api.v2.ApiV2Exception;
 import com.yoyuzh.auth.User;
-import com.yoyuzh.common.lock.DistributedLockService;
 import com.yoyuzh.files.core.StoredFile;
 import com.yoyuzh.files.core.StoredFileRepository;
+import com.yoyuzh.infra.lock.DistributedLockGateway;
 import jakarta.transaction.Transactional;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.Page;
@@ -57,7 +61,7 @@ public class BackgroundTaskService {
 
     private final BackgroundTaskRepository backgroundTaskRepository;
     private final StoredFileRepository storedFileRepository;
-    private final DistributedLockService distributedLockService;
+    private final DistributedLockGateway distributedLockGateway;
     private final BackgroundTaskRetryPolicy retryPolicy;
     private final BackgroundTaskStateManager stateManager;
 
@@ -65,14 +69,14 @@ public class BackgroundTaskService {
     public BackgroundTaskService(BackgroundTaskRepository backgroundTaskRepository,
                                  StoredFileRepository storedFileRepository,
                                  com.fasterxml.jackson.databind.ObjectMapper objectMapper,
-                                 DistributedLockService distributedLockService,
+                                 DistributedLockGateway distributedLockGateway,
                                  BackgroundTaskRetryPolicy retryPolicy,
                                  BackgroundTaskStateManager stateManager) {
         this.backgroundTaskRepository = backgroundTaskRepository;
         this.storedFileRepository = storedFileRepository;
-        this.distributedLockService = distributedLockService == null
-                ? DistributedLockService.noOp()
-                : distributedLockService;
+        this.distributedLockGateway = distributedLockGateway == null
+                ? DistributedLockGateway.noOp()
+                : distributedLockGateway;
         this.retryPolicy = retryPolicy == null ? new BackgroundTaskRetryPolicy() : retryPolicy;
         this.stateManager = stateManager == null ? new BackgroundTaskStateManager(objectMapper) : stateManager;
     }
@@ -80,12 +84,12 @@ public class BackgroundTaskService {
     BackgroundTaskService(BackgroundTaskRepository backgroundTaskRepository,
                           StoredFileRepository storedFileRepository,
                           com.fasterxml.jackson.databind.ObjectMapper objectMapper,
-                          DistributedLockService distributedLockService) {
+                          DistributedLockGateway distributedLockGateway) {
         this(
                 backgroundTaskRepository,
                 storedFileRepository,
                 objectMapper,
-                distributedLockService,
+                distributedLockGateway,
                 new BackgroundTaskRetryPolicy(),
                 new BackgroundTaskStateManager(objectMapper)
         );
@@ -114,7 +118,7 @@ public class BackgroundTaskService {
                 ? correlationId.trim()
                 : "media-meta:auto:file:" + fileId;
         try {
-            return distributedLockService.executeWithLock(
+            return distributedLockGateway.executeWithLock(
                     correlationLockName(normalizedCorrelationId),
                     CORRELATION_LOCK_TTL,
                     () -> {

@@ -1,0 +1,150 @@
+package com.yoyuzh.ops.admin.internal.application;
+
+import com.yoyuzh.identity.access.api.IdentityAdminSummaryApi;
+import com.yoyuzh.ops.admin.api.AdminOfflineTransferStorageLimitResponse;
+import com.yoyuzh.ops.admin.api.AdminRegistrationInviteCodeResponse;
+import com.yoyuzh.ops.admin.api.AdminSettingsResponse;
+import com.yoyuzh.ops.admin.api.AdminSettingsUpdateRequest;
+import com.yoyuzh.shared.kernel.BusinessException;
+import com.yoyuzh.shared.kernel.ErrorCode;
+import lombok.RequiredArgsConstructor;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+import java.util.Map;
+
+@Service
+@RequiredArgsConstructor
+public class AdminMutableSettingsService {
+
+    private final IdentityAdminSummaryApi identityAdminSummaryApi;
+    private final AdminMetricsService adminMetricsService;
+    private final AdminAuditService adminAuditService;
+    private final AdminRuntimeSettingsService adminRuntimeSettingsService;
+    private final AdminConfigSnapshotService adminConfigSnapshotService;
+
+    @Transactional
+    public AdminSettingsResponse updateSettings(AdminSettingsUpdateRequest request) {
+        if (!request.hasWritableSections()) {
+            throw new BusinessException(ErrorCode.UNKNOWN, "at least one writable section is required");
+        }
+
+        AdminRuntimeSettingsService.State currentState = adminRuntimeSettingsService.snapshot();
+        String currentInviteCode = identityAdminSummaryApi.currentInviteCode();
+        AdminSettingsUpdateRequest.RegistrationSection registrationSection;
+        if (request.registration() != null) {
+            registrationSection = new AdminSettingsUpdateRequest.RegistrationSection(
+                    request.registration().inviteCodeRequired(),
+                    currentInviteCode,
+                    request.registration().managementRoles()
+            );
+        } else {
+            registrationSection = new AdminSettingsUpdateRequest.RegistrationSection(
+                    currentState.registrationInviteCodeRequired(),
+                    currentInviteCode,
+                    currentState.registrationManagementRoles()
+            );
+        }
+
+        long offlineTransferStorageLimitBytes = adminMetricsService.getOfflineTransferStorageLimitBytes();
+        if (request.transfer() != null) {
+            offlineTransferStorageLimitBytes = request.transfer().offlineTransferStorageLimitBytes();
+            adminMetricsService.updateOfflineTransferStorageLimit(offlineTransferStorageLimitBytes);
+        }
+
+        AdminSettingsUpdateRequest effectiveRequest = new AdminSettingsUpdateRequest(
+                new AdminSettingsUpdateRequest.SiteSection(currentState.siteSupported()),
+                registrationSection,
+                new AdminSettingsUpdateRequest.UserSessionSection(
+                        currentState.userSessionAccessExpirationSeconds(),
+                        currentState.userSessionRefreshExpirationSeconds(),
+                        currentState.userSessionTokenBlacklistEnabled(),
+                        currentState.userSessionTokenBlacklistTtlBufferSeconds()
+                ),
+                new AdminSettingsUpdateRequest.TransferSection(offlineTransferStorageLimitBytes),
+                new AdminSettingsUpdateRequest.MediaProcessingSection(
+                        currentState.mediaMetadataExtractionEnabled(),
+                        currentState.mediaThumbnailGenerationEnabled(),
+                        currentState.mediaVideoPosterEnabled()
+                ),
+                new AdminSettingsUpdateRequest.QueueSection(
+                        currentState.queueBackend(),
+                        currentState.queueMediaMetadataFixedDelayMs(),
+                        currentState.queueMediaMetadataInitialDelayMs()
+                ),
+                new AdminSettingsUpdateRequest.AppearanceSection(currentState.appearanceSupported()),
+                new AdminSettingsUpdateRequest.ServerSection(
+                        currentState.serverStorageProvider(),
+                        currentState.serverRedisEnabled()
+                )
+        );
+        adminRuntimeSettingsService.update(effectiveRequest);
+
+        adminAuditService.record(
+                AdminAuditAction.UPDATE_SYSTEM_SETTINGS,
+                "SYSTEM_SETTING",
+                null,
+                "Updated admin settings snapshot",
+                Map.ofEntries(
+                        Map.entry("siteSupported", effectiveRequest.site().supported()),
+                        Map.entry("inviteCodeRequired", effectiveRequest.registration().inviteCodeRequired()),
+                        Map.entry("managementRoleCount", effectiveRequest.registration().managementRoles().size()),
+                        Map.entry("accessExpirationSeconds", effectiveRequest.userSession().accessExpirationSeconds()),
+                        Map.entry("refreshExpirationSeconds", effectiveRequest.userSession().refreshExpirationSeconds()),
+                        Map.entry("tokenBlacklistEnabled", effectiveRequest.userSession().tokenBlacklistEnabled()),
+                        Map.entry("tokenBlacklistTtlBufferSeconds", effectiveRequest.userSession().tokenBlacklistTtlBufferSeconds()),
+                        Map.entry("offlineTransferStorageLimitBytes", effectiveRequest.transfer().offlineTransferStorageLimitBytes()),
+                        Map.entry("queueBackend", effectiveRequest.queue().backend()),
+                        Map.entry("serverStorageProvider", effectiveRequest.server().storageProvider()),
+                        Map.entry("serverRedisEnabled", effectiveRequest.server().redisEnabled()),
+                        Map.entry("appearanceSupported", effectiveRequest.appearance().supported()),
+                        Map.entry("readOnlySectionsIgnored", true),
+                        Map.entry("registrationUpdated", request.registration() != null),
+                        Map.entry("transferUpdated", request.transfer() != null)
+                )
+        );
+        return adminConfigSnapshotService.getSettings();
+    }
+
+    @Transactional
+    public AdminRegistrationInviteCodeResponse updateRegistrationInviteCode(String inviteCode) {
+        String normalizedInviteCode = inviteCode == null ? "" : inviteCode.trim();
+        String currentInviteCode = identityAdminSummaryApi.updateInviteCode(normalizedInviteCode);
+        adminAuditService.record(
+                AdminAuditAction.UPDATE_REGISTRATION_INVITE_CODE,
+                "SYSTEM_SETTING",
+                null,
+                "Updated registration invite code",
+                Map.of("inviteCodeLength", currentInviteCode.length())
+        );
+        return new AdminRegistrationInviteCodeResponse(currentInviteCode);
+    }
+
+    @Transactional
+    public AdminRegistrationInviteCodeResponse rotateRegistrationInviteCode() {
+        String currentInviteCode = identityAdminSummaryApi.rotateInviteCode();
+        adminAuditService.record(
+                AdminAuditAction.ROTATE_REGISTRATION_INVITE_CODE,
+                "SYSTEM_SETTING",
+                null,
+                "Rotated registration invite code",
+                Map.of("inviteCodeLength", currentInviteCode.length())
+        );
+        return new AdminRegistrationInviteCodeResponse(currentInviteCode);
+    }
+
+    @Transactional
+    public AdminOfflineTransferStorageLimitResponse updateOfflineTransferStorageLimit(long offlineTransferStorageLimitBytes) {
+        AdminOfflineTransferStorageLimitResponse response = adminMetricsService.updateOfflineTransferStorageLimit(
+                offlineTransferStorageLimitBytes
+        );
+        adminAuditService.record(
+                AdminAuditAction.UPDATE_OFFLINE_TRANSFER_STORAGE_LIMIT,
+                "SYSTEM_SETTING",
+                null,
+                "Updated offline transfer storage limit",
+                Map.of("offlineTransferStorageLimitBytes", response.offlineTransferStorageLimitBytes())
+        );
+        return response;
+    }
+}

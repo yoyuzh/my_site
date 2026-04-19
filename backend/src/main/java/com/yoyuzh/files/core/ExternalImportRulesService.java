@@ -1,8 +1,8 @@
 package com.yoyuzh.files.core;
 
 import com.yoyuzh.auth.User;
-import com.yoyuzh.common.BusinessException;
-import com.yoyuzh.common.ErrorCode;
+import com.yoyuzh.shared.kernel.BusinessException;
+import com.yoyuzh.shared.kernel.ErrorCode;
 import org.springframework.util.StringUtils;
 
 import java.util.Comparator;

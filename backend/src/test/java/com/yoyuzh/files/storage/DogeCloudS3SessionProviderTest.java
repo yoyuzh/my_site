@@ -1,6 +1,6 @@
 package com.yoyuzh.files.storage;
 
-import com.yoyuzh.config.FileStorageProperties;
+import com.yoyuzh.platform.storage.internal.infra.FileStorageProperties;
 import org.junit.jupiter.api.Test;
 import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.s3.presigner.S3Presigner;

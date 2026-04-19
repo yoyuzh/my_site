@@ -1,7 +1,7 @@
 package com.yoyuzh.files.upload;
 
 import com.yoyuzh.auth.User;
-import com.yoyuzh.common.BusinessException;
+import com.yoyuzh.shared.kernel.BusinessException;
 import com.yoyuzh.files.policy.StoragePolicy;
 import com.yoyuzh.files.policy.StoragePolicyCapabilities;
 import com.yoyuzh.files.policy.StoragePolicyService;
@@ -272,7 +272,7 @@ class UploadSessionServiceTest {
     void shouldRejectDuplicateTargetWhenCreatingSession() {
         User user = createUser(7L);
         when(uploadTargetPolicy.validateUpload(user, "/docs", "movie.mp4", 20L))
-                .thenThrow(new BusinessException(com.yoyuzh.common.ErrorCode.UNKNOWN, "duplicate"));
+                .thenThrow(new BusinessException(com.yoyuzh.shared.kernel.ErrorCode.UNKNOWN, "duplicate"));
 
         assertThatThrownBy(() -> uploadSessionService.createSession(
                 user,

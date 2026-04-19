@@ -1,5 +1,9 @@
 package com.yoyuzh.files.tasks;
 
+import com.yoyuzh.platform.job.api.BackgroundTaskFailureCategory;
+import com.yoyuzh.platform.job.api.BackgroundTaskStatus;
+import com.yoyuzh.platform.job.api.BackgroundTaskType;
+
 import com.yoyuzh.platform.job.api.AsyncJobRetryPolicy;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
@@ -23,10 +27,10 @@ public class BackgroundTaskRetryPolicy {
             }
 
             @Override
-            public boolean hasRemainingAttempts(BackgroundTask task) {
-                return task.getAttemptCount() != null
-                        && task.getMaxAttempts() != null
-                        && task.getAttemptCount() < task.getMaxAttempts();
+            public boolean hasRemainingAttempts(Integer attemptCount, Integer maxAttempts) {
+                return attemptCount != null
+                        && maxAttempts != null
+                        && attemptCount < maxAttempts;
             }
 
             @Override
@@ -56,7 +60,7 @@ public class BackgroundTaskRetryPolicy {
     }
 
     public boolean hasRemainingAttempts(BackgroundTask task) {
-        return asyncJobRetryPolicy.hasRemainingAttempts(task);
+        return asyncJobRetryPolicy.hasRemainingAttempts(task.getAttemptCount(), task.getMaxAttempts());
     }
 
     public long resolveRetryDelaySeconds(BackgroundTaskType type,

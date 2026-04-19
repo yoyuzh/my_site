@@ -1,9 +1,9 @@
 package com.yoyuzh.files.core;
 
-import com.yoyuzh.admin.AdminMetricsService;
+import com.yoyuzh.ops.admin.internal.application.AdminMetricsService;
 import com.yoyuzh.auth.User;
-import com.yoyuzh.common.BusinessException;
-import com.yoyuzh.config.FileStorageProperties;
+import com.yoyuzh.shared.kernel.BusinessException;
+import com.yoyuzh.platform.storage.internal.infra.FileStorageProperties;
 import com.yoyuzh.files.policy.StoragePolicy;
 import com.yoyuzh.files.policy.StoragePolicyCapabilities;
 import com.yoyuzh.files.policy.StoragePolicyCredentialMode;
@@ -19,6 +19,7 @@ import com.yoyuzh.files.upload.InitiateUploadRequest;
 import com.yoyuzh.files.upload.InitiateUploadResponse;
 import com.yoyuzh.files.storage.FileContentStorage;
 import com.yoyuzh.files.storage.PreparedUpload;
+import com.yoyuzh.files.workspace.api.FileMetadataResponse;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -660,7 +661,7 @@ class FileServiceTest {
                 7L, "/docs", PageRequest.of(0, 10)))
                 .thenReturn(new PageImpl<>(List.of(file)));
         when(cacheService.getOrLoad(eq(7L), eq("/docs"), eq(0), eq(10), any()))
-                .thenAnswer(invocation -> invocation.<java.util.function.Supplier<com.yoyuzh.common.PageResponse<FileMetadataResponse>>>getArgument(4).get());
+                .thenAnswer(invocation -> invocation.<java.util.function.Supplier<com.yoyuzh.shared.kernel.PageResponse<FileMetadataResponse>>>getArgument(4).get());
 
         var result = fileService.list(user, "/docs", 0, 10);
 
@@ -945,7 +946,7 @@ class FileServiceTest {
                 .thenAnswer(invocation -> {
                     StoredFile file = invocation.getArgument(0);
                     if ("second.txt".equals(file.getFilename())) {
-                        throw new BusinessException(com.yoyuzh.common.ErrorCode.UNKNOWN, "metadata save failed");
+                        throw new BusinessException(com.yoyuzh.shared.kernel.ErrorCode.UNKNOWN, "metadata save failed");
                     }
                     file.setId(400L);
                     return file;

@@ -1,10 +1,9 @@
 package com.yoyuzh.transfer.internal.application;
 
-import com.yoyuzh.admin.AdminMetricsService;
+import com.yoyuzh.ops.admin.internal.application.AdminMetricsService;
 import com.yoyuzh.auth.User;
-import com.yoyuzh.common.BusinessException;
-import com.yoyuzh.common.ErrorCode;
-import com.yoyuzh.files.core.FileMetadataResponse;
+import com.yoyuzh.shared.kernel.BusinessException;
+import com.yoyuzh.shared.kernel.ErrorCode;
 import com.yoyuzh.transfer.CreateTransferSessionRequest;
 import com.yoyuzh.transfer.LookupTransferSessionResponse;
 import com.yoyuzh.transfer.OfflineTransferService;
@@ -18,6 +17,7 @@ import com.yoyuzh.transfer.api.CreateTransferSessionCommand;
 import com.yoyuzh.transfer.api.TransferImportApi;
 import com.yoyuzh.transfer.api.TransferImportCommand;
 import com.yoyuzh.transfer.api.TransferSessionApi;
+import com.yoyuzh.files.workspace.api.FileMetadataResponse;
 import org.springframework.http.ResponseEntity;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;

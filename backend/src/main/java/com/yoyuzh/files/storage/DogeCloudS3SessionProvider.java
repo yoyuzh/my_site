@@ -1,6 +1,6 @@
 package com.yoyuzh.files.storage;
 
-import com.yoyuzh.config.FileStorageProperties;
+import com.yoyuzh.platform.storage.internal.infra.FileStorageProperties;
 import software.amazon.awssdk.auth.credentials.AwsSessionCredentials;
 import software.amazon.awssdk.auth.credentials.StaticCredentialsProvider;
 import software.amazon.awssdk.regions.Region;

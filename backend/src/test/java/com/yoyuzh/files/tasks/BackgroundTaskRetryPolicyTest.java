@@ -1,5 +1,9 @@
 package com.yoyuzh.files.tasks;
 
+import com.yoyuzh.platform.job.api.BackgroundTaskFailureCategory;
+import com.yoyuzh.platform.job.api.BackgroundTaskStatus;
+import com.yoyuzh.platform.job.api.BackgroundTaskType;
+
 import com.yoyuzh.platform.job.api.AsyncJobRetryPolicy;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -52,9 +56,11 @@ class BackgroundTaskRetryPolicyTest {
     @Test
     void shouldDelegateRemainingAttemptsCheck() {
         BackgroundTask task = new BackgroundTask();
-        when(asyncJobRetryPolicy.hasRemainingAttempts(task)).thenReturn(true);
+        task.setAttemptCount(1);
+        task.setMaxAttempts(2);
+        when(asyncJobRetryPolicy.hasRemainingAttempts(1, 2)).thenReturn(true);
 
         assertThat(retryPolicy.hasRemainingAttempts(task)).isTrue();
-        verify(asyncJobRetryPolicy).hasRemainingAttempts(task);
+        verify(asyncJobRetryPolicy).hasRemainingAttempts(1, 2);
     }
 }

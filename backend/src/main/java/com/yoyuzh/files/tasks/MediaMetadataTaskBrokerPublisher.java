@@ -1,7 +1,7 @@
 package com.yoyuzh.files.tasks;
 
-import com.yoyuzh.common.broker.LightweightBrokerService;
 import com.yoyuzh.files.core.StoredFile;
+import com.yoyuzh.infra.broker.LightweightBrokerGateway;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
@@ -13,10 +13,10 @@ public class MediaMetadataTaskBrokerPublisher {
 
     public static final String TOPIC = "media-metadata-trigger";
 
-    private final LightweightBrokerService lightweightBrokerService;
+    private final LightweightBrokerGateway lightweightBrokerGateway;
 
-    public MediaMetadataTaskBrokerPublisher(LightweightBrokerService lightweightBrokerService) {
-        this.lightweightBrokerService = lightweightBrokerService;
+    public MediaMetadataTaskBrokerPublisher(LightweightBrokerGateway lightweightBrokerGateway) {
+        this.lightweightBrokerGateway = lightweightBrokerGateway;
     }
 
     public void publishAfterCommit(StoredFile storedFile) {
@@ -24,7 +24,7 @@ public class MediaMetadataTaskBrokerPublisher {
             return;
         }
 
-        Runnable publishTask = () -> lightweightBrokerService.publish(TOPIC, Map.of(
+        Runnable publishTask = () -> lightweightBrokerGateway.publish(TOPIC, Map.of(
                 "userId", storedFile.getUser().getId(),
                 "fileId", storedFile.getId(),
                 "correlationId", buildCorrelationId(storedFile)

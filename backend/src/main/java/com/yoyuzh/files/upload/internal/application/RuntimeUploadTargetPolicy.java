@@ -1,8 +1,8 @@
 package com.yoyuzh.files.upload.internal.application;
 
 import com.yoyuzh.auth.User;
-import com.yoyuzh.common.BusinessException;
-import com.yoyuzh.common.ErrorCode;
+import com.yoyuzh.shared.kernel.BusinessException;
+import com.yoyuzh.shared.kernel.ErrorCode;
 import com.yoyuzh.files.core.StoredFileRepository;
 import com.yoyuzh.files.upload.api.UploadTargetPolicy;
 import com.yoyuzh.files.upload.api.ValidatedUploadTarget;
@@ -27,7 +27,7 @@ public final class RuntimeUploadTargetPolicy implements UploadTargetPolicy {
                                      WorkspacePathPolicy workspacePathPolicy,
                                      StoragePolicyQuery storagePolicyQuery,
                                      UploadConstraintPolicy uploadConstraintPolicy,
-                                     com.yoyuzh.config.FileStorageProperties properties) {
+                                     com.yoyuzh.platform.storage.internal.infra.FileStorageProperties properties) {
         this(storedFileRepository, workspacePathPolicy, storagePolicyQuery, uploadConstraintPolicy, properties.getMaxFileSize());
     }
 

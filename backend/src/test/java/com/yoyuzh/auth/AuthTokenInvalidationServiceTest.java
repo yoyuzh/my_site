@@ -1,7 +1,7 @@
 package com.yoyuzh.auth;
 
-import com.yoyuzh.config.AppRedisProperties;
-import com.yoyuzh.config.JwtProperties;
+import com.yoyuzh.infra.cache.AppRedisProperties;
+import com.yoyuzh.boot.security.JwtProperties;
 import org.junit.jupiter.api.Test;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.ValueOperations;

@@ -1,6 +1,6 @@
 package com.yoyuzh.identity.access.internal.application;
 
-import com.yoyuzh.admin.AdminRuntimeSettingsService;
+import com.yoyuzh.ops.admin.internal.application.AdminRuntimeSettingsService;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;

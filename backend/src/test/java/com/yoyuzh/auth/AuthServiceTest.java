@@ -1,13 +1,13 @@
 package com.yoyuzh.auth;
 
-import com.yoyuzh.admin.AdminRuntimeSettingsService;
+import com.yoyuzh.ops.admin.internal.application.AdminRuntimeSettingsService;
 import com.yoyuzh.auth.dto.AuthResponse;
 import com.yoyuzh.auth.dto.LoginRequest;
 import com.yoyuzh.auth.dto.RegisterRequest;
 import com.yoyuzh.auth.dto.UpdateUserAvatarRequest;
 import com.yoyuzh.auth.dto.UpdateUserPasswordRequest;
 import com.yoyuzh.auth.dto.UpdateUserProfileRequest;
-import com.yoyuzh.common.BusinessException;
+import com.yoyuzh.shared.kernel.BusinessException;
 import com.yoyuzh.files.core.FileService;
 import com.yoyuzh.files.upload.InitiateUploadResponse;
 import com.yoyuzh.files.storage.FileContentStorage;
@@ -133,7 +133,7 @@ class AuthServiceTest {
                 "StrongPass1!",
                 "invite-code"
         );
-        org.mockito.Mockito.doThrow(new BusinessException(com.yoyuzh.common.ErrorCode.UNKNOWN, "用户名已存在"))
+        org.mockito.Mockito.doThrow(new BusinessException(com.yoyuzh.shared.kernel.ErrorCode.UNKNOWN, "用户名已存在"))
                 .when(registrationAdmissionPolicy)
                 .assertAllowed(any());
 
@@ -152,7 +152,7 @@ class AuthServiceTest {
                 "StrongPass1!",
                 "invite-code"
         );
-        org.mockito.Mockito.doThrow(new BusinessException(com.yoyuzh.common.ErrorCode.UNKNOWN, "手机号已存在"))
+        org.mockito.Mockito.doThrow(new BusinessException(com.yoyuzh.shared.kernel.ErrorCode.UNKNOWN, "手机号已存在"))
                 .when(registrationAdmissionPolicy)
                 .assertAllowed(any());
 
@@ -171,7 +171,7 @@ class AuthServiceTest {
                 "StrongPass1!",
                 "wrong-code"
         );
-        var invalidInviteCode = new BusinessException(com.yoyuzh.common.ErrorCode.PERMISSION_DENIED, "邀请码错误");
+        var invalidInviteCode = new BusinessException(com.yoyuzh.shared.kernel.ErrorCode.PERMISSION_DENIED, "邀请码错误");
         org.mockito.Mockito.doThrow(invalidInviteCode)
                 .when(registrationAdmissionPolicy)
                 .assertAllowed(any());
@@ -226,7 +226,7 @@ class AuthServiceTest {
     void shouldThrowBusinessExceptionWhenAuthenticationFails() {
         LoginRequest request = new LoginRequest("alice", "wrong-password");
         org.mockito.Mockito.doThrow(
-                        new BusinessException(com.yoyuzh.common.ErrorCode.NOT_LOGGED_IN, "用户名或密码错误"))
+                        new BusinessException(com.yoyuzh.shared.kernel.ErrorCode.NOT_LOGGED_IN, "用户名或密码错误"))
                 .when(loginAdmissionPolicy)
                 .assertAllowed("alice", "wrong-password");
 
@@ -239,7 +239,7 @@ class AuthServiceTest {
     void shouldRejectBannedUserLogin() {
         LoginRequest request = new LoginRequest("alice", "plain-password");
         org.mockito.Mockito.doThrow(
-                        new BusinessException(com.yoyuzh.common.ErrorCode.PERMISSION_DENIED, "账号已被封禁"))
+                        new BusinessException(com.yoyuzh.shared.kernel.ErrorCode.PERMISSION_DENIED, "账号已被封禁"))
                 .when(loginAdmissionPolicy)
                 .assertAllowed("alice", "plain-password");
 
@@ -397,7 +397,7 @@ class AuthServiceTest {
         when(passwordChangePolicy.changePassword(
                 eq(user),
                 eq(new PasswordChangeAttempt("WrongPass1!", "NewPass1!A", AuthClientType.DESKTOP))))
-                .thenThrow(new BusinessException(com.yoyuzh.common.ErrorCode.UNKNOWN, "当前密码错误"));
+                .thenThrow(new BusinessException(com.yoyuzh.shared.kernel.ErrorCode.UNKNOWN, "当前密码错误"));
 
         assertThatThrownBy(() -> authService.changePassword("alice", new UpdateUserPasswordRequest("WrongPass1!", "NewPass1!A")))
                 .isInstanceOf(BusinessException.class)

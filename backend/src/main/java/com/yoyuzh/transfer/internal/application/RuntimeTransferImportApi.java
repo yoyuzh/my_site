@@ -1,18 +1,18 @@
 package com.yoyuzh.transfer.internal.application;
 
 import com.yoyuzh.auth.User;
-import com.yoyuzh.common.BusinessException;
-import com.yoyuzh.common.ErrorCode;
-import com.yoyuzh.config.FileStorageProperties;
+import com.yoyuzh.shared.kernel.BusinessException;
+import com.yoyuzh.shared.kernel.ErrorCode;
+import com.yoyuzh.platform.storage.internal.infra.FileStorageProperties;
 import com.yoyuzh.files.content.api.ContentRegistrationApi;
 import com.yoyuzh.files.content.api.ContentRegistrationCommand;
 import com.yoyuzh.files.content.api.RegisteredContentFile;
 import com.yoyuzh.files.core.FileBlob;
 import com.yoyuzh.files.core.FileBlobRepository;
-import com.yoyuzh.files.core.FileMetadataResponse;
 import com.yoyuzh.files.core.StoredFileRepository;
 import com.yoyuzh.files.policy.StoragePolicyCapabilities;
 import com.yoyuzh.files.storage.FileContentStorage;
+import com.yoyuzh.files.workspace.api.FileMetadataResponse;
 import com.yoyuzh.files.workspace.api.WorkspacePathPolicy;
 import com.yoyuzh.platform.storage.api.DefaultStoragePolicySnapshot;
 import com.yoyuzh.platform.storage.api.StoragePolicyQuery;

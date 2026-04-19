@@ -1,8 +1,8 @@
 package com.yoyuzh.transfer;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.yoyuzh.common.lock.DistributedLockService;
-import com.yoyuzh.config.AppRedisProperties;
+import com.yoyuzh.infra.cache.AppRedisProperties;
+import com.yoyuzh.infra.lock.DistributedLockGateway;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.springframework.data.redis.core.StringRedisTemplate;
@@ -36,7 +36,7 @@ class TransferSessionStoreTest {
                 redisTemplate,
                 new ObjectMapper().findAndRegisterModules(),
                 redisProperties,
-                DistributedLockService.noOp()
+                DistributedLockGateway.noOp()
         );
 
         TransferSession session = new TransferSession(

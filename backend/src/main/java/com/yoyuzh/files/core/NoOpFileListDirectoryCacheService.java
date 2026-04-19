@@ -1,6 +1,7 @@
 package com.yoyuzh.files.core;
 
-import com.yoyuzh.common.PageResponse;
+import com.yoyuzh.shared.kernel.PageResponse;
+import com.yoyuzh.files.workspace.api.FileMetadataResponse;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Service;
 

@@ -1,0 +1,48 @@
+package com.yoyuzh.boot.security;
+
+import static org.assertj.core.api.Assertions.assertThat;
+
+import com.fasterxml.jackson.databind.ObjectMapper;
+import org.junit.jupiter.api.Test;
+import org.springframework.web.cors.CorsConfiguration;
+import org.springframework.web.cors.CorsConfigurationSource;
+
+class SecurityConfigTest {
+
+    @Test
+    void corsPropertiesShouldAllowProductionSiteOriginsByDefault() {
+        CorsProperties corsProperties = new CorsProperties();
+
+        assertThat(corsProperties.getAllowedOrigins())
+                .contains(
+                        "http://localhost",
+                        "https://localhost",
+                        "http://127.0.0.1",
+                        "https://127.0.0.1",
+                        "capacitor://localhost",
+                        "https://yoyuzh.xyz",
+                        "https://www.yoyuzh.xyz"
+                );
+    }
+
+    @Test
+    void corsConfigurationShouldAllowPatchRequests() {
+        CorsProperties corsProperties = new CorsProperties();
+        corsProperties.setAllowedOrigins(java.util.List.of("https://yoyuzh.xyz"));
+
+        SecurityConfig securityConfig = new SecurityConfig(
+                null,
+                null,
+                null,
+                new ObjectMapper(),
+                corsProperties
+        );
+
+        CorsConfigurationSource source = securityConfig.corsConfigurationSource();
+        CorsConfiguration configuration = source.getCorsConfiguration(
+                new org.springframework.mock.web.MockHttpServletRequest("OPTIONS", "/api/files/1/rename"));
+
+        assertThat(configuration).isNotNull();
+        assertThat(configuration.getAllowedMethods()).contains("PATCH");
+    }
+}

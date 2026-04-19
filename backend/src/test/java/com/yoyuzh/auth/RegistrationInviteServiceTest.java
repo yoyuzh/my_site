@@ -1,7 +1,7 @@
 package com.yoyuzh.auth;
 
-import com.yoyuzh.common.BusinessException;
-import com.yoyuzh.config.RegistrationProperties;
+import com.yoyuzh.shared.kernel.BusinessException;
+import com.yoyuzh.identity.access.internal.infra.RegistrationProperties;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;

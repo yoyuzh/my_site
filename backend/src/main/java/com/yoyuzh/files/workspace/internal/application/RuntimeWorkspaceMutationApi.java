@@ -1,13 +1,13 @@
 package com.yoyuzh.files.workspace.internal.application;
 
 import com.yoyuzh.auth.User;
-import com.yoyuzh.common.BusinessException;
-import com.yoyuzh.common.ErrorCode;
-import com.yoyuzh.files.core.FileMetadataResponse;
+import com.yoyuzh.shared.kernel.BusinessException;
+import com.yoyuzh.shared.kernel.ErrorCode;
 import com.yoyuzh.files.core.StoredFile;
 import com.yoyuzh.files.core.StoredFileRepository;
 import com.yoyuzh.files.storage.FileContentStorage;
 import com.yoyuzh.files.workspace.api.WorkspaceMutationApi;
+import com.yoyuzh.files.workspace.api.FileMetadataResponse;
 import com.yoyuzh.files.workspace.api.WorkspaceMutationResult;
 import com.yoyuzh.files.workspace.api.WorkspacePathPolicy;
 

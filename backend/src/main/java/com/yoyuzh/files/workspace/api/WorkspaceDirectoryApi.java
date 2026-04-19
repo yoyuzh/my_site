@@ -1,8 +1,7 @@
 package com.yoyuzh.files.workspace.api;
 
 import com.yoyuzh.auth.User;
-import com.yoyuzh.common.PageResponse;
-import com.yoyuzh.files.core.FileMetadataResponse;
+import com.yoyuzh.shared.kernel.PageResponse;
 
 public interface WorkspaceDirectoryApi {
 

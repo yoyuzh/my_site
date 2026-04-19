@@ -1,6 +1,6 @@
 package com.yoyuzh.identity.access.internal.application;
 
-import com.yoyuzh.admin.AdminRuntimeSettingsService;
+import com.yoyuzh.ops.admin.internal.application.AdminRuntimeSettingsService;
 import com.yoyuzh.identity.access.api.AdminAccessPolicy;
 import com.yoyuzh.identity.access.internal.domain.ManagementRolePolicy;
 import lombok.RequiredArgsConstructor;

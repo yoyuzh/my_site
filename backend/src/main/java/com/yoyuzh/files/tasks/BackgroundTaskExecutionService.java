@@ -1,5 +1,9 @@
 package com.yoyuzh.files.tasks;
 
+import com.yoyuzh.platform.job.api.BackgroundTaskFailureCategory;
+import com.yoyuzh.platform.job.api.BackgroundTaskStatus;
+import com.yoyuzh.platform.job.api.BackgroundTaskType;
+
 import com.yoyuzh.api.v2.ApiV2ErrorCode;
 import com.yoyuzh.api.v2.ApiV2Exception;
 import lombok.RequiredArgsConstructor;

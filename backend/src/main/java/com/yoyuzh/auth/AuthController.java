@@ -4,7 +4,7 @@ import com.yoyuzh.auth.dto.AuthResponse;
 import com.yoyuzh.auth.dto.LoginRequest;
 import com.yoyuzh.auth.dto.RefreshTokenRequest;
 import com.yoyuzh.auth.dto.RegisterRequest;
-import com.yoyuzh.common.ApiResponse;
+import com.yoyuzh.shared.kernel.ApiResponse;
 import io.swagger.v3.oas.annotations.Operation;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;

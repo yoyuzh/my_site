@@ -1,7 +1,7 @@
 package com.yoyuzh.auth;
 
 import com.yoyuzh.PortalBackendApplication;
-import com.yoyuzh.common.BusinessException;
+import com.yoyuzh.shared.kernel.BusinessException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
