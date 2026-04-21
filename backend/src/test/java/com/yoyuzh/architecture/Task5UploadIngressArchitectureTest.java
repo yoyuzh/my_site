@@ -5,12 +5,13 @@ import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.noClasses;
 
 import com.tngtech.archunit.core.domain.JavaClasses;
 import com.tngtech.archunit.core.importer.ClassFileImporter;
+import com.tngtech.archunit.core.importer.ImportOption;
 import com.tngtech.archunit.lang.ArchRule;
 import org.junit.jupiter.api.Test;
 
 class Task5UploadIngressArchitectureTest {
 
-    private final JavaClasses classes = new ClassFileImporter().importPackages("com.yoyuzh");
+    private final JavaClasses classes = new ClassFileImporter().withImportOption(ImportOption.Predefined.DO_NOT_INCLUDE_TESTS).importPackages("com.yoyuzh");
 
     @Test
     void uploadSessionServiceMustDependOnUploadTargetPolicy() {
@@ -28,7 +29,7 @@ class Task5UploadIngressArchitectureTest {
     void fileServiceMustDependOnUploadCompletionApi() {
         ArchRule rule = classes()
                 .that()
-                .haveFullyQualifiedName("com.yoyuzh.files.core.FileService")
+                .haveFullyQualifiedName("com.yoyuzh.files.workspace.internal.application.FileService")
                 .should()
                 .dependOnClassesThat()
                 .haveFullyQualifiedName("com.yoyuzh.files.upload.api.UploadCompletionApi");
@@ -43,16 +44,28 @@ class Task5UploadIngressArchitectureTest {
                 .haveFullyQualifiedName("com.yoyuzh.files.upload.UploadSessionService")
                 .should()
                 .dependOnClassesThat()
-                .haveFullyQualifiedName("com.yoyuzh.files.core.WorkspaceNodeRulesService");
+                .haveFullyQualifiedName("com.yoyuzh.files.workspace.internal.application.WorkspaceNodeRulesService");
 
         ArchRule uploadRule = noClasses()
                 .that()
                 .haveFullyQualifiedName("com.yoyuzh.files.upload.UploadSessionService")
                 .should()
                 .dependOnClassesThat()
-                .haveFullyQualifiedName("com.yoyuzh.files.core.FileUploadRulesService");
+                .haveFullyQualifiedName("com.yoyuzh.files.workspace.internal.application.FileUploadRulesService");
 
         workspaceRule.check(classes);
         uploadRule.check(classes);
+    }
+
+    @Test
+    void uploadApiContractsMustNotDependOnLegacyAuthTypes() {
+        ArchRule rule = noClasses()
+                .that()
+                .resideInAnyPackage("com.yoyuzh.files.upload.api..")
+                .should()
+                .dependOnClassesThat()
+                .resideInAnyPackage("com.yoyuzh.auth..");
+
+        rule.check(classes);
     }
 }

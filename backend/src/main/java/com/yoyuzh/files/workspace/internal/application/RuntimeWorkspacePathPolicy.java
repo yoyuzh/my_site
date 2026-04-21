@@ -1,10 +1,10 @@
 package com.yoyuzh.files.workspace.internal.application;
 
-import com.yoyuzh.auth.User;
+import com.yoyuzh.identity.access.internal.domain.User;
 import com.yoyuzh.shared.kernel.BusinessException;
 import com.yoyuzh.shared.kernel.ErrorCode;
-import com.yoyuzh.files.core.StoredFile;
-import com.yoyuzh.files.core.StoredFileRepository;
+import com.yoyuzh.files.workspace.internal.domain.StoredFile;
+import com.yoyuzh.files.workspace.internal.infra.StoredFileRepository;
 import com.yoyuzh.files.storage.FileContentStorage;
 import com.yoyuzh.files.workspace.api.WorkspacePathPolicy;
 import org.springframework.stereotype.Service;
@@ -97,7 +97,7 @@ public final class RuntimeWorkspacePathPolicy implements WorkspacePathPolicy {
     }
 
     @Override
-    public void ensureDirectoryHierarchy(User user, String normalizedPath) {
+    public void ensureDirectoryHierarchy(Long userId, String normalizedPath) {
         if ("/".equals(normalizedPath)) {
             return;
         }
@@ -106,7 +106,7 @@ public final class RuntimeWorkspacePathPolicy implements WorkspacePathPolicy {
         String currentPath = "/";
 
         for (String segment : segments) {
-            Optional<StoredFile> existing = storedFileRepository.findByUserIdAndPathAndFilename(user.getId(), currentPath, segment);
+            Optional<StoredFile> existing = storedFileRepository.findByUserIdAndPathAndFilename(userId, currentPath, segment);
             if (existing.isPresent()) {
                 if (!existing.get().isDirectory()) {
                     throw new BusinessException(ErrorCode.UNKNOWN, "目标路径不是目录");
@@ -116,10 +116,10 @@ public final class RuntimeWorkspacePathPolicy implements WorkspacePathPolicy {
             }
 
             String logicalPath = "/".equals(currentPath) ? "/" + segment : currentPath + "/" + segment;
-            fileContentStorage.ensureDirectory(user.getId(), logicalPath);
+            fileContentStorage.ensureDirectory(userId, logicalPath);
 
             StoredFile storedFile = new StoredFile();
-            storedFile.setUser(user);
+            storedFile.setUser(userReference(userId));
             storedFile.setFilename(segment);
             storedFile.setPath(currentPath);
             storedFile.setContentType("directory");
@@ -129,6 +129,12 @@ public final class RuntimeWorkspacePathPolicy implements WorkspacePathPolicy {
 
             currentPath = logicalPath;
         }
+    }
+
+    private User userReference(Long userId) {
+        User user = new User();
+        user.setId(userId);
+        return user;
     }
 
     @Override
@@ -149,7 +155,6 @@ public final class RuntimeWorkspacePathPolicy implements WorkspacePathPolicy {
         }
     }
 
-    @Override
     public void validateRecycleRestoreTargets(Long userId,
                                               List<StoredFile> recycleGroupItems,
                                               Function<StoredFile, String> recycleOriginalPathResolver) {

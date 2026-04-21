@@ -1,9 +1,7 @@
 package com.yoyuzh.files.upload.api;
 
-import com.yoyuzh.auth.User;
-
 public record UploadCompletionCommand(
-        User user,
+        Long userId,
         String normalizedPath,
         String filename,
         String objectKey,

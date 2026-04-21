@@ -3,7 +3,6 @@ package com.yoyuzh.ops.admin.internal.application;
 import com.yoyuzh.ops.admin.api.AdminPasswordResetResponse;
 import com.yoyuzh.ops.admin.api.AdminUserRole;
 import com.yoyuzh.ops.admin.api.AdminUserResponse;
-import com.yoyuzh.auth.UserRole;
 import com.yoyuzh.ops.admin.api.AdminUserGovernanceApi;
 import com.yoyuzh.shared.kernel.PageResponse;
 import org.springframework.stereotype.Service;
@@ -24,8 +23,7 @@ public class RuntimeAdminUserGovernanceApi implements AdminUserGovernanceApi {
 
     @Override
     public AdminUserResponse updateUserRole(Long userId, AdminUserRole role) {
-        UserRole legacyRole = UserRole.valueOf(role.name());
-        return adminUserGovernanceService.updateUserRole(userId, legacyRole);
+        return adminUserGovernanceService.updateUserRole(userId, role);
     }
 
     @Override

@@ -1,8 +1,8 @@
 package com.yoyuzh.ops.admin.internal.web;
 
-import com.yoyuzh.files.policy.StoragePolicyCapabilities;
-import com.yoyuzh.files.policy.StoragePolicyCredentialMode;
-import com.yoyuzh.files.policy.StoragePolicyType;
+import com.yoyuzh.platform.storage.api.StoragePolicyCapabilities;
+import com.yoyuzh.platform.storage.api.StoragePolicyCredentialMode;
+import com.yoyuzh.platform.storage.api.StoragePolicyType;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Positive;

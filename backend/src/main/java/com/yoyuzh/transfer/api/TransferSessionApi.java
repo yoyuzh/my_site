@@ -1,6 +1,5 @@
 package com.yoyuzh.transfer.api;
 
-import com.yoyuzh.auth.User;
 import com.yoyuzh.files.workspace.api.FileMetadataResponse;
 import com.yoyuzh.transfer.LookupTransferSessionResponse;
 import com.yoyuzh.transfer.PollTransferSignalsResponse;
@@ -13,15 +12,15 @@ import java.util.List;
 
 public interface TransferSessionApi {
 
-    TransferSessionResponse createSession(User sender, CreateTransferSessionCommand command);
+    TransferSessionResponse createSession(Long senderUserId, CreateTransferSessionCommand command);
 
     LookupTransferSessionResponse lookupSession(String pickupCode);
 
     TransferSessionResponse joinSession(String sessionId);
 
-    List<TransferSessionResponse> listOfflineSessions(User sender);
+    List<TransferSessionResponse> listOfflineSessions(Long senderUserId);
 
-    void uploadOfflineFile(User sender, String sessionId, String fileId, MultipartFile multipartFile);
+    void uploadOfflineFile(Long senderUserId, String sessionId, String fileId, MultipartFile multipartFile);
 
     void postSignal(String sessionId, String role, TransferSignalRequest request);
 
@@ -29,7 +28,7 @@ public interface TransferSessionApi {
 
     ResponseEntity<?> downloadOfflineFile(String sessionId, String fileId);
 
-    FileMetadataResponse importOfflineFile(User recipient, String sessionId, String fileId, TransferImportCommand command);
+    FileMetadataResponse importOfflineFile(Long recipientUserId, String sessionId, String fileId, TransferImportCommand command);
 
     void pruneExpiredTransfers();
 }

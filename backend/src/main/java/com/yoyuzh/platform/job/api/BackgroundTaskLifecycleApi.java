@@ -1,6 +1,5 @@
 package com.yoyuzh.platform.job.api;
 
-import com.yoyuzh.auth.User;
 import com.yoyuzh.shared.kernel.PageResponse;
 
 import java.util.Map;
@@ -8,25 +7,31 @@ import java.util.Optional;
 
 public interface BackgroundTaskLifecycleApi {
 
-    PageResponse<BackgroundTaskView> listOwnedTasks(User user, int page, int size);
+    PageResponse<BackgroundTaskView> listOwnedTasks(Long userId, int page, int size);
 
-    BackgroundTaskView getOwnedTask(User user, Long id);
+    BackgroundTaskView getOwnedTask(Long userId, Long id);
 
-    BackgroundTaskView cancelOwnedTask(User user, Long id);
+    BackgroundTaskView cancelOwnedTask(Long userId, Long id);
 
-    BackgroundTaskView retryOwnedTask(User user, Long id);
+    BackgroundTaskView retryOwnedTask(Long userId, Long id);
 
-    BackgroundTaskView createQueuedFileTask(User user,
+    BackgroundTaskView createQueuedFileTask(Long userId,
                                             BackgroundTaskType type,
                                             Long fileId,
                                             String requestedPath,
                                             String correlationId);
 
-    BackgroundTaskView createQueuedTask(User user,
+    BackgroundTaskView createQueuedTask(Long userId,
                                         BackgroundTaskType type,
                                         Map<String, Object> publicState,
                                         Map<String, Object> privateState,
                                         String correlationId);
+
+    BackgroundTaskView createQueuedTaskByUserId(Long userId,
+                                                BackgroundTaskType type,
+                                                Map<String, Object> publicState,
+                                                Map<String, Object> privateState,
+                                                String correlationId);
 
     Optional<BackgroundTaskView> createQueuedAutoMediaMetadataTask(Long userId,
                                                                    Long fileId,

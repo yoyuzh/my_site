@@ -1,9 +1,9 @@
 package com.yoyuzh.files.workspace.internal.application;
 
-import com.yoyuzh.auth.User;
+import com.yoyuzh.identity.access.internal.domain.User;
 import com.yoyuzh.shared.kernel.BusinessException;
-import com.yoyuzh.files.core.StoredFile;
-import com.yoyuzh.files.core.StoredFileRepository;
+import com.yoyuzh.files.workspace.internal.domain.StoredFile;
+import com.yoyuzh.files.workspace.internal.infra.StoredFileRepository;
 import com.yoyuzh.files.storage.FileContentStorage;
 import com.yoyuzh.files.workspace.api.WorkspaceMutationResult;
 import org.junit.jupiter.api.Test;
@@ -41,7 +41,7 @@ class RuntimeWorkspaceMutationApiTest {
         when(storedFileRepository.findByUserIdAndPathEqualsOrDescendant(7L, "/docs/archive")).thenReturn(List.of(childFile));
         when(storedFileRepository.save(any(StoredFile.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
-        WorkspaceMutationResult result = api.rename(user, 10L, "renamed-archive");
+        WorkspaceMutationResult result = api.rename(user.getId(), 10L, "renamed-archive");
 
         assertThat(result.file().filename()).isEqualTo("renamed-archive");
         assertThat(result.fromPath()).isEqualTo("/docs/archive");
@@ -63,7 +63,7 @@ class RuntimeWorkspaceMutationApiTest {
         when(storedFileRepository.findByUserIdAndPathEqualsOrDescendant(7L, "/docs/archive")).thenReturn(List.of(childFile));
         when(storedFileRepository.save(any(StoredFile.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
-        WorkspaceMutationResult result = api.move(user, 10L, "/图片");
+        WorkspaceMutationResult result = api.move(user.getId(), 10L, "/图片");
 
         assertThat(result.file().path()).isEqualTo("/图片/archive");
         assertThat(result.fromPath()).isEqualTo("/docs/archive");
@@ -85,7 +85,7 @@ class RuntimeWorkspaceMutationApiTest {
         when(storedFileRepository.findByUserIdAndPathAndFilename(7L, "/docs", "archive")).thenReturn(Optional.of(archiveDirectory));
         when(storedFileRepository.findByUserIdAndPathAndFilename(7L, "/docs/archive", "nested")).thenReturn(Optional.of(descendantDirectory));
 
-        assertThatThrownBy(() -> api.move(user, 10L, "/docs/archive/nested"))
+        assertThatThrownBy(() -> api.move(user.getId(), 10L, "/docs/archive/nested"))
                 .isInstanceOf(BusinessException.class)
                 .hasMessageContaining("不能移动到当前目录或其子目录");
     }

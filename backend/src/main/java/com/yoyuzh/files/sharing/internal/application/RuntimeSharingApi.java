@@ -2,14 +2,14 @@ package com.yoyuzh.files.sharing.internal.application;
 
 import com.yoyuzh.boot.web.v2.ApiV2ErrorCode;
 import com.yoyuzh.boot.web.v2.ApiV2Exception;
-import com.yoyuzh.auth.User;
+import com.yoyuzh.identity.access.internal.domain.User;
 import com.yoyuzh.files.content.api.ContentDuplicationApi;
 import com.yoyuzh.files.content.api.ContentBlobReference;
 import com.yoyuzh.files.content.api.ContentRegistrationCommand;
 import com.yoyuzh.files.content.api.RegisteredContentFile;
-import com.yoyuzh.files.core.FileBlob;
-import com.yoyuzh.files.core.StoredFile;
-import com.yoyuzh.files.core.StoredFileRepository;
+import com.yoyuzh.files.content.internal.domain.FileBlob;
+import com.yoyuzh.files.workspace.internal.domain.StoredFile;
+import com.yoyuzh.files.workspace.internal.infra.StoredFileRepository;
 import com.yoyuzh.files.sharing.api.CreateShareCommand;
 import com.yoyuzh.files.sharing.api.ImportShareCommand;
 import com.yoyuzh.files.sharing.api.SharingAdminShareQuery;
@@ -143,18 +143,19 @@ public class RuntimeSharingApi implements SharingApi {
         );
         workspacePathPolicy.ensureDirectoryHierarchy(recipientUserId, target.normalizedPath());
         RegisteredContentFile importedFile = contentDuplicationApi.duplicateBlobBackedFile(
-                new ContentRegistrationCommand(
-                        recipientUserId,
-                        target.normalizedPath(),
-                        target.filename(),
-                        sourceFile.getContentType(),
-                        sourceFile.getSize(),
-                        new ContentBlobReference(
-                                requireShareBlob(sourceFile).getObjectKey(),
-                                requireShareBlob(sourceFile).getContentType(),
-                                requireShareBlob(sourceFile).getSize()
+                        new ContentRegistrationCommand(
+                                recipientUserId,
+                                target.normalizedPath(),
+                                target.filename(),
+                                sourceFile.getContentType(),
+                                sourceFile.getSize(),
+                                new ContentBlobReference(
+                                        requireShareBlob(sourceFile).getId(),
+                                        requireShareBlob(sourceFile).getObjectKey(),
+                                        requireShareBlob(sourceFile).getContentType(),
+                                        requireShareBlob(sourceFile).getSize()
+                                )
                         )
-                )
         );
         shareLink.setDownloadCount(shareLink.getDownloadCountOrZero() + 1);
         return toFileMetadataResponse(importedFile);

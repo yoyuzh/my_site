@@ -1,17 +1,17 @@
 package com.yoyuzh.files.content.internal.application;
 
-import com.yoyuzh.auth.User;
+import com.yoyuzh.identity.access.internal.domain.User;
 import com.yoyuzh.files.content.api.ContentBlobReference;
 import com.yoyuzh.files.content.api.ContentPrimaryEntity;
 import com.yoyuzh.files.content.api.ContentPrimaryEntityRelationCommand;
-import com.yoyuzh.files.core.FileBlob;
-import com.yoyuzh.files.core.FileEntity;
-import com.yoyuzh.files.core.FileEntityRepository;
-import com.yoyuzh.files.core.FileEntityType;
-import com.yoyuzh.files.core.StoredFile;
-import com.yoyuzh.files.core.StoredFileEntity;
-import com.yoyuzh.files.core.StoredFileEntityRepository;
-import com.yoyuzh.files.core.StoredFileRepository;
+import com.yoyuzh.files.content.internal.domain.FileBlob;
+import com.yoyuzh.files.content.internal.domain.FileEntity;
+import com.yoyuzh.files.content.internal.infra.FileEntityRepository;
+import com.yoyuzh.files.content.internal.domain.FileEntityType;
+import com.yoyuzh.files.workspace.internal.domain.StoredFile;
+import com.yoyuzh.files.content.internal.domain.StoredFileEntity;
+import com.yoyuzh.files.content.internal.infra.StoredFileEntityRepository;
+import com.yoyuzh.files.workspace.internal.infra.StoredFileRepository;
 import com.yoyuzh.platform.storage.api.StoragePolicyQuery;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -59,7 +59,7 @@ class RuntimeContentAssetApiTest {
 
         ContentPrimaryEntity entity = api.createOrReferencePrimaryEntity(
                 7L,
-                new ContentBlobReference(blob.getObjectKey(), blob.getContentType(), blob.getSize())
+                new ContentBlobReference(blob.getId(), blob.getObjectKey(), blob.getContentType(), blob.getSize())
         );
 
         assertThat(entity.objectKey()).isEqualTo("blobs/blob-1");
@@ -131,6 +131,7 @@ class RuntimeContentAssetApiTest {
 
     private FileBlob createBlob(String objectKey) {
         FileBlob blob = new FileBlob();
+        blob.setId(99L);
         blob.setObjectKey(objectKey);
         blob.setContentType("text/plain");
         blob.setSize(5L);

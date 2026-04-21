@@ -1,6 +1,6 @@
 package com.yoyuzh.ops.admin.internal.web;
 
-import com.yoyuzh.auth.PasswordPolicy;
+import com.yoyuzh.identity.access.api.PasswordPolicy;
 import jakarta.validation.constraints.AssertTrue;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;

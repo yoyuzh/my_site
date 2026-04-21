@@ -1,27 +1,27 @@
 package com.yoyuzh.ops.admin.internal.application;
 
 import com.yoyuzh.PortalBackendApplication;
-import com.yoyuzh.auth.RefreshTokenRepository;
-import com.yoyuzh.auth.RegistrationInviteStateRepository;
-import com.yoyuzh.auth.User;
-import com.yoyuzh.auth.UserRepository;
-import com.yoyuzh.files.core.FileBlob;
-import com.yoyuzh.files.core.FileBlobRepository;
-import com.yoyuzh.files.core.FileEntity;
-import com.yoyuzh.files.core.FileEntityRepository;
-import com.yoyuzh.files.core.FileEntityType;
-import com.yoyuzh.files.core.StoredFile;
-import com.yoyuzh.files.core.StoredFileEntity;
-import com.yoyuzh.files.core.StoredFileEntityRepository;
-import com.yoyuzh.files.core.StoredFileRepository;
-import com.yoyuzh.files.policy.StoragePolicy;
-import com.yoyuzh.files.policy.StoragePolicyRepository;
-import com.yoyuzh.files.policy.StoragePolicyType;
-import com.yoyuzh.files.share.FileShareLink;
-import com.yoyuzh.files.share.FileShareLinkRepository;
-import com.yoyuzh.files.tasks.BackgroundTask;
+import com.yoyuzh.identity.access.internal.domain.User;
+import com.yoyuzh.identity.access.internal.infra.UserRepository;
+import com.yoyuzh.files.content.internal.domain.FileBlob;
+import com.yoyuzh.files.content.internal.infra.FileBlobRepository;
+import com.yoyuzh.files.content.internal.domain.FileEntity;
+import com.yoyuzh.files.content.internal.infra.FileEntityRepository;
+import com.yoyuzh.files.content.internal.domain.FileEntityType;
+import com.yoyuzh.files.workspace.internal.domain.StoredFile;
+import com.yoyuzh.files.content.internal.domain.StoredFileEntity;
+import com.yoyuzh.files.content.internal.infra.StoredFileEntityRepository;
+import com.yoyuzh.files.workspace.internal.infra.StoredFileRepository;
+import com.yoyuzh.files.sharing.internal.domain.FileShareLink;
+import com.yoyuzh.files.sharing.internal.infra.FileShareLinkRepository;
+import com.yoyuzh.identity.access.internal.infra.RefreshTokenRepository;
+import com.yoyuzh.identity.access.internal.infra.RegistrationInviteStateRepository;
+import com.yoyuzh.platform.storage.internal.domain.StoragePolicy;
+import com.yoyuzh.platform.storage.internal.infra.StoragePolicyRepository;
+import com.yoyuzh.platform.storage.api.StoragePolicyType;
+import com.yoyuzh.platform.job.internal.domain.BackgroundTask;
 import com.yoyuzh.platform.job.api.BackgroundTaskFailureCategory;
-import com.yoyuzh.files.tasks.BackgroundTaskRepository;
+import com.yoyuzh.platform.job.internal.infra.BackgroundTaskRepository;
 import com.yoyuzh.platform.job.api.BackgroundTaskStatus;
 import com.yoyuzh.platform.job.api.BackgroundTaskType;
 import com.yoyuzh.ops.admin.api.AdminSettingsUpdateRequest;
@@ -296,7 +296,7 @@ class AdminControllerIntegrationTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.role").value("ADMIN"));
 
-        secondaryUser.setRole(com.yoyuzh.auth.UserRole.MODERATOR);
+        secondaryUser.setRole(com.yoyuzh.identity.access.internal.domain.UserRole.MODERATOR);
         secondaryUser = userRepository.save(secondaryUser);
 
         mockMvc.perform(patch("/api/admin/users/{userId}/status", portalUser.getId())
@@ -624,7 +624,7 @@ class AdminControllerIntegrationTest {
     void shouldRejectRemovingLastAdminCapableUser() throws Exception {
         mockMvc.perform(get("/api/admin/settings"))
                 .andExpect(status().isOk());
-        portalUser.setRole(com.yoyuzh.auth.UserRole.ADMIN);
+        portalUser.setRole(com.yoyuzh.identity.access.internal.domain.UserRole.ADMIN);
         portalUser = userRepository.save(portalUser);
         adminRuntimeSettingsService.update(new AdminSettingsUpdateRequest(
                 null,
@@ -1036,7 +1036,7 @@ class AdminControllerIntegrationTest {
         targetPolicy.setRegion("auto");
         targetPolicy.setPrivateBucket(true);
         targetPolicy.setPrefix("archive/");
-        targetPolicy.setCredentialMode(com.yoyuzh.files.policy.StoragePolicyCredentialMode.STATIC);
+        targetPolicy.setCredentialMode(com.yoyuzh.platform.storage.api.StoragePolicyCredentialMode.STATIC);
         targetPolicy.setMaxSizeBytes(40960L);
         targetPolicy.setCapabilitiesJson("""
                 {"directUpload":true,"multipartUpload":true,"signedDownloadUrl":true,"serverProxyDownload":true,"thumbnailNative":false,"friendlyDownloadName":true,"requiresCors":true,"supportsInternalEndpoint":false,"maxObjectSize":40960}

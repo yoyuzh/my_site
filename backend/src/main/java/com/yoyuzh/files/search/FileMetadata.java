@@ -1,6 +1,6 @@
 package com.yoyuzh.files.search;
 
-import com.yoyuzh.files.core.StoredFile;
+import com.yoyuzh.files.workspace.internal.domain.StoredFile;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.FetchType;

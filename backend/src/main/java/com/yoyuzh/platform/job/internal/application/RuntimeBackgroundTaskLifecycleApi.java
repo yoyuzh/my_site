@@ -1,9 +1,8 @@
 package com.yoyuzh.platform.job.internal.application;
 
-import com.yoyuzh.auth.User;
 import com.yoyuzh.shared.kernel.PageResponse;
-import com.yoyuzh.files.tasks.BackgroundTask;
-import com.yoyuzh.files.tasks.BackgroundTaskService;
+import com.yoyuzh.platform.job.internal.domain.BackgroundTask;
+import com.yoyuzh.platform.job.internal.application.BackgroundTaskService;
 import com.yoyuzh.platform.job.api.BackgroundTaskLifecycleApi;
 import com.yoyuzh.platform.job.api.BackgroundTaskType;
 import com.yoyuzh.platform.job.api.BackgroundTaskView;
@@ -23,9 +22,9 @@ public class RuntimeBackgroundTaskLifecycleApi implements BackgroundTaskLifecycl
     private final BackgroundTaskService backgroundTaskService;
 
     @Override
-    public PageResponse<BackgroundTaskView> listOwnedTasks(User user, int page, int size) {
+    public PageResponse<BackgroundTaskView> listOwnedTasks(Long userId, int page, int size) {
         Page<BackgroundTask> result = backgroundTaskService.listOwnedTasks(
-                user,
+                userId,
                 PageRequest.of(page, size, Sort.by(Sort.Direction.DESC, "createdAt"))
         );
         return new PageResponse<>(
@@ -37,36 +36,45 @@ public class RuntimeBackgroundTaskLifecycleApi implements BackgroundTaskLifecycl
     }
 
     @Override
-    public BackgroundTaskView getOwnedTask(User user, Long id) {
-        return toView(backgroundTaskService.getOwnedTask(user, id));
+    public BackgroundTaskView getOwnedTask(Long userId, Long id) {
+        return toView(backgroundTaskService.getOwnedTask(userId, id));
     }
 
     @Override
-    public BackgroundTaskView cancelOwnedTask(User user, Long id) {
-        return toView(backgroundTaskService.cancelOwnedTask(user, id));
+    public BackgroundTaskView cancelOwnedTask(Long userId, Long id) {
+        return toView(backgroundTaskService.cancelOwnedTask(userId, id));
     }
 
     @Override
-    public BackgroundTaskView retryOwnedTask(User user, Long id) {
-        return toView(backgroundTaskService.retryOwnedTask(user, id));
+    public BackgroundTaskView retryOwnedTask(Long userId, Long id) {
+        return toView(backgroundTaskService.retryOwnedTask(userId, id));
     }
 
     @Override
-    public BackgroundTaskView createQueuedFileTask(User user,
+    public BackgroundTaskView createQueuedFileTask(Long userId,
                                                    BackgroundTaskType type,
                                                    Long fileId,
                                                    String requestedPath,
                                                    String correlationId) {
-        return toView(backgroundTaskService.createQueuedFileTask(user, type, fileId, requestedPath, correlationId));
+        return toView(backgroundTaskService.createQueuedFileTask(userId, type, fileId, requestedPath, correlationId));
     }
 
     @Override
-    public BackgroundTaskView createQueuedTask(User user,
+    public BackgroundTaskView createQueuedTask(Long userId,
                                                BackgroundTaskType type,
                                                Map<String, Object> publicState,
                                                Map<String, Object> privateState,
                                                String correlationId) {
-        return toView(backgroundTaskService.createQueuedTask(user, type, publicState, privateState, correlationId));
+        return toView(backgroundTaskService.createQueuedTaskByUserId(userId, type, publicState, privateState, correlationId));
+    }
+
+    @Override
+    public BackgroundTaskView createQueuedTaskByUserId(Long userId,
+                                                       BackgroundTaskType type,
+                                                       Map<String, Object> publicState,
+                                                       Map<String, Object> privateState,
+                                                       String correlationId) {
+        return toView(backgroundTaskService.createQueuedTaskByUserId(userId, type, publicState, privateState, correlationId));
     }
 
     @Override

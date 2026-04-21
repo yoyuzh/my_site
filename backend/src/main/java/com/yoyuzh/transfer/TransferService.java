@@ -1,7 +1,6 @@
 package com.yoyuzh.transfer;
 
-import com.yoyuzh.ops.admin.internal.application.AdminMetricsService;
-import com.yoyuzh.auth.User;
+import com.yoyuzh.identity.access.internal.domain.User;
 import com.yoyuzh.files.workspace.api.FileMetadataResponse;
 import com.yoyuzh.transfer.api.CreateTransferSessionCommand;
 import com.yoyuzh.transfer.api.TransferImportCommand;
@@ -22,7 +21,8 @@ public class TransferService {
 
     @Transactional
     public TransferSessionResponse createSession(User sender, CreateTransferSessionRequest request) {
-        return transferSessionApi.createSession(sender, new CreateTransferSessionCommand(request.mode(), request.files()));
+        return transferSessionApi.createSession(sender == null ? null : sender.getId(),
+                new CreateTransferSessionCommand(request.mode(), request.files()));
     }
 
     public LookupTransferSessionResponse lookupSession(String pickupCode) {
@@ -34,12 +34,12 @@ public class TransferService {
     }
 
     public List<TransferSessionResponse> listOfflineSessions(User sender) {
-        return transferSessionApi.listOfflineSessions(sender);
+        return transferSessionApi.listOfflineSessions(sender.getId());
     }
 
     @Transactional
     public void uploadOfflineFile(User sender, String sessionId, String fileId, MultipartFile multipartFile) {
-        transferSessionApi.uploadOfflineFile(sender, sessionId, fileId, multipartFile);
+        transferSessionApi.uploadOfflineFile(sender.getId(), sessionId, fileId, multipartFile);
     }
 
     public void postSignal(String sessionId, String role, TransferSignalRequest request) {
@@ -56,6 +56,6 @@ public class TransferService {
 
     @Transactional
     public FileMetadataResponse importOfflineFile(User recipient, String sessionId, String fileId, String path) {
-        return transferSessionApi.importOfflineFile(recipient, sessionId, fileId, new TransferImportCommand(path));
+        return transferSessionApi.importOfflineFile(recipient.getId(), sessionId, fileId, new TransferImportCommand(path));
     }
 }

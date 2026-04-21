@@ -1,7 +1,7 @@
 package com.yoyuzh.identity.access.internal.application;
 
-import com.yoyuzh.auth.AuthClientType;
-import com.yoyuzh.auth.User;
+import com.yoyuzh.identity.access.api.IdentityClientType;
+import com.yoyuzh.identity.access.internal.domain.User;
 import com.yoyuzh.shared.kernel.BusinessException;
 import com.yoyuzh.identity.access.api.IdentityCredentialIssuer;
 import com.yoyuzh.identity.access.api.IdentityCredentialRevocationPolicy;
@@ -45,18 +45,18 @@ class RuntimePasswordChangePolicyTest {
 
         when(passwordEncoder.matches("OldPass1!", "encoded-old")).thenReturn(true);
         when(passwordEncoder.encode("NewPass1!A")).thenReturn("encoded-new");
-        when(identityCredentialIssuer.issueFresh(user, AuthClientType.DESKTOP))
+        when(identityCredentialIssuer.issueFresh(user, IdentityClientType.DESKTOP))
                 .thenReturn(new IssuedAuthCredentials(user, "new-access", "new-refresh"));
 
         IssuedAuthCredentials issued = policy.changePassword(
                 user,
-                new PasswordChangeAttempt("OldPass1!", "NewPass1!A", AuthClientType.DESKTOP));
+                new PasswordChangeAttempt("OldPass1!", "NewPass1!A", IdentityClientType.DESKTOP));
 
         assertThat(user.getPasswordHash()).isEqualTo("encoded-new");
         assertThat(user.getDesktopActiveSessionId()).isEqualTo(previousDesktopSessionId);
         assertThat(user.getMobileActiveSessionId()).isEqualTo(previousMobileSessionId);
         verify(identityCredentialRevocationPolicy).revokeAll(user);
-        verify(identityCredentialIssuer).issueFresh(user, AuthClientType.DESKTOP);
+        verify(identityCredentialIssuer).issueFresh(user, IdentityClientType.DESKTOP);
         assertThat(issued.accessToken()).isEqualTo("new-access");
         assertThat(issued.refreshToken()).isEqualTo("new-refresh");
     }
@@ -73,12 +73,12 @@ class RuntimePasswordChangePolicyTest {
 
         assertThatThrownBy(() -> policy.changePassword(
                 user,
-                new PasswordChangeAttempt("WrongPass1!", "NewPass1!A", AuthClientType.DESKTOP)))
+                new PasswordChangeAttempt("WrongPass1!", "NewPass1!A", IdentityClientType.DESKTOP)))
                 .isInstanceOf(BusinessException.class)
                 .hasMessageContaining("当前密码错误");
 
         verify(identityCredentialRevocationPolicy, never()).revokeAll(user);
-        verify(identityCredentialIssuer, never()).issueFresh(user, AuthClientType.DESKTOP);
+        verify(identityCredentialIssuer, never()).issueFresh(user, IdentityClientType.DESKTOP);
     }
 
     private static User createUser(Long id, String username) {

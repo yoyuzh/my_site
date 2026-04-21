@@ -2,7 +2,6 @@ package com.yoyuzh.boot.security;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.yoyuzh.ops.admin.internal.web.ApiRequestMetricsFilter;
-import com.yoyuzh.auth.CustomUserDetailsService;
 import com.yoyuzh.shared.kernel.ApiResponse;
 import com.yoyuzh.shared.kernel.ErrorCode;
 import java.util.List;

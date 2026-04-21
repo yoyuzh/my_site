@@ -1,15 +1,15 @@
 package com.yoyuzh.identity.access.internal.application;
 
-import com.yoyuzh.auth.AuthClientType;
-import com.yoyuzh.auth.AuthTokenInvalidationService;
-import com.yoyuzh.auth.RefreshToken;
-import com.yoyuzh.auth.RefreshTokenRepository;
-import com.yoyuzh.auth.User;
+import com.yoyuzh.identity.access.api.IdentityClientType;
+import com.yoyuzh.identity.access.internal.domain.User;
+import com.yoyuzh.boot.security.AuthTokenInvalidationService;
 import com.yoyuzh.shared.kernel.BusinessException;
 import com.yoyuzh.shared.kernel.ErrorCode;
 import com.yoyuzh.boot.security.JwtProperties;
 import com.yoyuzh.identity.access.api.IdentityRefreshTokenManager;
 import com.yoyuzh.identity.access.api.RotatedIdentityRefreshToken;
+import com.yoyuzh.identity.access.internal.domain.RefreshToken;
+import com.yoyuzh.identity.access.internal.infra.RefreshTokenRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -38,7 +38,7 @@ public class RuntimeIdentityRefreshTokenManager implements IdentityRefreshTokenM
 
     @Override
     @Transactional
-    public String issue(User user, AuthClientType clientType) {
+    public String issue(User user, IdentityClientType clientType) {
         String rawToken = generateRawToken();
 
         RefreshToken refreshToken = new RefreshToken();
@@ -74,7 +74,7 @@ public class RuntimeIdentityRefreshTokenManager implements IdentityRefreshTokenM
         }
 
         User user = existing.getUser();
-        AuthClientType clientType = AuthClientType.fromHeader(existing.getClientType());
+        IdentityClientType clientType = IdentityClientType.fromHeader(existing.getClientType());
         existing.revoke(LocalDateTime.now());
         authTokenInvalidationService.blacklistRefreshTokenHash(existing.getTokenHash(), toInstant(existing.getExpiresAt()));
         revokeAll(user.getId(), clientType);
@@ -94,7 +94,7 @@ public class RuntimeIdentityRefreshTokenManager implements IdentityRefreshTokenM
 
     @Override
     @Transactional
-    public void revokeAll(Long userId, AuthClientType clientType) {
+    public void revokeAll(Long userId, IdentityClientType clientType) {
         LocalDateTime now = LocalDateTime.now();
         List<RefreshToken> tokens = refreshTokenRepository.findActiveByUserIdAndClientType(userId, clientType.name(), now);
         refreshTokenRepository.revokeAllActiveByUserIdAndClientType(userId, clientType.name(), now);

@@ -1,0 +1,10 @@
+package com.yoyuzh.files.upload.internal.web;
+
+import jakarta.validation.constraints.Min;
+import jakarta.validation.constraints.NotBlank;
+
+public record MarkUploadSessionPartV2Request(
+        @NotBlank String etag,
+        @Min(0) long size
+) {
+}

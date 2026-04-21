@@ -1,9 +1,9 @@
 package com.yoyuzh.files.search;
 
-import com.yoyuzh.api.v2.ApiV2Exception;
-import com.yoyuzh.auth.User;
-import com.yoyuzh.files.core.StoredFile;
-import com.yoyuzh.files.core.StoredFileRepository;
+import com.yoyuzh.boot.web.v2.ApiV2Exception;
+import com.yoyuzh.identity.access.internal.domain.User;
+import com.yoyuzh.files.workspace.internal.domain.StoredFile;
+import com.yoyuzh.files.workspace.internal.infra.StoredFileRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;

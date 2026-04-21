@@ -3,8 +3,8 @@ package com.yoyuzh.identity.access.internal.application;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.when;
 
-import com.yoyuzh.auth.RegistrationInviteService;
-import com.yoyuzh.auth.UserRepository;
+import com.yoyuzh.identity.access.internal.infra.UserRepository;
+import com.yoyuzh.identity.access.internal.application.RegistrationInviteService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;

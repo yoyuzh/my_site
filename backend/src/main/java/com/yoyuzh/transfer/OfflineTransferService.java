@@ -1,6 +1,5 @@
 package com.yoyuzh.transfer;
 
-import com.yoyuzh.auth.User;
 import com.yoyuzh.shared.kernel.BusinessException;
 import com.yoyuzh.shared.kernel.ErrorCode;
 import com.yoyuzh.platform.storage.internal.infra.FileStorageProperties;
@@ -46,11 +45,11 @@ public class OfflineTransferService {
     }
 
     @Transactional
-    public TransferSessionResponse createSession(User sender, CreateTransferSessionRequest request) {
+    public TransferSessionResponse createSession(Long senderUserId, CreateTransferSessionRequest request) {
         OfflineTransferSession session = new OfflineTransferSession();
         session.setSessionId(UUID.randomUUID().toString());
         session.setPickupCode(nextPickupCode());
-        session.setSenderUserId(sender.getId());
+        session.setSenderUserId(senderUserId);
         session.setExpiresAt(Instant.now().plus(OFFLINE_SESSION_TTL));
         session.setReady(false);
 
@@ -88,8 +87,8 @@ public class OfflineTransferService {
         return toSessionResponse(offlineSession);
     }
 
-    public List<TransferSessionResponse> listOfflineSessions(User sender) {
-        return offlineTransferSessionRepository.findActiveWithFilesBySenderUserId(sender.getId(), Instant.now()).stream()
+    public List<TransferSessionResponse> listOfflineSessions(Long senderUserId) {
+        return offlineTransferSessionRepository.findActiveWithFilesBySenderUserId(senderUserId, Instant.now()).stream()
                 .map(this::toSessionResponse)
                 .toList();
     }
@@ -99,8 +98,8 @@ public class OfflineTransferService {
     }
 
     @Transactional
-    public void uploadOfflineFile(User sender, String sessionId, String fileId, MultipartFile multipartFile) {
-        OfflineTransferSession session = getRequiredOfflineEditableSession(sender, sessionId);
+    public void uploadOfflineFile(Long senderUserId, String sessionId, String fileId, MultipartFile multipartFile) {
+        OfflineTransferSession session = getRequiredOfflineEditableSession(senderUserId, sessionId);
         OfflineTransferFile targetFile = getRequiredOfflineFile(session, fileId);
         offlineTransferQuotaService.ensureUploadAllowed(targetFile, multipartFile.getSize(), maxFileSize);
 
@@ -213,10 +212,10 @@ public class OfflineTransferService {
         );
     }
 
-    private OfflineTransferSession getRequiredOfflineEditableSession(User sender, String sessionId) {
+    private OfflineTransferSession getRequiredOfflineEditableSession(Long senderUserId, String sessionId) {
         OfflineTransferSession session = offlineTransferSessionRepository.findWithFilesBySessionId(sessionId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.FILE_NOT_FOUND, "offline transfer session not found or expired"));
-        if (!Objects.equals(session.getSenderUserId(), sender.getId())) {
+        if (!Objects.equals(session.getSenderUserId(), senderUserId)) {
             throw new BusinessException(ErrorCode.PERMISSION_DENIED, "no permission to upload this offline transfer file");
         }
         if (session.isExpired(Instant.now())) {

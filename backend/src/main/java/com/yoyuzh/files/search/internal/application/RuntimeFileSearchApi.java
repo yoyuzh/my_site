@@ -1,11 +1,10 @@
 package com.yoyuzh.files.search.internal.application;
 
-import com.yoyuzh.api.v2.ApiV2ErrorCode;
-import com.yoyuzh.api.v2.ApiV2Exception;
-import com.yoyuzh.auth.User;
+import com.yoyuzh.boot.web.v2.ApiV2ErrorCode;
+import com.yoyuzh.boot.web.v2.ApiV2Exception;
 import com.yoyuzh.shared.kernel.PageResponse;
-import com.yoyuzh.files.core.StoredFile;
-import com.yoyuzh.files.core.StoredFileRepository;
+import com.yoyuzh.files.workspace.internal.domain.StoredFile;
+import com.yoyuzh.files.workspace.internal.infra.StoredFileRepository;
 import com.yoyuzh.files.search.api.FileSearchApi;
 import com.yoyuzh.files.search.api.SearchFilesQuery;
 import com.yoyuzh.files.workspace.api.FileMetadataResponse;
@@ -27,10 +26,10 @@ public class RuntimeFileSearchApi implements FileSearchApi {
     }
 
     @Override
-    public PageResponse<FileMetadataResponse> search(User user, SearchFilesQuery query) {
+    public PageResponse<FileMetadataResponse> search(Long userId, SearchFilesQuery query) {
         validateQuery(query);
         Page<StoredFile> result = storedFileRepository.searchUserFiles(
-                user.getId(),
+                userId,
                 normalizeName(query.name()),
                 query.directory(),
                 query.sizeGte(),

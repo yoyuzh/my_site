@@ -1,10 +1,10 @@
 package com.yoyuzh.identity.access.api;
 
-import com.yoyuzh.auth.AuthClientType;
+import com.yoyuzh.identity.access.api.IdentityClientType;
 
 public record PasswordChangeAttempt(
         String currentPassword,
         String newPassword,
-        AuthClientType clientType
+        IdentityClientType clientType
 ) {
 }

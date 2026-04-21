@@ -1,11 +1,8 @@
 package com.yoyuzh.boot.security;
 
 import com.yoyuzh.ops.admin.internal.application.AdminMetricsService;
-import com.yoyuzh.auth.AuthClientType;
-import com.yoyuzh.auth.AuthTokenInvalidationService;
-import com.yoyuzh.auth.CustomUserDetailsService;
-import com.yoyuzh.auth.JwtTokenProvider;
-import com.yoyuzh.auth.User;
+import com.yoyuzh.identity.access.api.IdentityClientType;
+import com.yoyuzh.identity.access.internal.domain.User;
 import com.yoyuzh.shared.kernel.BusinessException;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
@@ -39,7 +36,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             if (jwtTokenProvider.validateToken(token)
                     && SecurityContextHolder.getContext().getAuthentication() == null) {
                 Long userId = jwtTokenProvider.getUserId(token);
-                AuthClientType clientType = jwtTokenProvider.getClientType(token);
+                IdentityClientType clientType = jwtTokenProvider.getClientType(token);
                 if (authTokenInvalidationService.isAccessTokenRevoked(
                         userId,
                         clientType,

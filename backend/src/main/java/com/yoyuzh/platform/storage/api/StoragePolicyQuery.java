@@ -4,7 +4,11 @@ public interface StoragePolicyQuery {
 
     DefaultStoragePolicySnapshot readDefaultPolicySnapshot();
 
+    StoragePolicyDescriptor readPolicyDescriptor(Long policyId);
+
+    StoragePolicyCapabilities readPolicyCapabilities(Long policyId);
+
     default Long readDefaultPolicyId() {
-        return readDefaultPolicySnapshot().policy().getId();
+        return readDefaultPolicySnapshot().policyId();
     }
 }

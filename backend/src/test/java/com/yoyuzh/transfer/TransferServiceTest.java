@@ -1,6 +1,6 @@
 package com.yoyuzh.transfer;
 
-import com.yoyuzh.auth.User;
+import com.yoyuzh.identity.access.internal.domain.User;
 import com.yoyuzh.transfer.api.CreateTransferSessionCommand;
 import com.yoyuzh.transfer.api.TransferImportCommand;
 import com.yoyuzh.transfer.api.TransferSessionApi;
@@ -57,12 +57,12 @@ class TransferServiceTest {
         User recipient = new User();
         recipient.setId(7L);
         FileMetadataResponse response = new FileMetadataResponse(10L, "offline.txt", "/docs", 12L, "text/plain", false, null);
-        when(transferSessionApi.importOfflineFile(recipient, "session-1", "file-1", new TransferImportCommand("/docs"))).thenReturn(response);
+        when(transferSessionApi.importOfflineFile(7L, "session-1", "file-1", new TransferImportCommand("/docs"))).thenReturn(response);
 
         FileMetadataResponse actual = transferService.importOfflineFile(recipient, "session-1", "file-1", "/docs");
 
         assertThat(actual.id()).isEqualTo(10L);
-        verify(transferSessionApi).importOfflineFile(recipient, "session-1", "file-1", new TransferImportCommand("/docs"));
+        verify(transferSessionApi).importOfflineFile(7L, "session-1", "file-1", new TransferImportCommand("/docs"));
     }
 
     @Test
@@ -77,7 +77,7 @@ class TransferServiceTest {
         ResponseEntity<?> actual = transferService.downloadOfflineFile("session-1", "file-1");
 
         assertThat(actual.getBody()).isEqualTo("ok");
-        verify(transferSessionApi).uploadOfflineFile(sender, "session-1", "file-1", file);
+        verify(transferSessionApi).uploadOfflineFile(7L, "session-1", "file-1", file);
         verify(transferSessionApi).downloadOfflineFile("session-1", "file-1");
     }
 }

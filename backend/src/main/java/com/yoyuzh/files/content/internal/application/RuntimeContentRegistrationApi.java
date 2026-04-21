@@ -1,6 +1,6 @@
 package com.yoyuzh.files.content.internal.application;
 
-import com.yoyuzh.auth.User;
+import com.yoyuzh.identity.access.internal.domain.User;
 import com.yoyuzh.files.content.api.ContentAssetApi;
 import com.yoyuzh.files.content.api.ContentPrimaryEntity;
 import com.yoyuzh.files.content.api.ContentPrimaryEntityRelationCommand;
@@ -8,11 +8,13 @@ import com.yoyuzh.files.content.api.ContentDuplicationApi;
 import com.yoyuzh.files.content.api.ContentRegistrationApi;
 import com.yoyuzh.files.content.api.ContentRegistrationCommand;
 import com.yoyuzh.files.content.api.RegisteredContentFile;
-import com.yoyuzh.files.core.FileEntity;
-import com.yoyuzh.files.core.FileEntityRepository;
-import com.yoyuzh.files.core.StoredFile;
-import com.yoyuzh.files.core.StoredFileEntityRepository;
-import com.yoyuzh.files.core.StoredFileRepository;
+import com.yoyuzh.files.content.internal.domain.FileBlob;
+import com.yoyuzh.files.content.internal.domain.FileEntity;
+import com.yoyuzh.files.content.internal.domain.FileEntityType;
+import com.yoyuzh.files.content.internal.infra.FileEntityRepository;
+import com.yoyuzh.files.workspace.internal.domain.StoredFile;
+import com.yoyuzh.files.content.internal.infra.StoredFileEntityRepository;
+import com.yoyuzh.files.workspace.internal.infra.StoredFileRepository;
 import com.yoyuzh.platform.storage.api.StoragePolicyQuery;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
@@ -90,8 +92,9 @@ public final class RuntimeContentRegistrationApi implements ContentRegistrationA
         );
     }
 
-    private com.yoyuzh.files.core.FileBlob blobReference(ContentRegistrationCommand command) {
-        com.yoyuzh.files.core.FileBlob blob = new com.yoyuzh.files.core.FileBlob();
+    private FileBlob blobReference(ContentRegistrationCommand command) {
+        FileBlob blob = new FileBlob();
+        blob.setId(command.blob().blobId());
         blob.setObjectKey(command.blob().objectKey());
         blob.setContentType(command.blob().contentType());
         blob.setSize(command.blob().size());
@@ -101,6 +104,7 @@ public final class RuntimeContentRegistrationApi implements ContentRegistrationA
     private FileEntity primaryEntityReference(ContentPrimaryEntity primaryEntity) {
         FileEntity entity = new FileEntity();
         entity.setId(primaryEntity.entityId());
+        entity.setEntityType(FileEntityType.VERSION);
         entity.setObjectKey(primaryEntity.objectKey());
         entity.setContentType(primaryEntity.contentType());
         entity.setSize(primaryEntity.size());

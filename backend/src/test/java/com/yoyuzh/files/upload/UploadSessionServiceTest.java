@@ -1,11 +1,11 @@
 package com.yoyuzh.files.upload;
 
-import com.yoyuzh.auth.User;
+import com.yoyuzh.identity.access.internal.domain.User;
 import com.yoyuzh.shared.kernel.BusinessException;
-import com.yoyuzh.files.policy.StoragePolicy;
-import com.yoyuzh.files.policy.StoragePolicyCapabilities;
-import com.yoyuzh.files.policy.StoragePolicyService;
-import com.yoyuzh.files.policy.StoragePolicyType;
+import com.yoyuzh.platform.storage.internal.domain.StoragePolicy;
+import com.yoyuzh.platform.storage.api.StoragePolicyCapabilities;
+import com.yoyuzh.platform.storage.internal.application.StoragePolicyService;
+import com.yoyuzh.platform.storage.api.StoragePolicyType;
 import com.yoyuzh.files.storage.FileContentStorage;
 import com.yoyuzh.files.storage.PreparedUpload;
 import com.yoyuzh.files.upload.api.UploadCompletionApi;
@@ -84,11 +84,12 @@ class UploadSessionServiceTest {
                 false,
                 500L * 1024 * 1024
         );
-        when(uploadTargetPolicy.validateUpload(user, "/docs", "movie.mp4", 20L * 1024 * 1024))
+        when(uploadTargetPolicy.validateUpload(7L, user.getMaxUploadSizeBytes(), user.getStorageQuotaBytes(),
+                "/docs", "movie.mp4", 20L * 1024 * 1024))
                 .thenReturn(new ValidatedUploadTarget(
                         "/docs",
                         "movie.mp4",
-                        new DefaultStoragePolicySnapshot(policy, capabilities)
+                        new DefaultStoragePolicySnapshot(policy.getId(), policy.getMaxSizeBytes(), capabilities)
                 ));
         when(fileContentStorage.createMultipartUpload(any(), eq("video/mp4"))).thenReturn("upload-123");
         when(uploadSessionRepository.save(any(UploadSession.class))).thenAnswer(invocation -> {
@@ -152,9 +153,7 @@ class UploadSessionServiceTest {
         session.setChunkCount(1);
         when(uploadSessionRepository.findBySessionIdAndUserId("session-1", 7L))
                 .thenReturn(Optional.of(session));
-        StoragePolicy policy = createDefaultStoragePolicy();
-        when(storagePolicyService.getRequiredPolicy(42L)).thenReturn(policy);
-        when(storagePolicyService.readCapabilities(policy)).thenReturn(new StoragePolicyCapabilities(
+        when(storagePolicyService.readPolicyCapabilities(42L)).thenReturn(new StoragePolicyCapabilities(
                 true,
                 false,
                 true,
@@ -165,7 +164,6 @@ class UploadSessionServiceTest {
                 false,
                 500L * 1024 * 1024
         ));
-        when(storagePolicyService.resolveUploadMode(any())).thenReturn(UploadSessionUploadMode.DIRECT_SINGLE);
         when(fileContentStorage.prepareBlobUpload("/docs", "movie.mp4", "blobs/session-1", "video/mp4", 20L))
                 .thenReturn(new PreparedUpload(
                         true,
@@ -192,9 +190,7 @@ class UploadSessionServiceTest {
         session.setSize(7L);
         when(uploadSessionRepository.findBySessionIdAndUserId("session-1", 7L))
                 .thenReturn(Optional.of(session));
-        StoragePolicy policy = createDefaultStoragePolicy();
-        when(storagePolicyService.getRequiredPolicy(42L)).thenReturn(policy);
-        when(storagePolicyService.readCapabilities(policy)).thenReturn(new StoragePolicyCapabilities(
+        when(storagePolicyService.readPolicyCapabilities(42L)).thenReturn(new StoragePolicyCapabilities(
                 false,
                 false,
                 false,
@@ -205,7 +201,6 @@ class UploadSessionServiceTest {
                 false,
                 500L * 1024 * 1024
         ));
-        when(storagePolicyService.resolveUploadMode(any())).thenReturn(UploadSessionUploadMode.PROXY);
         when(uploadSessionRepository.save(any(UploadSession.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
         UploadSession result = uploadSessionService.uploadOwnedContent(
@@ -222,11 +217,12 @@ class UploadSessionServiceTest {
     void shouldCreateProxyUploadSessionWhenPolicyDisablesDirectUpload() {
         User user = createUser(7L);
         StoragePolicy policy = createDefaultStoragePolicy();
-        when(uploadTargetPolicy.validateUpload(user, "/docs", "movie.mp4", 20L))
+        when(uploadTargetPolicy.validateUpload(7L, user.getMaxUploadSizeBytes(), user.getStorageQuotaBytes(),
+                "/docs", "movie.mp4", 20L))
                 .thenReturn(new ValidatedUploadTarget(
                         "/docs",
                         "movie.mp4",
-                        new DefaultStoragePolicySnapshot(policy, new StoragePolicyCapabilities(
+                        new DefaultStoragePolicySnapshot(policy.getId(), policy.getMaxSizeBytes(), new StoragePolicyCapabilities(
                                 false,
                                 false,
                                 false,
@@ -271,7 +267,8 @@ class UploadSessionServiceTest {
     @Test
     void shouldRejectDuplicateTargetWhenCreatingSession() {
         User user = createUser(7L);
-        when(uploadTargetPolicy.validateUpload(user, "/docs", "movie.mp4", 20L))
+        when(uploadTargetPolicy.validateUpload(7L, user.getMaxUploadSizeBytes(), user.getStorageQuotaBytes(),
+                "/docs", "movie.mp4", 20L))
                 .thenThrow(new BusinessException(com.yoyuzh.shared.kernel.ErrorCode.UNKNOWN, "duplicate"));
 
         assertThatThrownBy(() -> uploadSessionService.createSession(
@@ -304,6 +301,7 @@ class UploadSessionServiceTest {
         verify(fileContentStorage).completeMultipartUpload(eq("blobs/session-1"), eq("upload-123"), anyList());
         ArgumentCaptor<UploadCompletionCommand> commandCaptor = ArgumentCaptor.forClass(UploadCompletionCommand.class);
         verify(uploadCompletionApi).completeStoredBlob(commandCaptor.capture());
+        assertThat(commandCaptor.getValue().userId()).isEqualTo(7L);
         assertThat(commandCaptor.getValue().normalizedPath()).isEqualTo("/docs");
         assertThat(commandCaptor.getValue().filename()).isEqualTo("movie.mp4");
         assertThat(commandCaptor.getValue().objectKey()).isEqualTo("blobs/session-1");
@@ -410,6 +408,7 @@ class UploadSessionServiceTest {
         policy.setId(42L);
         policy.setName("Default S3 Compatible Storage");
         policy.setType(StoragePolicyType.S3_COMPATIBLE);
+        policy.setMaxSizeBytes(500L * 1024 * 1024);
         policy.setEnabled(true);
         policy.setDefaultPolicy(true);
         return policy;

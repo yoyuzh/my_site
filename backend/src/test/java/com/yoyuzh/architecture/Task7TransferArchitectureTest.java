@@ -5,12 +5,13 @@ import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.noClasses;
 
 import com.tngtech.archunit.core.domain.JavaClasses;
 import com.tngtech.archunit.core.importer.ClassFileImporter;
+import com.tngtech.archunit.core.importer.ImportOption;
 import com.tngtech.archunit.lang.ArchRule;
 import org.junit.jupiter.api.Test;
 
 class Task7TransferArchitectureTest {
 
-    private final JavaClasses classes = new ClassFileImporter().importPackages("com.yoyuzh");
+    private final JavaClasses classes = new ClassFileImporter().withImportOption(ImportOption.Predefined.DO_NOT_INCLUDE_TESTS).importPackages("com.yoyuzh");
 
     @Test
     void transferEntryPointsMustDependOnTransferApis() {
@@ -41,6 +42,18 @@ class Task7TransferArchitectureTest {
     }
 
     @Test
+    void transferApiContractsMustNotDependOnLegacyAuthTypes() {
+        ArchRule noLegacyAuthRule = noClasses()
+                .that()
+                .resideInAnyPackage("com.yoyuzh.transfer.api..")
+                .should()
+                .dependOnClassesThat()
+                .resideInAnyPackage("com.yoyuzh.auth..");
+
+        noLegacyAuthRule.check(classes);
+    }
+
+    @Test
     void transferImportMustStopDependingOnLegacyFileService() {
         ArchRule legacyDependencyRule = noClasses()
                 .that()
@@ -49,7 +62,7 @@ class Task7TransferArchitectureTest {
                 .haveFullyQualifiedName("com.yoyuzh.transfer.internal.application.RuntimeTransferImportApi")
                 .should()
                 .dependOnClassesThat()
-                .haveFullyQualifiedName("com.yoyuzh.files.core.FileService");
+                .haveFullyQualifiedName("com.yoyuzh.files.workspace.internal.application.FileService");
 
         ArchRule workspaceAndContentRule = classes()
                 .that()

@@ -1,11 +1,10 @@
 package com.yoyuzh.transfer;
 
-import com.yoyuzh.auth.CustomUserDetailsService;
-import com.yoyuzh.auth.User;
+import com.yoyuzh.boot.security.CustomUserDetailsService;
 import com.yoyuzh.shared.kernel.ApiResponse;
 import com.yoyuzh.shared.kernel.BusinessException;
 import com.yoyuzh.shared.kernel.ErrorCode;
-import com.yoyuzh.files.share.ImportSharedFileRequest;
+import com.yoyuzh.files.sharing.api.ImportSharedFileRequest;
 import com.yoyuzh.files.workspace.api.FileMetadataResponse;
 import com.yoyuzh.transfer.api.CreateTransferSessionCommand;
 import com.yoyuzh.transfer.api.TransferImportCommand;
@@ -38,8 +37,8 @@ public class TransferController {
     @PostMapping("/sessions")
     public ApiResponse<TransferSessionResponse> createSession(@AuthenticationPrincipal UserDetails userDetails,
                                                               @Valid @RequestBody CreateTransferSessionRequest request) {
-        User sender = loadAuthenticatedUser(userDetails);
-        return ApiResponse.success(transferSessionApi.createSession(sender, new CreateTransferSessionCommand(
+        Long senderUserId = loadAuthenticatedUserId(userDetails);
+        return ApiResponse.success(transferSessionApi.createSession(senderUserId, new CreateTransferSessionCommand(
                 request.mode(),
                 request.files()
         )));
@@ -60,10 +59,7 @@ public class TransferController {
     @Operation(summary = "查看当前用户的离线快传列表")
     @GetMapping("/sessions/offline/mine")
     public ApiResponse<java.util.List<TransferSessionResponse>> listOfflineSessions(@AuthenticationPrincipal UserDetails userDetails) {
-        requireAuthenticatedUser(userDetails);
-        return ApiResponse.success(transferSessionApi.listOfflineSessions(
-                userDetailsService.loadDomainUser(userDetails.getUsername())
-        ));
+        return ApiResponse.success(transferSessionApi.listOfflineSessions(currentUserId(userDetails)));
     }
 
     @Operation(summary = "上传离线快传文件")
@@ -72,9 +68,8 @@ public class TransferController {
                                                @PathVariable String sessionId,
                                                @PathVariable String fileId,
                                                @RequestPart("file") MultipartFile file) {
-        requireAuthenticatedUser(userDetails);
         transferSessionApi.uploadOfflineFile(
-                userDetailsService.loadDomainUser(userDetails.getUsername()),
+                currentUserId(userDetails),
                 sessionId,
                 fileId,
                 file
@@ -95,9 +90,8 @@ public class TransferController {
                                                                @PathVariable String sessionId,
                                                                @PathVariable String fileId,
                                                                @Valid @RequestBody ImportSharedFileRequest request) {
-        requireAuthenticatedUser(userDetails);
         return ApiResponse.success(transferSessionApi.importOfflineFile(
-                userDetailsService.loadDomainUser(userDetails.getUsername()),
+                currentUserId(userDetails),
                 sessionId,
                 fileId,
                 new TransferImportCommand(request.path())
@@ -127,10 +121,15 @@ public class TransferController {
         }
     }
 
-    private User loadAuthenticatedUser(UserDetails userDetails) {
+    private Long loadAuthenticatedUserId(UserDetails userDetails) {
         if (userDetails == null) {
             return null;
         }
-        return userDetailsService.loadDomainUser(userDetails.getUsername());
+        return userDetailsService.loadDomainUser(userDetails.getUsername()).getId();
+    }
+
+    private Long currentUserId(UserDetails userDetails) {
+        requireAuthenticatedUser(userDetails);
+        return userDetailsService.loadDomainUser(userDetails.getUsername()).getId();
     }
 }

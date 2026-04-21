@@ -1,7 +1,6 @@
 package com.yoyuzh.transfer.internal.application;
 
 import com.yoyuzh.ops.admin.internal.application.AdminMetricsService;
-import com.yoyuzh.auth.User;
 import com.yoyuzh.shared.kernel.BusinessException;
 import com.yoyuzh.shared.kernel.ErrorCode;
 import com.yoyuzh.transfer.LookupTransferSessionResponse;
@@ -21,6 +20,7 @@ import java.util.List;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -84,8 +84,7 @@ class RuntimeTransferSessionApiTest {
 
     @Test
     void shouldRouteOfflineSessionCreationToOfflineService() {
-        User sender = new User();
-        sender.setId(7L);
+        Long senderUserId = 7L;
         CreateTransferSessionCommand command = new CreateTransferSessionCommand(
                 TransferMode.OFFLINE,
                 List.of(new TransferFileItem("demo.txt", 12L, "text/plain"))
@@ -97,13 +96,13 @@ class RuntimeTransferSessionApiTest {
                 Instant.now().plusSeconds(60),
                 command.files()
         );
-        when(offlineTransferService.createSession(any(User.class), any())).thenReturn(response);
+        when(offlineTransferService.createSession(anyLong(), any())).thenReturn(response);
 
-        TransferSessionResponse actual = transferSessionApi.createSession(sender, command);
+        TransferSessionResponse actual = transferSessionApi.createSession(senderUserId, command);
 
         assertThat(actual.sessionId()).isEqualTo("offline-1");
         verify(adminMetricsService).recordTransferUsage(12L);
-        verify(offlineTransferService).createSession(any(User.class), any());
+        verify(offlineTransferService).createSession(anyLong(), any());
     }
 
     @Test

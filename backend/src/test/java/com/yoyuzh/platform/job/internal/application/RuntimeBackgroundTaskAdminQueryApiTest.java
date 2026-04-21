@@ -1,8 +1,8 @@
 package com.yoyuzh.platform.job.internal.application;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.yoyuzh.files.tasks.BackgroundTask;
-import com.yoyuzh.files.tasks.BackgroundTaskRepository;
+import com.yoyuzh.platform.job.internal.domain.BackgroundTask;
+import com.yoyuzh.platform.job.internal.infra.BackgroundTaskRepository;
 import com.yoyuzh.platform.job.api.AdminBackgroundTaskQuery;
 import com.yoyuzh.platform.job.api.AdminBackgroundTaskView;
 import com.yoyuzh.platform.job.api.BackgroundTaskFailureCategory;

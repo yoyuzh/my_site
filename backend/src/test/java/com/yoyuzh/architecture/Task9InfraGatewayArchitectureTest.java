@@ -6,25 +6,26 @@ import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.noClasses;
 
 import com.tngtech.archunit.core.domain.JavaClasses;
 import com.tngtech.archunit.core.importer.ClassFileImporter;
+import com.tngtech.archunit.core.importer.ImportOption;
 import com.tngtech.archunit.lang.ArchRule;
 import org.junit.jupiter.api.Test;
 
 class Task9InfraGatewayArchitectureTest {
 
-    private final JavaClasses classes = new ClassFileImporter().importPackages("com.yoyuzh");
+    private final JavaClasses classes = new ClassFileImporter().withImportOption(ImportOption.Predefined.DO_NOT_INCLUDE_TESTS).importPackages("com.yoyuzh");
 
     @Test
     void taskAndTransferRuntimeEntrypointsMustDependOnInfraGateways() {
         ArchRule brokerPublisherRule = classes()
                 .that()
-                .haveFullyQualifiedName("com.yoyuzh.files.tasks.MediaMetadataTaskBrokerPublisher")
+                .haveFullyQualifiedName("com.yoyuzh.platform.job.internal.application.MediaMetadataTaskBrokerPublisher")
                 .should()
                 .dependOnClassesThat()
                 .haveFullyQualifiedName("com.yoyuzh.infra.broker.LightweightBrokerGateway");
 
         ArchRule brokerConsumerRule = classes()
                 .that()
-                .haveFullyQualifiedName("com.yoyuzh.files.tasks.MediaMetadataTaskBrokerConsumer")
+                .haveFullyQualifiedName("com.yoyuzh.platform.job.internal.application.MediaMetadataTaskBrokerConsumer")
                 .should()
                 .dependOnClassesThat()
                 .haveFullyQualifiedName("com.yoyuzh.infra.broker.LightweightBrokerGateway");
@@ -38,14 +39,14 @@ class Task9InfraGatewayArchitectureTest {
 
         ArchRule backgroundTaskRule = classes()
                 .that()
-                .haveFullyQualifiedName("com.yoyuzh.files.tasks.BackgroundTaskService")
+                .haveFullyQualifiedName("com.yoyuzh.platform.job.internal.application.BackgroundTaskService")
                 .should()
                 .dependOnClassesThat()
                 .haveFullyQualifiedName("com.yoyuzh.infra.lock.DistributedLockGateway");
 
         ArchRule fileServiceLockRule = classes()
                 .that()
-                .haveFullyQualifiedName("com.yoyuzh.files.core.FileService")
+                .haveFullyQualifiedName("com.yoyuzh.files.workspace.internal.application.FileService")
                 .should()
                 .dependOnClassesThat()
                 .haveFullyQualifiedName("com.yoyuzh.infra.lock.DistributedLockGateway");
@@ -61,9 +62,9 @@ class Task9InfraGatewayArchitectureTest {
     void taskAndTransferRuntimeEntrypointsMustStopDependingOnLegacyCommonInfraContracts() {
         ArchRule noLegacyBrokerRule = noClasses()
                 .that()
-                .haveFullyQualifiedName("com.yoyuzh.files.tasks.MediaMetadataTaskBrokerPublisher")
+                .haveFullyQualifiedName("com.yoyuzh.platform.job.internal.application.MediaMetadataTaskBrokerPublisher")
                 .or()
-                .haveFullyQualifiedName("com.yoyuzh.files.tasks.MediaMetadataTaskBrokerConsumer")
+                .haveFullyQualifiedName("com.yoyuzh.platform.job.internal.application.MediaMetadataTaskBrokerConsumer")
                 .should()
                 .dependOnClassesThat()
                 .haveFullyQualifiedName("com.yoyuzh.common.broker.LightweightBrokerService");
@@ -72,9 +73,9 @@ class Task9InfraGatewayArchitectureTest {
                 .that()
                 .haveFullyQualifiedName("com.yoyuzh.transfer.TransferSessionStore")
                 .or()
-                .haveFullyQualifiedName("com.yoyuzh.files.tasks.BackgroundTaskService")
+                .haveFullyQualifiedName("com.yoyuzh.platform.job.internal.application.BackgroundTaskService")
                 .or()
-                .haveFullyQualifiedName("com.yoyuzh.files.core.FileService")
+                .haveFullyQualifiedName("com.yoyuzh.files.workspace.internal.application.FileService")
                 .should()
                 .dependOnClassesThat()
                 .haveFullyQualifiedName("com.yoyuzh.common.lock.DistributedLockService");

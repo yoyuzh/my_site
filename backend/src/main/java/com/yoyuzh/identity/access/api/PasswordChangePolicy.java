@@ -1,6 +1,6 @@
 package com.yoyuzh.identity.access.api;
 
-import com.yoyuzh.auth.User;
+import com.yoyuzh.identity.access.internal.domain.User;
 
 public interface PasswordChangePolicy {
 

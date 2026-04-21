@@ -1,8 +1,8 @@
 package com.yoyuzh.transfer;
 
 import com.yoyuzh.PortalBackendApplication;
-import com.yoyuzh.auth.User;
-import com.yoyuzh.auth.UserRepository;
+import com.yoyuzh.identity.access.internal.domain.User;
+import com.yoyuzh.identity.access.internal.infra.UserRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;

@@ -1,6 +1,8 @@
 package com.yoyuzh.files.workspace.api;
 
 import java.util.Optional;
+import java.util.Map;
+import java.util.Set;
 import com.yoyuzh.shared.kernel.PageResponse;
 
 public interface WorkspaceAdminGovernanceApi {
@@ -10,4 +12,8 @@ public interface WorkspaceAdminGovernanceApi {
     PageResponse<WorkspaceAdminFileView> listFilesAsAdmin(WorkspaceAdminFileQuery query);
 
     long countFilesAsAdmin();
+
+    long loadUsedStorageBytesByUserId(Long userId);
+
+    Map<Long, Long> loadUsedStorageBytesByUserIds(Set<Long> userIds);
 }

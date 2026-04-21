@@ -1,13 +1,13 @@
 package com.yoyuzh.identity.access.api;
 
-import com.yoyuzh.auth.AuthClientType;
-import com.yoyuzh.auth.User;
+import com.yoyuzh.identity.access.api.IdentityClientType;
+import com.yoyuzh.identity.access.internal.domain.User;
 
 public interface IdentityCredentialIssuer {
 
-    IssuedAuthCredentials issueFresh(User user, AuthClientType clientType);
+    IssuedAuthCredentials issueFresh(User user, IdentityClientType clientType);
 
-    IssuedAuthCredentials issueWithRefreshToken(User user, String refreshToken, AuthClientType clientType);
+    IssuedAuthCredentials issueWithRefreshToken(User user, String refreshToken, IdentityClientType clientType);
 
-    IssuedAuthCredentials refresh(String rawRefreshToken, AuthClientType defaultClientType);
+    IssuedAuthCredentials refresh(String rawRefreshToken, IdentityClientType defaultClientType);
 }

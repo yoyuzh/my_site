@@ -1,11 +1,11 @@
 package com.yoyuzh.files.workspace.internal.application;
 
-import com.yoyuzh.auth.User;
+import com.yoyuzh.identity.access.internal.domain.User;
 import com.yoyuzh.shared.kernel.BusinessException;
 import com.yoyuzh.shared.kernel.ErrorCode;
 import com.yoyuzh.shared.kernel.PageResponse;
-import com.yoyuzh.files.core.StoredFile;
-import com.yoyuzh.files.core.StoredFileRepository;
+import com.yoyuzh.files.workspace.internal.domain.StoredFile;
+import com.yoyuzh.files.workspace.internal.infra.StoredFileRepository;
 import com.yoyuzh.files.storage.FileContentStorage;
 import com.yoyuzh.files.workspace.api.WorkspaceDirectoryApi;
 import com.yoyuzh.files.workspace.api.FileMetadataResponse;
@@ -27,18 +27,18 @@ public final class RuntimeWorkspaceDirectoryApi implements WorkspaceDirectoryApi
     }
 
     @Override
-    public FileMetadataResponse createDirectory(User user, String normalizedPath) {
+    public FileMetadataResponse createDirectory(Long userId, String normalizedPath) {
         if ("/".equals(normalizedPath)) {
             throw new BusinessException(ErrorCode.UNKNOWN, "根目录无需创建");
         }
         String parentPath = workspacePathPolicy.extractParentPath(normalizedPath);
         String directoryName = workspacePathPolicy.extractLeafName(normalizedPath);
-        workspacePathPolicy.ensureNodeNameAvailable(user.getId(), parentPath, directoryName, "目录已存在");
+        workspacePathPolicy.ensureNodeNameAvailable(userId, parentPath, directoryName, "目录已存在");
 
-        fileContentStorage.createDirectory(user.getId(), normalizedPath);
+        fileContentStorage.createDirectory(userId, normalizedPath);
 
         StoredFile storedFile = new StoredFile();
-        storedFile.setUser(user);
+        storedFile.setUser(userReference(userId));
         storedFile.setFilename(directoryName);
         storedFile.setPath(parentPath);
         storedFile.setLegacyStorageName(directoryName);
@@ -49,13 +49,19 @@ public final class RuntimeWorkspaceDirectoryApi implements WorkspaceDirectoryApi
     }
 
     @Override
-    public PageResponse<FileMetadataResponse> loadDirectoryPage(User user, String normalizedPath, int page, int size) {
+    public PageResponse<FileMetadataResponse> loadDirectoryPage(Long userId, String normalizedPath, int page, int size) {
         Page<StoredFile> result = storedFileRepository.findByUserIdAndPathOrderByDirectoryDescCreatedAtDesc(
-                user.getId(),
+                userId,
                 normalizedPath,
                 PageRequest.of(page, size)
         );
         return new PageResponse<>(result.getContent().stream().map(this::toResponse).toList(), result.getTotalElements(), page, size);
+    }
+
+    private User userReference(Long userId) {
+        User user = new User();
+        user.setId(userId);
+        return user;
     }
 
     private FileMetadataResponse toResponse(StoredFile storedFile) {

@@ -1,16 +1,14 @@
 package com.yoyuzh.files.workspace.internal.application;
 
-import com.yoyuzh.auth.User;
 import com.yoyuzh.shared.kernel.BusinessException;
-import com.yoyuzh.files.core.StoredFile;
-import com.yoyuzh.files.core.StoredFileRepository;
+import com.yoyuzh.files.workspace.internal.domain.StoredFile;
+import com.yoyuzh.files.workspace.internal.infra.StoredFileRepository;
 import com.yoyuzh.files.storage.FileContentStorage;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
-import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 
@@ -41,11 +39,10 @@ class RuntimeWorkspacePathPolicyTest {
     @Test
     void shouldCreateMissingDirectoryHierarchy() {
         RuntimeWorkspacePathPolicy policy = new RuntimeWorkspacePathPolicy(storedFileRepository, fileContentStorage);
-        User user = createUser(7L);
         when(storedFileRepository.findByUserIdAndPathAndFilename(eq(7L), any(), any())).thenReturn(Optional.empty());
         when(storedFileRepository.save(any(StoredFile.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
-        policy.ensureDirectoryHierarchy(user, "/projects/site");
+        policy.ensureDirectoryHierarchy(7L, "/projects/site");
 
         verify(fileContentStorage).ensureDirectory(7L, "/projects");
         verify(fileContentStorage).ensureDirectory(7L, "/projects/site");
@@ -66,11 +63,4 @@ class RuntimeWorkspacePathPolicyTest {
         )).isInstanceOf(BusinessException.class);
     }
 
-    private User createUser(Long id) {
-        User user = new User();
-        user.setId(id);
-        user.setUsername("user-" + id);
-        user.setCreatedAt(LocalDateTime.now());
-        return user;
-    }
 }

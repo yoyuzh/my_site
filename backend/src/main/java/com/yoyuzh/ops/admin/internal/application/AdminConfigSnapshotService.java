@@ -6,10 +6,9 @@ import com.yoyuzh.identity.access.api.IdentityRoleName;
 import com.yoyuzh.infra.cache.AppRedisProperties;
 import com.yoyuzh.ops.admin.api.AdminSettingsResponse;
 import com.yoyuzh.platform.storage.internal.infra.FileStorageProperties;
-import com.yoyuzh.files.policy.StoragePolicy;
-import com.yoyuzh.files.policy.StoragePolicyCapabilities;
 import com.yoyuzh.files.workspace.api.WorkspaceAdminGovernanceApi;
-import com.yoyuzh.platform.storage.api.StoragePolicyQuery;
+import com.yoyuzh.platform.storage.api.StoragePolicyAdminApi;
+import com.yoyuzh.platform.storage.api.StoragePolicyAdminView;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
@@ -23,7 +22,7 @@ public class AdminConfigSnapshotService {
     private final AppRedisProperties redisProperties;
     private final FileStorageProperties fileStorageProperties;
     private final AdminRuntimeSettingsService adminRuntimeSettingsService;
-    private final StoragePolicyQuery storagePolicyQuery;
+    private final StoragePolicyAdminApi storagePolicyAdminApi;
     private final WorkspaceAdminGovernanceApi workspaceAdminGovernanceApi;
     private final ContentAdminInspectionApi contentAdminInspectionApi;
 
@@ -74,10 +73,8 @@ public class AdminConfigSnapshotService {
     }
 
     public AdminFilesystemResponse getFilesystem() {
-        var defaultPolicySnapshot = storagePolicyQuery.readDefaultPolicySnapshot();
-        StoragePolicy defaultPolicy = defaultPolicySnapshot.policy();
-        StoragePolicyCapabilities capabilities = defaultPolicySnapshot.capabilities();
-        boolean directUpload = capabilities.directUpload();
+        StoragePolicyAdminView defaultPolicy = storagePolicyAdminApi.readDefaultStoragePolicyAsAdmin();
+        boolean directUpload = defaultPolicy.capabilities().directUpload();
         return new AdminFilesystemResponse(
                 new AdminFilesystemResponse.OverviewSection(
                         normalizeStorageProvider(fileStorageProperties.getProvider()),
@@ -85,14 +82,14 @@ public class AdminConfigSnapshotService {
                         contentAdminInspectionApi.countBlobsAsAdmin(),
                         contentAdminInspectionApi.countEntitiesAsAdmin()
                 ),
-                AdminStoragePolicyResponses.from(defaultPolicy, capabilities),
+                AdminStoragePolicyResponses.from(defaultPolicy),
                 new AdminFilesystemResponse.UploadSection(
                         !directUpload,
-                        directUpload && !capabilities.multipartUpload(),
-                        directUpload && capabilities.multipartUpload(),
-                        resolveEffectiveMaxFileSize(defaultPolicy, capabilities)
+                        directUpload && !defaultPolicy.capabilities().multipartUpload(),
+                        directUpload && defaultPolicy.capabilities().multipartUpload(),
+                        resolveEffectiveMaxFileSize(defaultPolicy)
                 ),
-                new AdminFilesystemResponse.MediaProcessingSection(true, capabilities.thumbnailNative()),
+                new AdminFilesystemResponse.MediaProcessingSection(true, defaultPolicy.capabilities().thumbnailNative()),
                 new AdminFilesystemResponse.CacheSection(
                         redisProperties.isEnabled() ? "redis" : "disabled",
                         redisProperties.getCache().getFilesListTtlSeconds(),
@@ -109,13 +106,13 @@ public class AdminConfigSnapshotService {
         return provider.trim().toLowerCase();
     }
 
-    private long resolveEffectiveMaxFileSize(StoragePolicy policy, StoragePolicyCapabilities capabilities) {
+    private long resolveEffectiveMaxFileSize(StoragePolicyAdminView policy) {
         long effectiveMaxFileSize = fileStorageProperties.getMaxFileSize();
-        if (policy.getMaxSizeBytes() > 0) {
-            effectiveMaxFileSize = Math.min(effectiveMaxFileSize, policy.getMaxSizeBytes());
+        if (policy.maxSizeBytes() > 0) {
+            effectiveMaxFileSize = Math.min(effectiveMaxFileSize, policy.maxSizeBytes());
         }
-        if (capabilities.maxObjectSize() > 0) {
-            effectiveMaxFileSize = Math.min(effectiveMaxFileSize, capabilities.maxObjectSize());
+        if (policy.capabilities().maxObjectSize() > 0) {
+            effectiveMaxFileSize = Math.min(effectiveMaxFileSize, policy.capabilities().maxObjectSize());
         }
         return effectiveMaxFileSize;
     }

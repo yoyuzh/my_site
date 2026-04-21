@@ -1,10 +1,10 @@
 package com.yoyuzh.identity.access.internal.application;
 
 import com.yoyuzh.ops.admin.internal.application.AdminRuntimeSettingsService;
-import com.yoyuzh.auth.RegistrationInviteService;
-import com.yoyuzh.auth.UserRepository;
+import com.yoyuzh.identity.access.internal.infra.UserRepository;
 import com.yoyuzh.shared.kernel.BusinessException;
 import com.yoyuzh.identity.access.api.RegistrationAttempt;
+import com.yoyuzh.identity.access.internal.application.RegistrationInviteService;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;

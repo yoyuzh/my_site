@@ -9,12 +9,13 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import com.tngtech.archunit.core.domain.JavaClass;
 import com.tngtech.archunit.core.domain.JavaClasses;
 import com.tngtech.archunit.core.importer.ClassFileImporter;
+import com.tngtech.archunit.core.importer.ImportOption;
 import com.tngtech.archunit.lang.ArchRule;
 import org.junit.jupiter.api.Test;
 
 class Task3PlatformSeamArchitectureTest {
 
-    private final JavaClasses classes = new ClassFileImporter().importPackages("com.yoyuzh");
+    private final JavaClasses classes = new ClassFileImporter().withImportOption(ImportOption.Predefined.DO_NOT_INCLUDE_TESTS).importPackages("com.yoyuzh");
 
     @Test
     void taskEnumsMustBeOwnedByPlatformJobApiPackage() {
@@ -140,9 +141,9 @@ class Task3PlatformSeamArchitectureTest {
 
         ArchRule fileStoragePolicyConsumersUseApiRule = noClasses()
                 .that()
-                .haveFullyQualifiedName("com.yoyuzh.files.core.FileService")
+                .haveFullyQualifiedName("com.yoyuzh.files.workspace.internal.application.FileService")
                 .or()
-                .haveFullyQualifiedName("com.yoyuzh.files.core.FileUploadRulesService")
+                .haveFullyQualifiedName("com.yoyuzh.files.workspace.internal.application.FileUploadRulesService")
                 .or()
                 .haveFullyQualifiedName("com.yoyuzh.files.upload.UploadSessionService")
                 .or()

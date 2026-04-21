@@ -1,9 +1,8 @@
 package com.yoyuzh.files.upload.internal.application;
 
-import com.yoyuzh.auth.User;
 import com.yoyuzh.shared.kernel.BusinessException;
 import com.yoyuzh.shared.kernel.ErrorCode;
-import com.yoyuzh.files.core.StoredFileRepository;
+import com.yoyuzh.files.workspace.internal.infra.StoredFileRepository;
 import com.yoyuzh.files.upload.api.UploadTargetPolicy;
 import com.yoyuzh.files.upload.api.ValidatedUploadTarget;
 import com.yoyuzh.files.workspace.api.WorkspacePathPolicy;
@@ -44,32 +43,36 @@ public final class RuntimeUploadTargetPolicy implements UploadTargetPolicy {
     }
 
     @Override
-    public ValidatedUploadTarget validateUpload(User user, String path, String filename, long size) {
+    public ValidatedUploadTarget validateUpload(Long userId,
+                                                Long maxUploadSizeBytes,
+                                                long storageQuotaBytes,
+                                                String path,
+                                                String filename,
+                                                long size) {
         String normalizedPath = workspacePathPolicy.normalizeDirectoryPath(path);
         String normalizedFilename = workspacePathPolicy.normalizeLeafName(filename);
         DefaultStoragePolicySnapshot defaultPolicySnapshot = storagePolicyQuery.readDefaultPolicySnapshot();
         long effectiveMaxUploadSize = uploadConstraintPolicy.resolveEffectiveMaxUploadSize(
                 maxFileSize,
-                user,
-                defaultPolicySnapshot.policy(),
-                defaultPolicySnapshot.capabilities()
+                maxUploadSizeBytes,
+                defaultPolicySnapshot.policyMaxSizeBytes(),
+                defaultPolicySnapshot.capabilities() == null ? 0L : defaultPolicySnapshot.capabilities().maxObjectSize()
         );
         if (size > effectiveMaxUploadSize) {
             throw new BusinessException(ErrorCode.UNKNOWN, "文件大小超出限制");
         }
-        workspacePathPolicy.ensureNodeNameAvailable(user.getId(), normalizedPath, normalizedFilename, "同目录下文件已存在");
-        ensureWithinStorageQuota(user, size);
+        workspacePathPolicy.ensureNodeNameAvailable(userId, normalizedPath, normalizedFilename, "同目录下文件已存在");
+        ensureWithinStorageQuota(userId, storageQuotaBytes, size);
         return new ValidatedUploadTarget(normalizedPath, normalizedFilename, defaultPolicySnapshot);
     }
 
-    private void ensureWithinStorageQuota(User user, long additionalBytes) {
+    private void ensureWithinStorageQuota(Long userId, long storageQuotaBytes, long additionalBytes) {
         if (additionalBytes <= 0) {
             return;
         }
 
-        long usedBytes = storedFileRepository.sumFileSizeByUserId(user.getId());
-        long quotaBytes = user.getStorageQuotaBytes();
-        if (usedBytes > Long.MAX_VALUE - additionalBytes || usedBytes + additionalBytes > quotaBytes) {
+        long usedBytes = storedFileRepository.sumFileSizeByUserId(userId);
+        if (usedBytes > Long.MAX_VALUE - additionalBytes || usedBytes + additionalBytes > storageQuotaBytes) {
             throw new BusinessException(ErrorCode.UNKNOWN, "存储空间不足");
         }
     }

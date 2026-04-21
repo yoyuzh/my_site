@@ -1,23 +1,15 @@
 package com.yoyuzh.ops.admin.internal.application;
 
-import com.yoyuzh.auth.PasswordPolicy;
-import com.yoyuzh.auth.User;
-import com.yoyuzh.auth.UserRepository;
-import com.yoyuzh.auth.UserRole;
+import com.yoyuzh.files.workspace.api.WorkspaceAdminGovernanceApi;
+import com.yoyuzh.identity.access.api.IdentityAdminUserGovernanceApi;
+import com.yoyuzh.identity.access.api.IdentityAdminUserQuery;
+import com.yoyuzh.identity.access.api.IdentityAdminUserView;
+import com.yoyuzh.identity.access.api.IdentityRoleName;
 import com.yoyuzh.ops.admin.api.AdminPasswordResetResponse;
 import com.yoyuzh.ops.admin.api.AdminUserRole;
 import com.yoyuzh.ops.admin.api.AdminUserResponse;
-import com.yoyuzh.shared.kernel.BusinessException;
-import com.yoyuzh.shared.kernel.ErrorCode;
 import com.yoyuzh.shared.kernel.PageResponse;
-import com.yoyuzh.files.core.StoredFileRepository;
-import com.yoyuzh.identity.access.api.AdminAccessContinuityGuard;
-import com.yoyuzh.identity.access.api.IdentityCredentialRevocationPolicy;
 import lombok.RequiredArgsConstructor;
-import org.springframework.data.domain.Page;
-import org.springframework.data.domain.PageRequest;
-import org.springframework.data.domain.Sort;
-import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -32,54 +24,47 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 public class AdminUserGovernanceService {
 
-    private final UserRepository userRepository;
-    private final StoredFileRepository storedFileRepository;
-    private final PasswordEncoder passwordEncoder;
-    private final IdentityCredentialRevocationPolicy identityCredentialRevocationPolicy;
+    private final IdentityAdminUserGovernanceApi identityAdminUserGovernanceApi;
+    private final WorkspaceAdminGovernanceApi workspaceAdminGovernanceApi;
     private final AdminAuditService adminAuditService;
-    private final AdminAccessContinuityGuard adminAccessContinuityGuard;
     private final SecureRandom secureRandom = new SecureRandom();
 
     public PageResponse<AdminUserResponse> listUsers(int page, int size, String query) {
-        Page<User> result = userRepository.searchByUsernameOrEmail(
-                normalizeQuery(query),
-                PageRequest.of(page, size, Sort.by(Sort.Direction.DESC, "createdAt"))
+        PageResponse<IdentityAdminUserView> users = identityAdminUserGovernanceApi.listUsersAsAdmin(
+                new IdentityAdminUserQuery(page, size, normalizeQuery(query))
         );
-        List<User> users = result.getContent();
-        Map<Long, Long> usedStorageByUserId = loadUsedStorageByUserIds(users);
+        Map<Long, Long> usedStorageByUserId = loadUsedStorageByUserIds(users.items());
         return new PageResponse<>(
-                users.stream()
-                        .map(user -> toUserResponse(user, usedStorageByUserId.getOrDefault(user.getId(), 0L)))
+                users.items().stream()
+                        .map(user -> toUserResponse(user, usedStorageByUserId.getOrDefault(user.id(), 0L)))
                         .toList(),
-                result.getTotalElements(),
+                users.total(),
                 page,
                 size
         );
     }
 
     @Transactional
-    public AdminUserResponse updateUserRole(Long userId, UserRole role) {
-        User user = getRequiredUser(userId);
-        ensureAdminAccessRemainsAvailable(user, false, role);
-        user.setRole(role);
-        AdminUserResponse response = toUserResponse(userRepository.save(user));
+    public AdminUserResponse updateUserRole(Long userId, AdminUserRole role) {
+        IdentityAdminUserView user = identityAdminUserGovernanceApi.updateUserRoleAsAdmin(
+                userId,
+                role == null ? null : IdentityRoleName.valueOf(role.name())
+        );
+        AdminUserResponse response = toUserResponse(user, workspaceAdminGovernanceApi.loadUsedStorageBytesByUserId(userId));
         adminAuditService.record(
                 AdminAuditAction.UPDATE_USER_ROLE,
                 "USER",
                 userId,
                 "Updated user role",
-                Map.of("role", role.name())
+                Map.of("role", role == null ? null : role.name())
         );
         return response;
     }
 
     @Transactional
     public AdminUserResponse updateUserBanned(Long userId, boolean banned) {
-        User user = getRequiredUser(userId);
-        ensureAdminAccessRemainsAvailable(user, banned, user.getRole());
-        user.setBanned(banned);
-        identityCredentialRevocationPolicy.revokeAll(user);
-        AdminUserResponse response = toUserResponse(userRepository.save(user));
+        IdentityAdminUserView user = identityAdminUserGovernanceApi.updateUserBannedAsAdmin(userId, banned);
+        AdminUserResponse response = toUserResponse(user, workspaceAdminGovernanceApi.loadUsedStorageBytesByUserId(userId));
         adminAuditService.record(
                 AdminAuditAction.UPDATE_USER_BANNED,
                 "USER",
@@ -96,36 +81,6 @@ public class AdminUserGovernanceService {
     }
 
     @Transactional
-    public AdminUserResponse updateUserStorageQuota(Long userId, long storageQuotaBytes) {
-        User user = getRequiredUser(userId);
-        user.setStorageQuotaBytes(storageQuotaBytes);
-        AdminUserResponse response = toUserResponse(userRepository.save(user));
-        adminAuditService.record(
-                AdminAuditAction.UPDATE_USER_STORAGE_QUOTA,
-                "USER",
-                userId,
-                "Updated user storage quota",
-                Map.of("storageQuotaBytes", storageQuotaBytes)
-        );
-        return response;
-    }
-
-    @Transactional
-    public AdminUserResponse updateUserMaxUploadSize(Long userId, long maxUploadSizeBytes) {
-        User user = getRequiredUser(userId);
-        user.setMaxUploadSizeBytes(maxUploadSizeBytes);
-        AdminUserResponse response = toUserResponse(userRepository.save(user));
-        adminAuditService.record(
-                AdminAuditAction.UPDATE_USER_MAX_UPLOAD_SIZE,
-                "USER",
-                userId,
-                "Updated user max upload size",
-                Map.of("maxUploadSizeBytes", maxUploadSizeBytes)
-        );
-        return response;
-    }
-
-    @Transactional
     public AdminPasswordResetResponse resetUserPassword(Long userId) {
         String temporaryPassword = generateTemporaryPassword();
         updateUserPasswordInternal(userId, temporaryPassword, AdminAuditAction.RESET_USER_PASSWORD);
@@ -133,13 +88,8 @@ public class AdminUserGovernanceService {
     }
 
     private AdminUserResponse updateUserPasswordInternal(Long userId, String newPassword, AdminAuditAction action) {
-        if (!PasswordPolicy.isStrong(newPassword)) {
-            throw new BusinessException(ErrorCode.UNKNOWN, PasswordPolicy.VALIDATION_MESSAGE);
-        }
-        User user = getRequiredUser(userId);
-        user.setPasswordHash(passwordEncoder.encode(newPassword));
-        identityCredentialRevocationPolicy.revokeAll(user);
-        AdminUserResponse response = toUserResponse(userRepository.save(user));
+        IdentityAdminUserView user = identityAdminUserGovernanceApi.updateUserPasswordAsAdmin(userId, newPassword);
+        AdminUserResponse response = toUserResponse(user, workspaceAdminGovernanceApi.loadUsedStorageBytesByUserId(userId));
         Map<String, Object> details = new LinkedHashMap<>();
         details.put("passwordLength", newPassword.length());
         details.put("temporaryPassword", action == AdminAuditAction.RESET_USER_PASSWORD);
@@ -155,43 +105,30 @@ public class AdminUserGovernanceService {
         return response;
     }
 
-    private AdminUserResponse toUserResponse(User user) {
-        return toUserResponse(user, storedFileRepository.sumFileSizeByUserId(user.getId()));
-    }
-
-    private AdminUserResponse toUserResponse(User user, long usedStorageBytes) {
+    private AdminUserResponse toUserResponse(IdentityAdminUserView user, long usedStorageBytes) {
         return new AdminUserResponse(
-                user.getId(),
-                user.getUsername(),
-                user.getEmail(),
-                user.getPhoneNumber(),
-                user.getCreatedAt(),
-                user.getRole() == null ? null : AdminUserRole.valueOf(user.getRole().name()),
-                user.isBanned(),
+                user.id(),
+                user.username(),
+                user.email(),
+                user.phoneNumber(),
+                user.createdAt(),
+                user.role() == null ? null : AdminUserRole.valueOf(user.role().name()),
+                user.banned(),
                 usedStorageBytes,
-                user.getStorageQuotaBytes(),
-                user.getMaxUploadSizeBytes()
+                user.storageQuotaBytes(),
+                user.maxUploadSizeBytes()
         );
     }
 
-    private Map<Long, Long> loadUsedStorageByUserIds(List<User> users) {
+    private Map<Long, Long> loadUsedStorageByUserIds(List<IdentityAdminUserView> users) {
         Set<Long> userIds = users.stream()
-                .map(User::getId)
+                .map(IdentityAdminUserView::id)
                 .filter(id -> id != null)
                 .collect(Collectors.toSet());
         if (userIds.isEmpty()) {
             return Map.of();
         }
-        return storedFileRepository.sumFileSizeByUserIds(userIds).stream()
-                .collect(Collectors.toMap(
-                        StoredFileRepository.UserStorageUsageProjection::getUserId,
-                        projection -> projection.getUsedStorageBytes() == null ? 0L : projection.getUsedStorageBytes()
-                ));
-    }
-
-    private User getRequiredUser(Long userId) {
-        return userRepository.findById(userId)
-                .orElseThrow(() -> new BusinessException(ErrorCode.UNKNOWN, "user not found"));
+        return workspaceAdminGovernanceApi.loadUsedStorageBytesByUserIds(userIds);
     }
 
     private String normalizeQuery(String query) {
@@ -199,14 +136,6 @@ public class AdminUserGovernanceService {
             return "";
         }
         return query.trim();
-    }
-
-    private void ensureAdminAccessRemainsAvailable(User user, boolean bannedAfterUpdate, UserRole roleAfterUpdate) {
-        adminAccessContinuityGuard.ensureAdminAccessRemainsAvailable(
-                user.getRole() == null ? null : user.getRole().name(),
-                user.isBanned(),
-                roleAfterUpdate == null ? null : roleAfterUpdate.name(),
-                bannedAfterUpdate);
     }
 
     private String generateTemporaryPassword() {
@@ -230,5 +159,35 @@ public class AdminUserGovernanceService {
             password[j] = tmp;
         }
         return new String(password);
+    }
+
+    @Transactional
+    public AdminUserResponse updateUserStorageQuota(Long userId, long storageQuotaBytes) {
+        IdentityAdminUserView user =
+                identityAdminUserGovernanceApi.updateUserStorageQuotaAsAdmin(userId, storageQuotaBytes);
+        AdminUserResponse response = toUserResponse(user, workspaceAdminGovernanceApi.loadUsedStorageBytesByUserId(userId));
+        adminAuditService.record(
+                AdminAuditAction.UPDATE_USER_STORAGE_QUOTA,
+                "USER",
+                userId,
+                "Updated user storage quota",
+                Map.of("storageQuotaBytes", storageQuotaBytes)
+        );
+        return response;
+    }
+
+    @Transactional
+    public AdminUserResponse updateUserMaxUploadSize(Long userId, long maxUploadSizeBytes) {
+        IdentityAdminUserView user =
+                identityAdminUserGovernanceApi.updateUserMaxUploadSizeAsAdmin(userId, maxUploadSizeBytes);
+        AdminUserResponse response = toUserResponse(user, workspaceAdminGovernanceApi.loadUsedStorageBytesByUserId(userId));
+        adminAuditService.record(
+                AdminAuditAction.UPDATE_USER_MAX_UPLOAD_SIZE,
+                "USER",
+                userId,
+                "Updated user max upload size",
+                Map.of("maxUploadSizeBytes", maxUploadSizeBytes)
+        );
+        return response;
     }
 }

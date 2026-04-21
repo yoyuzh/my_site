@@ -1,6 +1,6 @@
 package com.yoyuzh.identity.access.internal.application;
 
-import com.yoyuzh.auth.UserRepository;
+import com.yoyuzh.identity.access.internal.infra.UserRepository;
 import com.yoyuzh.shared.kernel.BusinessException;
 import com.yoyuzh.shared.kernel.ErrorCode;
 import com.yoyuzh.identity.access.api.ProfileUpdateAdmissionPolicy;

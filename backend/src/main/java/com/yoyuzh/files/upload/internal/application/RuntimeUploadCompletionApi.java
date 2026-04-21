@@ -4,8 +4,8 @@ import com.yoyuzh.files.content.api.ContentRegistrationApi;
 import com.yoyuzh.files.content.api.ContentBlobReference;
 import com.yoyuzh.files.content.api.ContentRegistrationCommand;
 import com.yoyuzh.files.content.api.RegisteredContentFile;
-import com.yoyuzh.files.core.FileBlob;
-import com.yoyuzh.files.core.FileBlobRepository;
+import com.yoyuzh.files.content.internal.domain.FileBlob;
+import com.yoyuzh.files.content.internal.infra.FileBlobRepository;
 import com.yoyuzh.files.storage.FileContentStorage;
 import com.yoyuzh.files.upload.api.UploadCompletionApi;
 import com.yoyuzh.files.upload.api.UploadCompletionCommand;
@@ -42,7 +42,7 @@ public final class RuntimeUploadCompletionApi implements UploadCompletionApi {
                     command.filename(),
                     command.contentType(),
                     command.size(),
-                    new ContentBlobReference(blob.getObjectKey(), blob.getContentType(), blob.getSize())
+                    new ContentBlobReference(blob.getId(), blob.getObjectKey(), blob.getContentType(), blob.getSize())
             ));
         } catch (RuntimeException ex) {
             try {

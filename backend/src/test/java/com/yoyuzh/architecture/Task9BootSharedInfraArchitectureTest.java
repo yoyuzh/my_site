@@ -7,12 +7,14 @@ import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.noClasses;
 import com.tngtech.archunit.core.domain.JavaClass;
 import com.tngtech.archunit.core.domain.JavaClasses;
 import com.tngtech.archunit.core.importer.ClassFileImporter;
+import com.tngtech.archunit.core.importer.ImportOption;
 import com.tngtech.archunit.lang.ArchRule;
 import org.junit.jupiter.api.Test;
+import org.springframework.web.bind.annotation.RestController;
 
 class Task9BootSharedInfraArchitectureTest {
 
-    private final JavaClasses classes = new ClassFileImporter().importPackages("com.yoyuzh");
+    private final JavaClasses classes = new ClassFileImporter().withImportOption(ImportOption.Predefined.DO_NOT_INCLUDE_TESTS).importPackages("com.yoyuzh");
 
     @Test
     void androidReleaseControllerMustDependOnAppAndroidApi() {
@@ -70,11 +72,24 @@ class Task9BootSharedInfraArchitectureTest {
         assertThat(classes.get("com.yoyuzh.boot.security.JwtAuthenticationFilter")).isNotNull();
         assertThat(classes.get("com.yoyuzh.boot.security.JwtProperties")).isNotNull();
         assertThat(classes.get("com.yoyuzh.boot.security.CorsProperties")).isNotNull();
+        assertThat(classes.get("com.yoyuzh.boot.security.JwtTokenProvider")).isNotNull();
+        assertThat(classes.get("com.yoyuzh.boot.security.AuthTokenInvalidationService")).isNotNull();
+        assertThat(classes.get("com.yoyuzh.boot.security.NoOpAuthTokenInvalidationService")).isNotNull();
+        assertThat(classes.get("com.yoyuzh.boot.security.CustomUserDetailsService")).isNotNull();
+
+        assertThat(classes.stream().map(JavaClass::getFullName))
+                .doesNotContain(
+                        "com.yoyuzh.auth.JwtTokenProvider",
+                        "com.yoyuzh.auth.AuthTokenInvalidationService",
+                        "com.yoyuzh.auth.NoOpAuthTokenInvalidationService",
+                        "com.yoyuzh.auth.CustomUserDetailsService"
+                );
     }
 
     @Test
     void bootMustOwnRemainingGlobalWiring() {
         assertThat(classes.get("com.yoyuzh.boot.web.ApiRootController")).isNotNull();
+        assertThat(classes.get("com.yoyuzh.boot.web.SiteV2Controller")).isNotNull();
         assertThat(classes.get("com.yoyuzh.boot.web.OpenApiConfig")).isNotNull();
         assertThat(classes.get("com.yoyuzh.boot.RestClientConfig")).isNotNull();
         assertThat(classes.get("com.yoyuzh.boot.SchedulingConfiguration")).isNotNull();
@@ -82,6 +97,25 @@ class Task9BootSharedInfraArchitectureTest {
 
         assertThat(classes.stream().map(JavaClass::getFullName))
                 .doesNotContain("com.yoyuzh.config.FileStorageConfiguration");
+    }
+
+    @Test
+    void bootWebV2MustOwnProtocolEnvelopeWithoutRecreatingTopLevelApiRoot() {
+        ArchRule noV2ControllersInTopLevelApiRule = noClasses()
+                .that()
+                .resideInAnyPackage("com.yoyuzh.boot.web.v2..")
+                .should()
+                .beAnnotatedWith(RestController.class);
+
+        noV2ControllersInTopLevelApiRule.check(classes);
+        assertThat(classes.stream().map(JavaClass::getPackageName))
+                .noneMatch(packageName -> packageName.equals("com.yoyuzh.api") || packageName.startsWith("com.yoyuzh.api."))
+                .doesNotContain(
+                        "com.yoyuzh.boot.web.v2.files",
+                        "com.yoyuzh.boot.web.v2.shares",
+                        "com.yoyuzh.boot.web.v2.tasks",
+                        "com.yoyuzh.boot.web.v2.site"
+                );
     }
 
     @Test

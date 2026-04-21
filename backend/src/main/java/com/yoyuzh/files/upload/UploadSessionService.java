@@ -2,12 +2,11 @@ package com.yoyuzh.files.upload;
 
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.yoyuzh.auth.User;
+import com.yoyuzh.identity.access.internal.domain.User;
 import com.yoyuzh.shared.kernel.BusinessException;
 import com.yoyuzh.shared.kernel.ErrorCode;
-import com.yoyuzh.files.policy.StoragePolicy;
-import com.yoyuzh.files.policy.StoragePolicyCapabilities;
-import com.yoyuzh.files.policy.StoragePolicyService;
+import com.yoyuzh.platform.storage.api.StoragePolicyCapabilities;
+import com.yoyuzh.platform.storage.api.StoragePolicyQuery;
 import com.yoyuzh.files.storage.FileContentStorage;
 import com.yoyuzh.files.storage.MultipartCompletedPart;
 import com.yoyuzh.files.storage.PreparedUpload;
@@ -47,7 +46,7 @@ public class UploadSessionService {
     private final UploadTargetPolicy uploadTargetPolicy;
     private final UploadCompletionApi uploadCompletionApi;
     private final FileContentStorage fileContentStorage;
-    private final StoragePolicyService storagePolicyService;
+    private final StoragePolicyQuery storagePolicyQuery;
     private final ObjectMapper objectMapper = new ObjectMapper();
     private final UploadPolicyResolver uploadPolicyResolver;
     private final UploadSessionStateMachine uploadSessionStateMachine;
@@ -60,7 +59,7 @@ public class UploadSessionService {
                                 UploadTargetPolicy uploadTargetPolicy,
                                 UploadCompletionApi uploadCompletionApi,
                                 FileContentStorage fileContentStorage,
-                                StoragePolicyService storagePolicyService,
+                                StoragePolicyQuery storagePolicyQuery,
                                 UploadPolicyResolver uploadPolicyResolver,
                                 UploadSessionStateMachine uploadSessionStateMachine) {
         this(
@@ -68,7 +67,7 @@ public class UploadSessionService {
                 uploadTargetPolicy,
                 uploadCompletionApi,
                 fileContentStorage,
-                storagePolicyService,
+                storagePolicyQuery,
                 Clock.systemUTC(),
                 uploadPolicyResolver,
                 uploadSessionStateMachine
@@ -79,14 +78,14 @@ public class UploadSessionService {
                          UploadTargetPolicy uploadTargetPolicy,
                          UploadCompletionApi uploadCompletionApi,
                          FileContentStorage fileContentStorage,
-                         StoragePolicyService storagePolicyService,
+                         StoragePolicyQuery storagePolicyQuery,
                          Clock clock) {
         this(
                 uploadSessionRepository,
                 uploadTargetPolicy,
                 uploadCompletionApi,
                 fileContentStorage,
-                storagePolicyService,
+                storagePolicyQuery,
                 clock,
                 new UploadPolicyResolver(),
                 new UploadSessionStateMachine()
@@ -97,7 +96,7 @@ public class UploadSessionService {
                          UploadTargetPolicy uploadTargetPolicy,
                          UploadCompletionApi uploadCompletionApi,
                          FileContentStorage fileContentStorage,
-                         StoragePolicyService storagePolicyService,
+                         StoragePolicyQuery storagePolicyQuery,
                          Clock clock,
                          UploadPolicyResolver uploadPolicyResolver,
                          UploadSessionStateMachine uploadSessionStateMachine) {
@@ -105,7 +104,7 @@ public class UploadSessionService {
         this.uploadTargetPolicy = uploadTargetPolicy;
         this.uploadCompletionApi = uploadCompletionApi;
         this.fileContentStorage = fileContentStorage;
-        this.storagePolicyService = storagePolicyService;
+        this.storagePolicyQuery = storagePolicyQuery;
         this.clock = clock;
         this.uploadPolicyResolver = uploadPolicyResolver;
         this.uploadSessionStateMachine = uploadSessionStateMachine;
@@ -113,9 +112,15 @@ public class UploadSessionService {
 
     @Transactional
     public UploadSession createSession(User user, UploadSessionCreateCommand command) {
-        ValidatedUploadTarget target = uploadTargetPolicy.validateUpload(user, command.path(), command.filename(), command.size());
+        ValidatedUploadTarget target = uploadTargetPolicy.validateUpload(
+                user.getId(),
+                user.getMaxUploadSizeBytes(),
+                user.getStorageQuotaBytes(),
+                command.path(),
+                command.filename(),
+                command.size()
+        );
         var defaultPolicySnapshot = target.defaultPolicySnapshot();
-        StoragePolicy policy = defaultPolicySnapshot.policy();
         StoragePolicyCapabilities capabilities = defaultPolicySnapshot.capabilities();
         UploadSessionUploadMode uploadMode = uploadPolicyResolver.resolveUploadMode(capabilities);
 
@@ -127,7 +132,7 @@ public class UploadSessionService {
         session.setContentType(command.contentType());
         session.setSize(command.size());
         session.setObjectKey(createBlobObjectKey());
-        session.setStoragePolicyId(policy.getId());
+        session.setStoragePolicyId(defaultPolicySnapshot.policyId());
         session.setChunkSize(DEFAULT_CHUNK_SIZE);
         session.setChunkCount(uploadMode == UploadSessionUploadMode.DIRECT_MULTIPART
                 ? uploadPolicyResolver.calculateChunkCount(command.size(), DEFAULT_CHUNK_SIZE)
@@ -306,7 +311,7 @@ public class UploadSessionService {
                 );
             }
             uploadCompletionApi.completeStoredBlob(new UploadCompletionCommand(
-                    user,
+                    user.getId(),
                     session.getTargetPath(),
                     session.getFilename(),
                     session.getObjectKey(),
@@ -359,8 +364,7 @@ public class UploadSessionService {
             }
             return UploadSessionUploadMode.PROXY;
         }
-        StoragePolicy policy = storagePolicyService.getRequiredPolicy(session.getStoragePolicyId());
-        return storagePolicyService.resolveUploadMode(storagePolicyService.readCapabilities(policy));
+        return uploadPolicyResolver.resolveUploadMode(storagePolicyQuery.readPolicyCapabilities(session.getStoragePolicyId()));
     }
 
     private void ensureSessionCanReceiveContent(UploadSession session, LocalDateTime now) {

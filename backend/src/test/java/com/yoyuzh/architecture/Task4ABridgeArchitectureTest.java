@@ -7,12 +7,13 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.tngtech.archunit.core.domain.JavaClasses;
 import com.tngtech.archunit.core.importer.ClassFileImporter;
+import com.tngtech.archunit.core.importer.ImportOption;
 import com.tngtech.archunit.lang.ArchRule;
 import org.junit.jupiter.api.Test;
 
 class Task4ABridgeArchitectureTest {
 
-    private final JavaClasses classes = new ClassFileImporter().importPackages("com.yoyuzh");
+    private final JavaClasses classes = new ClassFileImporter().withImportOption(ImportOption.Predefined.DO_NOT_INCLUDE_TESTS).importPackages("com.yoyuzh");
 
     @Test
     void workspaceAndContentApiPackagesMustNotDependOnInternalPackages() {
@@ -57,12 +58,11 @@ class Task4ABridgeArchitectureTest {
     }
 
     @Test
-    void onlyFilesCoreCompatibilityShellMayDependOnWorkspaceAndContentInternalApplicationBridges() {
+    void workspaceAndContentInternalApplicationBridgesMustStayInsideOwningModules() {
         ArchRule workspaceRule = noClasses()
                 .that()
                 .resideOutsideOfPackages(
                         "com.yoyuzh.files.workspace..",
-                        "com.yoyuzh.files.core..",
                         "com.yoyuzh.boot..")
                 .should()
                 .dependOnClassesThat()
@@ -71,9 +71,9 @@ class Task4ABridgeArchitectureTest {
         ArchRule contentRule = noClasses()
                 .that()
                 .resideOutsideOfPackages(
-                        "com.yoyuzh.files.content..",
-                        "com.yoyuzh.files.core..",
-                        "com.yoyuzh.boot..")
+                        "com.yoyuzh.files.content..")
+                .and()
+                .doNotHaveFullyQualifiedName("com.yoyuzh.files.workspace.internal.application.FileService")
                 .should()
                 .dependOnClassesThat()
                 .resideInAnyPackage("com.yoyuzh.files.content.internal.application..");
@@ -86,21 +86,21 @@ class Task4ABridgeArchitectureTest {
     void fileServiceMustDependOnTask4AApiSeams() {
         ArchRule workspaceRule = classes()
                 .that()
-                .haveFullyQualifiedName("com.yoyuzh.files.core.FileService")
+                .haveFullyQualifiedName("com.yoyuzh.files.workspace.internal.application.FileService")
                 .should()
                 .dependOnClassesThat()
                 .haveFullyQualifiedName("com.yoyuzh.files.workspace.api.WorkspaceDirectoryApi");
 
         ArchRule workspaceMutationRule = classes()
                 .that()
-                .haveFullyQualifiedName("com.yoyuzh.files.core.FileService")
+                .haveFullyQualifiedName("com.yoyuzh.files.workspace.internal.application.FileService")
                 .should()
                 .dependOnClassesThat()
                 .haveFullyQualifiedName("com.yoyuzh.files.workspace.api.WorkspaceMutationApi");
 
         ArchRule contentRule = classes()
                 .that()
-                .haveFullyQualifiedName("com.yoyuzh.files.core.FileService")
+                .haveFullyQualifiedName("com.yoyuzh.files.workspace.internal.application.FileService")
                 .should()
                 .dependOnClassesThat()
                 .haveFullyQualifiedName("com.yoyuzh.files.content.api.ContentRegistrationApi");

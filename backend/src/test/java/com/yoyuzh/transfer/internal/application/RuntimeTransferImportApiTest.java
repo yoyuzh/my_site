@@ -1,16 +1,17 @@
 package com.yoyuzh.transfer.internal.application;
 
-import com.yoyuzh.auth.User;
+import com.yoyuzh.identity.access.internal.domain.User;
+import com.yoyuzh.identity.access.internal.infra.UserRepository;
 import com.yoyuzh.platform.storage.internal.infra.FileStorageProperties;
 import com.yoyuzh.files.content.api.ContentRegistrationApi;
 import com.yoyuzh.files.content.api.ContentRegistrationCommand;
 import com.yoyuzh.files.content.api.RegisteredContentFile;
-import com.yoyuzh.files.core.FileBlob;
-import com.yoyuzh.files.core.FileBlobRepository;
-import com.yoyuzh.files.core.StoredFileRepository;
-import com.yoyuzh.files.policy.StoragePolicy;
-import com.yoyuzh.files.policy.StoragePolicyCapabilities;
-import com.yoyuzh.files.policy.StoragePolicyType;
+import com.yoyuzh.files.content.internal.domain.FileBlob;
+import com.yoyuzh.files.content.internal.infra.FileBlobRepository;
+import com.yoyuzh.files.workspace.internal.infra.StoredFileRepository;
+import com.yoyuzh.platform.storage.internal.domain.StoragePolicy;
+import com.yoyuzh.platform.storage.api.StoragePolicyCapabilities;
+import com.yoyuzh.platform.storage.api.StoragePolicyType;
 import com.yoyuzh.files.storage.FileContentStorage;
 import com.yoyuzh.files.workspace.api.FileMetadataResponse;
 import com.yoyuzh.files.workspace.api.WorkspacePathPolicy;
@@ -53,6 +54,8 @@ class RuntimeTransferImportApiTest {
     private StoragePolicyQuery storagePolicyQuery;
     @Mock
     private UploadConstraintPolicy uploadConstraintPolicy;
+    @Mock
+    private UserRepository userRepository;
 
     private RuntimeTransferImportApi transferImportApi;
 
@@ -69,6 +72,7 @@ class RuntimeTransferImportApiTest {
                 fileContentStorage,
                 storagePolicyQuery,
                 uploadConstraintPolicy,
+                userRepository,
                 properties
         );
     }
@@ -85,8 +89,9 @@ class RuntimeTransferImportApiTest {
         when(offlineTransferService.readReadyFile("session-1", "file-1")).thenReturn(readyFile);
         when(workspacePathPolicy.normalizeDirectoryPath("/docs")).thenReturn("/docs");
         when(workspacePathPolicy.normalizeLeafName("offline.txt")).thenReturn("offline.txt");
+        when(userRepository.findById(7L)).thenReturn(java.util.Optional.of(recipient));
         when(storagePolicyQuery.readDefaultPolicySnapshot()).thenReturn(defaultPolicySnapshot());
-        when(uploadConstraintPolicy.resolveEffectiveMaxUploadSize(eq(500L), eq(recipient), any(), any())).thenReturn(500L);
+        when(uploadConstraintPolicy.resolveEffectiveMaxUploadSize(eq(500L), eq(500L), eq(0L), eq(500L))).thenReturn(500L);
         when(storedFileRepository.sumFileSizeByUserId(7L)).thenReturn(10L);
         when(fileBlobRepository.save(any(FileBlob.class))).thenAnswer(invocation -> invocation.getArgument(0));
         when(contentRegistrationApi.registerBlob(any(ContentRegistrationCommand.class))).thenReturn(new RegisteredContentFile(
@@ -100,7 +105,7 @@ class RuntimeTransferImportApiTest {
         ));
 
         FileMetadataResponse response = transferImportApi.importOfflineFile(
-                recipient,
+                recipient.getId(),
                 "session-1",
                 "file-1",
                 new TransferImportCommand("/docs")
@@ -109,7 +114,7 @@ class RuntimeTransferImportApiTest {
         assertThat(response.id()).isEqualTo(21L);
         assertThat(response.path()).isEqualTo("/docs");
         verify(workspacePathPolicy).ensureNodeNameAvailable(7L, "/docs", "offline.txt", "同目录下文件已存在");
-        verify(workspacePathPolicy).ensureDirectoryHierarchy(recipient, "/docs");
+        verify(workspacePathPolicy).ensureDirectoryHierarchy(7L, "/docs");
         verify(fileContentStorage).storeBlob(any(), eq("text/plain"), eq("hello offline".getBytes()));
         verify(contentRegistrationApi).registerBlob(any(ContentRegistrationCommand.class));
     }
@@ -126,14 +131,15 @@ class RuntimeTransferImportApiTest {
         when(offlineTransferService.readReadyFile("session-1", "file-1")).thenReturn(readyFile);
         when(workspacePathPolicy.normalizeDirectoryPath("/docs")).thenReturn("/docs");
         when(workspacePathPolicy.normalizeLeafName("offline.txt")).thenReturn("offline.txt");
+        when(userRepository.findById(7L)).thenReturn(java.util.Optional.of(recipient));
         when(storagePolicyQuery.readDefaultPolicySnapshot()).thenReturn(defaultPolicySnapshot());
-        when(uploadConstraintPolicy.resolveEffectiveMaxUploadSize(eq(500L), eq(recipient), any(), any())).thenReturn(500L);
+        when(uploadConstraintPolicy.resolveEffectiveMaxUploadSize(eq(500L), eq(500L), eq(0L), eq(500L))).thenReturn(500L);
         when(storedFileRepository.sumFileSizeByUserId(7L)).thenReturn(10L);
         when(fileBlobRepository.save(any(FileBlob.class))).thenAnswer(invocation -> invocation.getArgument(0));
         when(contentRegistrationApi.registerBlob(any(ContentRegistrationCommand.class))).thenThrow(new IllegalStateException("registration failed"));
 
         assertThatThrownBy(() -> transferImportApi.importOfflineFile(
-                recipient,
+                recipient.getId(),
                 "session-1",
                 "file-1",
                 new TransferImportCommand("/docs")
@@ -156,8 +162,10 @@ class RuntimeTransferImportApiTest {
         policy.setId(42L);
         policy.setType(StoragePolicyType.S3_COMPATIBLE);
         policy.setEnabled(true);
+        policy.setMaxSizeBytes(0L);
         return new DefaultStoragePolicySnapshot(
-                policy,
+                policy.getId(),
+                policy.getMaxSizeBytes(),
                 new StoragePolicyCapabilities(true, false, true, true, false, true, true, false, 500L)
         );
     }

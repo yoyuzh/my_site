@@ -4,12 +4,12 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.when;
 
-import com.yoyuzh.auth.User;
+import com.yoyuzh.identity.access.internal.domain.User;
 import com.yoyuzh.shared.kernel.BusinessException;
-import com.yoyuzh.files.core.StoredFileRepository;
-import com.yoyuzh.files.policy.StoragePolicy;
-import com.yoyuzh.files.policy.StoragePolicyCapabilities;
-import com.yoyuzh.files.policy.StoragePolicyType;
+import com.yoyuzh.files.workspace.internal.infra.StoredFileRepository;
+import com.yoyuzh.platform.storage.internal.domain.StoragePolicy;
+import com.yoyuzh.platform.storage.api.StoragePolicyCapabilities;
+import com.yoyuzh.platform.storage.api.StoragePolicyType;
 import com.yoyuzh.files.upload.api.ValidatedUploadTarget;
 import com.yoyuzh.files.workspace.api.WorkspacePathPolicy;
 import com.yoyuzh.platform.storage.api.DefaultStoragePolicySnapshot;
@@ -50,7 +50,8 @@ class RuntimeUploadTargetPolicyTest {
         User user = createUser(7L);
         StoragePolicy policy = createDefaultStoragePolicy();
         DefaultStoragePolicySnapshot snapshot = new DefaultStoragePolicySnapshot(
-                policy,
+                policy.getId(),
+                policy.getMaxSizeBytes(),
                 new StoragePolicyCapabilities(true, true, true, true, false, true, true, false, 300L)
         );
         when(workspacePathPolicy.normalizeDirectoryPath("/docs")).thenReturn("/docs");
@@ -58,7 +59,14 @@ class RuntimeUploadTargetPolicyTest {
         when(storagePolicyQuery.readDefaultPolicySnapshot()).thenReturn(snapshot);
         when(storedFileRepository.sumFileSizeByUserId(7L)).thenReturn(10L);
 
-        ValidatedUploadTarget target = uploadTargetPolicy.validateUpload(user, "/docs", "movie.mp4", 120L);
+        ValidatedUploadTarget target = uploadTargetPolicy.validateUpload(
+                user.getId(),
+                user.getMaxUploadSizeBytes(),
+                user.getStorageQuotaBytes(),
+                "/docs",
+                "movie.mp4",
+                120L
+        );
 
         assertThat(target.normalizedPath()).isEqualTo("/docs");
         assertThat(target.filename()).isEqualTo("movie.mp4");
@@ -73,12 +81,20 @@ class RuntimeUploadTargetPolicyTest {
         when(workspacePathPolicy.normalizeDirectoryPath("/docs")).thenReturn("/docs");
         when(workspacePathPolicy.normalizeLeafName("movie.mp4")).thenReturn("movie.mp4");
         when(storagePolicyQuery.readDefaultPolicySnapshot()).thenReturn(new DefaultStoragePolicySnapshot(
-                policy,
+                policy.getId(),
+                policy.getMaxSizeBytes(),
                 new StoragePolicyCapabilities(true, false, true, true, false, true, true, false, 500L)
         ));
         when(storedFileRepository.sumFileSizeByUserId(7L)).thenReturn(90L);
 
-        assertThatThrownBy(() -> uploadTargetPolicy.validateUpload(user, "/docs", "movie.mp4", 20L))
+        assertThatThrownBy(() -> uploadTargetPolicy.validateUpload(
+                user.getId(),
+                user.getMaxUploadSizeBytes(),
+                user.getStorageQuotaBytes(),
+                "/docs",
+                "movie.mp4",
+                20L
+        ))
                 .isInstanceOf(BusinessException.class);
     }
 

@@ -1,7 +1,6 @@
 package com.yoyuzh.transfer.internal.application;
 
 import com.yoyuzh.ops.admin.internal.application.AdminMetricsService;
-import com.yoyuzh.auth.User;
 import com.yoyuzh.shared.kernel.BusinessException;
 import com.yoyuzh.shared.kernel.ErrorCode;
 import com.yoyuzh.transfer.CreateTransferSessionRequest;
@@ -48,14 +47,14 @@ public class RuntimeTransferSessionApi implements TransferSessionApi {
 
     @Override
     @Transactional
-    public TransferSessionResponse createSession(User sender, CreateTransferSessionCommand command) {
+    public TransferSessionResponse createSession(Long senderUserId, CreateTransferSessionCommand command) {
         pruneExpiredSessions();
         adminMetricsService.recordTransferUsage(command.files().stream().mapToLong(TransferFileItem::size).sum());
         if (command.mode() == TransferMode.OFFLINE) {
-            if (sender == null) {
+            if (senderUserId == null) {
                 throw new BusinessException(ErrorCode.NOT_LOGGED_IN, "offline transfer requires authenticated user");
             }
-            return offlineTransferService.createSession(sender, new CreateTransferSessionRequest(command.mode(), command.files()));
+            return offlineTransferService.createSession(senderUserId, new CreateTransferSessionRequest(command.mode(), command.files()));
         }
         return onlineTransferService.createSession(new CreateTransferSessionRequest(command.mode(), command.files()));
     }
@@ -83,16 +82,16 @@ public class RuntimeTransferSessionApi implements TransferSessionApi {
     }
 
     @Override
-    public List<TransferSessionResponse> listOfflineSessions(User sender) {
+    public List<TransferSessionResponse> listOfflineSessions(Long senderUserId) {
         pruneExpiredSessions();
-        return offlineTransferService.listOfflineSessions(sender);
+        return offlineTransferService.listOfflineSessions(senderUserId);
     }
 
     @Override
     @Transactional
-    public void uploadOfflineFile(User sender, String sessionId, String fileId, MultipartFile multipartFile) {
+    public void uploadOfflineFile(Long senderUserId, String sessionId, String fileId, MultipartFile multipartFile) {
         pruneExpiredSessions();
-        offlineTransferService.uploadOfflineFile(sender, sessionId, fileId, multipartFile);
+        offlineTransferService.uploadOfflineFile(senderUserId, sessionId, fileId, multipartFile);
     }
 
     @Override
@@ -129,9 +128,9 @@ public class RuntimeTransferSessionApi implements TransferSessionApi {
 
     @Override
     @Transactional
-    public FileMetadataResponse importOfflineFile(User recipient, String sessionId, String fileId, TransferImportCommand command) {
+    public FileMetadataResponse importOfflineFile(Long recipientUserId, String sessionId, String fileId, TransferImportCommand command) {
         pruneExpiredSessions();
-        return transferImportApi.importOfflineFile(recipient, sessionId, fileId, command);
+        return transferImportApi.importOfflineFile(recipientUserId, sessionId, fileId, command);
     }
 
     @Override

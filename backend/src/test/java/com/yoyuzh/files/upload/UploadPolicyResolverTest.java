@@ -1,6 +1,6 @@
 package com.yoyuzh.files.upload;
 
-import com.yoyuzh.auth.User;
+import com.yoyuzh.identity.access.internal.domain.User;
 import com.yoyuzh.platform.storage.api.StoragePolicyCapabilities;
 import com.yoyuzh.platform.storage.api.StorageUploadMode;
 import com.yoyuzh.platform.storage.api.UploadConstraintPolicy;

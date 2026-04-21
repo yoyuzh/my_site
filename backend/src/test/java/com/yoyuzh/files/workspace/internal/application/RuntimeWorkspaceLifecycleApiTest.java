@@ -1,13 +1,13 @@
 package com.yoyuzh.files.workspace.internal.application;
 
-import com.yoyuzh.auth.User;
+import com.yoyuzh.identity.access.internal.domain.User;
 import com.yoyuzh.shared.kernel.BusinessException;
 import com.yoyuzh.files.content.api.ContentDuplicationApi;
 import com.yoyuzh.files.content.api.ContentRegistrationCommand;
 import com.yoyuzh.files.content.api.RegisteredContentFile;
-import com.yoyuzh.files.core.FileBlob;
-import com.yoyuzh.files.core.StoredFile;
-import com.yoyuzh.files.core.StoredFileRepository;
+import com.yoyuzh.files.content.internal.domain.FileBlob;
+import com.yoyuzh.files.workspace.internal.domain.StoredFile;
+import com.yoyuzh.files.workspace.internal.infra.StoredFileRepository;
 import com.yoyuzh.files.storage.FileContentStorage;
 import com.yoyuzh.files.workspace.api.WorkspaceLifecycleResult;
 import org.junit.jupiter.api.Test;
@@ -67,7 +67,7 @@ class RuntimeWorkspaceLifecycleApiTest {
                 .thenReturn(new RegisteredContentFile(120L, "notes.txt", "/图片/archive", 5L, "text/plain", false, LocalDateTime.now()));
         AtomicLong guardedBytes = new AtomicLong(-1L);
 
-        WorkspaceLifecycleResult result = api.copy(user, 10L, "/图片", guardedBytes::set);
+        WorkspaceLifecycleResult result = api.copy(user.getId(), 10L, "/图片", guardedBytes::set);
 
         assertThat(result.file().path()).isEqualTo("/图片/archive");
         assertThat(result.toPath()).isEqualTo("/图片/archive");
@@ -88,7 +88,7 @@ class RuntimeWorkspaceLifecycleApiTest {
         when(storedFileRepository.findDetailedById(10L)).thenReturn(Optional.of(directory));
         when(storedFileRepository.findByUserIdAndPathEqualsOrDescendant(7L, "/docs/archive")).thenReturn(List.of(childFile));
 
-        WorkspaceLifecycleResult result = api.recycle(user, 10L);
+        WorkspaceLifecycleResult result = api.recycle(user.getId(), 10L);
 
         assertThat(directory.getDeletedAt()).isNotNull();
         assertThat(directory.isRecycleRoot()).isTrue();
@@ -116,7 +116,7 @@ class RuntimeWorkspaceLifecycleApiTest {
         when(storedFileRepository.existsByUserIdAndPathAndFilename(7L, "/docs", "last.txt")).thenReturn(false);
         when(storedFileRepository.findByUserIdAndPathAndFilename(7L, "/", "docs")).thenReturn(Optional.of(docsDirectory));
 
-        WorkspaceLifecycleResult result = api.restore(user, 16L, bytes -> assertThat(bytes).isEqualTo(5L));
+        WorkspaceLifecycleResult result = api.restore(user.getId(), 16L, bytes -> assertThat(bytes).isEqualTo(5L));
 
         assertThat(recycleRoot.getDeletedAt()).isNull();
         assertThat(recycleRoot.getPath()).isEqualTo("/docs");
@@ -141,7 +141,7 @@ class RuntimeWorkspaceLifecycleApiTest {
         when(storedFileRepository.findByUserIdAndPathAndFilename(7L, "/docs", "archive")).thenReturn(Optional.of(archiveDirectory));
         when(storedFileRepository.findByUserIdAndPathAndFilename(7L, "/docs/archive", "nested")).thenReturn(Optional.of(descendantDirectory));
 
-        assertThatThrownBy(() -> api.copy(user, 10L, "/docs/archive/nested", bytes -> {}))
+        assertThatThrownBy(() -> api.copy(user.getId(), 10L, "/docs/archive/nested", bytes -> {}))
                 .isInstanceOf(BusinessException.class)
                 .hasMessageContaining("不能复制到当前目录或其子目录");
     }

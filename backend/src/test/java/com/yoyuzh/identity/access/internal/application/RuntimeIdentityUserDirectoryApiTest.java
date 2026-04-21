@@ -1,7 +1,7 @@
 package com.yoyuzh.identity.access.internal.application;
 
-import com.yoyuzh.auth.User;
-import com.yoyuzh.auth.UserRepository;
+import com.yoyuzh.identity.access.internal.domain.User;
+import com.yoyuzh.identity.access.internal.infra.UserRepository;
 import com.yoyuzh.identity.access.api.IdentityUserProfileSummary;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;

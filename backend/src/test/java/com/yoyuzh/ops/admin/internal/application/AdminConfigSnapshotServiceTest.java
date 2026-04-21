@@ -4,14 +4,13 @@ import com.yoyuzh.files.content.api.ContentAdminInspectionApi;
 import com.yoyuzh.identity.access.api.IdentityAdminSummaryApi;
 import com.yoyuzh.infra.cache.AppRedisProperties;
 import com.yoyuzh.ops.admin.api.AdminSettingsResponse;
+import com.yoyuzh.platform.storage.api.StoragePolicyAdminApi;
+import com.yoyuzh.platform.storage.api.StoragePolicyAdminView;
+import com.yoyuzh.platform.storage.api.StoragePolicyCapabilities;
+import com.yoyuzh.platform.storage.api.StoragePolicyCredentialMode;
+import com.yoyuzh.platform.storage.api.StoragePolicyType;
 import com.yoyuzh.platform.storage.internal.infra.FileStorageProperties;
-import com.yoyuzh.files.policy.StoragePolicy;
-import com.yoyuzh.files.policy.StoragePolicyCapabilities;
-import com.yoyuzh.files.policy.StoragePolicyCredentialMode;
-import com.yoyuzh.files.policy.StoragePolicyService;
-import com.yoyuzh.files.policy.StoragePolicyType;
 import com.yoyuzh.files.workspace.api.WorkspaceAdminGovernanceApi;
-import com.yoyuzh.platform.storage.api.DefaultStoragePolicySnapshot;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -31,7 +30,7 @@ class AdminConfigSnapshotServiceTest {
     @Mock
     private AdminMetricsService adminMetricsService;
     @Mock
-    private StoragePolicyService storagePolicyService;
+    private StoragePolicyAdminApi storagePolicyAdminApi;
     @Mock
     private WorkspaceAdminGovernanceApi workspaceAdminGovernanceApi;
     @Mock
@@ -53,7 +52,7 @@ class AdminConfigSnapshotServiceTest {
                 redisProperties,
                 fileStorageProperties,
                 adminRuntimeSettingsService,
-                storagePolicyService,
+                storagePolicyAdminApi,
                 workspaceAdminGovernanceApi,
                 contentAdminInspectionApi
         );
@@ -114,10 +113,7 @@ class AdminConfigSnapshotServiceTest {
         redisProperties.getCache().setFilesListTtlSeconds(45);
         redisProperties.getCache().setDirectoryVersionTtlSeconds(3600);
 
-        StoragePolicy policy = createStoragePolicy(7L, "Default S3 Storage");
-        policy.setType(StoragePolicyType.S3_COMPATIBLE);
-        policy.setDefaultPolicy(true);
-        policy.setMaxSizeBytes(400_000L);
+        StoragePolicyAdminView policy = createStoragePolicy(7L, "Default S3 Storage");
         StoragePolicyCapabilities capabilities = new StoragePolicyCapabilities(
                 true,
                 true,
@@ -129,7 +125,24 @@ class AdminConfigSnapshotServiceTest {
                 false,
                 300_000L
         );
-        when(storagePolicyService.readDefaultPolicySnapshot()).thenReturn(new DefaultStoragePolicySnapshot(policy, capabilities));
+        StoragePolicyAdminView defaultPolicy = new StoragePolicyAdminView(
+                policy.id(),
+                policy.name(),
+                policy.type(),
+                policy.bucketName(),
+                policy.endpoint(),
+                policy.region(),
+                policy.privateBucket(),
+                policy.prefix(),
+                policy.credentialMode(),
+                400_000L,
+                capabilities,
+                policy.enabled(),
+                true,
+                policy.createdAt(),
+                policy.updatedAt()
+        );
+        when(storagePolicyAdminApi.readDefaultStoragePolicyAsAdmin()).thenReturn(defaultPolicy);
         when(workspaceAdminGovernanceApi.countFilesAsAdmin()).thenReturn(12L);
         when(contentAdminInspectionApi.countBlobsAsAdmin()).thenReturn(8L);
         when(contentAdminInspectionApi.countEntitiesAsAdmin()).thenReturn(9L);
@@ -153,23 +166,33 @@ class AdminConfigSnapshotServiceTest {
         assertThat(response.webdav().enabled()).isFalse();
     }
 
-    private StoragePolicy createStoragePolicy(Long id, String name) {
-        StoragePolicy policy = new StoragePolicy();
-        policy.setId(id);
-        policy.setName(name);
-        policy.setType(StoragePolicyType.S3_COMPATIBLE);
-        policy.setBucketName("bucket");
-        policy.setEndpoint("https://s3.example.com");
-        policy.setRegion("auto");
-        policy.setPrivateBucket(true);
-        policy.setPrefix("files/");
-        policy.setCredentialMode(StoragePolicyCredentialMode.STATIC);
-        policy.setMaxSizeBytes(10_240L);
-        policy.setCapabilitiesJson("{}");
-        policy.setEnabled(true);
-        policy.setDefaultPolicy(false);
-        policy.setCreatedAt(LocalDateTime.now());
-        policy.setUpdatedAt(LocalDateTime.now());
-        return policy;
+    private StoragePolicyAdminView createStoragePolicy(Long id, String name) {
+        return new StoragePolicyAdminView(
+                id,
+                name,
+                StoragePolicyType.S3_COMPATIBLE,
+                "bucket",
+                "https://s3.example.com",
+                "auto",
+                true,
+                "files/",
+                StoragePolicyCredentialMode.STATIC,
+                10_240L,
+                new StoragePolicyCapabilities(
+                        true,
+                        true,
+                        true,
+                        true,
+                        false,
+                        true,
+                        true,
+                        false,
+                        10_240L
+                ),
+                true,
+                false,
+                LocalDateTime.now(),
+                LocalDateTime.now()
+        );
     }
 }

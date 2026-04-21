@@ -4,21 +4,24 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-import com.yoyuzh.auth.User;
-import com.yoyuzh.auth.UserRole;
-import com.yoyuzh.files.core.FileService;
-import com.yoyuzh.files.core.StoredFile;
-import com.yoyuzh.files.core.StoredFileRepository;
+import com.yoyuzh.identity.access.internal.domain.User;
+import com.yoyuzh.identity.access.internal.domain.UserRole;
+import com.yoyuzh.files.workspace.internal.application.FileService;
+import com.yoyuzh.files.workspace.internal.domain.StoredFile;
+import com.yoyuzh.files.workspace.internal.infra.StoredFileRepository;
 import com.yoyuzh.files.workspace.api.WorkspaceAdminFileQuery;
 import com.yoyuzh.files.workspace.api.WorkspaceAdminFileSnapshot;
 import com.yoyuzh.files.workspace.api.WorkspaceAdminFileView;
 import com.yoyuzh.shared.kernel.PageResponse;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -93,6 +96,42 @@ class RuntimeWorkspaceAdminGovernanceApiTest {
         long total = runtimeWorkspaceAdminGovernanceApi.countFilesAsAdmin();
 
         assertThat(total).isEqualTo(12L);
+    }
+
+    @Test
+    void shouldLoadUsedStorageBytesByUserId() {
+        when(storedFileRepository.sumFileSizeByUserId(1L)).thenReturn(2048L);
+
+        long usedStorageBytes = runtimeWorkspaceAdminGovernanceApi.loadUsedStorageBytesByUserId(1L);
+
+        assertThat(usedStorageBytes).isEqualTo(2048L);
+        verify(storedFileRepository).sumFileSizeByUserId(1L);
+    }
+
+    @Test
+    void shouldLoadUsedStorageBytesByUserIds() {
+        StoredFileRepository.UserStorageUsageProjection alice = mock(StoredFileRepository.UserStorageUsageProjection.class);
+        when(alice.getUserId()).thenReturn(1L);
+        when(alice.getUsedStorageBytes()).thenReturn(1024L);
+        StoredFileRepository.UserStorageUsageProjection bob = mock(StoredFileRepository.UserStorageUsageProjection.class);
+        when(bob.getUserId()).thenReturn(2L);
+        when(bob.getUsedStorageBytes()).thenReturn(4096L);
+        when(storedFileRepository.sumFileSizeByUserIds(Set.of(1L, 2L))).thenReturn(List.of(alice, bob));
+
+        Map<Long, Long> usedStorageByUserId =
+                runtimeWorkspaceAdminGovernanceApi.loadUsedStorageBytesByUserIds(Set.of(1L, 2L));
+
+        assertThat(usedStorageByUserId).containsEntry(1L, 1024L);
+        assertThat(usedStorageByUserId).containsEntry(2L, 4096L);
+        verify(storedFileRepository).sumFileSizeByUserIds(Set.of(1L, 2L));
+    }
+
+    @Test
+    void shouldReturnEmptyMapWhenLoadingUsedStorageForEmptyUserIds() {
+        Map<Long, Long> usedStorageByUserId =
+                runtimeWorkspaceAdminGovernanceApi.loadUsedStorageBytesByUserIds(Set.of());
+
+        assertThat(usedStorageByUserId).isEmpty();
     }
 
     private User createUser(Long id, String username, String email) {

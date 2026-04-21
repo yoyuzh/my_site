@@ -1,8 +1,8 @@
 package com.yoyuzh.identity.access.internal.application;
 
-import com.yoyuzh.auth.AuthSessionPolicy;
-import com.yoyuzh.auth.AuthTokenInvalidationService;
-import com.yoyuzh.auth.User;
+import com.yoyuzh.identity.access.internal.application.AuthSessionPolicy;
+import com.yoyuzh.identity.access.internal.domain.User;
+import com.yoyuzh.boot.security.AuthTokenInvalidationService;
 import com.yoyuzh.identity.access.api.IdentityCredentialRevocationPolicy;
 import com.yoyuzh.identity.access.api.IdentityRefreshTokenManager;
 import lombok.RequiredArgsConstructor;

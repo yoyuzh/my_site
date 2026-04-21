@@ -1,0 +1,73 @@
+package com.yoyuzh.files.workspace.internal.application;
+
+import com.yoyuzh.identity.access.internal.domain.User;
+import com.yoyuzh.shared.kernel.BusinessException;
+import com.yoyuzh.shared.kernel.ErrorCode;
+import com.yoyuzh.platform.storage.api.StoragePolicyCapabilities;
+import com.yoyuzh.platform.storage.api.StoragePolicyQuery;
+import com.yoyuzh.platform.storage.api.UploadConstraintPolicy;
+import com.yoyuzh.files.workspace.internal.infra.StoredFileRepository;
+
+public final class FileUploadRulesService {
+
+    private final StoredFileRepository storedFileRepository;
+    private final StoragePolicyQuery storagePolicyQuery;
+    private final UploadConstraintPolicy uploadConstraintPolicy;
+    private final WorkspaceNodeRulesService workspaceNodeRulesService;
+    private final long maxFileSize;
+
+    public FileUploadRulesService(StoredFileRepository storedFileRepository,
+                                  StoragePolicyQuery storagePolicyQuery,
+                                  UploadConstraintPolicy uploadConstraintPolicy,
+                                  WorkspaceNodeRulesService workspaceNodeRulesService,
+                                  long maxFileSize) {
+        this.storedFileRepository = storedFileRepository;
+        this.storagePolicyQuery = storagePolicyQuery;
+        this.uploadConstraintPolicy = uploadConstraintPolicy;
+        this.workspaceNodeRulesService = workspaceNodeRulesService;
+        this.maxFileSize = maxFileSize;
+    }
+
+    public void validateUpload(User user, String normalizedPath, String filename, long size) {
+        long effectiveMaxUploadSize = Math.min(maxFileSize, user.getMaxUploadSizeBytes());
+        long policyMaxSizeBytes = 0L;
+        StoragePolicyCapabilities capabilities = null;
+        if (storagePolicyQuery != null) {
+            var defaultPolicySnapshot = storagePolicyQuery.readDefaultPolicySnapshot();
+            policyMaxSizeBytes = defaultPolicySnapshot.policyMaxSizeBytes();
+            capabilities = defaultPolicySnapshot.capabilities();
+        }
+        if (uploadConstraintPolicy != null) {
+            effectiveMaxUploadSize = uploadConstraintPolicy.resolveEffectiveMaxUploadSize(
+                    maxFileSize,
+                    user.getMaxUploadSizeBytes(),
+                    policyMaxSizeBytes,
+                    capabilities == null ? 0L : capabilities.maxObjectSize()
+            );
+        } else {
+            if (policyMaxSizeBytes > 0) {
+                effectiveMaxUploadSize = Math.min(effectiveMaxUploadSize, policyMaxSizeBytes);
+            }
+            if (capabilities != null && capabilities.maxObjectSize() > 0) {
+                effectiveMaxUploadSize = Math.min(effectiveMaxUploadSize, capabilities.maxObjectSize());
+            }
+        }
+        if (size > effectiveMaxUploadSize) {
+            throw new BusinessException(ErrorCode.UNKNOWN, "文件大小超出限制");
+        }
+        workspaceNodeRulesService.ensureNodeNameAvailable(user.getId(), normalizedPath, filename, "同目录下文件已存在");
+        ensureWithinStorageQuota(user, size);
+    }
+
+    public void ensureWithinStorageQuota(User user, long additionalBytes) {
+        if (additionalBytes <= 0) {
+            return;
+        }
+
+        long usedBytes = storedFileRepository.sumFileSizeByUserId(user.getId());
+        long quotaBytes = user.getStorageQuotaBytes();
+        if (usedBytes > Long.MAX_VALUE - additionalBytes || usedBytes + additionalBytes > quotaBytes) {
+            throw new BusinessException(ErrorCode.UNKNOWN, "存储空间不足");
+        }
+    }
+}

@@ -1,7 +1,7 @@
 package com.yoyuzh.transfer.internal.application;
 
-import com.yoyuzh.auth.User;
-import com.yoyuzh.auth.UserRepository;
+import com.yoyuzh.identity.access.internal.domain.User;
+import com.yoyuzh.identity.access.internal.infra.UserRepository;
 import com.yoyuzh.shared.kernel.BusinessException;
 import com.yoyuzh.shared.kernel.ErrorCode;
 import com.yoyuzh.platform.storage.internal.infra.FileStorageProperties;
@@ -9,9 +9,9 @@ import com.yoyuzh.files.content.api.ContentRegistrationApi;
 import com.yoyuzh.files.content.api.ContentBlobReference;
 import com.yoyuzh.files.content.api.ContentRegistrationCommand;
 import com.yoyuzh.files.content.api.RegisteredContentFile;
-import com.yoyuzh.files.core.FileBlob;
-import com.yoyuzh.files.core.FileBlobRepository;
-import com.yoyuzh.files.core.StoredFileRepository;
+import com.yoyuzh.files.content.internal.domain.FileBlob;
+import com.yoyuzh.files.content.internal.infra.FileBlobRepository;
+import com.yoyuzh.files.workspace.internal.infra.StoredFileRepository;
 import com.yoyuzh.platform.storage.api.StoragePolicyCapabilities;
 import com.yoyuzh.files.storage.FileContentStorage;
 import com.yoyuzh.files.workspace.api.FileMetadataResponse;
@@ -83,7 +83,7 @@ public class RuntimeTransferImportApi implements TransferImportApi {
                     normalizedFilename,
                     readyFile.contentType(),
                     readyFile.size(),
-                    new ContentBlobReference(blob.getObjectKey(), blob.getContentType(), blob.getSize())
+                    new ContentBlobReference(blob.getId(), blob.getObjectKey(), blob.getContentType(), blob.getSize())
             ));
             return new FileMetadataResponse(
                     storedFile.id(),

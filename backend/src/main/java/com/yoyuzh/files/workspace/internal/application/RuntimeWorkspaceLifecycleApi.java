@@ -1,14 +1,14 @@
 package com.yoyuzh.files.workspace.internal.application;
 
-import com.yoyuzh.auth.User;
+import com.yoyuzh.identity.access.internal.domain.User;
 import com.yoyuzh.shared.kernel.BusinessException;
 import com.yoyuzh.shared.kernel.ErrorCode;
 import com.yoyuzh.files.content.api.ContentBlobReference;
 import com.yoyuzh.files.content.api.ContentDuplicationApi;
 import com.yoyuzh.files.content.api.ContentRegistrationCommand;
 import com.yoyuzh.files.content.api.RegisteredContentFile;
-import com.yoyuzh.files.core.StoredFile;
-import com.yoyuzh.files.core.StoredFileRepository;
+import com.yoyuzh.files.workspace.internal.domain.StoredFile;
+import com.yoyuzh.files.workspace.internal.infra.StoredFileRepository;
 import com.yoyuzh.files.storage.FileContentStorage;
 import com.yoyuzh.files.workspace.api.FileMetadataResponse;
 import com.yoyuzh.files.workspace.api.WorkspaceLifecycleApi;
@@ -30,6 +30,7 @@ public final class RuntimeWorkspaceLifecycleApi implements WorkspaceLifecycleApi
     private final StoredFileRepository storedFileRepository;
     private final ContentDuplicationApi contentDuplicationApi;
     private final WorkspacePathPolicy workspacePathPolicy;
+    private final WorkspaceNodeRulesService workspaceNodeRulesService;
 
     public RuntimeWorkspaceLifecycleApi(StoredFileRepository storedFileRepository,
                                         FileContentStorage fileContentStorage,
@@ -37,6 +38,7 @@ public final class RuntimeWorkspaceLifecycleApi implements WorkspaceLifecycleApi
         this.storedFileRepository = storedFileRepository;
         this.contentDuplicationApi = contentDuplicationApi;
         this.workspacePathPolicy = new RuntimeWorkspacePathPolicy(storedFileRepository, fileContentStorage);
+        this.workspaceNodeRulesService = new WorkspaceNodeRulesService(storedFileRepository, fileContentStorage);
     }
 
     @Override
@@ -135,7 +137,7 @@ public final class RuntimeWorkspaceLifecycleApi implements WorkspaceLifecycleApi
                 .mapToLong(StoredFile::getSize)
                 .sum();
         quotaGuard.ensureWithinQuota(additionalBytes);
-        workspacePathPolicy.validateRecycleRestoreTargets(userId, recycleGroupItems, this::requireRecycleOriginalPath);
+        workspaceNodeRulesService.validateRecycleRestoreTargets(userId, recycleGroupItems, this::requireRecycleOriginalPath);
         workspacePathPolicy.ensureDirectoryHierarchy(userId, requireRecycleOriginalPath(recycleRoot));
 
         for (StoredFile item : recycleGroupItems) {
@@ -265,6 +267,7 @@ public final class RuntimeWorkspaceLifecycleApi implements WorkspaceLifecycleApi
                         copiedFile.getContentType(),
                         copiedFile.getSize(),
                         new ContentBlobReference(
+                                copiedFile.getBlob().getId(),
                                 copiedFile.getBlob().getObjectKey(),
                                 copiedFile.getBlob().getContentType(),
                                 copiedFile.getBlob().getSize()

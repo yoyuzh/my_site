@@ -1,8 +1,8 @@
 package com.yoyuzh.files.workspace.internal.application;
 
-import com.yoyuzh.files.core.FileService;
-import com.yoyuzh.files.core.StoredFile;
-import com.yoyuzh.files.core.StoredFileRepository;
+import com.yoyuzh.files.workspace.internal.application.FileService;
+import com.yoyuzh.files.workspace.internal.domain.StoredFile;
+import com.yoyuzh.files.workspace.internal.infra.StoredFileRepository;
 import com.yoyuzh.files.workspace.api.WorkspaceAdminFileSnapshot;
 import com.yoyuzh.files.workspace.api.WorkspaceAdminFileQuery;
 import com.yoyuzh.files.workspace.api.WorkspaceAdminFileView;
@@ -15,7 +15,10 @@ import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
@@ -66,6 +69,28 @@ public class RuntimeWorkspaceAdminGovernanceApi implements WorkspaceAdminGoverna
     @Transactional(readOnly = true)
     public long countFilesAsAdmin() {
         return storedFileRepository.count();
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public long loadUsedStorageBytesByUserId(Long userId) {
+        if (userId == null) {
+            return 0L;
+        }
+        return storedFileRepository.sumFileSizeByUserId(userId);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public Map<Long, Long> loadUsedStorageBytesByUserIds(Set<Long> userIds) {
+        if (userIds == null || userIds.isEmpty()) {
+            return Map.of();
+        }
+        return storedFileRepository.sumFileSizeByUserIds(userIds).stream()
+                .collect(Collectors.toMap(
+                        StoredFileRepository.UserStorageUsageProjection::getUserId,
+                        projection -> projection.getUsedStorageBytes() == null ? 0L : projection.getUsedStorageBytes()
+                ));
     }
 
     private WorkspaceAdminFileView toAdminFileView(StoredFile storedFile) {

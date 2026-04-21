@@ -1,8 +1,8 @@
 package com.yoyuzh.identity.access.internal.application;
 
 import com.yoyuzh.ops.admin.internal.application.AdminRuntimeSettingsService;
-import com.yoyuzh.auth.UserRepository;
-import com.yoyuzh.auth.UserRole;
+import com.yoyuzh.identity.access.internal.infra.UserRepository;
+import com.yoyuzh.identity.access.internal.domain.UserRole;
 import com.yoyuzh.shared.kernel.BusinessException;
 import com.yoyuzh.shared.kernel.ErrorCode;
 import com.yoyuzh.identity.access.api.AdminAccessContinuityGuard;

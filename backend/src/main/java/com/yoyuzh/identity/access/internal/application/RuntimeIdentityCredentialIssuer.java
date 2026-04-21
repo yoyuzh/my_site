@@ -1,11 +1,11 @@
 package com.yoyuzh.identity.access.internal.application;
 
-import com.yoyuzh.auth.AuthClientType;
-import com.yoyuzh.auth.AuthSessionPolicy;
-import com.yoyuzh.auth.AuthTokenInvalidationService;
-import com.yoyuzh.auth.JwtTokenProvider;
-import com.yoyuzh.auth.User;
-import com.yoyuzh.auth.UserRepository;
+import com.yoyuzh.identity.access.api.IdentityClientType;
+import com.yoyuzh.identity.access.internal.application.AuthSessionPolicy;
+import com.yoyuzh.identity.access.internal.domain.User;
+import com.yoyuzh.identity.access.internal.infra.UserRepository;
+import com.yoyuzh.boot.security.AuthTokenInvalidationService;
+import com.yoyuzh.boot.security.JwtTokenProvider;
 import com.yoyuzh.identity.access.api.IdentityCredentialIssuer;
 import com.yoyuzh.identity.access.api.IdentityRefreshTokenManager;
 import com.yoyuzh.identity.access.api.IssuedAuthCredentials;
@@ -25,7 +25,7 @@ public class RuntimeIdentityCredentialIssuer implements IdentityCredentialIssuer
 
     @Override
     @Transactional
-    public IssuedAuthCredentials issueFresh(User user, AuthClientType clientType) {
+    public IssuedAuthCredentials issueFresh(User user, IdentityClientType clientType) {
         authTokenInvalidationService.revokeAccessTokensForUser(user.getId(), clientType);
         identityRefreshTokenManager.revokeAll(user.getId(), clientType);
         return issueWithRefreshToken(user, identityRefreshTokenManager.issue(user, clientType), clientType);
@@ -33,7 +33,7 @@ public class RuntimeIdentityCredentialIssuer implements IdentityCredentialIssuer
 
     @Override
     @Transactional
-    public IssuedAuthCredentials issueWithRefreshToken(User user, String refreshToken, AuthClientType clientType) {
+    public IssuedAuthCredentials issueWithRefreshToken(User user, String refreshToken, IdentityClientType clientType) {
         authSessionPolicy.rotateActiveSession(user, clientType);
         User sessionUser = userRepository.save(user);
         String accessToken = jwtTokenProvider.generateAccessToken(
@@ -46,9 +46,9 @@ public class RuntimeIdentityCredentialIssuer implements IdentityCredentialIssuer
 
     @Override
     @Transactional
-    public IssuedAuthCredentials refresh(String rawRefreshToken, AuthClientType defaultClientType) {
+    public IssuedAuthCredentials refresh(String rawRefreshToken, IdentityClientType defaultClientType) {
         var rotated = identityRefreshTokenManager.rotate(rawRefreshToken);
-        AuthClientType clientType = rotated.clientType() == null ? defaultClientType : rotated.clientType();
+        IdentityClientType clientType = rotated.clientType() == null ? defaultClientType : rotated.clientType();
         return issueWithRefreshToken(rotated.user(), rotated.refreshToken(), clientType);
     }
 }

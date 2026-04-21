@@ -8,6 +8,7 @@ import com.tngtech.archunit.core.domain.JavaClass;
 import com.tngtech.archunit.core.domain.JavaClasses;
 import com.tngtech.archunit.core.importer.ClassFileImporter;
 import com.tngtech.archunit.core.importer.ImportOption;
+import com.tngtech.archunit.core.importer.ImportOption;
 import com.tngtech.archunit.lang.ArchRule;
 import org.junit.jupiter.api.Test;
 
@@ -104,7 +105,7 @@ class Task8OpsAdminArchitectureTest {
                 .haveFullyQualifiedName("com.yoyuzh.ops.admin.internal.application.AdminTaskQueryService")
                 .should()
                 .dependOnClassesThat()
-                .haveFullyQualifiedName("com.yoyuzh.auth.UserRepository");
+                .haveFullyQualifiedName("com.yoyuzh.identity.access.internal.infra.UserRepository");
 
         dependencyRule.check(classes);
         identityDependencyRule.check(classes);
@@ -126,7 +127,7 @@ class Task8OpsAdminArchitectureTest {
                 .haveFullyQualifiedName("com.yoyuzh.ops.admin.internal.application.AdminAuditService")
                 .should()
                 .dependOnClassesThat()
-                .haveFullyQualifiedName("com.yoyuzh.auth.UserRepository");
+                .haveFullyQualifiedName("com.yoyuzh.identity.access.internal.infra.UserRepository");
 
         dependencyRule.check(classes);
         noLegacyRule.check(classes);
@@ -202,35 +203,35 @@ class Task8OpsAdminArchitectureTest {
                 .haveFullyQualifiedName("com.yoyuzh.ops.admin.internal.application.AdminInspectionQueryService")
                 .should()
                 .dependOnClassesThat()
-                .haveFullyQualifiedName("com.yoyuzh.files.core.StoredFile");
+                .haveFullyQualifiedName("com.yoyuzh.files.workspace.internal.domain.StoredFile");
 
         ArchRule noLegacyFileEntityRepositoryRule = noClasses()
                 .that()
                 .haveFullyQualifiedName("com.yoyuzh.ops.admin.internal.application.AdminInspectionQueryService")
                 .should()
                 .dependOnClassesThat()
-                .haveFullyQualifiedName("com.yoyuzh.files.core.FileEntityRepository");
+                .haveFullyQualifiedName("com.yoyuzh.files.content.internal.infra.FileEntityRepository");
 
         ArchRule noLegacyStoredFileRepositoryRule = noClasses()
                 .that()
                 .haveFullyQualifiedName("com.yoyuzh.ops.admin.internal.application.AdminInspectionQueryService")
                 .should()
                 .dependOnClassesThat()
-                .haveFullyQualifiedName("com.yoyuzh.files.core.StoredFileRepository");
+                .haveFullyQualifiedName("com.yoyuzh.files.workspace.internal.infra.StoredFileRepository");
 
         ArchRule noLegacyFileBlobRepositoryRule = noClasses()
                 .that()
                 .haveFullyQualifiedName("com.yoyuzh.ops.admin.internal.application.AdminInspectionQueryService")
                 .should()
                 .dependOnClassesThat()
-                .haveFullyQualifiedName("com.yoyuzh.files.core.FileBlobRepository");
+                .haveFullyQualifiedName("com.yoyuzh.files.content.internal.infra.FileBlobRepository");
 
         ArchRule noLegacyStoredFileEntityRepositoryRule = noClasses()
                 .that()
                 .haveFullyQualifiedName("com.yoyuzh.ops.admin.internal.application.AdminInspectionQueryService")
                 .should()
                 .dependOnClassesThat()
-                .haveFullyQualifiedName("com.yoyuzh.files.core.StoredFileEntityRepository");
+                .haveFullyQualifiedName("com.yoyuzh.files.workspace.internal.domain.StoredFileEntityRepository");
 
         ArchRule noLegacyShareRepositoryRule = noClasses()
                 .that()
@@ -244,7 +245,7 @@ class Task8OpsAdminArchitectureTest {
                 .haveFullyQualifiedName("com.yoyuzh.ops.admin.internal.application.AdminInspectionQueryService")
                 .should()
                 .dependOnClassesThat()
-                .haveFullyQualifiedName("com.yoyuzh.auth.UserRepository");
+                .haveFullyQualifiedName("com.yoyuzh.identity.access.internal.infra.UserRepository");
 
         ArchRule noLegacyRegistrationInviteServiceRule = noClasses()
                 .that()
@@ -311,7 +312,7 @@ class Task8OpsAdminArchitectureTest {
                 .haveFullyQualifiedName("com.yoyuzh.ops.admin.internal.application.AdminConfigSnapshotService")
                 .should()
                 .dependOnClassesThat()
-                .haveFullyQualifiedName("com.yoyuzh.auth.UserRepository");
+                .haveFullyQualifiedName("com.yoyuzh.identity.access.internal.infra.UserRepository");
 
         ArchRule noLegacyInviteServiceRule = noClasses()
                 .that()
@@ -325,21 +326,21 @@ class Task8OpsAdminArchitectureTest {
                 .haveFullyQualifiedName("com.yoyuzh.ops.admin.internal.application.AdminConfigSnapshotService")
                 .should()
                 .dependOnClassesThat()
-                .haveFullyQualifiedName("com.yoyuzh.files.core.StoredFileRepository");
+                .haveFullyQualifiedName("com.yoyuzh.files.workspace.internal.infra.StoredFileRepository");
 
         ArchRule noLegacyFileBlobRepositoryRule = noClasses()
                 .that()
                 .haveFullyQualifiedName("com.yoyuzh.ops.admin.internal.application.AdminConfigSnapshotService")
                 .should()
                 .dependOnClassesThat()
-                .haveFullyQualifiedName("com.yoyuzh.files.core.FileBlobRepository");
+                .haveFullyQualifiedName("com.yoyuzh.files.content.internal.infra.FileBlobRepository");
 
         ArchRule noLegacyFileEntityRepositoryRule = noClasses()
                 .that()
                 .haveFullyQualifiedName("com.yoyuzh.ops.admin.internal.application.AdminConfigSnapshotService")
                 .should()
                 .dependOnClassesThat()
-                .haveFullyQualifiedName("com.yoyuzh.files.core.FileEntityRepository");
+                .haveFullyQualifiedName("com.yoyuzh.files.content.internal.infra.FileEntityRepository");
 
         ArchRule noLegacyStoragePolicyRule = noClasses()
                 .that()
@@ -408,7 +409,7 @@ class Task8OpsAdminArchitectureTest {
                 .haveFullyQualifiedName("com.yoyuzh.ops.admin.internal.application.AdminUserGovernanceService")
                 .should()
                 .dependOnClassesThat()
-                .haveFullyQualifiedName("com.yoyuzh.files.core.StoredFileRepository");
+                .haveFullyQualifiedName("com.yoyuzh.files.workspace.internal.infra.StoredFileRepository");
 
         identityDependencyRule.check(classes);
         workspaceDependencyRule.check(classes);

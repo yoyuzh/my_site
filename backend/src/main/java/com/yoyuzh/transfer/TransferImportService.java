@@ -1,6 +1,6 @@
 package com.yoyuzh.transfer;
 
-import com.yoyuzh.auth.User;
+import com.yoyuzh.identity.access.internal.domain.User;
 import com.yoyuzh.files.workspace.api.FileMetadataResponse;
 import com.yoyuzh.transfer.api.TransferImportApi;
 import com.yoyuzh.transfer.api.TransferImportCommand;
@@ -16,6 +16,6 @@ public class TransferImportService {
 
     @Transactional
     public FileMetadataResponse importOfflineFile(User recipient, String sessionId, String fileId, String path) {
-        return transferImportApi.importOfflineFile(recipient, sessionId, fileId, new TransferImportCommand(path));
+        return transferImportApi.importOfflineFile(recipient.getId(), sessionId, fileId, new TransferImportCommand(path));
     }
 }

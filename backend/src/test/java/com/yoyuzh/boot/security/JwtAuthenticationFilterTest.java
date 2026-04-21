@@ -6,11 +6,8 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.yoyuzh.ops.admin.internal.application.AdminMetricsService;
-import com.yoyuzh.auth.AuthClientType;
-import com.yoyuzh.auth.AuthTokenInvalidationService;
-import com.yoyuzh.auth.CustomUserDetailsService;
-import com.yoyuzh.auth.JwtTokenProvider;
-import com.yoyuzh.auth.User;
+import com.yoyuzh.identity.access.api.IdentityClientType;
+import com.yoyuzh.identity.access.internal.domain.User;
 import com.yoyuzh.shared.kernel.BusinessException;
 import com.yoyuzh.shared.kernel.ErrorCode;
 import jakarta.servlet.FilterChain;
@@ -100,9 +97,9 @@ class JwtAuthenticationFilterTest {
         Instant issuedAt = Instant.now().minusSeconds(30);
         when(jwtTokenProvider.validateToken("valid-token")).thenReturn(true);
         when(jwtTokenProvider.getUserId("valid-token")).thenReturn(1L);
-        when(jwtTokenProvider.getClientType("valid-token")).thenReturn(AuthClientType.DESKTOP);
+        when(jwtTokenProvider.getClientType("valid-token")).thenReturn(IdentityClientType.DESKTOP);
         when(jwtTokenProvider.getIssuedAt("valid-token")).thenReturn(issuedAt);
-        when(authTokenInvalidationService.isAccessTokenRevoked(1L, AuthClientType.DESKTOP, issuedAt)).thenReturn(true);
+        when(authTokenInvalidationService.isAccessTokenRevoked(1L, IdentityClientType.DESKTOP, issuedAt)).thenReturn(true);
 
         filter.doFilterInternal(request, response, filterChain);
 
@@ -118,7 +115,7 @@ class JwtAuthenticationFilterTest {
         MockHttpServletResponse response = new MockHttpServletResponse();
         when(jwtTokenProvider.validateToken("valid-token")).thenReturn(true);
         when(jwtTokenProvider.getUserId("valid-token")).thenReturn(1L);
-        when(jwtTokenProvider.getClientType("valid-token")).thenReturn(AuthClientType.DESKTOP);
+        when(jwtTokenProvider.getClientType("valid-token")).thenReturn(IdentityClientType.DESKTOP);
         when(jwtTokenProvider.getIssuedAt("valid-token")).thenReturn(Instant.now());
         when(jwtTokenProvider.getUsername("valid-token")).thenReturn("alice");
         when(userDetailsService.loadDomainUser("alice"))
@@ -138,7 +135,7 @@ class JwtAuthenticationFilterTest {
         User domainUser = createDomainUser("alice", "session-1", null);
         when(jwtTokenProvider.validateToken("valid-token")).thenReturn(true);
         when(jwtTokenProvider.getUserId("valid-token")).thenReturn(1L);
-        when(jwtTokenProvider.getClientType("valid-token")).thenReturn(AuthClientType.DESKTOP);
+        when(jwtTokenProvider.getClientType("valid-token")).thenReturn(IdentityClientType.DESKTOP);
         when(jwtTokenProvider.getIssuedAt("valid-token")).thenReturn(Instant.now());
         when(jwtTokenProvider.getUsername("valid-token")).thenReturn("alice");
         when(userDetailsService.loadDomainUser("alice")).thenReturn(domainUser);
@@ -164,7 +161,7 @@ class JwtAuthenticationFilterTest {
                 .build();
         when(jwtTokenProvider.validateToken("valid-token")).thenReturn(true);
         when(jwtTokenProvider.getUserId("valid-token")).thenReturn(1L);
-        when(jwtTokenProvider.getClientType("valid-token")).thenReturn(AuthClientType.DESKTOP);
+        when(jwtTokenProvider.getClientType("valid-token")).thenReturn(IdentityClientType.DESKTOP);
         when(jwtTokenProvider.getIssuedAt("valid-token")).thenReturn(Instant.now());
         when(jwtTokenProvider.getUsername("valid-token")).thenReturn("alice");
         when(userDetailsService.loadDomainUser("alice")).thenReturn(domainUser);
@@ -190,7 +187,7 @@ class JwtAuthenticationFilterTest {
                 .build();
         when(jwtTokenProvider.validateToken("valid-token")).thenReturn(true);
         when(jwtTokenProvider.getUserId("valid-token")).thenReturn(1L);
-        when(jwtTokenProvider.getClientType("valid-token")).thenReturn(AuthClientType.DESKTOP);
+        when(jwtTokenProvider.getClientType("valid-token")).thenReturn(IdentityClientType.DESKTOP);
         when(jwtTokenProvider.getIssuedAt("valid-token")).thenReturn(Instant.now());
         when(jwtTokenProvider.getUsername("valid-token")).thenReturn("alice");
         when(userDetailsService.loadDomainUser("alice")).thenReturn(domainUser);
