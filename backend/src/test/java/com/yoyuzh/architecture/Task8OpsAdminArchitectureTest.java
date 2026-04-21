@@ -7,12 +7,15 @@ import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.noClasses;
 import com.tngtech.archunit.core.domain.JavaClass;
 import com.tngtech.archunit.core.domain.JavaClasses;
 import com.tngtech.archunit.core.importer.ClassFileImporter;
+import com.tngtech.archunit.core.importer.ImportOption;
 import com.tngtech.archunit.lang.ArchRule;
 import org.junit.jupiter.api.Test;
 
 class Task8OpsAdminArchitectureTest {
 
-    private final JavaClasses classes = new ClassFileImporter().importPackages("com.yoyuzh");
+    private final JavaClasses classes = new ClassFileImporter()
+            .withImportOption(ImportOption.Predefined.DO_NOT_INCLUDE_TESTS)
+            .importPackages("com.yoyuzh");
 
     @Test
     void adminControllersMustDependOnOpsAdminApis() {
@@ -94,7 +97,7 @@ class Task8OpsAdminArchitectureTest {
                 .haveFullyQualifiedName("com.yoyuzh.ops.admin.internal.application.AdminTaskQueryService")
                 .should()
                 .dependOnClassesThat()
-                .resideInAnyPackage("com.yoyuzh.files.tasks..");
+                .resideInAnyPackage("com.yoyuzh.platform.job.internal.application..");
 
         ArchRule noLegacyIdentityRepoRule = noClasses()
                 .that()
@@ -296,6 +299,13 @@ class Task8OpsAdminArchitectureTest {
                 .dependOnClassesThat()
                 .haveFullyQualifiedName("com.yoyuzh.files.content.api.ContentAdminInspectionApi");
 
+        ArchRule storageDependencyRule = classes()
+                .that()
+                .haveFullyQualifiedName("com.yoyuzh.ops.admin.internal.application.AdminConfigSnapshotService")
+                .should()
+                .dependOnClassesThat()
+                .haveFullyQualifiedName("com.yoyuzh.platform.storage.api.StoragePolicyAdminApi");
+
         ArchRule noLegacyUserRepositoryRule = noClasses()
                 .that()
                 .haveFullyQualifiedName("com.yoyuzh.ops.admin.internal.application.AdminConfigSnapshotService")
@@ -331,14 +341,23 @@ class Task8OpsAdminArchitectureTest {
                 .dependOnClassesThat()
                 .haveFullyQualifiedName("com.yoyuzh.files.core.FileEntityRepository");
 
+        ArchRule noLegacyStoragePolicyRule = noClasses()
+                .that()
+                .haveFullyQualifiedName("com.yoyuzh.ops.admin.internal.application.AdminConfigSnapshotService")
+                .should()
+                .dependOnClassesThat()
+                .resideInAnyPackage("com.yoyuzh.files.policy..");
+
         identityDependencyRule.check(classes);
         workspaceDependencyRule.check(classes);
         contentDependencyRule.check(classes);
+        storageDependencyRule.check(classes);
         noLegacyUserRepositoryRule.check(classes);
         noLegacyInviteServiceRule.check(classes);
         noLegacyStoredFileRepositoryRule.check(classes);
         noLegacyFileBlobRepositoryRule.check(classes);
         noLegacyFileEntityRepositoryRule.check(classes);
+        noLegacyStoragePolicyRule.check(classes);
     }
 
     @Test
@@ -359,6 +378,150 @@ class Task8OpsAdminArchitectureTest {
 
         identityDependencyRule.check(classes);
         noLegacyInviteServiceRule.check(classes);
+    }
+
+    @Test
+    void adminUserGovernanceServiceMustUseIdentityAndWorkspaceApis() {
+        ArchRule identityDependencyRule = classes()
+                .that()
+                .haveFullyQualifiedName("com.yoyuzh.ops.admin.internal.application.AdminUserGovernanceService")
+                .should()
+                .dependOnClassesThat()
+                .haveFullyQualifiedName("com.yoyuzh.identity.access.api.IdentityAdminUserGovernanceApi");
+
+        ArchRule workspaceDependencyRule = classes()
+                .that()
+                .haveFullyQualifiedName("com.yoyuzh.ops.admin.internal.application.AdminUserGovernanceService")
+                .should()
+                .dependOnClassesThat()
+                .haveFullyQualifiedName("com.yoyuzh.files.workspace.api.WorkspaceAdminGovernanceApi");
+
+        ArchRule noLegacyAuthRule = noClasses()
+                .that()
+                .haveFullyQualifiedName("com.yoyuzh.ops.admin.internal.application.AdminUserGovernanceService")
+                .should()
+                .dependOnClassesThat()
+                .resideInAnyPackage("com.yoyuzh.auth..");
+
+        ArchRule noLegacyStoredFileRepositoryRule = noClasses()
+                .that()
+                .haveFullyQualifiedName("com.yoyuzh.ops.admin.internal.application.AdminUserGovernanceService")
+                .should()
+                .dependOnClassesThat()
+                .haveFullyQualifiedName("com.yoyuzh.files.core.StoredFileRepository");
+
+        identityDependencyRule.check(classes);
+        workspaceDependencyRule.check(classes);
+        noLegacyAuthRule.check(classes);
+        noLegacyStoredFileRepositoryRule.check(classes);
+    }
+
+    @Test
+    void runtimeAdminUserGovernanceApiMustNotDependOnLegacyAuthRoleTypes() {
+        ArchRule noLegacyAuthRule = noClasses()
+                .that()
+                .haveFullyQualifiedName("com.yoyuzh.ops.admin.internal.application.RuntimeAdminUserGovernanceApi")
+                .should()
+                .dependOnClassesThat()
+                .resideInAnyPackage("com.yoyuzh.auth..");
+
+        noLegacyAuthRule.check(classes);
+    }
+
+    @Test
+    void opsAdminApplicationMustAvoidLegacyModuleBypasses() {
+        ArchRule noLegacyBypassRule = noClasses()
+                .that()
+                .resideInAnyPackage("com.yoyuzh.ops.admin.internal.application..")
+                .should()
+                .dependOnClassesThat()
+                .resideInAnyPackage(
+                        "com.yoyuzh.auth..",
+                        "com.yoyuzh.files.core..",
+                        "com.yoyuzh.files.policy..",
+                        "com.yoyuzh.files.share..",
+                        "com.yoyuzh.platform.job.internal.application..",
+                        "com.yoyuzh.platform.storage.internal.domain.."
+                );
+
+        noLegacyBypassRule.check(classes);
+    }
+
+    @Test
+    void adminStorageServicesMustUsePlatformStorageApiAndAvoidLegacyStorageInternals() {
+        ArchRule queryDependencyRule = classes()
+                .that()
+                .haveFullyQualifiedName("com.yoyuzh.ops.admin.internal.application.AdminStoragePolicyQueryService")
+                .should()
+                .dependOnClassesThat()
+                .haveFullyQualifiedName("com.yoyuzh.platform.storage.api.StoragePolicyAdminApi");
+
+        ArchRule governanceDependencyRule = classes()
+                .that()
+                .haveFullyQualifiedName("com.yoyuzh.ops.admin.internal.application.AdminStorageGovernanceService")
+                .should()
+                .dependOnClassesThat()
+                .haveFullyQualifiedName("com.yoyuzh.platform.storage.api.StoragePolicyAdminApi");
+
+        ArchRule noLegacyStorageRepositoryRule = noClasses()
+                .that()
+                .haveFullyQualifiedName("com.yoyuzh.ops.admin.internal.application.AdminStoragePolicyQueryService")
+                .or()
+                .haveFullyQualifiedName("com.yoyuzh.ops.admin.internal.application.AdminStorageGovernanceService")
+                .should()
+                .dependOnClassesThat()
+                .resideInAnyPackage(
+                        "com.yoyuzh.files.policy..",
+                        "com.yoyuzh.platform.storage.internal.domain.."
+                );
+
+        ArchRule noStoragePolicyInternalServiceRule = noClasses()
+                .that()
+                .haveFullyQualifiedName("com.yoyuzh.ops.admin.internal.application.AdminStoragePolicyQueryService")
+                .or()
+                .haveFullyQualifiedName("com.yoyuzh.ops.admin.internal.application.AdminStorageGovernanceService")
+                .should()
+                .dependOnClassesThat()
+                .haveFullyQualifiedName("com.yoyuzh.platform.storage.internal.application.StoragePolicyService");
+
+        ArchRule noStoragePolicyInternalRepositoryRule = noClasses()
+                .that()
+                .haveFullyQualifiedName("com.yoyuzh.ops.admin.internal.application.AdminStoragePolicyQueryService")
+                .or()
+                .haveFullyQualifiedName("com.yoyuzh.ops.admin.internal.application.AdminStorageGovernanceService")
+                .should()
+                .dependOnClassesThat()
+                .haveFullyQualifiedName("com.yoyuzh.platform.storage.internal.infra.StoragePolicyRepository");
+
+        ArchRule noLegacyStorageEntityCountRule = noClasses()
+                .that()
+                .haveFullyQualifiedName("com.yoyuzh.ops.admin.internal.application.AdminStorageGovernanceService")
+                .should()
+                .dependOnClassesThat()
+                .resideInAnyPackage("com.yoyuzh.files.core..");
+
+        ArchRule noLegacyAuthRule = noClasses()
+                .that()
+                .haveFullyQualifiedName("com.yoyuzh.ops.admin.internal.application.AdminStorageGovernanceService")
+                .should()
+                .dependOnClassesThat()
+                .resideInAnyPackage("com.yoyuzh.auth..");
+
+        ArchRule noAdminWebDtoRule = noClasses()
+                .that()
+                .haveFullyQualifiedName("com.yoyuzh.ops.admin.internal.application.AdminStorageGovernanceService")
+                .should()
+                .dependOnClassesThat()
+                .resideInAnyPackage("com.yoyuzh.ops.admin.internal.web..");
+
+        queryDependencyRule.check(classes);
+        governanceDependencyRule.check(classes);
+        noLegacyStorageRepositoryRule.check(classes);
+        noStoragePolicyInternalServiceRule.check(classes);
+        noStoragePolicyInternalRepositoryRule.check(classes);
+        noLegacyStorageEntityCountRule.check(classes);
+        noLegacyAuthRule.check(classes);
+        noAdminWebDtoRule.check(classes);
     }
 
     @Test

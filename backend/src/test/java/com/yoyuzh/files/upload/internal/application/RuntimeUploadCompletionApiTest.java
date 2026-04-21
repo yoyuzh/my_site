@@ -8,6 +8,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.yoyuzh.auth.User;
+import com.yoyuzh.files.content.api.ContentBlobReference;
 import com.yoyuzh.files.content.api.ContentRegistrationApi;
 import com.yoyuzh.files.content.api.ContentRegistrationCommand;
 import com.yoyuzh.files.content.api.RegisteredContentFile;
@@ -61,7 +62,7 @@ class RuntimeUploadCompletionApiTest {
         );
 
         RegisteredContentFile result = uploadCompletionApi.completeStoredBlob(new UploadCompletionCommand(
-                user,
+                user.getId(),
                 "/docs",
                 "movie.mp4",
                 "blobs/session-1",
@@ -70,12 +71,14 @@ class RuntimeUploadCompletionApiTest {
         ));
 
         assertThat(result.filename()).isEqualTo("movie.mp4");
-        verify(workspacePathPolicy).ensureDirectoryHierarchy(user, "/docs");
+        verify(workspacePathPolicy).ensureDirectoryHierarchy(7L, "/docs");
         ArgumentCaptor<ContentRegistrationCommand> commandCaptor = ArgumentCaptor.forClass(ContentRegistrationCommand.class);
         verify(contentRegistrationApi).registerBlob(commandCaptor.capture());
         assertThat(commandCaptor.getValue().normalizedPath()).isEqualTo("/docs");
         assertThat(commandCaptor.getValue().filename()).isEqualTo("movie.mp4");
-        assertThat(commandCaptor.getValue().blob().getObjectKey()).isEqualTo("blobs/session-1");
+        assertThat(commandCaptor.getValue().userId()).isEqualTo(7L);
+        ContentBlobReference blob = commandCaptor.getValue().blob();
+        assertThat(blob.objectKey()).isEqualTo("blobs/session-1");
     }
 
     @Test
@@ -86,7 +89,7 @@ class RuntimeUploadCompletionApiTest {
                 .thenThrow(new IllegalStateException("registration failed"));
 
         assertThatThrownBy(() -> uploadCompletionApi.completeStoredBlob(new UploadCompletionCommand(
-                user,
+                user.getId(),
                 "/docs",
                 "movie.mp4",
                 "blobs/session-1",

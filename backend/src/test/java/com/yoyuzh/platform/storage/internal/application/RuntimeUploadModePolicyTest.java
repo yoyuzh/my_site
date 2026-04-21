@@ -1,7 +1,7 @@
 package com.yoyuzh.platform.storage.internal.application;
 
-import com.yoyuzh.files.policy.StoragePolicyCapabilities;
-import com.yoyuzh.files.upload.UploadSessionUploadMode;
+import com.yoyuzh.platform.storage.api.StoragePolicyCapabilities;
+import com.yoyuzh.platform.storage.api.StorageUploadMode;
 import org.junit.jupiter.api.Test;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -12,7 +12,7 @@ class RuntimeUploadModePolicyTest {
 
     @Test
     void shouldUseProxyWhenDirectUploadIsDisabled() {
-        UploadSessionUploadMode uploadMode = policy.resolveUploadMode(new StoragePolicyCapabilities(
+        StorageUploadMode uploadMode = policy.resolveUploadMode(new StoragePolicyCapabilities(
                 false,
                 false,
                 false,
@@ -24,12 +24,12 @@ class RuntimeUploadModePolicyTest {
                 1024L
         ));
 
-        assertThat(uploadMode).isEqualTo(UploadSessionUploadMode.PROXY);
+        assertThat(uploadMode).isEqualTo(StorageUploadMode.PROXY);
     }
 
     @Test
     void shouldUseDirectMultipartWhenMultipartUploadIsEnabled() {
-        UploadSessionUploadMode uploadMode = policy.resolveUploadMode(new StoragePolicyCapabilities(
+        StorageUploadMode uploadMode = policy.resolveUploadMode(new StoragePolicyCapabilities(
                 true,
                 true,
                 true,
@@ -41,12 +41,12 @@ class RuntimeUploadModePolicyTest {
                 1024L
         ));
 
-        assertThat(uploadMode).isEqualTo(UploadSessionUploadMode.DIRECT_MULTIPART);
+        assertThat(uploadMode).isEqualTo(StorageUploadMode.DIRECT_MULTIPART);
     }
 
     @Test
     void shouldUseDirectSingleWhenDirectUploadIsEnabledWithoutMultipart() {
-        UploadSessionUploadMode uploadMode = policy.resolveUploadMode(new StoragePolicyCapabilities(
+        StorageUploadMode uploadMode = policy.resolveUploadMode(new StoragePolicyCapabilities(
                 true,
                 false,
                 true,
@@ -58,6 +58,6 @@ class RuntimeUploadModePolicyTest {
                 1024L
         ));
 
-        assertThat(uploadMode).isEqualTo(UploadSessionUploadMode.DIRECT_SINGLE);
+        assertThat(uploadMode).isEqualTo(StorageUploadMode.DIRECT_SINGLE);
     }
 }

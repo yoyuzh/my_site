@@ -1,6 +1,9 @@
 package com.yoyuzh.files.content.internal.application;
 
 import com.yoyuzh.auth.User;
+import com.yoyuzh.files.content.api.ContentBlobReference;
+import com.yoyuzh.files.content.api.ContentPrimaryEntity;
+import com.yoyuzh.files.content.api.ContentPrimaryEntityRelationCommand;
 import com.yoyuzh.files.core.FileBlob;
 import com.yoyuzh.files.core.FileEntity;
 import com.yoyuzh.files.core.FileEntityRepository;
@@ -54,11 +57,14 @@ class RuntimeContentAssetApiTest {
         when(fileEntityRepository.save(any(FileEntity.class))).thenAnswer(invocation -> invocation.getArgument(0));
         when(storagePolicyQuery.readDefaultPolicyId()).thenReturn(42L);
 
-        FileEntity entity = api.createOrReferencePrimaryEntity(createUser(7L), blob);
+        ContentPrimaryEntity entity = api.createOrReferencePrimaryEntity(
+                7L,
+                new ContentBlobReference(blob.getObjectKey(), blob.getContentType(), blob.getSize())
+        );
 
-        assertThat(entity.getObjectKey()).isEqualTo("blobs/blob-1");
-        assertThat(entity.getReferenceCount()).isEqualTo(1);
-        assertThat(entity.getStoragePolicyId()).isEqualTo(42L);
+        assertThat(entity.objectKey()).isEqualTo("blobs/blob-1");
+        assertThat(entity.referenceCount()).isEqualTo(1);
+        assertThat(entity.storagePolicyId()).isEqualTo(42L);
     }
 
     @Test
@@ -74,7 +80,7 @@ class RuntimeContentAssetApiTest {
         FileEntity fileEntity = new FileEntity();
         fileEntity.setId(20L);
 
-        api.savePrimaryEntityRelation(storedFile, fileEntity);
+        api.savePrimaryEntityRelation(new ContentPrimaryEntityRelationCommand(storedFile.getId(), fileEntity.getId()));
 
         ArgumentCaptor<StoredFileEntity> captor = ArgumentCaptor.forClass(StoredFileEntity.class);
         verify(storedFileEntityRepository).save(captor.capture());
@@ -109,14 +115,6 @@ class RuntimeContentAssetApiTest {
         verify(storedFileEntityRepository).save(any(StoredFileEntity.class));
     }
 
-    private User createUser(Long id) {
-        User user = new User();
-        user.setId(id);
-        user.setUsername("user-" + id);
-        user.setCreatedAt(LocalDateTime.now());
-        return user;
-    }
-
     private StoredFile createStoredFile(Long id, Long userId, String filename, FileBlob blob) {
         StoredFile file = new StoredFile();
         file.setId(id);
@@ -137,5 +135,13 @@ class RuntimeContentAssetApiTest {
         blob.setContentType("text/plain");
         blob.setSize(5L);
         return blob;
+    }
+
+    private User createUser(Long id) {
+        User user = new User();
+        user.setId(id);
+        user.setUsername("user-" + id);
+        user.setCreatedAt(LocalDateTime.now());
+        return user;
     }
 }

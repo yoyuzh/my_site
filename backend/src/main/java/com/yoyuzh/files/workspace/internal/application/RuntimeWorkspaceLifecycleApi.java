@@ -3,6 +3,7 @@ package com.yoyuzh.files.workspace.internal.application;
 import com.yoyuzh.auth.User;
 import com.yoyuzh.shared.kernel.BusinessException;
 import com.yoyuzh.shared.kernel.ErrorCode;
+import com.yoyuzh.files.content.api.ContentBlobReference;
 import com.yoyuzh.files.content.api.ContentDuplicationApi;
 import com.yoyuzh.files.content.api.ContentRegistrationCommand;
 import com.yoyuzh.files.content.api.RegisteredContentFile;
@@ -39,10 +40,11 @@ public final class RuntimeWorkspaceLifecycleApi implements WorkspaceLifecycleApi
     }
 
     @Override
-    public WorkspaceLifecycleResult copy(User user, Long fileId, String normalizedTargetPath, WorkspaceQuotaGuard quotaGuard) {
-        StoredFile storedFile = getOwnedActiveFile(user, fileId, "复制");
-        workspacePathPolicy.ensureExistingDirectoryPath(user.getId(), normalizedTargetPath);
-        workspacePathPolicy.ensureNodeNameAvailable(user.getId(), normalizedTargetPath, storedFile.getFilename(), "目标目录已存在同名文件");
+    public WorkspaceLifecycleResult copy(Long userId, Long fileId, String normalizedTargetPath, WorkspaceQuotaGuard quotaGuard) {
+        User user = userReference(userId);
+        StoredFile storedFile = getOwnedActiveFile(userId, fileId, "复制");
+        workspacePathPolicy.ensureExistingDirectoryPath(userId, normalizedTargetPath);
+        workspacePathPolicy.ensureNodeNameAvailable(userId, normalizedTargetPath, storedFile.getFilename(), "目标目录已存在同名文件");
 
         if (!storedFile.isDirectory()) {
             quotaGuard.ensureWithinQuota(storedFile.getSize());
@@ -61,7 +63,7 @@ public final class RuntimeWorkspaceLifecycleApi implements WorkspaceLifecycleApi
             throw new BusinessException(ErrorCode.UNKNOWN, "不能复制到当前目录或其子目录");
         }
 
-        List<StoredFile> descendants = storedFileRepository.findByUserIdAndPathEqualsOrDescendant(user.getId(), oldLogicalPath);
+        List<StoredFile> descendants = storedFileRepository.findByUserIdAndPathEqualsOrDescendant(userId, oldLogicalPath);
         long additionalBytes = descendants.stream()
                 .filter(descendant -> !descendant.isDirectory())
                 .mapToLong(StoredFile::getSize)
@@ -79,7 +81,7 @@ public final class RuntimeWorkspaceLifecycleApi implements WorkspaceLifecycleApi
                         .thenComparing(StoredFile::getFilename))
                 .forEach(descendant -> {
                     String copiedPath = remapCopiedPath(descendant.getPath(), oldLogicalPath, newLogicalPath);
-                    workspacePathPolicy.ensureNodeNameAvailable(user.getId(), copiedPath, descendant.getFilename(), "目标目录已存在同名文件");
+                    workspacePathPolicy.ensureNodeNameAvailable(userId, copiedPath, descendant.getFilename(), "目标目录已存在同名文件");
                     copiedEntries.add(copyStoredFile(descendant, user, copiedPath));
                 });
 
@@ -103,14 +105,14 @@ public final class RuntimeWorkspaceLifecycleApi implements WorkspaceLifecycleApi
     }
 
     @Override
-    public WorkspaceLifecycleResult recycle(User user, Long fileId) {
-        StoredFile storedFile = getOwnedActiveFile(user, fileId, "删除");
+    public WorkspaceLifecycleResult recycle(Long userId, Long fileId) {
+        StoredFile storedFile = getOwnedActiveFile(userId, fileId, "删除");
         String fromPath = buildLogicalPath(storedFile);
         List<StoredFile> filesToRecycle = new ArrayList<>();
         filesToRecycle.add(storedFile);
         if (storedFile.isDirectory()) {
             String logicalPath = buildLogicalPath(storedFile);
-            filesToRecycle.addAll(storedFileRepository.findByUserIdAndPathEqualsOrDescendant(user.getId(), logicalPath));
+            filesToRecycle.addAll(storedFileRepository.findByUserIdAndPathEqualsOrDescendant(userId, logicalPath));
         }
         moveToRecycleBin(filesToRecycle, storedFile.getId());
         return new WorkspaceLifecycleResult(
@@ -122,8 +124,8 @@ public final class RuntimeWorkspaceLifecycleApi implements WorkspaceLifecycleApi
     }
 
     @Override
-    public WorkspaceLifecycleResult restore(User user, Long fileId, WorkspaceQuotaGuard quotaGuard) {
-        StoredFile recycleRoot = getOwnedRecycleRootFile(user, fileId);
+    public WorkspaceLifecycleResult restore(Long userId, Long fileId, WorkspaceQuotaGuard quotaGuard) {
+        StoredFile recycleRoot = getOwnedRecycleRootFile(userId, fileId);
         String fromPath = buildLogicalPath(recycleRoot);
         String restoreParentPath = requireRecycleOriginalPath(recycleRoot);
         String toPath = workspacePathPolicy.buildTargetLogicalPath(restoreParentPath, recycleRoot.getFilename());
@@ -133,8 +135,8 @@ public final class RuntimeWorkspaceLifecycleApi implements WorkspaceLifecycleApi
                 .mapToLong(StoredFile::getSize)
                 .sum();
         quotaGuard.ensureWithinQuota(additionalBytes);
-        workspacePathPolicy.validateRecycleRestoreTargets(user.getId(), recycleGroupItems, this::requireRecycleOriginalPath);
-        workspacePathPolicy.ensureDirectoryHierarchy(user, requireRecycleOriginalPath(recycleRoot));
+        workspacePathPolicy.validateRecycleRestoreTargets(userId, recycleGroupItems, this::requireRecycleOriginalPath);
+        workspacePathPolicy.ensureDirectoryHierarchy(userId, requireRecycleOriginalPath(recycleRoot));
 
         for (StoredFile item : recycleGroupItems) {
             item.setPath(requireRecycleOriginalPath(item));
@@ -152,10 +154,10 @@ public final class RuntimeWorkspaceLifecycleApi implements WorkspaceLifecycleApi
         );
     }
 
-    private StoredFile getOwnedActiveFile(User user, Long fileId, String action) {
+    private StoredFile getOwnedActiveFile(Long userId, Long fileId, String action) {
         StoredFile storedFile = storedFileRepository.findDetailedById(fileId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.FILE_NOT_FOUND, "文件不存在"));
-        if (!storedFile.getUser().getId().equals(user.getId())) {
+        if (!storedFile.getUser().getId().equals(userId)) {
             throw new BusinessException(ErrorCode.PERMISSION_DENIED, "没有权限" + action + "该文件");
         }
         if (storedFile.getDeletedAt() != null) {
@@ -164,10 +166,10 @@ public final class RuntimeWorkspaceLifecycleApi implements WorkspaceLifecycleApi
         return storedFile;
     }
 
-    private StoredFile getOwnedRecycleRootFile(User user, Long fileId) {
+    private StoredFile getOwnedRecycleRootFile(Long userId, Long fileId) {
         StoredFile storedFile = storedFileRepository.findDetailedById(fileId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.FILE_NOT_FOUND, "文件不存在"));
-        if (!storedFile.getUser().getId().equals(user.getId())) {
+        if (!storedFile.getUser().getId().equals(userId)) {
             throw new BusinessException(ErrorCode.PERMISSION_DENIED, "没有权限恢复该文件");
         }
         if (storedFile.getDeletedAt() == null || !storedFile.isRecycleRoot()) {
@@ -257,14 +259,24 @@ public final class RuntimeWorkspaceLifecycleApi implements WorkspaceLifecycleApi
     private RegisteredContentFile duplicateBlobBackedFile(StoredFile copiedFile, User owner) {
         return contentDuplicationApi.duplicateBlobBackedFile(
                 new ContentRegistrationCommand(
-                        owner,
+                        owner.getId(),
                         copiedFile.getPath(),
                         copiedFile.getFilename(),
                         copiedFile.getContentType(),
                         copiedFile.getSize(),
-                        copiedFile.getBlob()
+                        new ContentBlobReference(
+                                copiedFile.getBlob().getObjectKey(),
+                                copiedFile.getBlob().getContentType(),
+                                copiedFile.getBlob().getSize()
+                        )
                 )
         );
+    }
+
+    private User userReference(Long userId) {
+        User user = new User();
+        user.setId(userId);
+        return user;
     }
 
     private StoredFile toStoredFile(RegisteredContentFile savedFile) {

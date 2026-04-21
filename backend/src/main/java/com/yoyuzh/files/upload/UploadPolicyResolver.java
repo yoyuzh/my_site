@@ -1,10 +1,9 @@
 package com.yoyuzh.files.upload;
 
-import com.yoyuzh.auth.User;
 import com.yoyuzh.shared.kernel.BusinessException;
 import com.yoyuzh.shared.kernel.ErrorCode;
-import com.yoyuzh.files.policy.StoragePolicy;
-import com.yoyuzh.files.policy.StoragePolicyCapabilities;
+import com.yoyuzh.platform.storage.api.StoragePolicyCapabilities;
+import com.yoyuzh.platform.storage.api.StorageUploadMode;
 import com.yoyuzh.platform.storage.api.UploadConstraintPolicy;
 import com.yoyuzh.platform.storage.api.UploadModePolicy;
 import com.yoyuzh.platform.storage.internal.application.RuntimeUploadConstraintPolicy;
@@ -25,14 +24,19 @@ public class UploadPolicyResolver {
     }
 
     public UploadSessionUploadMode resolveUploadMode(StoragePolicyCapabilities capabilities) {
-        return uploadModePolicy.resolveUploadMode(capabilities);
+        return toUploadSessionMode(uploadModePolicy.resolveUploadMode(capabilities));
     }
 
     public long resolveEffectiveMaxUploadSize(long systemMaxFileSize,
-                                              User user,
-                                              StoragePolicy policy,
+                                              long userMaxUploadSizeBytes,
+                                              long policyMaxSizeBytes,
                                               StoragePolicyCapabilities capabilities) {
-        return uploadConstraintPolicy.resolveEffectiveMaxUploadSize(systemMaxFileSize, user, policy, capabilities);
+        return uploadConstraintPolicy.resolveEffectiveMaxUploadSize(
+                systemMaxFileSize,
+                userMaxUploadSizeBytes,
+                policyMaxSizeBytes,
+                capabilities == null ? 0L : capabilities.maxObjectSize()
+        );
     }
 
     public int calculateChunkCount(long size, long chunkSize) {
@@ -51,5 +55,13 @@ public class UploadPolicyResolver {
         }
         long remaining = session.getSize() - session.getChunkSize() * (session.getChunkCount() - 1L);
         return remaining > 0 ? remaining : session.getChunkSize();
+    }
+
+    private UploadSessionUploadMode toUploadSessionMode(StorageUploadMode mode) {
+        return switch (mode) {
+            case PROXY -> UploadSessionUploadMode.PROXY;
+            case DIRECT_SINGLE -> UploadSessionUploadMode.DIRECT_SINGLE;
+            case DIRECT_MULTIPART -> UploadSessionUploadMode.DIRECT_MULTIPART;
+        };
     }
 }

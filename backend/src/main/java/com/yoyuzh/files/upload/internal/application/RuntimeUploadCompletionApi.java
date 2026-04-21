@@ -1,6 +1,7 @@
 package com.yoyuzh.files.upload.internal.application;
 
 import com.yoyuzh.files.content.api.ContentRegistrationApi;
+import com.yoyuzh.files.content.api.ContentBlobReference;
 import com.yoyuzh.files.content.api.ContentRegistrationCommand;
 import com.yoyuzh.files.content.api.RegisteredContentFile;
 import com.yoyuzh.files.core.FileBlob;
@@ -33,15 +34,15 @@ public final class RuntimeUploadCompletionApi implements UploadCompletionApi {
     public RegisteredContentFile completeStoredBlob(UploadCompletionCommand command) {
         try {
             fileContentStorage.completeBlobUpload(command.objectKey(), command.contentType(), command.size());
-            workspacePathPolicy.ensureDirectoryHierarchy(command.user(), command.normalizedPath());
+            workspacePathPolicy.ensureDirectoryHierarchy(command.userId(), command.normalizedPath());
             FileBlob blob = createAndSaveBlob(command.objectKey(), command.contentType(), command.size());
             return contentRegistrationApi.registerBlob(new ContentRegistrationCommand(
-                    command.user(),
+                    command.userId(),
                     command.normalizedPath(),
                     command.filename(),
                     command.contentType(),
                     command.size(),
-                    blob
+                    new ContentBlobReference(blob.getObjectKey(), blob.getContentType(), blob.getSize())
             ));
         } catch (RuntimeException ex) {
             try {

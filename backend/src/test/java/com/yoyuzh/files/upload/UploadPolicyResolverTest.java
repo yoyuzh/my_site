@@ -1,8 +1,8 @@
 package com.yoyuzh.files.upload;
 
 import com.yoyuzh.auth.User;
-import com.yoyuzh.files.policy.StoragePolicy;
-import com.yoyuzh.files.policy.StoragePolicyCapabilities;
+import com.yoyuzh.platform.storage.api.StoragePolicyCapabilities;
+import com.yoyuzh.platform.storage.api.StorageUploadMode;
 import com.yoyuzh.platform.storage.api.UploadConstraintPolicy;
 import com.yoyuzh.platform.storage.api.UploadModePolicy;
 import org.junit.jupiter.api.Test;
@@ -14,6 +14,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import java.time.LocalDateTime;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -34,12 +35,12 @@ class UploadPolicyResolverTest {
         StoragePolicyCapabilities capabilities = new StoragePolicyCapabilities(
                 true, false, true, true, false, true, true, false, 1024L
         );
-        when(uploadModePolicy.resolveUploadMode(capabilities)).thenReturn(UploadSessionUploadMode.DIRECT_SINGLE);
+        when(uploadModePolicy.resolveUploadMode(any())).thenReturn(StorageUploadMode.DIRECT_SINGLE);
 
         UploadSessionUploadMode uploadMode = uploadPolicyResolver.resolveUploadMode(capabilities);
 
         assertThat(uploadMode).isEqualTo(UploadSessionUploadMode.DIRECT_SINGLE);
-        verify(uploadModePolicy).resolveUploadMode(capabilities);
+        verify(uploadModePolicy).resolveUploadMode(any(com.yoyuzh.platform.storage.api.StoragePolicyCapabilities.class));
     }
 
     @Test
@@ -50,16 +51,21 @@ class UploadPolicyResolverTest {
         user.setEmail("alice@example.com");
         user.setPasswordHash("encoded");
         user.setCreatedAt(LocalDateTime.now());
-        StoragePolicy storagePolicy = new StoragePolicy();
+        user.setMaxUploadSizeBytes(1_000L);
         StoragePolicyCapabilities capabilities = new StoragePolicyCapabilities(
                 true, true, true, true, false, true, true, false, 512L
         );
-        when(uploadConstraintPolicy.resolveEffectiveMaxUploadSize(2_000L, user, storagePolicy, capabilities))
+        when(uploadConstraintPolicy.resolveEffectiveMaxUploadSize(2_000L, user.getMaxUploadSizeBytes(), 800L, capabilities.maxObjectSize()))
                 .thenReturn(512L);
 
-        long effectiveMax = uploadPolicyResolver.resolveEffectiveMaxUploadSize(2_000L, user, storagePolicy, capabilities);
+        long effectiveMax = uploadPolicyResolver.resolveEffectiveMaxUploadSize(
+                2_000L,
+                user.getMaxUploadSizeBytes(),
+                800L,
+                capabilities
+        );
 
         assertThat(effectiveMax).isEqualTo(512L);
-        verify(uploadConstraintPolicy).resolveEffectiveMaxUploadSize(2_000L, user, storagePolicy, capabilities);
+        verify(uploadConstraintPolicy).resolveEffectiveMaxUploadSize(2_000L, user.getMaxUploadSizeBytes(), 800L, capabilities.maxObjectSize());
     }
 }

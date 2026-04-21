@@ -1,16 +1,12 @@
 package com.yoyuzh.files.content.api;
 
-import com.yoyuzh.auth.User;
-import com.yoyuzh.files.core.FileBlob;
-import com.yoyuzh.files.core.FileEntity;
-import com.yoyuzh.files.core.StoredFile;
-import com.yoyuzh.files.policy.StoragePolicyCapabilities;
+import com.yoyuzh.platform.storage.api.StoragePolicyCapabilities;
 
 public interface ContentAssetApi {
 
-    FileEntity createOrReferencePrimaryEntity(User user, FileBlob blob);
+    ContentPrimaryEntity createOrReferencePrimaryEntity(Long userId, ContentBlobReference blob);
 
-    void savePrimaryEntityRelation(StoredFile storedFile, FileEntity primaryEntity);
+    void savePrimaryEntityRelation(ContentPrimaryEntityRelationCommand command);
 
     StoragePolicyCapabilities resolveDefaultStoragePolicyCapabilities();
 

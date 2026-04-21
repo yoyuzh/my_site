@@ -1,6 +1,7 @@
 package com.yoyuzh.files.content.internal.application;
 
 import com.yoyuzh.auth.User;
+import com.yoyuzh.files.content.api.ContentBlobReference;
 import com.yoyuzh.files.content.api.ContentRegistrationCommand;
 import com.yoyuzh.files.content.api.RegisteredContentFile;
 import com.yoyuzh.files.core.FileBlob;
@@ -65,12 +66,12 @@ class RuntimeContentRegistrationApiTest {
         when(storagePolicyQuery.readDefaultPolicyId()).thenReturn(42L);
 
         RegisteredContentFile response = api.registerBlob(new ContentRegistrationCommand(
-                user,
+                user.getId(),
                 "/docs",
                 "notes.txt",
                 "text/plain",
                 5L,
-                blob
+                new ContentBlobReference(blob.getObjectKey(), blob.getContentType(), blob.getSize())
         ));
 
         assertThat(response.id()).isEqualTo(10L);
@@ -99,7 +100,14 @@ class RuntimeContentRegistrationApiTest {
         when(fileEntityRepository.save(existingEntity)).thenReturn(existingEntity);
         when(storedFileRepository.save(any(StoredFile.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
-        api.registerBlob(new ContentRegistrationCommand(user, "/docs", "report.pdf", "application/pdf", 12L, blob));
+        api.registerBlob(new ContentRegistrationCommand(
+                user.getId(),
+                "/docs",
+                "report.pdf",
+                "application/pdf",
+                12L,
+                new ContentBlobReference(blob.getObjectKey(), blob.getContentType(), blob.getSize())
+        ));
 
         assertThat(existingEntity.getReferenceCount()).isEqualTo(3);
         verify(fileEntityRepository).save(existingEntity);
@@ -130,12 +138,12 @@ class RuntimeContentRegistrationApiTest {
         when(storagePolicyQuery.readDefaultPolicyId()).thenReturn(42L);
 
         RegisteredContentFile response = api.duplicateBlobBackedFile(new ContentRegistrationCommand(
-                user,
+                user.getId(),
                 "/downloads",
                 "notes-copy.txt",
                 "text/plain",
                 5L,
-                blob
+                new ContentBlobReference(blob.getObjectKey(), blob.getContentType(), blob.getSize())
         ));
 
         assertThat(response.id()).isEqualTo(11L);

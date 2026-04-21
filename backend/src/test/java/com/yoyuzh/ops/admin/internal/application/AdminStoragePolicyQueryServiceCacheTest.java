@@ -1,16 +1,21 @@
 package com.yoyuzh.ops.admin.internal.application;
 
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.reset;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
+
 import com.yoyuzh.infra.cache.RedisCacheNames;
-import com.yoyuzh.ops.admin.internal.web.AdminStoragePolicyUpsertRequest;
-import com.yoyuzh.files.core.FileEntityRepository;
-import com.yoyuzh.files.core.StoredFileEntityRepository;
-import com.yoyuzh.files.policy.StoragePolicy;
-import com.yoyuzh.files.policy.StoragePolicyCapabilities;
-import com.yoyuzh.files.policy.StoragePolicyCredentialMode;
-import com.yoyuzh.files.policy.StoragePolicyRepository;
-import com.yoyuzh.files.policy.StoragePolicyService;
-import com.yoyuzh.files.policy.StoragePolicyType;
 import com.yoyuzh.platform.job.api.BackgroundTaskLifecycleApi;
+import com.yoyuzh.platform.storage.api.StoragePolicyAdminApi;
+import com.yoyuzh.platform.storage.api.StoragePolicyAdminView;
+import com.yoyuzh.platform.storage.api.StoragePolicyCapabilities;
+import com.yoyuzh.platform.storage.api.StoragePolicyCredentialMode;
+import com.yoyuzh.platform.storage.api.StoragePolicyType;
+import java.time.LocalDateTime;
+import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -20,17 +25,6 @@ import org.springframework.cache.concurrent.ConcurrentMapCacheManager;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.test.context.junit.jupiter.SpringJUnitConfig;
-
-import java.time.LocalDateTime;
-import java.util.List;
-import java.util.Optional;
-
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.reset;
-import static org.mockito.Mockito.times;
-import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.when;
 
 @SpringJUnitConfig(AdminStoragePolicyQueryServiceCacheTest.CacheTestConfiguration.class)
 class AdminStoragePolicyQueryServiceCacheTest {
@@ -45,102 +39,98 @@ class AdminStoragePolicyQueryServiceCacheTest {
     private CacheManager cacheManager;
 
     @Autowired
-    private StoragePolicyRepository storagePolicyRepository;
-
-    @Autowired
-    private StoragePolicyService storagePolicyService;
+    private StoragePolicyAdminApi storagePolicyAdminApi;
 
     @BeforeEach
     void setUp() {
         cacheManager.getCache(RedisCacheNames.STORAGE_POLICIES).clear();
-        reset(storagePolicyRepository, storagePolicyService);
-        when(storagePolicyService.readCapabilities(any(StoragePolicy.class))).thenReturn(defaultCapabilities());
+        reset(storagePolicyAdminApi);
     }
 
     @Test
     void shouldCacheStoragePolicyListUntilExplicitEviction() {
-        StoragePolicy defaultPolicy = storagePolicy(1L, "Default Local Storage", true, true);
-        when(storagePolicyRepository.findAll(any(org.springframework.data.domain.Sort.class)))
-                .thenReturn(List.of(defaultPolicy));
+        StoragePolicyAdminView defaultPolicy = storagePolicy(1L, "Default Local Storage", true, true);
+        when(storagePolicyAdminApi.listStoragePoliciesAsAdmin()).thenReturn(List.of(defaultPolicy));
 
         adminStoragePolicyQueryService.listStoragePolicies();
         adminStoragePolicyQueryService.listStoragePolicies();
 
-        verify(storagePolicyRepository, times(1)).findAll(any(org.springframework.data.domain.Sort.class));
+        verify(storagePolicyAdminApi, times(1)).listStoragePoliciesAsAdmin();
     }
 
     @Test
     void shouldEvictStoragePolicyListAfterCreatingPolicy() {
-        StoragePolicy defaultPolicy = storagePolicy(1L, "Default Local Storage", true, true);
-        StoragePolicy createdPolicy = storagePolicy(2L, "Archive Bucket", true, false);
-        when(storagePolicyRepository.findAll(any(org.springframework.data.domain.Sort.class)))
+        StoragePolicyAdminView defaultPolicy = storagePolicy(1L, "Default Local Storage", true, true);
+        StoragePolicyAdminView createdPolicy = storagePolicy(2L, "Archive Bucket", true, false);
+        when(storagePolicyAdminApi.listStoragePoliciesAsAdmin())
                 .thenReturn(List.of(defaultPolicy))
                 .thenReturn(List.of(defaultPolicy, createdPolicy));
-        when(storagePolicyRepository.save(any(StoragePolicy.class))).thenAnswer(invocation -> {
-            StoragePolicy saved = invocation.getArgument(0);
-            saved.setId(2L);
-            saved.setCreatedAt(LocalDateTime.now());
-            saved.setUpdatedAt(LocalDateTime.now());
-            return saved;
-        });
+        when(storagePolicyAdminApi.createStoragePolicyAsAdmin(any()))
+                .thenReturn(createdPolicy);
 
         adminStoragePolicyQueryService.listStoragePolicies();
         adminStorageGovernanceService.createStoragePolicy(upsertRequest("Archive Bucket", true));
         adminStoragePolicyQueryService.listStoragePolicies();
 
-        verify(storagePolicyRepository, times(2)).findAll(any(org.springframework.data.domain.Sort.class));
+        verify(storagePolicyAdminApi, times(2)).listStoragePoliciesAsAdmin();
     }
 
     @Test
     void shouldEvictStoragePolicyListAfterUpdatingPolicy() {
-        StoragePolicy existingPolicy = storagePolicy(2L, "Archive Bucket", true, false);
-        StoragePolicy updatedPolicy = storagePolicy(2L, "Hot Bucket", true, false);
-        when(storagePolicyRepository.findAll(any(org.springframework.data.domain.Sort.class)))
+        StoragePolicyAdminView existingPolicy = storagePolicy(2L, "Archive Bucket", true, false);
+        StoragePolicyAdminView updatedPolicy = storagePolicy(2L, "Hot Bucket", true, false);
+        when(storagePolicyAdminApi.listStoragePoliciesAsAdmin())
                 .thenReturn(List.of(existingPolicy))
                 .thenReturn(List.of(updatedPolicy));
-        when(storagePolicyRepository.findById(2L)).thenReturn(Optional.of(existingPolicy));
-        when(storagePolicyRepository.save(existingPolicy)).thenReturn(updatedPolicy);
+        when(storagePolicyAdminApi.updateStoragePolicyAsAdmin(any(), any()))
+                .thenReturn(updatedPolicy);
 
         adminStoragePolicyQueryService.listStoragePolicies();
         adminStorageGovernanceService.updateStoragePolicy(2L, upsertRequest("Hot Bucket", true));
         adminStoragePolicyQueryService.listStoragePolicies();
 
-        verify(storagePolicyRepository, times(2)).findAll(any(org.springframework.data.domain.Sort.class));
+        verify(storagePolicyAdminApi, times(2)).listStoragePoliciesAsAdmin();
     }
 
     @Test
     void shouldEvictStoragePolicyListAfterUpdatingPolicyStatus() {
-        StoragePolicy existingPolicy = storagePolicy(2L, "Archive Bucket", true, false);
-        StoragePolicy disabledPolicy = storagePolicy(2L, "Archive Bucket", false, false);
-        when(storagePolicyRepository.findAll(any(org.springframework.data.domain.Sort.class)))
+        StoragePolicyAdminView existingPolicy = storagePolicy(2L, "Archive Bucket", true, false);
+        StoragePolicyAdminView disabledPolicy = storagePolicy(2L, "Archive Bucket", false, false);
+        when(storagePolicyAdminApi.listStoragePoliciesAsAdmin())
                 .thenReturn(List.of(existingPolicy))
                 .thenReturn(List.of(disabledPolicy));
-        when(storagePolicyRepository.findById(2L)).thenReturn(Optional.of(existingPolicy));
-        when(storagePolicyRepository.save(existingPolicy)).thenReturn(disabledPolicy);
+        when(storagePolicyAdminApi.updateStoragePolicyStatusAsAdmin(2L, false))
+                .thenReturn(disabledPolicy);
 
         adminStoragePolicyQueryService.listStoragePolicies();
         adminStorageGovernanceService.updateStoragePolicyStatus(2L, false);
         adminStoragePolicyQueryService.listStoragePolicies();
 
-        verify(storagePolicyRepository, times(2)).findAll(any(org.springframework.data.domain.Sort.class));
+        verify(storagePolicyAdminApi, times(2)).listStoragePoliciesAsAdmin();
     }
 
-    private StoragePolicy storagePolicy(Long id, String name, boolean enabled, boolean defaultPolicy) {
-        StoragePolicy policy = new StoragePolicy();
-        policy.setId(id);
-        policy.setName(name);
-        policy.setType(StoragePolicyType.LOCAL);
-        policy.setCredentialMode(StoragePolicyCredentialMode.NONE);
-        policy.setMaxSizeBytes(1024L);
-        policy.setEnabled(enabled);
-        policy.setDefaultPolicy(defaultPolicy);
-        policy.setCreatedAt(LocalDateTime.now());
-        policy.setUpdatedAt(LocalDateTime.now());
-        return policy;
+    private StoragePolicyAdminView storagePolicy(Long id, String name, boolean enabled, boolean defaultPolicy) {
+        return new StoragePolicyAdminView(
+                id,
+                name,
+                StoragePolicyType.LOCAL,
+                null,
+                null,
+                null,
+                false,
+                "",
+                StoragePolicyCredentialMode.NONE,
+                1024L,
+                defaultCapabilities(),
+                enabled,
+                defaultPolicy,
+                LocalDateTime.now(),
+                LocalDateTime.now()
+        );
     }
 
-    private AdminStoragePolicyUpsertRequest upsertRequest(String name, boolean enabled) {
-        return new AdminStoragePolicyUpsertRequest(
+    private AdminStoragePolicyUpsertInput upsertRequest(String name, boolean enabled) {
+        return new AdminStoragePolicyUpsertInput(
                 name,
                 StoragePolicyType.LOCAL,
                 null,
@@ -169,23 +159,8 @@ class AdminStoragePolicyQueryServiceCacheTest {
         }
 
         @Bean
-        StoragePolicyRepository storagePolicyRepository() {
-            return mock(StoragePolicyRepository.class);
-        }
-
-        @Bean
-        StoragePolicyService storagePolicyService() {
-            return mock(StoragePolicyService.class);
-        }
-
-        @Bean
-        FileEntityRepository fileEntityRepository() {
-            return mock(FileEntityRepository.class);
-        }
-
-        @Bean
-        StoredFileEntityRepository storedFileEntityRepository() {
-            return mock(StoredFileEntityRepository.class);
+        StoragePolicyAdminApi storagePolicyAdminApi() {
+            return mock(StoragePolicyAdminApi.class);
         }
 
         @Bean
@@ -199,23 +174,16 @@ class AdminStoragePolicyQueryServiceCacheTest {
         }
 
         @Bean
-        AdminStoragePolicyQueryService adminStoragePolicyQueryService(StoragePolicyRepository storagePolicyRepository,
-                                                                      StoragePolicyService storagePolicyService) {
-            return new AdminStoragePolicyQueryService(storagePolicyRepository, storagePolicyService);
+        AdminStoragePolicyQueryService adminStoragePolicyQueryService(StoragePolicyAdminApi storagePolicyAdminApi) {
+            return new AdminStoragePolicyQueryService(storagePolicyAdminApi);
         }
 
         @Bean
-        AdminStorageGovernanceService adminStorageGovernanceService(StoragePolicyRepository storagePolicyRepository,
-                                                                    StoragePolicyService storagePolicyService,
-                                                                    FileEntityRepository fileEntityRepository,
-                                                                    StoredFileEntityRepository storedFileEntityRepository,
+        AdminStorageGovernanceService adminStorageGovernanceService(StoragePolicyAdminApi storagePolicyAdminApi,
                                                                     BackgroundTaskLifecycleApi backgroundTaskLifecycleApi,
                                                                     AdminAuditService adminAuditService) {
             return new AdminStorageGovernanceService(
-                    storagePolicyRepository,
-                    storagePolicyService,
-                    fileEntityRepository,
-                    storedFileEntityRepository,
+                    storagePolicyAdminApi,
                     backgroundTaskLifecycleApi,
                     adminAuditService
             );

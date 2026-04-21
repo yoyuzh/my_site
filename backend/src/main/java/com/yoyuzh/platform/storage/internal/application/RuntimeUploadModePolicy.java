@@ -1,7 +1,7 @@
 package com.yoyuzh.platform.storage.internal.application;
 
-import com.yoyuzh.files.policy.StoragePolicyCapabilities;
-import com.yoyuzh.files.upload.UploadSessionUploadMode;
+import com.yoyuzh.platform.storage.api.StoragePolicyCapabilities;
+import com.yoyuzh.platform.storage.api.StorageUploadMode;
 import com.yoyuzh.platform.storage.api.UploadModePolicy;
 import org.springframework.stereotype.Service;
 
@@ -9,13 +9,13 @@ import org.springframework.stereotype.Service;
 public class RuntimeUploadModePolicy implements UploadModePolicy {
 
     @Override
-    public UploadSessionUploadMode resolveUploadMode(StoragePolicyCapabilities capabilities) {
+    public StorageUploadMode resolveUploadMode(StoragePolicyCapabilities capabilities) {
         if (!capabilities.directUpload()) {
-            return UploadSessionUploadMode.PROXY;
+            return StorageUploadMode.PROXY;
         }
         if (capabilities.multipartUpload()) {
-            return UploadSessionUploadMode.DIRECT_MULTIPART;
+            return StorageUploadMode.DIRECT_MULTIPART;
         }
-        return UploadSessionUploadMode.DIRECT_SINGLE;
+        return StorageUploadMode.DIRECT_SINGLE;
     }
 }

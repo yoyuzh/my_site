@@ -1,52 +1,35 @@
 package com.yoyuzh.ops.admin.internal.application;
 
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
+
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.yoyuzh.auth.User;
-import com.yoyuzh.auth.UserRole;
-import com.yoyuzh.ops.admin.internal.web.AdminStoragePolicyMigrationCreateRequest;
-import com.yoyuzh.ops.admin.internal.web.AdminStoragePolicyUpsertRequest;
-import com.yoyuzh.shared.kernel.BusinessException;
-import com.yoyuzh.files.core.FileEntityType;
-import com.yoyuzh.files.core.FileEntityRepository;
-import com.yoyuzh.files.core.StoredFileEntityRepository;
-import com.yoyuzh.files.policy.StoragePolicy;
-import com.yoyuzh.files.policy.StoragePolicyCapabilities;
-import com.yoyuzh.files.policy.StoragePolicyCredentialMode;
-import com.yoyuzh.files.policy.StoragePolicyRepository;
-import com.yoyuzh.files.policy.StoragePolicyService;
-import com.yoyuzh.files.policy.StoragePolicyType;
+import com.yoyuzh.platform.job.api.BackgroundTaskLifecycleApi;
 import com.yoyuzh.platform.job.api.BackgroundTaskStatus;
 import com.yoyuzh.platform.job.api.BackgroundTaskType;
-import com.yoyuzh.platform.job.api.BackgroundTaskLifecycleApi;
 import com.yoyuzh.platform.job.api.BackgroundTaskView;
+import com.yoyuzh.platform.storage.api.StoragePolicyAdminApi;
+import com.yoyuzh.platform.storage.api.StoragePolicyAdminView;
+import com.yoyuzh.platform.storage.api.StoragePolicyCapabilities;
+import com.yoyuzh.platform.storage.api.StoragePolicyCredentialMode;
+import com.yoyuzh.platform.storage.api.StoragePolicyMigrationCandidate;
+import com.yoyuzh.platform.storage.api.StoragePolicyType;
+import java.time.LocalDateTime;
+import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
-import java.time.LocalDateTime;
-import java.util.Optional;
-
-import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.Mockito.never;
-import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.when;
-
 @ExtendWith(MockitoExtension.class)
 class AdminStorageGovernanceServiceTest {
 
     @Mock
-    private StoragePolicyRepository storagePolicyRepository;
-    @Mock
-    private StoragePolicyService storagePolicyService;
-    @Mock
-    private FileEntityRepository fileEntityRepository;
-    @Mock
-    private StoredFileEntityRepository storedFileEntityRepository;
+    private StoragePolicyAdminApi storagePolicyAdminApi;
     @Mock
     private BackgroundTaskLifecycleApi backgroundTaskLifecycleApi;
     @Mock
@@ -57,10 +40,7 @@ class AdminStorageGovernanceServiceTest {
     @BeforeEach
     void setUp() {
         adminStorageGovernanceService = new AdminStorageGovernanceService(
-                storagePolicyRepository,
-                storagePolicyService,
-                fileEntityRepository,
-                storedFileEntityRepository,
+                storagePolicyAdminApi,
                 backgroundTaskLifecycleApi,
                 adminAuditService
         );
@@ -68,15 +48,10 @@ class AdminStorageGovernanceServiceTest {
 
     @Test
     void shouldCreateStoragePolicy() {
-        when(storagePolicyService.writeCapabilities(any(StoragePolicyCapabilities.class))).thenReturn("{\"maxObjectSize\":20480}");
-        when(storagePolicyRepository.save(any(StoragePolicy.class))).thenAnswer(invocation -> {
-            StoragePolicy policy = invocation.getArgument(0);
-            policy.setId(9L);
-            return policy;
-        });
-        when(storagePolicyService.readCapabilities(any(StoragePolicy.class))).thenReturn(defaultCapabilities(20_480L));
+        when(storagePolicyAdminApi.createStoragePolicyAsAdmin(any()))
+                .thenReturn(storagePolicyView(9L, "Archive Bucket", true, false));
 
-        AdminStoragePolicyResponse response = adminStorageGovernanceService.createStoragePolicy(new AdminStoragePolicyUpsertRequest(
+        AdminStoragePolicyResponse response = adminStorageGovernanceService.createStoragePolicy(new AdminStoragePolicyUpsertInput(
                 " Archive Bucket ",
                 StoragePolicyType.S3_COMPATIBLE,
                 "archive-bucket",
@@ -90,29 +65,22 @@ class AdminStorageGovernanceServiceTest {
                 true
         ));
 
+        assertThat(response.id()).isEqualTo(9L);
         assertThat(response.name()).isEqualTo("Archive Bucket");
-        assertThat(response.type()).isEqualTo(StoragePolicyType.S3_COMPATIBLE);
-        assertThat(response.bucketName()).isEqualTo("archive-bucket");
-        assertThat(response.endpoint()).isEqualTo("https://s3.example.com");
-        assertThat(response.region()).isEqualTo("auto");
-        assertThat(response.privateBucket()).isTrue();
-        assertThat(response.prefix()).isEqualTo("archive/");
-        assertThat(response.credentialMode()).isEqualTo(StoragePolicyCredentialMode.STATIC);
-        assertThat(response.maxSizeBytes()).isEqualTo(20_480L);
         assertThat(response.enabled()).isTrue();
-        assertThat(response.defaultPolicy()).isFalse();
     }
 
     @Test
-    void shouldUpdateStoragePolicyFieldsWithoutChangingDefaultFlag() {
-        StoragePolicy existingPolicy = createStoragePolicy(7L, "Archive Bucket");
-        existingPolicy.setDefaultPolicy(false);
-        when(storagePolicyService.writeCapabilities(any(StoragePolicyCapabilities.class))).thenReturn("{\"maxObjectSize\":40960}");
-        when(storagePolicyRepository.findById(7L)).thenReturn(Optional.of(existingPolicy));
-        when(storagePolicyRepository.save(existingPolicy)).thenReturn(existingPolicy);
-        when(storagePolicyService.readCapabilities(existingPolicy)).thenReturn(defaultCapabilities(40_960L));
+    void shouldUpdateStoragePolicy() {
+        when(storagePolicyAdminApi.updateStoragePolicyAsAdmin(eq(7L), any()))
+                .thenReturn(storagePolicyView(
+                        7L,
+                        "Hot Bucket",
+                        true,
+                        false,
+                        StoragePolicyCredentialMode.DOGECLOUD_TEMP));
 
-        AdminStoragePolicyResponse response = adminStorageGovernanceService.updateStoragePolicy(7L, new AdminStoragePolicyUpsertRequest(
+        AdminStoragePolicyResponse response = adminStorageGovernanceService.updateStoragePolicy(7L, new AdminStoragePolicyUpsertInput(
                 "Hot Bucket",
                 StoragePolicyType.S3_COMPATIBLE,
                 "hot-bucket",
@@ -126,47 +94,39 @@ class AdminStorageGovernanceServiceTest {
                 true
         ));
 
-        assertThat(existingPolicy.getName()).isEqualTo("Hot Bucket");
-        assertThat(existingPolicy.getBucketName()).isEqualTo("hot-bucket");
-        assertThat(existingPolicy.getEndpoint()).isEqualTo("https://hot.example.com");
-        assertThat(existingPolicy.getRegion()).isEqualTo("cn-north-1");
-        assertThat(existingPolicy.isPrivateBucket()).isFalse();
-        assertThat(existingPolicy.getPrefix()).isEqualTo("hot/");
-        assertThat(existingPolicy.getCredentialMode()).isEqualTo(StoragePolicyCredentialMode.DOGECLOUD_TEMP);
-        assertThat(existingPolicy.getMaxSizeBytes()).isEqualTo(40_960L);
-        assertThat(existingPolicy.isEnabled()).isTrue();
-        assertThat(response.defaultPolicy()).isFalse();
+        assertThat(response.id()).isEqualTo(7L);
+        assertThat(response.name()).isEqualTo("Hot Bucket");
+        assertThat(response.credentialMode()).isEqualTo(StoragePolicyCredentialMode.DOGECLOUD_TEMP);
     }
 
     @Test
-    void shouldRejectDisablingDefaultStoragePolicy() {
-        StoragePolicy existingPolicy = createStoragePolicy(3L, "Default Local Storage");
-        existingPolicy.setDefaultPolicy(true);
-        existingPolicy.setEnabled(true);
-        when(storagePolicyRepository.findById(3L)).thenReturn(Optional.of(existingPolicy));
+    void shouldUpdateStoragePolicyStatus() {
+        when(storagePolicyAdminApi.updateStoragePolicyStatusAsAdmin(3L, false))
+                .thenReturn(storagePolicyView(3L, "Archive Bucket", false, false));
 
-        assertThatThrownBy(() -> adminStorageGovernanceService.updateStoragePolicyStatus(3L, false))
-                .isInstanceOf(BusinessException.class);
+        AdminStoragePolicyResponse response = adminStorageGovernanceService.updateStoragePolicyStatus(3L, false);
 
-        verify(storagePolicyRepository, never()).save(any(StoragePolicy.class));
+        assertThat(response.enabled()).isFalse();
+        verify(adminAuditService).record(
+                eq(AdminAuditAction.UPDATE_STORAGE_POLICY_STATUS),
+                eq("STORAGE_POLICY"),
+                eq(3L),
+                eq("Disabled storage policy"),
+                eq(Map.of("enabled", false))
+        );
     }
 
     @Test
     void shouldCreateStoragePolicyMigrationTaskSkeleton() throws Exception {
-        User adminUser = createUser(99L, "alice", "alice@example.com");
-        StoragePolicy sourcePolicy = createStoragePolicy(3L, "Source Policy");
-        StoragePolicy targetPolicy = createStoragePolicy(4L, "Target Policy");
-        targetPolicy.setEnabled(true);
-        when(storagePolicyRepository.findById(3L)).thenReturn(Optional.of(sourcePolicy));
-        when(storagePolicyRepository.findById(4L)).thenReturn(Optional.of(targetPolicy));
-        when(fileEntityRepository.countByStoragePolicyIdAndEntityType(3L, FileEntityType.VERSION)).thenReturn(5L);
-        when(storedFileEntityRepository.countDistinctStoredFilesByStoragePolicyIdAndEntityType(3L, FileEntityType.VERSION)).thenReturn(8L);
-        when(backgroundTaskLifecycleApi.createQueuedTask(eq(adminUser), eq(BackgroundTaskType.STORAGE_POLICY_MIGRATION), any(), any(), eq("migration-1")))
+        Long userId = 99L;
+        when(storagePolicyAdminApi.buildStoragePolicyMigrationCandidate(3L, 4L))
+                .thenReturn(new StoragePolicyMigrationCandidate(3L, "Source Policy", 4L, "Target Policy", 5L, 8L, "VERSION"));
+        when(backgroundTaskLifecycleApi.createQueuedTaskByUserId(eq(userId), eq(BackgroundTaskType.STORAGE_POLICY_MIGRATION), any(), any(), eq("migration-1")))
                 .thenAnswer(invocation -> new BackgroundTaskView(
                         11L,
                         BackgroundTaskType.STORAGE_POLICY_MIGRATION,
                         BackgroundTaskStatus.QUEUED,
-                        adminUser.getId(),
+                        userId,
                         new ObjectMapper().writeValueAsString(invocation.getArgument(2)),
                         "migration-1",
                         null,
@@ -175,7 +135,7 @@ class AdminStorageGovernanceServiceTest {
                         null
                 ));
 
-        BackgroundTaskView task = adminStorageGovernanceService.createStoragePolicyMigrationTask(adminUser, new AdminStoragePolicyMigrationCreateRequest(
+        BackgroundTaskView task = adminStorageGovernanceService.createStoragePolicyMigrationTask(userId, new AdminStoragePolicyMigrationInput(
                 3L,
                 4L,
                 "migration-1"
@@ -190,35 +150,33 @@ class AdminStorageGovernanceServiceTest {
         assertThat(task.publicStateJson()).contains("\"migrationPerformed\":false");
     }
 
-    private User createUser(Long id, String username, String email) {
-        User user = new User();
-        user.setId(id);
-        user.setUsername(username);
-        user.setEmail(email);
-        user.setPasswordHash("hashed");
-        user.setRole(UserRole.ADMIN);
-        user.setCreatedAt(LocalDateTime.now());
-        return user;
+    private StoragePolicyAdminView storagePolicyView(Long id, String name, boolean enabled, boolean defaultPolicy) {
+        return storagePolicyView(id, name, enabled, defaultPolicy, StoragePolicyCredentialMode.STATIC);
     }
 
-    private StoragePolicy createStoragePolicy(Long id, String name) {
-        StoragePolicy policy = new StoragePolicy();
-        policy.setId(id);
-        policy.setName(name);
-        policy.setType(StoragePolicyType.S3_COMPATIBLE);
-        policy.setBucketName("bucket");
-        policy.setEndpoint("https://s3.example.com");
-        policy.setRegion("auto");
-        policy.setPrivateBucket(true);
-        policy.setPrefix("files/");
-        policy.setCredentialMode(StoragePolicyCredentialMode.STATIC);
-        policy.setMaxSizeBytes(10_240L);
-        policy.setCapabilitiesJson("{}");
-        policy.setEnabled(true);
-        policy.setDefaultPolicy(false);
-        policy.setCreatedAt(LocalDateTime.now());
-        policy.setUpdatedAt(LocalDateTime.now());
-        return policy;
+    private StoragePolicyAdminView storagePolicyView(
+            Long id,
+            String name,
+            boolean enabled,
+            boolean defaultPolicy,
+            StoragePolicyCredentialMode credentialMode) {
+        return new StoragePolicyAdminView(
+                id,
+                name,
+                StoragePolicyType.S3_COMPATIBLE,
+                "bucket",
+                "https://s3.example.com",
+                "auto",
+                true,
+                "files/",
+                credentialMode,
+                10_240L,
+                defaultCapabilities(10_240L),
+                enabled,
+                defaultPolicy,
+                LocalDateTime.now(),
+                LocalDateTime.now()
+        );
     }
 
     private StoragePolicyCapabilities defaultCapabilities(long maxObjectSize) {

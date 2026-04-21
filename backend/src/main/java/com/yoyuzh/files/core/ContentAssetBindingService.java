@@ -2,8 +2,11 @@ package com.yoyuzh.files.core;
 
 import com.yoyuzh.auth.User;
 import com.yoyuzh.files.content.api.ContentAssetApi;
+import com.yoyuzh.files.content.api.ContentBlobReference;
+import com.yoyuzh.files.content.api.ContentPrimaryEntity;
+import com.yoyuzh.files.content.api.ContentPrimaryEntityRelationCommand;
 import com.yoyuzh.files.content.internal.application.RuntimeContentAssetApi;
-import com.yoyuzh.files.policy.StoragePolicyCapabilities;
+import com.yoyuzh.platform.storage.api.StoragePolicyCapabilities;
 import com.yoyuzh.platform.storage.api.StoragePolicyQuery;
 
 final class ContentAssetBindingService {
@@ -22,7 +25,10 @@ final class ContentAssetBindingService {
     }
 
     FileEntity createOrReferencePrimaryEntity(User user, FileBlob blob) {
-        return contentAssetApi.createOrReferencePrimaryEntity(user, blob);
+        return toLegacyEntity(contentAssetApi.createOrReferencePrimaryEntity(
+                user.getId(),
+                new ContentBlobReference(blob.getObjectKey(), blob.getContentType(), blob.getSize())
+        ));
     }
 
     StoragePolicyCapabilities resolveDefaultStoragePolicyCapabilities() {
@@ -30,6 +36,21 @@ final class ContentAssetBindingService {
     }
 
     void savePrimaryEntityRelation(StoredFile storedFile, FileEntity primaryEntity) {
-        contentAssetApi.savePrimaryEntityRelation(storedFile, primaryEntity);
+        contentAssetApi.savePrimaryEntityRelation(new ContentPrimaryEntityRelationCommand(
+                storedFile.getId(),
+                primaryEntity.getId()
+        ));
+    }
+
+    private FileEntity toLegacyEntity(ContentPrimaryEntity entity) {
+        FileEntity fileEntity = new FileEntity();
+        fileEntity.setId(entity.entityId());
+        fileEntity.setObjectKey(entity.objectKey());
+        fileEntity.setContentType(entity.contentType());
+        fileEntity.setSize(entity.size());
+        fileEntity.setEntityType(FileEntityType.VERSION);
+        fileEntity.setReferenceCount(entity.referenceCount());
+        fileEntity.setStoragePolicyId(entity.storagePolicyId());
+        return fileEntity;
     }
 }

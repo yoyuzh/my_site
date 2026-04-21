@@ -1,16 +1,18 @@
 package com.yoyuzh.transfer.internal.application;
 
 import com.yoyuzh.auth.User;
+import com.yoyuzh.auth.UserRepository;
 import com.yoyuzh.shared.kernel.BusinessException;
 import com.yoyuzh.shared.kernel.ErrorCode;
 import com.yoyuzh.platform.storage.internal.infra.FileStorageProperties;
 import com.yoyuzh.files.content.api.ContentRegistrationApi;
+import com.yoyuzh.files.content.api.ContentBlobReference;
 import com.yoyuzh.files.content.api.ContentRegistrationCommand;
 import com.yoyuzh.files.content.api.RegisteredContentFile;
 import com.yoyuzh.files.core.FileBlob;
 import com.yoyuzh.files.core.FileBlobRepository;
 import com.yoyuzh.files.core.StoredFileRepository;
-import com.yoyuzh.files.policy.StoragePolicyCapabilities;
+import com.yoyuzh.platform.storage.api.StoragePolicyCapabilities;
 import com.yoyuzh.files.storage.FileContentStorage;
 import com.yoyuzh.files.workspace.api.FileMetadataResponse;
 import com.yoyuzh.files.workspace.api.WorkspacePathPolicy;
@@ -35,6 +37,7 @@ public class RuntimeTransferImportApi implements TransferImportApi {
     private final FileContentStorage fileContentStorage;
     private final StoragePolicyQuery storagePolicyQuery;
     private final UploadConstraintPolicy uploadConstraintPolicy;
+    private final UserRepository userRepository;
     private final long maxFileSize;
 
     public RuntimeTransferImportApi(OfflineTransferService offlineTransferService,
@@ -45,6 +48,7 @@ public class RuntimeTransferImportApi implements TransferImportApi {
                                     FileContentStorage fileContentStorage,
                                     StoragePolicyQuery storagePolicyQuery,
                                     UploadConstraintPolicy uploadConstraintPolicy,
+                                    UserRepository userRepository,
                                     FileStorageProperties properties) {
         this.offlineTransferService = offlineTransferService;
         this.workspacePathPolicy = workspacePathPolicy;
@@ -54,29 +58,32 @@ public class RuntimeTransferImportApi implements TransferImportApi {
         this.fileContentStorage = fileContentStorage;
         this.storagePolicyQuery = storagePolicyQuery;
         this.uploadConstraintPolicy = uploadConstraintPolicy;
+        this.userRepository = userRepository;
         this.maxFileSize = properties.getMaxFileSize();
     }
 
     @Override
-    public FileMetadataResponse importOfflineFile(User recipient, String sessionId, String fileId, TransferImportCommand command) {
+    public FileMetadataResponse importOfflineFile(Long recipientUserId, String sessionId, String fileId, TransferImportCommand command) {
+        User recipient = userRepository.findById(recipientUserId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.NOT_LOGGED_IN, "用户不存在"));
         OfflineTransferService.ReadyOfflineTransferFile readyFile = offlineTransferService.readReadyFile(sessionId, fileId);
         String normalizedPath = workspacePathPolicy.normalizeDirectoryPath(command.path());
         String normalizedFilename = workspacePathPolicy.normalizeLeafName(readyFile.filename());
 
         validateImportTarget(recipient, normalizedPath, normalizedFilename, readyFile.size());
-        workspacePathPolicy.ensureDirectoryHierarchy(recipient, normalizedPath);
+        workspacePathPolicy.ensureDirectoryHierarchy(recipient.getId(), normalizedPath);
 
         String objectKey = createBlobObjectKey();
         try {
             fileContentStorage.storeBlob(objectKey, readyFile.contentType(), readyFile.content());
             FileBlob blob = createAndSaveBlob(objectKey, readyFile.contentType(), readyFile.size());
             RegisteredContentFile storedFile = contentRegistrationApi.registerBlob(new ContentRegistrationCommand(
-                    recipient,
+                    recipient.getId(),
                     normalizedPath,
                     normalizedFilename,
                     readyFile.contentType(),
                     readyFile.size(),
-                    blob
+                    new ContentBlobReference(blob.getObjectKey(), blob.getContentType(), blob.getSize())
             ));
             return new FileMetadataResponse(
                     storedFile.id(),
@@ -102,9 +109,9 @@ public class RuntimeTransferImportApi implements TransferImportApi {
         StoragePolicyCapabilities capabilities = policySnapshot.capabilities();
         long effectiveMaxUploadSize = uploadConstraintPolicy.resolveEffectiveMaxUploadSize(
                 maxFileSize,
-                recipient,
-                policySnapshot.policy(),
-                capabilities
+                recipient.getMaxUploadSizeBytes(),
+                policySnapshot.policyMaxSizeBytes(),
+                capabilities == null ? 0L : capabilities.maxObjectSize()
         );
         if (size > effectiveMaxUploadSize) {
             throw new BusinessException(ErrorCode.UNKNOWN, "文件大小超出限制");

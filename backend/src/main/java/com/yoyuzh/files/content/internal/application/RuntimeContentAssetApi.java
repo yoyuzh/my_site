@@ -2,6 +2,9 @@ package com.yoyuzh.files.content.internal.application;
 
 import com.yoyuzh.auth.User;
 import com.yoyuzh.files.content.api.ContentAssetApi;
+import com.yoyuzh.files.content.api.ContentBlobReference;
+import com.yoyuzh.files.content.api.ContentPrimaryEntity;
+import com.yoyuzh.files.content.api.ContentPrimaryEntityRelationCommand;
 import com.yoyuzh.files.core.FileBlob;
 import com.yoyuzh.files.core.FileEntity;
 import com.yoyuzh.files.core.FileEntityRepository;
@@ -10,7 +13,7 @@ import com.yoyuzh.files.core.StoredFile;
 import com.yoyuzh.files.core.StoredFileEntity;
 import com.yoyuzh.files.core.StoredFileEntityRepository;
 import com.yoyuzh.files.core.StoredFileRepository;
-import com.yoyuzh.files.policy.StoragePolicyCapabilities;
+import com.yoyuzh.platform.storage.api.StoragePolicyCapabilities;
 import com.yoyuzh.platform.storage.api.StoragePolicyQuery;
 import org.springframework.stereotype.Service;
 
@@ -37,34 +40,34 @@ public final class RuntimeContentAssetApi implements ContentAssetApi {
     }
 
     @Override
-    public FileEntity createOrReferencePrimaryEntity(User user, FileBlob blob) {
+    public ContentPrimaryEntity createOrReferencePrimaryEntity(Long userId, ContentBlobReference blob) {
         if (fileEntityRepository == null) {
-            return createTransientPrimaryEntity(user, blob);
+            return toContentPrimaryEntity(createTransientPrimaryEntity(userId, blob));
         }
 
         Optional<FileEntity> existingEntity = fileEntityRepository.findByObjectKeyAndEntityType(
-                blob.getObjectKey(),
+                blob.objectKey(),
                 FileEntityType.VERSION
         );
         if (existingEntity.isPresent()) {
             FileEntity entity = existingEntity.get();
             entity.setReferenceCount(entity.getReferenceCount() + 1);
             fileEntityRepository.save(entity);
-            return entity;
+            return toContentPrimaryEntity(entity);
         }
 
-        return fileEntityRepository.save(createTransientPrimaryEntity(user, blob));
+        return toContentPrimaryEntity(fileEntityRepository.save(createTransientPrimaryEntity(userId, blob)));
     }
 
     @Override
-    public void savePrimaryEntityRelation(StoredFile storedFile, FileEntity primaryEntity) {
+    public void savePrimaryEntityRelation(ContentPrimaryEntityRelationCommand command) {
         if (storedFileEntityRepository == null) {
             return;
         }
 
         StoredFileEntity relation = new StoredFileEntity();
-        relation.setStoredFile(storedFile);
-        relation.setFileEntity(primaryEntity);
+        relation.setStoredFile(storedFileReference(command.storedFileId()));
+        relation.setFileEntity(fileEntityReference(command.primaryEntityId()));
         relation.setEntityRole(PRIMARY_ENTITY_ROLE);
         storedFileEntityRepository.save(relation);
     }
@@ -85,23 +88,32 @@ public final class RuntimeContentAssetApi implements ContentAssetApi {
 
         for (StoredFile storedFile : storedFileRepository.findAllByDirectoryFalseAndBlobIsNotNullAndPrimaryEntityIsNull()) {
             FileBlob blob = storedFile.getBlob();
-            FileEntity fileEntity = createOrReferencePrimaryEntity(storedFile.getUser(), blob);
-            storedFile.setPrimaryEntity(fileEntity);
+            ContentPrimaryEntity primaryEntity = createOrReferencePrimaryEntity(
+                    storedFile.getUser().getId(),
+                    toBlobReference(blob)
+            );
+            storedFile.setPrimaryEntity(legacyPrimaryEntityReference(primaryEntity));
             storedFileRepository.save(storedFile);
-            savePrimaryEntityRelation(storedFile, fileEntity);
+            savePrimaryEntityRelation(new ContentPrimaryEntityRelationCommand(storedFile.getId(), primaryEntity.entityId()));
         }
     }
 
-    private FileEntity createTransientPrimaryEntity(User user, FileBlob blob) {
+    private FileEntity createTransientPrimaryEntity(Long userId, ContentBlobReference blob) {
         FileEntity entity = new FileEntity();
-        entity.setObjectKey(blob.getObjectKey());
-        entity.setContentType(blob.getContentType());
-        entity.setSize(blob.getSize());
+        entity.setObjectKey(blob.objectKey());
+        entity.setContentType(blob.contentType());
+        entity.setSize(blob.size());
         entity.setEntityType(FileEntityType.VERSION);
         entity.setReferenceCount(1);
-        entity.setCreatedBy(user);
+        entity.setCreatedBy(userReference(userId));
         entity.setStoragePolicyId(resolveDefaultStoragePolicyId());
         return entity;
+    }
+
+    private User userReference(Long userId) {
+        User user = new User();
+        user.setId(userId);
+        return user;
     }
 
     private Long resolveDefaultStoragePolicyId() {
@@ -109,5 +121,43 @@ public final class RuntimeContentAssetApi implements ContentAssetApi {
             return null;
         }
         return storagePolicyQuery.readDefaultPolicyId();
+    }
+
+    private ContentBlobReference toBlobReference(FileBlob blob) {
+        return new ContentBlobReference(blob.getObjectKey(), blob.getContentType(), blob.getSize());
+    }
+
+    private ContentPrimaryEntity toContentPrimaryEntity(FileEntity entity) {
+        return new ContentPrimaryEntity(
+                entity.getId(),
+                entity.getObjectKey(),
+                entity.getContentType(),
+                entity.getSize() == null ? 0L : entity.getSize(),
+                entity.getReferenceCount() == null ? 0 : entity.getReferenceCount(),
+                entity.getStoragePolicyId()
+        );
+    }
+
+    private StoredFile storedFileReference(Long storedFileId) {
+        StoredFile storedFile = new StoredFile();
+        storedFile.setId(storedFileId);
+        return storedFile;
+    }
+
+    private FileEntity fileEntityReference(Long primaryEntityId) {
+        FileEntity entity = new FileEntity();
+        entity.setId(primaryEntityId);
+        entity.setEntityType(FileEntityType.VERSION);
+        return entity;
+    }
+
+    private FileEntity legacyPrimaryEntityReference(ContentPrimaryEntity primaryEntity) {
+        FileEntity entity = fileEntityReference(primaryEntity.entityId());
+        entity.setObjectKey(primaryEntity.objectKey());
+        entity.setContentType(primaryEntity.contentType());
+        entity.setSize(primaryEntity.size());
+        entity.setReferenceCount(primaryEntity.referenceCount());
+        entity.setStoragePolicyId(primaryEntity.storagePolicyId());
+        return entity;
     }
 }

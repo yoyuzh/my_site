@@ -1,12 +1,13 @@
 package com.yoyuzh.ops.admin.internal.web;
 
-import com.yoyuzh.api.v2.tasks.BackgroundTaskResponse;
-import com.yoyuzh.auth.CustomUserDetailsService;
-import com.yoyuzh.auth.User;
+import com.yoyuzh.boot.security.CustomUserDetailsService;
+import com.yoyuzh.ops.admin.internal.application.AdminStoragePolicyMigrationInput;
 import com.yoyuzh.ops.admin.internal.application.AdminStorageGovernanceService;
+import com.yoyuzh.ops.admin.internal.application.AdminStoragePolicyUpsertInput;
 import com.yoyuzh.ops.admin.internal.application.AdminStoragePolicyResponse;
 import com.yoyuzh.ops.admin.internal.application.AdminStoragePolicyQueryService;
 import com.yoyuzh.shared.kernel.ApiResponse;
+import com.yoyuzh.platform.job.api.BackgroundTaskResponse;
 import com.yoyuzh.platform.job.api.BackgroundTaskView;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -42,14 +43,14 @@ public class AdminStoragePolicyController {
     @PostMapping("/storage-policies")
     public ApiResponse<AdminStoragePolicyResponse> createStoragePolicy(
             @Valid @RequestBody AdminStoragePolicyUpsertRequest request) {
-        return ApiResponse.success(adminStorageGovernanceService.createStoragePolicy(request));
+        return ApiResponse.success(adminStorageGovernanceService.createStoragePolicy(toInput(request)));
     }
 
     @PutMapping("/storage-policies/{policyId}")
     public ApiResponse<AdminStoragePolicyResponse> updateStoragePolicy(
             @PathVariable Long policyId,
             @Valid @RequestBody AdminStoragePolicyUpsertRequest request) {
-        return ApiResponse.success(adminStorageGovernanceService.updateStoragePolicy(policyId, request));
+        return ApiResponse.success(adminStorageGovernanceService.updateStoragePolicy(policyId, toInput(request)));
     }
 
     @PatchMapping("/storage-policies/{policyId}/status")
@@ -63,8 +64,32 @@ public class AdminStoragePolicyController {
     public ApiResponse<BackgroundTaskResponse> createStoragePolicyMigrationTask(
             @AuthenticationPrincipal UserDetails userDetails,
             @Valid @RequestBody AdminStoragePolicyMigrationCreateRequest request) {
-        User user = userDetailsService.loadDomainUser(userDetails.getUsername());
-        return ApiResponse.success(toTaskResponse(adminStorageGovernanceService.createStoragePolicyMigrationTask(user, request)));
+        Long userId = userDetailsService.loadDomainUser(userDetails.getUsername()).getId();
+        return ApiResponse.success(toTaskResponse(adminStorageGovernanceService.createStoragePolicyMigrationTask(userId, toInput(request))));
+    }
+
+    private AdminStoragePolicyUpsertInput toInput(AdminStoragePolicyUpsertRequest request) {
+        return new AdminStoragePolicyUpsertInput(
+                request.name(),
+                request.type(),
+                request.bucketName(),
+                request.endpoint(),
+                request.region(),
+                request.privateBucket(),
+                request.prefix(),
+                request.credentialMode(),
+                request.maxSizeBytes(),
+                request.capabilities(),
+                request.enabled()
+        );
+    }
+
+    private AdminStoragePolicyMigrationInput toInput(AdminStoragePolicyMigrationCreateRequest request) {
+        return new AdminStoragePolicyMigrationInput(
+                request.sourcePolicyId(),
+                request.targetPolicyId(),
+                request.correlationId()
+        );
     }
 
     private BackgroundTaskResponse toTaskResponse(BackgroundTaskView task) {

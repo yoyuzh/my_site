@@ -31,6 +31,32 @@ class Task4ABridgeArchitectureTest {
     }
 
     @Test
+    void workspaceApiContractsMustNotDependOnLegacyAuthTypes() {
+        ArchRule rule = noClasses()
+                .that()
+                .resideInAnyPackage(
+                        "com.yoyuzh.files.workspace.api..",
+                        "com.yoyuzh.files.content.api..")
+                .should()
+                .dependOnClassesThat()
+                .resideInAnyPackage("com.yoyuzh.auth..");
+
+        rule.check(classes);
+    }
+
+    @Test
+    void contentApiContractsMustNotDependOnLegacyFilesCoreTypes() {
+        ArchRule rule = noClasses()
+                .that()
+                .resideInAnyPackage("com.yoyuzh.files.content.api..")
+                .should()
+                .dependOnClassesThat()
+                .resideInAnyPackage("com.yoyuzh.files.core..");
+
+        rule.check(classes);
+    }
+
+    @Test
     void onlyFilesCoreCompatibilityShellMayDependOnWorkspaceAndContentInternalApplicationBridges() {
         ArchRule workspaceRule = noClasses()
                 .that()

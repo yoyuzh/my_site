@@ -7,23 +7,21 @@ import com.yoyuzh.shared.kernel.ErrorCode;
 import com.yoyuzh.shared.kernel.PageResponse;
 import com.yoyuzh.platform.storage.internal.infra.FileStorageProperties;
 import com.yoyuzh.files.content.api.ContentAssetApi;
+import com.yoyuzh.files.content.api.ContentBlobReference;
 import com.yoyuzh.files.content.api.ContentRegistrationApi;
 import com.yoyuzh.files.content.api.ContentRegistrationCommand;
 import com.yoyuzh.files.content.api.RegisteredContentFile;
 import com.yoyuzh.files.content.internal.application.RuntimeContentAssetApi;
 import com.yoyuzh.files.content.internal.application.RuntimeContentRegistrationApi;
-import com.yoyuzh.files.events.FileEventService;
-import com.yoyuzh.files.events.FileEventType;
-import com.yoyuzh.files.policy.StoragePolicy;
-import com.yoyuzh.files.policy.StoragePolicyCapabilities;
-import com.yoyuzh.files.policy.StoragePolicyService;
-import com.yoyuzh.files.share.CreateFileShareLinkResponse;
-import com.yoyuzh.files.share.FileShareDetailsResponse;
-import com.yoyuzh.files.share.FileShareLink;
-import com.yoyuzh.files.share.FileShareLinkRepository;
+import com.yoyuzh.files.search.api.FileEventApi;
+import com.yoyuzh.files.search.api.FileEventRecordCommand;
+import com.yoyuzh.files.search.api.FileEventType;
+import com.yoyuzh.platform.storage.api.StoragePolicyCapabilities;
+import com.yoyuzh.platform.storage.api.StoragePolicyQuery;
+import com.yoyuzh.platform.storage.api.UploadConstraintPolicy;
 import com.yoyuzh.files.storage.FileContentStorage;
 import com.yoyuzh.files.storage.PreparedUpload;
-import com.yoyuzh.files.tasks.MediaMetadataTaskBrokerPublisher;
+import com.yoyuzh.platform.job.internal.application.MediaMetadataTaskBrokerPublisher;
 import com.yoyuzh.files.upload.CompleteUploadRequest;
 import com.yoyuzh.files.upload.InitiateUploadRequest;
 import com.yoyuzh.files.upload.InitiateUploadResponse;
@@ -89,9 +87,9 @@ public class FileService {
     private final FileEntityRepository fileEntityRepository;
     private final StoredFileEntityRepository storedFileEntityRepository;
     private final FileContentStorage fileContentStorage;
-    private final FileShareLinkRepository fileShareLinkRepository;
     private final AdminMetricsService adminMetricsService;
-    private final StoragePolicyService storagePolicyService;
+    private final StoragePolicyQuery storagePolicyQuery;
+    private final UploadConstraintPolicy uploadConstraintPolicy;
     private final long maxFileSize;
     private final String packageDownloadBaseUrl;
     private final String packageDownloadSecret;
@@ -108,7 +106,7 @@ public class FileService {
     private final UploadCompletionApi uploadCompletionApi;
     private final ContentBlobLifecycleService contentBlobLifecycleService;
     @Autowired(required = false)
-    private FileEventService fileEventService;
+    private FileEventApi fileEventApi;
     @Autowired(required = false)
     private FileListDirectoryCacheService fileListDirectoryCacheService = FileListDirectoryCacheService.noOp();
     @Autowired(required = false)
@@ -122,12 +120,12 @@ public class FileService {
                        FileEntityRepository fileEntityRepository,
                        StoredFileEntityRepository storedFileEntityRepository,
                        FileContentStorage fileContentStorage,
-                       FileShareLinkRepository fileShareLinkRepository,
                        AdminMetricsService adminMetricsService,
-                       StoragePolicyService storagePolicyService,
+                       StoragePolicyQuery storagePolicyQuery,
                        UploadCompletionApi uploadCompletionApi,
-                       FileStorageProperties properties) {
-        this(storedFileRepository, fileBlobRepository, fileEntityRepository, storedFileEntityRepository, fileContentStorage, fileShareLinkRepository, adminMetricsService, storagePolicyService, uploadCompletionApi, properties, Clock.systemUTC());
+                       FileStorageProperties properties,
+                       UploadConstraintPolicy uploadConstraintPolicy) {
+        this(storedFileRepository, fileBlobRepository, fileEntityRepository, storedFileEntityRepository, fileContentStorage, adminMetricsService, storagePolicyQuery, uploadCompletionApi, properties, uploadConstraintPolicy, Clock.systemUTC());
     }
 
     public FileService(StoredFileRepository storedFileRepository,
@@ -135,11 +133,10 @@ public class FileService {
                        FileEntityRepository fileEntityRepository,
                        StoredFileEntityRepository storedFileEntityRepository,
                        FileContentStorage fileContentStorage,
-                       FileShareLinkRepository fileShareLinkRepository,
                        AdminMetricsService adminMetricsService,
-                       StoragePolicyService storagePolicyService,
+                       StoragePolicyQuery storagePolicyQuery,
                        FileStorageProperties properties) {
-        this(storedFileRepository, fileBlobRepository, fileEntityRepository, storedFileEntityRepository, fileContentStorage, fileShareLinkRepository, adminMetricsService, storagePolicyService, null, properties, Clock.systemUTC());
+        this(storedFileRepository, fileBlobRepository, fileEntityRepository, storedFileEntityRepository, fileContentStorage, adminMetricsService, storagePolicyQuery, null, properties, null, Clock.systemUTC());
     }
 
     FileService(StoredFileRepository storedFileRepository,
@@ -147,19 +144,19 @@ public class FileService {
                 FileEntityRepository fileEntityRepository,
                 StoredFileEntityRepository storedFileEntityRepository,
                 FileContentStorage fileContentStorage,
-                FileShareLinkRepository fileShareLinkRepository,
                 AdminMetricsService adminMetricsService,
-                StoragePolicyService storagePolicyService,
+                StoragePolicyQuery storagePolicyQuery,
                 UploadCompletionApi uploadCompletionApi,
                 FileStorageProperties properties,
+                UploadConstraintPolicy uploadConstraintPolicy,
                 Clock clock) {
         this.storedFileRepository = storedFileRepository;
         this.fileEntityRepository = fileEntityRepository;
         this.storedFileEntityRepository = storedFileEntityRepository;
         this.fileContentStorage = fileContentStorage;
-        this.fileShareLinkRepository = fileShareLinkRepository;
         this.adminMetricsService = adminMetricsService;
-        this.storagePolicyService = storagePolicyService;
+        this.storagePolicyQuery = storagePolicyQuery;
+        this.uploadConstraintPolicy = uploadConstraintPolicy;
         this.maxFileSize = properties.getMaxFileSize();
         this.packageDownloadBaseUrl = StringUtils.hasText(properties.getS3().getPackageDownloadBaseUrl())
                 ? properties.getS3().getPackageDownloadBaseUrl().trim()
@@ -173,13 +170,13 @@ public class FileService {
         this.workspaceNodeRulesService = new WorkspaceNodeRulesService(storedFileRepository, fileContentStorage);
         this.workspaceDirectoryApi = new RuntimeWorkspaceDirectoryApi(storedFileRepository, fileContentStorage);
         this.workspaceMutationApi = new RuntimeWorkspaceMutationApi(storedFileRepository, fileContentStorage);
-        this.fileUploadRulesService = new FileUploadRulesService(storedFileRepository, storagePolicyService, workspaceNodeRulesService, maxFileSize);
+        this.fileUploadRulesService = new FileUploadRulesService(storedFileRepository, storagePolicyQuery, uploadConstraintPolicy, workspaceNodeRulesService, maxFileSize);
         this.externalImportRulesService = new ExternalImportRulesService(workspaceNodeRulesService, fileUploadRulesService);
         RuntimeContentAssetApi runtimeContentAssetApi = new RuntimeContentAssetApi(
                 storedFileRepository,
                 fileEntityRepository,
                 storedFileEntityRepository,
-                storagePolicyService
+                storagePolicyQuery
         );
         this.contentAssetApi = runtimeContentAssetApi;
         RuntimeContentRegistrationApi runtimeContentRegistrationApi = new RuntimeContentRegistrationApi(
@@ -206,20 +203,18 @@ public class FileService {
     FileService(StoredFileRepository storedFileRepository,
                 FileBlobRepository fileBlobRepository,
                 FileContentStorage fileContentStorage,
-                FileShareLinkRepository fileShareLinkRepository,
                 AdminMetricsService adminMetricsService,
                 FileStorageProperties properties) {
-        this(storedFileRepository, fileBlobRepository, null, null, fileContentStorage, fileShareLinkRepository, adminMetricsService, null, null, properties, Clock.systemUTC());
+        this(storedFileRepository, fileBlobRepository, null, null, fileContentStorage, adminMetricsService, null, null, properties, null, Clock.systemUTC());
     }
 
     FileService(StoredFileRepository storedFileRepository,
                 FileBlobRepository fileBlobRepository,
                 FileContentStorage fileContentStorage,
-                FileShareLinkRepository fileShareLinkRepository,
                 AdminMetricsService adminMetricsService,
                 FileStorageProperties properties,
                 Clock clock) {
-        this(storedFileRepository, fileBlobRepository, null, null, fileContentStorage, fileShareLinkRepository, adminMetricsService, null, null, properties, clock);
+        this(storedFileRepository, fileBlobRepository, null, null, fileContentStorage, adminMetricsService, null, null, properties, null, clock);
     }
 
     @Transactional
@@ -271,7 +266,7 @@ public class FileService {
         String objectKey = normalizeBlobObjectKey(request.storageName());
         fileUploadRulesService.validateUpload(user, normalizedPath, filename, request.size());
         RegisteredContentFile savedFile = uploadCompletionApi.completeStoredBlob(new UploadCompletionCommand(
-                user,
+                user.getId(),
                 normalizedPath,
                 filename,
                 objectKey,
@@ -284,7 +279,7 @@ public class FileService {
     @Transactional
     public FileMetadataResponse mkdir(User user, String path) {
         String normalizedPath = normalizeDirectoryPath(path);
-        FileMetadataResponse response = workspaceDirectoryApi.createDirectory(user, normalizedPath);
+        FileMetadataResponse response = workspaceDirectoryApi.createDirectory(user.getId(), normalizedPath);
         String parentPath = extractParentPath(normalizedPath);
         touchDirectoryListings(user, parentPath);
         return response;
@@ -297,7 +292,7 @@ public class FileService {
                 normalizedPath,
                 page,
                 size,
-                () -> workspaceDirectoryApi.loadDirectoryPage(user, normalizedPath, page, size)
+                () -> workspaceDirectoryApi.loadDirectoryPage(user.getId(), normalizedPath, page, size)
         );
     }
 
@@ -343,7 +338,7 @@ public class FileService {
 
     @Transactional
     public void delete(User user, Long fileId) {
-        WorkspaceLifecycleResult result = workspaceLifecycleApi.recycle(user, fileId);
+        WorkspaceLifecycleResult result = workspaceLifecycleApi.recycle(user.getId(), fileId);
         if (!result.affectedPaths().isEmpty()) {
             touchDirectoryListings(user, result.affectedPaths().toArray(String[]::new));
         }
@@ -357,7 +352,7 @@ public class FileService {
                 Duration.ofSeconds(120),
                 () -> {
                     WorkspaceLifecycleResult result = workspaceLifecycleApi.restore(
-                            user,
+                            user.getId(),
                             fileId,
                             additionalBytes -> fileUploadRulesService.ensureWithinStorageQuota(user, additionalBytes)
                     );
@@ -388,7 +383,7 @@ public class FileService {
     @Transactional
     public FileMetadataResponse rename(User user, Long fileId, String nextFilename) {
         String sanitizedFilename = normalizeLeafName(nextFilename);
-        WorkspaceMutationResult result = workspaceMutationApi.rename(user, fileId, sanitizedFilename);
+        WorkspaceMutationResult result = workspaceMutationApi.rename(user.getId(), fileId, sanitizedFilename);
         if (!result.affectedPaths().isEmpty()) {
             touchDirectoryListings(user, result.affectedPaths().toArray(String[]::new));
         }
@@ -401,7 +396,7 @@ public class FileService {
     @Transactional
     public FileMetadataResponse move(User user, Long fileId, String nextPath) {
         String normalizedTargetPath = normalizeDirectoryPath(nextPath);
-        WorkspaceMutationResult result = workspaceMutationApi.move(user, fileId, normalizedTargetPath);
+        WorkspaceMutationResult result = workspaceMutationApi.move(user.getId(), fileId, normalizedTargetPath);
         if (!result.affectedPaths().isEmpty()) {
             touchDirectoryListings(user, result.affectedPaths().toArray(String[]::new));
         }
@@ -415,7 +410,7 @@ public class FileService {
     public FileMetadataResponse copy(User user, Long fileId, String nextPath) {
         String normalizedTargetPath = normalizeDirectoryPath(nextPath);
         WorkspaceLifecycleResult result = workspaceLifecycleApi.copy(
-                user,
+                user.getId(),
                 fileId,
                 normalizedTargetPath,
                 additionalBytes -> fileUploadRulesService.ensureWithinStorageQuota(user, additionalBytes)
@@ -473,59 +468,6 @@ public class FileService {
         }
 
         return new DownloadUrlResponse("/api/files/download/" + storedFile.getId());
-    }
-
-    @Transactional
-    public CreateFileShareLinkResponse createShareLink(User user, Long fileId) {
-        StoredFile storedFile = getOwnedActiveFile(user, fileId, "分享");
-        if (storedFile.isDirectory()) {
-            throw new BusinessException(ErrorCode.UNKNOWN, "目录暂不支持分享链接");
-        }
-
-        FileShareLink shareLink = new FileShareLink();
-        shareLink.setOwner(user);
-        shareLink.setFile(storedFile);
-        shareLink.setToken(UUID.randomUUID().toString().replace("-", ""));
-        FileShareLink saved = fileShareLinkRepository.save(shareLink);
-
-        return new CreateFileShareLinkResponse(
-                saved.getToken(),
-                storedFile.getFilename(),
-                storedFile.getSize(),
-                storedFile.getContentType(),
-                saved.getCreatedAt()
-        );
-    }
-
-    public FileShareDetailsResponse getShareDetails(String token) {
-        FileShareLink shareLink = getShareLink(token);
-        StoredFile storedFile = shareLink.getFile();
-        return new FileShareDetailsResponse(
-                shareLink.getToken(),
-                shareLink.getOwner().getUsername(),
-                storedFile.getFilename(),
-                storedFile.getSize(),
-                storedFile.getContentType(),
-                storedFile.isDirectory(),
-                shareLink.getCreatedAt()
-        );
-    }
-
-    @Transactional
-    public FileMetadataResponse importSharedFile(User recipient, String token, String path) {
-        FileShareLink shareLink = getShareLink(token);
-        StoredFile sourceFile = shareLink.getFile();
-        if (sourceFile.isDirectory()) {
-            throw new BusinessException(ErrorCode.UNKNOWN, "目录暂不支持导入");
-        }
-        return importReferencedBlob(
-                recipient,
-                path,
-                sourceFile.getFilename(),
-                sourceFile.getContentType(),
-                sourceFile.getSize(),
-                contentBlobLifecycleService.getRequiredBlob(sourceFile)
-        );
     }
 
     @Transactional
@@ -781,7 +723,14 @@ public class FileService {
                                                   long size,
                                                   FileBlob blob) {
         RegisteredContentFile savedFile = contentRegistrationApi.registerBlob(
-                new ContentRegistrationCommand(user, normalizedPath, filename, contentType, size, blob)
+                new ContentRegistrationCommand(
+                        user.getId(),
+                        normalizedPath,
+                        filename,
+                        contentType,
+                        size,
+                        new ContentBlobReference(blob.getObjectKey(), blob.getContentType(), blob.getSize())
+                )
         );
         return finalizeUploadedFile(user, normalizedPath, savedFile);
     }
@@ -804,11 +753,6 @@ public class FileService {
         payload.setFilename(storedFile.filename());
         payload.setContentType(storedFile.contentType());
         mediaMetadataTaskBrokerPublisher.publishAfterCommit(payload);
-    }
-
-    private FileShareLink getShareLink(String token) {
-        return fileShareLinkRepository.findByToken(token)
-                .orElseThrow(() -> new BusinessException(ErrorCode.FILE_NOT_FOUND, "分享链接不存在"));
     }
 
     private RecycleBinItemResponse toRecycleBinResponse(StoredFile storedFile) {
@@ -853,15 +797,15 @@ public class FileService {
             return;
         }
         long effectiveMaxUploadSize = Math.min(maxFileSize, user.getMaxUploadSizeBytes());
-        StoragePolicy defaultPolicy = null;
+        long policyMaxSizeBytes = 0L;
         StoragePolicyCapabilities capabilities = null;
-        if (storagePolicyService != null) {
-            var defaultPolicySnapshot = storagePolicyService.readDefaultPolicySnapshot();
-            defaultPolicy = defaultPolicySnapshot.policy();
+        if (storagePolicyQuery != null) {
+            var defaultPolicySnapshot = storagePolicyQuery.readDefaultPolicySnapshot();
+            policyMaxSizeBytes = defaultPolicySnapshot.policyMaxSizeBytes();
             capabilities = defaultPolicySnapshot.capabilities();
         }
-        if (defaultPolicy != null && defaultPolicy.getMaxSizeBytes() > 0) {
-            effectiveMaxUploadSize = Math.min(effectiveMaxUploadSize, defaultPolicy.getMaxSizeBytes());
+        if (policyMaxSizeBytes > 0) {
+            effectiveMaxUploadSize = Math.min(effectiveMaxUploadSize, policyMaxSizeBytes);
         }
         if (capabilities != null && capabilities.maxObjectSize() > 0) {
             effectiveMaxUploadSize = Math.min(effectiveMaxUploadSize, capabilities.maxObjectSize());
@@ -1231,7 +1175,7 @@ public class FileService {
                                  StoredFile storedFile,
                                  String fromPath,
                                  String toPath) {
-        if (fileEventService == null || storedFile == null || storedFile.getId() == null) {
+        if (fileEventApi == null || user == null || user.getId() == null || storedFile == null || storedFile.getId() == null) {
             return;
         }
 
@@ -1249,7 +1193,15 @@ public class FileService {
         if (toPath != null) {
             payload.put("toPath", toPath);
         }
-        fileEventService.record(user, eventType, storedFile.getId(), fromPath, toPath, payload);
+        fileEventApi.record(new FileEventRecordCommand(
+                user.getId(),
+                eventType,
+                storedFile.getId(),
+                fromPath,
+                toPath,
+                null,
+                payload
+        ));
     }
 
     private void recordFileEvent(User user,
@@ -1257,7 +1209,7 @@ public class FileService {
                                  FileMetadataResponse storedFile,
                                  String fromPath,
                                  String toPath) {
-        if (fileEventService == null || storedFile == null || storedFile.id() == null) {
+        if (fileEventApi == null || user == null || user.getId() == null || storedFile == null || storedFile.id() == null) {
             return;
         }
 
@@ -1275,7 +1227,15 @@ public class FileService {
         if (toPath != null) {
             payload.put("toPath", toPath);
         }
-        fileEventService.record(user, eventType, storedFile.id(), fromPath, toPath, payload);
+        fileEventApi.record(new FileEventRecordCommand(
+                user.getId(),
+                eventType,
+                storedFile.id(),
+                fromPath,
+                toPath,
+                null,
+                payload
+        ));
     }
 
     private void recordFileEvent(User user,
@@ -1283,7 +1243,7 @@ public class FileService {
                                  RegisteredContentFile storedFile,
                                  String fromPath,
                                  String toPath) {
-        if (fileEventService == null || storedFile == null || storedFile.id() == null) {
+        if (fileEventApi == null || user == null || user.getId() == null || storedFile == null || storedFile.id() == null) {
             return;
         }
 
@@ -1301,7 +1261,15 @@ public class FileService {
         if (toPath != null) {
             payload.put("toPath", toPath);
         }
-        fileEventService.record(user, eventType, storedFile.id(), fromPath, toPath, payload);
+        fileEventApi.record(new FileEventRecordCommand(
+                user.getId(),
+                eventType,
+                storedFile.id(),
+                fromPath,
+                toPath,
+                null,
+                payload
+        ));
     }
 
     private void touchDirectoryListings(User user, String... paths) {
