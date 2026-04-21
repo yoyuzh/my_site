@@ -1,6 +1,7 @@
 package com.yoyuzh.platform.storage.internal.application;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -8,6 +9,7 @@ import static org.mockito.Mockito.when;
 import com.yoyuzh.files.content.internal.infra.FileEntityRepository;
 import com.yoyuzh.files.content.internal.domain.FileEntityType;
 import com.yoyuzh.files.content.internal.infra.StoredFileEntityRepository;
+import com.yoyuzh.platform.storage.api.StoragePolicyBlobAccessApi;
 import com.yoyuzh.platform.storage.internal.domain.StoragePolicy;
 import com.yoyuzh.platform.storage.internal.infra.StoragePolicyRepository;
 import com.yoyuzh.platform.storage.internal.application.StoragePolicyService;
@@ -38,6 +40,8 @@ class RuntimeStoragePolicyAdminApiTest {
     private FileEntityRepository fileEntityRepository;
     @Mock
     private StoredFileEntityRepository storedFileEntityRepository;
+    @Mock
+    private StoragePolicyBlobAccessApi storagePolicyBlobAccessApi;
 
     private RuntimeStoragePolicyAdminApi runtimeStoragePolicyAdminApi;
 
@@ -47,7 +51,8 @@ class RuntimeStoragePolicyAdminApiTest {
                 storagePolicyRepository,
                 storagePolicyService,
                 fileEntityRepository,
-                storedFileEntityRepository
+                storedFileEntityRepository,
+                storagePolicyBlobAccessApi
         );
     }
 
@@ -153,6 +158,77 @@ class RuntimeStoragePolicyAdminApiTest {
         assertThat(candidate.candidateEntityCount()).isEqualTo(5L);
         assertThat(candidate.candidateStoredFileCount()).isEqualTo(8L);
         assertThat(candidate.entityType()).isEqualTo("VERSION");
+    }
+
+    @Test
+    void shouldRejectRelativeLocalStorageRoot() {
+        assertThatThrownBy(() -> runtimeStoragePolicyAdminApi.createStoragePolicyAsAdmin(new StoragePolicyAdminUpsertCommand(
+                "Archive Local",
+                StoragePolicyType.LOCAL,
+                null,
+                null,
+                null,
+                true,
+                "archive",
+                StoragePolicyCredentialMode.NONE,
+                40960L,
+                new StoragePolicyCapabilities(
+                        false,
+                        false,
+                        false,
+                        true,
+                        false,
+                        true,
+                        false,
+                        false,
+                        40960L
+                ),
+                true
+        )))
+                .isInstanceOf(com.yoyuzh.shared.kernel.BusinessException.class)
+                .hasMessageContaining("绝对路径根目录");
+    }
+
+    @Test
+    void shouldAcceptAbsoluteLocalStorageRoot() {
+        StoragePolicy savedPolicy = createPolicy(5L, "Archive Local");
+        savedPolicy.setType(StoragePolicyType.LOCAL);
+        savedPolicy.setBucketName(null);
+        savedPolicy.setEndpoint(null);
+        savedPolicy.setRegion(null);
+        savedPolicy.setPrefix("/srv/my-site/archive");
+        savedPolicy.setCredentialMode(StoragePolicyCredentialMode.NONE);
+        var capabilities = new StoragePolicyCapabilities(
+                false,
+                false,
+                false,
+                true,
+                false,
+                true,
+                false,
+                false,
+                40960L
+        );
+        when(storagePolicyService.writeCapabilities(any(StoragePolicyCapabilities.class))).thenReturn("{\"maxObjectSize\":40960}");
+        when(storagePolicyRepository.save(any(StoragePolicy.class))).thenReturn(savedPolicy);
+        when(storagePolicyService.readCapabilities(savedPolicy)).thenReturn(capabilities);
+
+        StoragePolicyAdminView response = runtimeStoragePolicyAdminApi.createStoragePolicyAsAdmin(new StoragePolicyAdminUpsertCommand(
+                "Archive Local",
+                StoragePolicyType.LOCAL,
+                null,
+                null,
+                null,
+                true,
+                "/srv/my-site/archive",
+                StoragePolicyCredentialMode.NONE,
+                40960L,
+                capabilities,
+                true
+        ));
+
+        assertThat(response.type()).isEqualTo(StoragePolicyType.LOCAL);
+        assertThat(response.prefix()).isEqualTo("/srv/my-site/archive");
     }
 
     private StoragePolicy createPolicy(Long id, String name) {

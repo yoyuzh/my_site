@@ -91,9 +91,9 @@ public class AdminStorageGovernanceService {
         state.put("candidateEntityCount", candidate.candidateEntityCount());
         state.put("candidateStoredFileCount", candidate.candidateStoredFileCount());
         state.put("migrationPerformed", false);
-        state.put("migrationMode", "skeleton");
+        state.put("migrationMode", "queued");
         state.put("entityType", candidate.entityType());
-        state.put("message", "storage policy migration skeleton queued; worker will validate and recount candidates without moving object data");
+        state.put("message", "storage policy migration queued; worker will move object data between the selected source and target storage policies");
 
         Map<String, Object> privateState = new LinkedHashMap<>(state);
         privateState.put("taskType", BackgroundTaskType.STORAGE_POLICY_MIGRATION.name());

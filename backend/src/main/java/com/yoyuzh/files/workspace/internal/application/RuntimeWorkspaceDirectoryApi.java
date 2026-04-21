@@ -20,10 +20,16 @@ public final class RuntimeWorkspaceDirectoryApi implements WorkspaceDirectoryApi
     private final WorkspacePathPolicy workspacePathPolicy;
 
     public RuntimeWorkspaceDirectoryApi(StoredFileRepository storedFileRepository,
-                                        FileContentStorage fileContentStorage) {
+                                        FileContentStorage fileContentStorage,
+                                        WorkspacePathPolicy workspacePathPolicy) {
         this.storedFileRepository = storedFileRepository;
         this.fileContentStorage = fileContentStorage;
-        this.workspacePathPolicy = new RuntimeWorkspacePathPolicy(storedFileRepository, fileContentStorage);
+        this.workspacePathPolicy = workspacePathPolicy;
+    }
+
+    public RuntimeWorkspaceDirectoryApi(StoredFileRepository storedFileRepository,
+                                        FileContentStorage fileContentStorage) {
+        this(storedFileRepository, fileContentStorage, new RuntimeWorkspacePathPolicy(storedFileRepository, fileContentStorage));
     }
 
     @Override

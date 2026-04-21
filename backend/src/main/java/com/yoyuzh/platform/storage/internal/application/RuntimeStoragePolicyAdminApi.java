@@ -9,6 +9,7 @@ import com.yoyuzh.platform.storage.api.StoragePolicyAdminApi;
 import com.yoyuzh.platform.storage.api.StoragePolicyAdminUpsertCommand;
 import com.yoyuzh.platform.storage.api.StoragePolicyAdminView;
 import com.yoyuzh.platform.storage.api.StoragePolicyCapabilities;
+import com.yoyuzh.platform.storage.api.StoragePolicyBlobAccessApi;
 import com.yoyuzh.platform.storage.api.StoragePolicyCredentialMode;
 import com.yoyuzh.platform.storage.api.StoragePolicyMigrationCandidate;
 import com.yoyuzh.platform.storage.api.StoragePolicyType;
@@ -20,6 +21,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
+import java.nio.file.InvalidPathException;
+import java.nio.file.Path;
 import java.util.List;
 
 @Service
@@ -30,6 +33,7 @@ public class RuntimeStoragePolicyAdminApi implements StoragePolicyAdminApi {
     private final StoragePolicyService storagePolicyService;
     private final FileEntityRepository fileEntityRepository;
     private final StoredFileEntityRepository storedFileEntityRepository;
+    private final StoragePolicyBlobAccessApi storagePolicyBlobAccessApi;
 
     @Override
     @Transactional(readOnly = true)
@@ -73,7 +77,7 @@ public class RuntimeStoragePolicyAdminApi implements StoragePolicyAdminApi {
     public StoragePolicyAdminView updateStoragePolicyStatusAsAdmin(Long policyId, boolean enabled) {
         StoragePolicy policy = getRequiredStoragePolicy(policyId);
         if (policy.isDefaultPolicy() && !enabled) {
-            throw new BusinessException(ErrorCode.UNKNOWN, "姒涙顓荤€涙ê鍋嶇粵鏍殣娑撳秷鍏橀崑婊呮暏");
+            throw new BusinessException(ErrorCode.UNKNOWN, "默认存储策略不能被禁用");
         }
         policy.setEnabled(enabled);
         StoragePolicy savedPolicy = storagePolicyRepository.save(policy);
@@ -85,12 +89,10 @@ public class RuntimeStoragePolicyAdminApi implements StoragePolicyAdminApi {
     public StoragePolicyMigrationCandidate buildStoragePolicyMigrationCandidate(Long sourcePolicyId, Long targetPolicyId) {
         StoragePolicy sourcePolicy = getRequiredStoragePolicy(sourcePolicyId);
         StoragePolicy targetPolicy = getRequiredStoragePolicy(targetPolicyId);
-        if (sourcePolicy.getId().equals(targetPolicy.getId())) {
-            throw new BusinessException(ErrorCode.UNKNOWN, "濠ф劕鐡ㄩ崒銊х摜閻ｃ儱鎷伴惄顔界垼鐎涙ê鍋嶇粵鏍殣娑撳秷鍏橀惄绋挎倱");
-        }
-        if (!targetPolicy.isEnabled()) {
-            throw new BusinessException(ErrorCode.UNKNOWN, "target storage policy must be enabled");
-        }
+        storagePolicyBlobAccessApi.validateMigration(
+                storagePolicyService.readPolicyDescriptor(sourcePolicy.getId()),
+                storagePolicyService.readPolicyDescriptor(targetPolicy.getId())
+        );
         long candidateEntityCount = fileEntityRepository.countByStoragePolicyIdAndEntityType(
                 sourcePolicy.getId(),
                 FileEntityType.VERSION
@@ -117,7 +119,7 @@ public class RuntimeStoragePolicyAdminApi implements StoragePolicyAdminApi {
 
     private void applyStoragePolicyUpsert(StoragePolicy policy, StoragePolicyAdminUpsertCommand command) {
         if (policy.isDefaultPolicy() && !command.enabled()) {
-            throw new BusinessException(ErrorCode.UNKNOWN, "姒涙顓荤€涙ê鍋嶇粵鏍殣娑撳秷鍏橀崑婊呮暏");
+            throw new BusinessException(ErrorCode.UNKNOWN, "默认存储策略不能被禁用");
         }
         validateStoragePolicyCommand(command);
         policy.setName(command.name().trim());
@@ -134,13 +136,28 @@ public class RuntimeStoragePolicyAdminApi implements StoragePolicyAdminApi {
     }
 
     private void validateStoragePolicyCommand(StoragePolicyAdminUpsertCommand command) {
-        if (command.type() == StoragePolicyType.LOCAL
-                && command.credentialMode() != StoragePolicyCredentialMode.NONE) {
-            throw new BusinessException(ErrorCode.UNKNOWN, "閺堫剙婀寸€涙ê鍋嶇粵鏍殣韫囧懘銆忔担璺ㄦ暏 NONE 閸戭叀鐦夊Ο鈥崇础");
+        if (command.type() == StoragePolicyType.LOCAL) {
+            if (command.credentialMode() != StoragePolicyCredentialMode.NONE) {
+                throw new BusinessException(ErrorCode.UNKNOWN, "本地存储策略的凭证模式必须为 NONE");
+            }
+            validateLocalStorageRoot(command.prefix());
         }
         if (command.type() == StoragePolicyType.S3_COMPATIBLE
                 && !StringUtils.hasText(command.bucketName())) {
-            throw new BusinessException(ErrorCode.UNKNOWN, "S3 鐎涙ê鍋嶇粵鏍殣韫囧懘銆忛幓鎰返 bucketName");
+            throw new BusinessException(ErrorCode.UNKNOWN, "S3 存储策略必须配置 bucketName");
+        }
+    }
+
+    private void validateLocalStorageRoot(String prefix) {
+        if (!StringUtils.hasText(prefix)) {
+            throw new BusinessException(ErrorCode.UNKNOWN, "本地存储策略必须配置绝对路径根目录");
+        }
+        try {
+            if (!Path.of(prefix.trim()).isAbsolute()) {
+                throw new BusinessException(ErrorCode.UNKNOWN, "本地存储策略必须配置绝对路径根目录");
+            }
+        } catch (InvalidPathException ex) {
+            throw new BusinessException(ErrorCode.UNKNOWN, "本地存储策略根目录不合法");
         }
     }
 

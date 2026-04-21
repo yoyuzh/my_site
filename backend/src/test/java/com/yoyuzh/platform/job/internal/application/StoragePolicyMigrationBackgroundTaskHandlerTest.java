@@ -12,10 +12,11 @@ import com.yoyuzh.files.content.internal.infra.FileBlobRepository;
 import com.yoyuzh.files.content.internal.domain.FileEntityType;
 import com.yoyuzh.files.content.internal.infra.FileEntityRepository;
 import com.yoyuzh.files.workspace.internal.infra.StoredFileRepository;
+import com.yoyuzh.platform.storage.api.StoragePolicyBlobAccessApi;
+import com.yoyuzh.platform.storage.api.StoragePolicyCredentialMode;
 import com.yoyuzh.platform.storage.api.StoragePolicyDescriptor;
 import com.yoyuzh.platform.storage.api.StoragePolicyQuery;
 import com.yoyuzh.platform.storage.api.StoragePolicyType;
-import com.yoyuzh.files.storage.FileContentStorage;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -46,7 +47,7 @@ class StoragePolicyMigrationBackgroundTaskHandlerTest {
     @Mock
     private StoredFileRepository storedFileRepository;
     @Mock
-    private FileContentStorage fileContentStorage;
+    private StoragePolicyBlobAccessApi storagePolicyBlobAccessApi;
 
     private StoragePolicyMigrationBackgroundTaskHandler handler;
 
@@ -57,7 +58,7 @@ class StoragePolicyMigrationBackgroundTaskHandlerTest {
                 fileEntityRepository,
                 fileBlobRepository,
                 storedFileRepository,
-                fileContentStorage,
+                storagePolicyBlobAccessApi,
                 new BackgroundTaskStateManager(new ObjectMapper())
         );
     }
@@ -85,7 +86,7 @@ class StoragePolicyMigrationBackgroundTaskHandlerTest {
         when(storedFileRepository.countByBlobId(30L)).thenReturn(2L);
         when(fileEntityRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
         when(fileBlobRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
-        when(fileContentStorage.readBlob("blobs/source-1")).thenReturn("payload".getBytes());
+        when(storagePolicyBlobAccessApi.readBlob(sourcePolicy, "blobs/source-1")).thenReturn("payload".getBytes());
 
         BackgroundTask task = new BackgroundTask();
         task.setId(11L);
@@ -111,7 +112,7 @@ class StoragePolicyMigrationBackgroundTaskHandlerTest {
         assertThat(entity.getStoragePolicyId()).isEqualTo(4L);
         assertThat(entity.getObjectKey()).startsWith("policies/4/blobs/");
         assertThat(blob.getObjectKey()).startsWith("policies/4/blobs/");
-        verify(fileContentStorage).storeBlob(startsWith("policies/4/blobs/"), eq("video/mp4"), any());
+        verify(storagePolicyBlobAccessApi).storeBlob(eq(targetPolicy), startsWith("policies/4/blobs/"), eq("video/mp4"), any());
     }
 
     @Test
@@ -135,8 +136,9 @@ class StoragePolicyMigrationBackgroundTaskHandlerTest {
         when(fileEntityRepository.findByStoragePolicyIdAndEntityTypeOrderByIdAsc(3L, FileEntityType.VERSION)).thenReturn(List.of(entity));
         when(fileBlobRepository.findByObjectKey("blobs/source-1")).thenReturn(Optional.of(blob));
         when(storedFileRepository.countByBlobId(30L)).thenReturn(2L);
-        when(fileContentStorage.readBlob("blobs/source-1")).thenReturn("payload".getBytes());
-        doThrow(new IllegalStateException("store failed")).when(fileContentStorage).storeBlob(startsWith("policies/4/blobs/"), eq("video/mp4"), any());
+        when(storagePolicyBlobAccessApi.readBlob(sourcePolicy, "blobs/source-1")).thenReturn("payload".getBytes());
+        doThrow(new IllegalStateException("store failed")).when(storagePolicyBlobAccessApi)
+                .storeBlob(eq(targetPolicy), startsWith("policies/4/blobs/"), eq("video/mp4"), any());
 
         BackgroundTask task = new BackgroundTask();
         task.setId(11L);
@@ -151,7 +153,7 @@ class StoragePolicyMigrationBackgroundTaskHandlerTest {
         assertThatThrownBy(() -> handler.handle(task))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("store failed");
-        verify(fileContentStorage).deleteBlob(startsWith("policies/4/blobs/"));
+        verify(storagePolicyBlobAccessApi).deleteBlob(eq(targetPolicy), startsWith("policies/4/blobs/"));
     }
 
     private StoragePolicyDescriptor createPolicy(Long id, String name) {
@@ -159,6 +161,12 @@ class StoragePolicyMigrationBackgroundTaskHandlerTest {
                 id,
                 name,
                 StoragePolicyType.LOCAL,
+                null,
+                null,
+                null,
+                true,
+                "/tmp/storage-" + id,
+                StoragePolicyCredentialMode.NONE,
                 true,
                 0L
         );

@@ -3,7 +3,6 @@ package com.yoyuzh.files.workspace.internal.application;
 import com.yoyuzh.files.workspace.internal.application.*;
 import com.yoyuzh.files.workspace.internal.domain.*;
 import com.yoyuzh.files.workspace.internal.infra.*;
-import com.yoyuzh.files.workspace.internal.web.*;
 import com.yoyuzh.files.content.internal.application.*;
 import com.yoyuzh.files.content.internal.domain.*;
 import com.yoyuzh.files.content.internal.infra.*;
@@ -11,17 +10,20 @@ import com.yoyuzh.files.content.internal.infra.*;
 import com.yoyuzh.ops.admin.internal.application.AdminMetricsService;
 import com.yoyuzh.identity.access.internal.domain.User;
 import com.yoyuzh.shared.kernel.BusinessException;
-import com.yoyuzh.platform.storage.internal.infra.FileStorageProperties;
 import com.yoyuzh.platform.storage.api.StoragePolicyCapabilities;
 import com.yoyuzh.platform.storage.api.StoragePolicyQuery;
 import com.yoyuzh.platform.storage.api.DefaultStoragePolicySnapshot;
-import com.yoyuzh.platform.job.internal.application.MediaMetadataTaskBrokerPublisher;
+import com.yoyuzh.platform.job.api.BackgroundTaskLifecycleApi;
 import com.yoyuzh.files.upload.CompleteUploadRequest;
 import com.yoyuzh.files.upload.InitiateUploadRequest;
 import com.yoyuzh.files.upload.InitiateUploadResponse;
 import com.yoyuzh.files.storage.FileContentStorage;
 import com.yoyuzh.files.storage.PreparedUpload;
+import com.yoyuzh.files.workspace.api.DownloadUrlResponse;
 import com.yoyuzh.files.workspace.api.FileMetadataResponse;
+import com.yoyuzh.files.workspace.api.WorkspaceDownloadOptions;
+import com.yoyuzh.files.workspace.api.WorkspaceDownloadResult;
+import com.yoyuzh.platform.storage.internal.infra.FileStorageProperties;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -32,7 +34,6 @@ import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
-import org.springframework.http.ResponseEntity;
 import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.test.util.ReflectionTestUtils;
 
@@ -88,7 +89,7 @@ class FileServiceTest {
     @Mock
     private StoragePolicyQuery storagePolicyQuery;
     @Mock
-    private MediaMetadataTaskBrokerPublisher mediaMetadataTaskBrokerPublisher;
+    private BackgroundTaskLifecycleApi backgroundTaskLifecycleApi;
 
     private FileService fileService;
 
@@ -101,7 +102,8 @@ class FileServiceTest {
                 fileBlobRepository,
                 fileContentStorage,
                 adminMetricsService,
-                properties
+                toDownloadOptions(properties),
+                properties.getMaxFileSize()
         );
     }
 
@@ -136,7 +138,7 @@ class FileServiceTest {
 
     @Test
     void shouldPublishMediaMetadataTriggerWhenSavingImageFile() {
-        ReflectionTestUtils.setField(fileService, "mediaMetadataTaskBrokerPublisher", mediaMetadataTaskBrokerPublisher);
+        ReflectionTestUtils.setField(fileService, "backgroundTaskLifecycleApi", backgroundTaskLifecycleApi);
         User user = createUser(7L);
         MockMultipartFile multipartFile = new MockMultipartFile(
                 "file", "photo.png", "image/png", "hello".getBytes());
@@ -154,11 +156,7 @@ class FileServiceTest {
 
         fileService.upload(user, "/docs", multipartFile);
 
-        verify(mediaMetadataTaskBrokerPublisher).publishAfterCommit(org.mockito.ArgumentMatchers.argThat(file ->
-                file != null
-                        && file.getId().equals(10L)
-                        && "image/png".equals(file.getContentType())
-                        && "photo.png".equals(file.getFilename())));
+        verify(backgroundTaskLifecycleApi).createQueuedAutoMediaMetadataTask(7L, 10L, null);
     }
 
     @Test
@@ -200,9 +198,10 @@ class FileServiceTest {
                 fileEntityRepository,
                 storedFileEntityRepository,
                 fileContentStorage,
-                adminMetricsService,
                 storagePolicyQuery,
-                new FileStorageProperties()
+                adminMetricsService,
+                WorkspaceDownloadOptions.disabled(),
+                new FileStorageProperties().getMaxFileSize()
         );
         User user = createUser(7L);
         MockMultipartFile multipartFile = new MockMultipartFile(
@@ -287,9 +286,10 @@ class FileServiceTest {
                 fileEntityRepository,
                 storedFileEntityRepository,
                 fileContentStorage,
-                adminMetricsService,
                 storagePolicyQuery,
-                new FileStorageProperties()
+                adminMetricsService,
+                WorkspaceDownloadOptions.disabled(),
+                new FileStorageProperties().getMaxFileSize()
         );
         User user = createUser(7L);
         when(storedFileRepository.existsByUserIdAndPathAndFilename(7L, "/docs", "notes.txt")).thenReturn(false);
@@ -689,6 +689,7 @@ class FileServiceTest {
         DownloadUrlResponse response = fileService.getDownloadUrl(user, 22L);
 
         assertThat(response.url()).isEqualTo("https://download.example.com/file");
+        verify(adminMetricsService, never()).recordDownloadTraffic(anyLong());
     }
 
     @Test
@@ -718,7 +719,8 @@ class FileServiceTest {
                 fileBlobRepository,
                 fileContentStorage,
                 adminMetricsService,
-                properties,
+                toDownloadOptions(properties),
+                properties.getMaxFileSize(),
                 Clock.fixed(Instant.parse("2026-04-04T04:30:00Z"), ZoneOffset.UTC)
         );
 
@@ -752,7 +754,8 @@ class FileServiceTest {
                 fileBlobRepository,
                 fileContentStorage,
                 adminMetricsService,
-                properties,
+                toDownloadOptions(properties),
+                properties.getMaxFileSize(),
                 Clock.fixed(Instant.parse("2026-04-04T04:30:00Z"), ZoneOffset.UTC)
         );
 
@@ -762,15 +765,16 @@ class FileServiceTest {
         when(storedFileRepository.findDetailedById(22L)).thenReturn(Optional.of(file));
         when(fileContentStorage.supportsDirectDownload()).thenReturn(true);
 
-        ResponseEntity<?> response = fileService.download(user, 22L);
+        WorkspaceDownloadResult response = fileService.download(user, 22L);
 
-        assertThat(response.getStatusCode().value()).isEqualTo(302);
-        assertThat(response.getHeaders().getLocation()).isNotNull();
-        assertThat(response.getHeaders().getLocation().getHost()).isEqualTo("api.yoyuzh.xyz");
-        assertThat(response.getHeaders().getLocation().getPath()).isEqualTo("/_dl/blobs/blob-22");
-        assertThat(response.getHeaders().getLocation().getQuery()).contains("expires=1775277300");
-        assertThat(response.getHeaders().getLocation().getQuery()).contains("md5=1z0AP88pnPz-TpgnYfIT4A");
+        assertThat(response.redirect()).isTrue();
+        URI uri = URI.create(response.redirectUrl());
+        assertThat(uri.getHost()).isEqualTo("api.yoyuzh.xyz");
+        assertThat(uri.getPath()).isEqualTo("/_dl/blobs/blob-22");
+        assertThat(uri.getQuery()).contains("expires=1775277300");
+        assertThat(uri.getQuery()).contains("md5=1z0AP88pnPz-TpgnYfIT4A");
         verify(fileContentStorage, never()).createBlobDownloadUrl(any(), any());
+        verify(adminMetricsService).recordDownloadTraffic(5L);
     }
 
     @Test
@@ -802,16 +806,15 @@ class FileServiceTest {
         when(fileContentStorage.readBlob("blobs/blob-13"))
                 .thenReturn("world".getBytes(StandardCharsets.UTF_8));
 
-        var response = fileService.download(user, 10L);
+        WorkspaceDownloadResult response = fileService.download(user, 10L);
 
-        assertThat(response.getHeaders().getFirst(HttpHeaders.CONTENT_DISPOSITION))
-                .contains("archive.zip");
-        assertThat(response.getHeaders().getContentType())
-                .isEqualTo(MediaType.parseMediaType("application/zip"));
+        assertThat(response.redirect()).isFalse();
+        assertThat(response.filename()).isEqualTo("archive.zip");
+        assertThat(response.contentType()).isEqualTo("application/zip");
 
         Map<String, String> entries = new LinkedHashMap<>();
         try (ZipInputStream zipInputStream = new ZipInputStream(
-                new ByteArrayInputStream((byte[]) response.getBody()), StandardCharsets.UTF_8)) {
+                new ByteArrayInputStream(response.body()), StandardCharsets.UTF_8)) {
             var entry = zipInputStream.getNextEntry();
             while (entry != null) {
                 entries.put(entry.getName(), entry.isDirectory() ? "" : new String(zipInputStream.readAllBytes(), StandardCharsets.UTF_8));
@@ -825,6 +828,7 @@ class FileServiceTest {
         assertThat(entries).containsEntry("archive/nested/todo.txt", "world");
         verify(fileContentStorage).readBlob("blobs/blob-12");
         verify(fileContentStorage).readBlob("blobs/blob-13");
+        verify(adminMetricsService).recordDownloadTraffic((long) response.body().length);
     }
 
     @Test
@@ -1068,6 +1072,14 @@ class FileServiceTest {
             zipOutputStream.finish();
             return outputStream.toByteArray();
         }
+    }
+
+    private WorkspaceDownloadOptions toDownloadOptions(FileStorageProperties properties) {
+        return new WorkspaceDownloadOptions(
+                properties.getS3().getPackageDownloadBaseUrl(),
+                properties.getS3().getPackageDownloadSecret(),
+                properties.getS3().getPackageDownloadTtlSeconds()
+        );
     }
 
 }

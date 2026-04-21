@@ -38,7 +38,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
-public class S3FileContentStorage implements FileContentStorage {
+public class S3FileContentStorage implements FileContentStorage, AutoCloseable {
 
     private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
 
@@ -65,6 +65,11 @@ public class S3FileContentStorage implements FileContentStorage {
     S3FileContentStorage(FileStorageProperties storageProperties, S3SessionProvider sessionProvider) {
         this.properties = storageProperties.getS3();
         this.sessionProvider = sessionProvider;
+    }
+
+    @Override
+    public void close() {
+        sessionProvider.close();
     }
 
     @Override

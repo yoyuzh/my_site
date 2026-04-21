@@ -16,11 +16,16 @@ import com.yoyuzh.files.sharing.api.SharingApi;
 import com.yoyuzh.files.upload.CompleteUploadRequest;
 import com.yoyuzh.files.upload.InitiateUploadRequest;
 import com.yoyuzh.files.upload.InitiateUploadResponse;
+import com.yoyuzh.files.workspace.api.DownloadUrlResponse;
 import com.yoyuzh.files.workspace.api.FileMetadataResponse;
+import com.yoyuzh.files.workspace.api.RecycleBinItemResponse;
+import com.yoyuzh.files.workspace.api.WorkspaceDownloadResult;
 import com.yoyuzh.files.workspace.internal.application.FileService;
 import io.swagger.v3.oas.annotations.Operation;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.core.userdetails.UserDetails;
@@ -114,7 +119,18 @@ public class FileController {
     @GetMapping("/download/{fileId}")
     public ResponseEntity<?> download(@AuthenticationPrincipal UserDetails userDetails,
                                       @PathVariable Long fileId) {
-        return fileService.download(userDetailsService.loadDomainUser(userDetails.getUsername()), fileId);
+        WorkspaceDownloadResult result = fileService.download(
+                userDetailsService.loadDomainUser(userDetails.getUsername()),
+                fileId
+        );
+        if (result.redirect()) {
+            return ResponseEntity.status(302).header(HttpHeaders.LOCATION, result.redirectUrl()).build();
+        }
+        return ResponseEntity.ok()
+                .header(HttpHeaders.CONTENT_DISPOSITION,
+                        "attachment; filename*=UTF-8''" + java.net.URLEncoder.encode(result.filename(), java.nio.charset.StandardCharsets.UTF_8))
+                .contentType(MediaType.parseMediaType(result.contentType()))
+                .body(result.body());
     }
 
     @Operation(summary = "获取下载链接")
@@ -189,7 +205,7 @@ public class FileController {
         try {
             ShareV2Response response = sharingApi.getShare(token);
             if (response.file() == null) {
-                throw new BusinessException(ErrorCode.PERMISSION_DENIED, "璇ュ垎浜摼鎺ラ渶瑕侀獙璇佸瘑鐮?");
+                throw new BusinessException(ErrorCode.PERMISSION_DENIED, "该分享链接需要先验证提取码");
             }
             return ApiResponse.success(new FileShareDetailsResponse(
                     response.token(),

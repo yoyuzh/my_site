@@ -18,9 +18,14 @@ public final class RuntimeWorkspaceMutationApi implements WorkspaceMutationApi {
     private final WorkspacePathPolicy workspacePathPolicy;
 
     public RuntimeWorkspaceMutationApi(StoredFileRepository storedFileRepository,
-                                       FileContentStorage fileContentStorage) {
+                                       WorkspacePathPolicy workspacePathPolicy) {
         this.storedFileRepository = storedFileRepository;
-        this.workspacePathPolicy = new RuntimeWorkspacePathPolicy(storedFileRepository, fileContentStorage);
+        this.workspacePathPolicy = workspacePathPolicy;
+    }
+
+    public RuntimeWorkspaceMutationApi(StoredFileRepository storedFileRepository,
+                                       FileContentStorage fileContentStorage) {
+        this(storedFileRepository, new RuntimeWorkspacePathPolicy(storedFileRepository, fileContentStorage));
     }
 
     @Override

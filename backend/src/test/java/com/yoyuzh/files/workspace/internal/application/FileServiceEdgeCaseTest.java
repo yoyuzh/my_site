@@ -3,7 +3,6 @@ package com.yoyuzh.files.workspace.internal.application;
 import com.yoyuzh.files.workspace.internal.application.*;
 import com.yoyuzh.files.workspace.internal.domain.*;
 import com.yoyuzh.files.workspace.internal.infra.*;
-import com.yoyuzh.files.workspace.internal.web.*;
 import com.yoyuzh.files.content.internal.application.*;
 import com.yoyuzh.files.content.internal.domain.*;
 import com.yoyuzh.files.content.internal.infra.*;
@@ -11,6 +10,8 @@ import com.yoyuzh.files.content.internal.infra.*;
 import com.yoyuzh.ops.admin.internal.application.AdminMetricsService;
 import com.yoyuzh.identity.access.internal.domain.User;
 import com.yoyuzh.shared.kernel.BusinessException;
+import com.yoyuzh.files.workspace.api.WorkspaceDownloadOptions;
+import com.yoyuzh.files.workspace.api.WorkspaceDownloadResult;
 import com.yoyuzh.platform.storage.internal.infra.FileStorageProperties;
 import com.yoyuzh.files.upload.InitiateUploadRequest;
 import com.yoyuzh.files.storage.FileContentStorage;
@@ -59,7 +60,8 @@ class FileServiceEdgeCaseTest {
                 fileBlobRepository,
                 fileContentStorage,
                 adminMetricsService,
-                properties
+                new WorkspaceDownloadOptions(null, null, 300L),
+                properties.getMaxFileSize()
         );
     }
 
@@ -155,11 +157,11 @@ class FileServiceEdgeCaseTest {
         when(fileContentStorage.createBlobDownloadUrl("blobs/blob-10", "notes.txt"))
                 .thenReturn("https://cdn.example.com/notes.txt");
 
-        ResponseEntity<?> response = fileService.download(user, 10L);
+        WorkspaceDownloadResult response = fileService.download(user, 10L);
 
-        assertThat(response.getStatusCodeValue()).isEqualTo(302);
-        assertThat(response.getHeaders().getFirst(HttpHeaders.LOCATION))
-                .isEqualTo("https://cdn.example.com/notes.txt");
+        assertThat(response.redirect()).isTrue();
+        assertThat(response.redirectUrl()).isEqualTo("https://cdn.example.com/notes.txt");
+        verify(adminMetricsService).recordDownloadTraffic(5L);
     }
 
     // --- getDownloadUrl edge cases ---

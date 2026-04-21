@@ -33,12 +33,24 @@ public final class RuntimeWorkspaceLifecycleApi implements WorkspaceLifecycleApi
     private final WorkspaceNodeRulesService workspaceNodeRulesService;
 
     public RuntimeWorkspaceLifecycleApi(StoredFileRepository storedFileRepository,
-                                        FileContentStorage fileContentStorage,
-                                        ContentDuplicationApi contentDuplicationApi) {
+                                        ContentDuplicationApi contentDuplicationApi,
+                                        WorkspacePathPolicy workspacePathPolicy,
+                                        WorkspaceNodeRulesService workspaceNodeRulesService) {
         this.storedFileRepository = storedFileRepository;
         this.contentDuplicationApi = contentDuplicationApi;
-        this.workspacePathPolicy = new RuntimeWorkspacePathPolicy(storedFileRepository, fileContentStorage);
-        this.workspaceNodeRulesService = new WorkspaceNodeRulesService(storedFileRepository, fileContentStorage);
+        this.workspacePathPolicy = workspacePathPolicy;
+        this.workspaceNodeRulesService = workspaceNodeRulesService;
+    }
+
+    public RuntimeWorkspaceLifecycleApi(StoredFileRepository storedFileRepository,
+                                        FileContentStorage fileContentStorage,
+                                        ContentDuplicationApi contentDuplicationApi) {
+        this(
+                storedFileRepository,
+                contentDuplicationApi,
+                new RuntimeWorkspacePathPolicy(storedFileRepository, fileContentStorage),
+                new WorkspaceNodeRulesService(storedFileRepository, fileContentStorage)
+        );
     }
 
     @Override

@@ -16,7 +16,10 @@ public final class WorkspaceNodeRulesService {
 
     public WorkspaceNodeRulesService(StoredFileRepository storedFileRepository,
                                      FileContentStorage fileContentStorage) {
-        RuntimeWorkspacePathPolicy runtimeWorkspacePathPolicy = new RuntimeWorkspacePathPolicy(storedFileRepository, fileContentStorage);
+        this(new RuntimeWorkspacePathPolicy(storedFileRepository, fileContentStorage));
+    }
+
+    public WorkspaceNodeRulesService(RuntimeWorkspacePathPolicy runtimeWorkspacePathPolicy) {
         this.workspacePathPolicy = runtimeWorkspacePathPolicy;
         this.recycleRestorePolicy = runtimeWorkspacePathPolicy;
     }

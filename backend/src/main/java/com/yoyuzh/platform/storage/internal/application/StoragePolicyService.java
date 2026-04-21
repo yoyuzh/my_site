@@ -66,6 +66,12 @@ public class StoragePolicyService implements CommandLineRunner, StoragePolicyQue
                 policy.getId(),
                 policy.getName(),
                 policy.getType(),
+                policy.getBucketName(),
+                policy.getEndpoint(),
+                policy.getRegion(),
+                policy.isPrivateBucket(),
+                policy.getPrefix(),
+                policy.getCredentialMode(),
                 policy.isEnabled(),
                 policy.getMaxSizeBytes()
         );

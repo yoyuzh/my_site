@@ -15,11 +15,8 @@ import com.yoyuzh.files.content.internal.infra.FileEntityRepository;
 import com.yoyuzh.files.content.internal.domain.FileEntityType;
 import com.yoyuzh.files.workspace.internal.infra.StoredFileRepository;
 import com.yoyuzh.platform.storage.api.StoragePolicyDescriptor;
+import com.yoyuzh.platform.storage.api.StoragePolicyBlobAccessApi;
 import com.yoyuzh.platform.storage.api.StoragePolicyQuery;
-import com.yoyuzh.platform.storage.api.StoragePolicyType;
-import com.yoyuzh.files.storage.FileContentStorage;
-import com.yoyuzh.files.storage.LocalFileContentStorage;
-import com.yoyuzh.files.storage.S3FileContentStorage;
 import jakarta.transaction.Transactional;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.support.TransactionSynchronization;
@@ -42,20 +39,20 @@ public class StoragePolicyMigrationBackgroundTaskHandler implements BackgroundTa
     private final FileEntityRepository fileEntityRepository;
     private final FileBlobRepository fileBlobRepository;
     private final StoredFileRepository storedFileRepository;
-    private final FileContentStorage fileContentStorage;
+    private final StoragePolicyBlobAccessApi storagePolicyBlobAccessApi;
     private final BackgroundTaskStateManager stateManager;
 
     public StoragePolicyMigrationBackgroundTaskHandler(StoragePolicyQuery storagePolicyQuery,
                                                        FileEntityRepository fileEntityRepository,
                                                        FileBlobRepository fileBlobRepository,
                                                        StoredFileRepository storedFileRepository,
-                                                       FileContentStorage fileContentStorage,
+                                                       StoragePolicyBlobAccessApi storagePolicyBlobAccessApi,
                                                        BackgroundTaskStateManager stateManager) {
         this.storagePolicyQuery = storagePolicyQuery;
         this.fileEntityRepository = fileEntityRepository;
         this.fileBlobRepository = fileBlobRepository;
         this.storedFileRepository = storedFileRepository;
-        this.fileContentStorage = fileContentStorage;
+        this.storagePolicyBlobAccessApi = storagePolicyBlobAccessApi;
         this.stateManager = stateManager;
     }
 
@@ -117,9 +114,9 @@ public class StoragePolicyMigrationBackgroundTaskHandler implements BackgroundTa
                 String newObjectKey = buildTargetObjectKey(targetPolicy.id());
                 String contentType = StringUtils.hasText(entity.getContentType()) ? entity.getContentType() : blob.getContentType();
 
-                byte[] content = fileContentStorage.readBlob(oldObjectKey);
+                byte[] content = storagePolicyBlobAccessApi.readBlob(sourcePolicy, oldObjectKey);
                 copiedObjectKeys.add(newObjectKey);
-                fileContentStorage.storeBlob(newObjectKey, contentType, content);
+                storagePolicyBlobAccessApi.storeBlob(targetPolicy, newObjectKey, contentType, content);
 
                 entity.setObjectKey(newObjectKey);
                 entity.setStoragePolicyId(targetPolicy.id());
@@ -144,11 +141,11 @@ public class StoragePolicyMigrationBackgroundTaskHandler implements BackgroundTa
                 ));
             }
         } catch (RuntimeException ex) {
-            cleanupCopiedObjects(copiedObjectKeys);
+            cleanupCopiedObjects(targetPolicy, copiedObjectKeys);
             throw ex;
         }
 
-        scheduleStaleObjectCleanup(staleObjectKeys);
+        scheduleStaleObjectCleanup(sourcePolicy, staleObjectKeys);
         return new BackgroundTaskHandlerResult(progressPatch(
                 sourcePolicy,
                 targetPolicy,
@@ -163,30 +160,7 @@ public class StoragePolicyMigrationBackgroundTaskHandler implements BackgroundTa
     }
 
     private void validatePolicyPair(StoragePolicyDescriptor sourcePolicy, StoragePolicyDescriptor targetPolicy) {
-        if (sourcePolicy.id().equals(targetPolicy.id())) {
-            throw new BusinessException(ErrorCode.UNKNOWN, "源存储策略和目标存储策略不能相同");
-        }
-        if (!targetPolicy.enabled()) {
-            throw new BusinessException(ErrorCode.UNKNOWN, "目标存储策略必须处于启用状态");
-        }
-        if (sourcePolicy.type() != targetPolicy.type()) {
-            throw new BusinessException(ErrorCode.UNKNOWN, "当前只支持迁移同类型存储策略");
-        }
-        StoragePolicyType runtimeType = resolveRuntimePolicyType();
-        if (runtimeType != null
-                && (sourcePolicy.type() != runtimeType || targetPolicy.type() != runtimeType)) {
-            throw new BusinessException(ErrorCode.UNKNOWN, "当前运行时只支持迁移同类型活动存储后端的策略");
-        }
-    }
-
-    private StoragePolicyType resolveRuntimePolicyType() {
-        if (fileContentStorage instanceof LocalFileContentStorage) {
-            return StoragePolicyType.LOCAL;
-        }
-        if (fileContentStorage instanceof S3FileContentStorage) {
-            return StoragePolicyType.S3_COMPATIBLE;
-        }
-        return null;
+        storagePolicyBlobAccessApi.validateMigration(sourcePolicy, targetPolicy);
     }
 
     private void validateTargetCapacity(FileEntity entity, StoragePolicyDescriptor targetPolicy) {
@@ -257,7 +231,7 @@ public class StoragePolicyMigrationBackgroundTaskHandler implements BackgroundTa
         return (int) Math.min(100L, Math.floor((processed * 100.0d) / total));
     }
 
-    private void scheduleStaleObjectCleanup(LinkedHashSet<String> staleObjectKeys) {
+    private void scheduleStaleObjectCleanup(StoragePolicyDescriptor sourcePolicy, LinkedHashSet<String> staleObjectKeys) {
         if (staleObjectKeys.isEmpty() || !TransactionSynchronizationManager.isSynchronizationActive()) {
             return;
         }
@@ -266,7 +240,7 @@ public class StoragePolicyMigrationBackgroundTaskHandler implements BackgroundTa
             public void afterCommit() {
                 for (String staleObjectKey : staleObjectKeys) {
                     try {
-                        fileContentStorage.deleteBlob(staleObjectKey);
+                        storagePolicyBlobAccessApi.deleteBlob(sourcePolicy, staleObjectKey);
                     } catch (RuntimeException ignored) {
                         // Database state already committed; leave old object cleanup as best effort.
                     }
@@ -275,10 +249,10 @@ public class StoragePolicyMigrationBackgroundTaskHandler implements BackgroundTa
         });
     }
 
-    private void cleanupCopiedObjects(List<String> copiedObjectKeys) {
+    private void cleanupCopiedObjects(StoragePolicyDescriptor targetPolicy, List<String> copiedObjectKeys) {
         for (String copiedObjectKey : copiedObjectKeys) {
             try {
-                fileContentStorage.deleteBlob(copiedObjectKey);
+                storagePolicyBlobAccessApi.deleteBlob(targetPolicy, copiedObjectKey);
             } catch (RuntimeException ignored) {
                 // Best-effort cleanup while metadata rolls back.
             }

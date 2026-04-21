@@ -3,13 +3,13 @@ package com.yoyuzh.files.workspace.internal.application;
 import com.yoyuzh.files.workspace.internal.application.*;
 import com.yoyuzh.files.workspace.internal.domain.*;
 import com.yoyuzh.files.workspace.internal.infra.*;
-import com.yoyuzh.files.workspace.internal.web.*;
 import com.yoyuzh.files.content.internal.application.*;
 import com.yoyuzh.files.content.internal.domain.*;
 import com.yoyuzh.files.content.internal.infra.*;
 
 import com.yoyuzh.ops.admin.internal.application.AdminMetricsService;
 import com.yoyuzh.identity.access.internal.domain.User;
+import com.yoyuzh.files.workspace.api.WorkspaceDownloadOptions;
 import com.yoyuzh.platform.storage.internal.infra.FileStorageProperties;
 import com.yoyuzh.files.storage.FileContentStorage;
 import org.junit.jupiter.api.BeforeEach;
@@ -50,7 +50,8 @@ class FileServiceUploadStorageNameTest {
                 fileBlobRepository,
                 fileContentStorage,
                 adminMetricsService,
-                properties
+                WorkspaceDownloadOptions.disabled(),
+                properties.getMaxFileSize()
         );
     }
 

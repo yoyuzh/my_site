@@ -41,6 +41,8 @@ import org.springframework.test.web.servlet.MockMvc;
 import java.time.LocalDateTime;
 import java.time.LocalDate;
 import java.time.LocalTime;
+import java.nio.file.Files;
+import java.nio.file.Path;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.greaterThanOrEqualTo;
@@ -682,10 +684,13 @@ class AdminControllerIntegrationTest {
 
     @Test
     void shouldExposeTrafficAndTransferMetricsInSummary() throws Exception {
-        mockMvc.perform(get("/api/files/download/{fileId}/url", storedFile.getId())
+        Path blobPath = Path.of("./target/test-storage-admin/blobs/admin-report");
+        Files.createDirectories(blobPath.getParent());
+        Files.write(blobPath, new byte[1024]);
+
+        mockMvc.perform(get("/api/files/download/{fileId}", storedFile.getId())
                         .with(user("alice").roles("ADMIN")))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.url").value("/api/files/download/" + storedFile.getId()));
+                .andExpect(status().isOk());
 
         mockMvc.perform(post("/api/transfer/sessions")
                         .with(user("alice").roles("ADMIN"))
@@ -1029,17 +1034,13 @@ class AdminControllerIntegrationTest {
         StoragePolicy sourcePolicy = storagePolicyRepository.findFirstByDefaultPolicyTrueOrderByIdAsc().orElseThrow();
 
         StoragePolicy targetPolicy = new StoragePolicy();
-        targetPolicy.setName("Archive Bucket");
-        targetPolicy.setType(StoragePolicyType.S3_COMPATIBLE);
-        targetPolicy.setBucketName("archive-bucket");
-        targetPolicy.setEndpoint("https://s3.example.com");
-        targetPolicy.setRegion("auto");
-        targetPolicy.setPrivateBucket(true);
-        targetPolicy.setPrefix("archive/");
-        targetPolicy.setCredentialMode(com.yoyuzh.platform.storage.api.StoragePolicyCredentialMode.STATIC);
+        targetPolicy.setName("Archive Local");
+        targetPolicy.setType(StoragePolicyType.LOCAL);
+        targetPolicy.setPrefix("/tmp/my-site-storage-policy-archive");
+        targetPolicy.setCredentialMode(com.yoyuzh.platform.storage.api.StoragePolicyCredentialMode.NONE);
         targetPolicy.setMaxSizeBytes(40960L);
         targetPolicy.setCapabilitiesJson("""
-                {"directUpload":true,"multipartUpload":true,"signedDownloadUrl":true,"serverProxyDownload":true,"thumbnailNative":false,"friendlyDownloadName":true,"requiresCors":true,"supportsInternalEndpoint":false,"maxObjectSize":40960}
+                {"directUpload":false,"multipartUpload":false,"signedDownloadUrl":false,"serverProxyDownload":true,"thumbnailNative":false,"friendlyDownloadName":true,"requiresCors":false,"supportsInternalEndpoint":true,"maxObjectSize":40960}
                 """);
         targetPolicy.setEnabled(true);
         targetPolicy.setDefaultPolicy(false);

@@ -24,12 +24,17 @@ import com.yoyuzh.files.upload.InitiateUploadResponse;
 import com.yoyuzh.files.upload.api.UploadCompletionApi;
 import com.yoyuzh.files.upload.api.UploadCompletionCommand;
 import com.yoyuzh.files.upload.internal.application.RuntimeUploadCompletionApi;
+import com.yoyuzh.files.workspace.api.DownloadUrlResponse;
 import com.yoyuzh.files.workspace.api.FileMetadataResponse;
+import com.yoyuzh.files.workspace.api.RecycleBinItemResponse;
 import com.yoyuzh.files.workspace.api.WorkspaceArchiveApi;
 import com.yoyuzh.files.workspace.api.WorkspaceArchiveBuildProgress;
 import com.yoyuzh.files.workspace.api.WorkspaceArchiveBuildProgressListener;
 import com.yoyuzh.files.workspace.api.WorkspaceArchiveSummary;
 import com.yoyuzh.files.workspace.api.WorkspaceBootstrapApi;
+import com.yoyuzh.files.workspace.api.WorkspaceDownloadMetricsPort;
+import com.yoyuzh.files.workspace.api.WorkspaceDownloadOptions;
+import com.yoyuzh.files.workspace.api.WorkspaceDownloadResult;
 import com.yoyuzh.files.workspace.api.WorkspaceDirectoryApi;
 import com.yoyuzh.files.workspace.api.WorkspaceExternalFileImport;
 import com.yoyuzh.files.workspace.api.WorkspaceExternalImportProgress;
@@ -45,26 +50,20 @@ import com.yoyuzh.files.workspace.api.WorkspaceZipArchiveEntry;
 import com.yoyuzh.files.workspace.internal.domain.StoredFile;
 import com.yoyuzh.files.workspace.internal.infra.FileListDirectoryCacheService;
 import com.yoyuzh.files.workspace.internal.infra.StoredFileRepository;
-import com.yoyuzh.files.workspace.internal.web.DownloadUrlResponse;
-import com.yoyuzh.files.workspace.internal.web.RecycleBinItemResponse;
 import com.yoyuzh.identity.access.internal.domain.User;
 import com.yoyuzh.infra.lock.DistributedLockGateway;
-import com.yoyuzh.ops.admin.internal.application.AdminMetricsService;
-import com.yoyuzh.platform.job.internal.application.MediaMetadataTaskBrokerPublisher;
+import com.yoyuzh.platform.job.api.BackgroundTaskLifecycleApi;
 import com.yoyuzh.platform.storage.api.StoragePolicyCapabilities;
 import com.yoyuzh.platform.storage.api.StoragePolicyQuery;
 import com.yoyuzh.platform.storage.api.UploadConstraintPolicy;
-import com.yoyuzh.platform.storage.internal.infra.FileStorageProperties;
 import com.yoyuzh.shared.kernel.BusinessException;
 import com.yoyuzh.shared.kernel.ErrorCode;
 import com.yoyuzh.shared.kernel.PageResponse;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
-import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.scheduling.annotation.Scheduled;
-import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
@@ -73,7 +72,6 @@ import org.springframework.web.multipart.MultipartFile;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
-import java.net.URI;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
@@ -105,7 +103,6 @@ public class FileService implements WorkspaceBootstrapApi, WorkspaceArchiveApi {
     private final FileEntityRepository fileEntityRepository;
     private final StoredFileEntityRepository storedFileEntityRepository;
     private final FileContentStorage fileContentStorage;
-    private final AdminMetricsService adminMetricsService;
     private final StoragePolicyQuery storagePolicyQuery;
     private final UploadConstraintPolicy uploadConstraintPolicy;
     private final long maxFileSize;
@@ -123,14 +120,14 @@ public class FileService implements WorkspaceBootstrapApi, WorkspaceArchiveApi {
     private final ContentRegistrationApi contentRegistrationApi;
     private final UploadCompletionApi uploadCompletionApi;
     private final ContentBlobLifecycleService contentBlobLifecycleService;
+    private final WorkspaceDownloadMetricsPort workspaceDownloadMetricsPort;
+    private final BackgroundTaskLifecycleApi backgroundTaskLifecycleApi;
     @Autowired(required = false)
     private FileEventApi fileEventApi;
     @Autowired(required = false)
     private FileListDirectoryCacheService fileListDirectoryCacheService = FileListDirectoryCacheService.noOp();
     @Autowired(required = false)
     private DistributedLockGateway distributedLockGateway = DistributedLockGateway.noOp();
-    @Autowired(required = false)
-    private MediaMetadataTaskBrokerPublisher mediaMetadataTaskBrokerPublisher;
 
     @Autowired
     public FileService(StoredFileRepository storedFileRepository,
@@ -138,12 +135,43 @@ public class FileService implements WorkspaceBootstrapApi, WorkspaceArchiveApi {
                        FileEntityRepository fileEntityRepository,
                        StoredFileEntityRepository storedFileEntityRepository,
                        FileContentStorage fileContentStorage,
-                       AdminMetricsService adminMetricsService,
                        StoragePolicyQuery storagePolicyQuery,
                        UploadCompletionApi uploadCompletionApi,
-                       FileStorageProperties properties,
-                       UploadConstraintPolicy uploadConstraintPolicy) {
-        this(storedFileRepository, fileBlobRepository, fileEntityRepository, storedFileEntityRepository, fileContentStorage, adminMetricsService, storagePolicyQuery, uploadCompletionApi, properties, uploadConstraintPolicy, Clock.systemUTC());
+                       UploadConstraintPolicy uploadConstraintPolicy,
+                       WorkspaceDownloadOptions workspaceDownloadOptions,
+                       WorkspaceNodeRulesService workspaceNodeRulesService,
+                       WorkspaceDirectoryApi workspaceDirectoryApi,
+                       WorkspaceMutationApi workspaceMutationApi,
+                       WorkspaceLifecycleApi workspaceLifecycleApi,
+                       FileUploadRulesService fileUploadRulesService,
+                       ExternalImportRulesService externalImportRulesService,
+                       ContentAssetApi contentAssetApi,
+                       ContentRegistrationApi contentRegistrationApi,
+                       WorkspaceDownloadMetricsPort workspaceDownloadMetricsPort,
+                       BackgroundTaskLifecycleApi backgroundTaskLifecycleApi) {
+        this(
+                storedFileRepository,
+                fileEntityRepository,
+                storedFileEntityRepository,
+                fileContentStorage,
+                storagePolicyQuery,
+                uploadConstraintPolicy,
+                workspaceDownloadOptions,
+                workspaceNodeRulesService,
+                workspaceDirectoryApi,
+                workspaceMutationApi,
+                workspaceLifecycleApi,
+                fileUploadRulesService,
+                externalImportRulesService,
+                contentAssetApi,
+                contentRegistrationApi,
+                uploadCompletionApi,
+                createContentBlobLifecycleService(storedFileRepository, fileBlobRepository, fileContentStorage),
+                workspaceDownloadMetricsPort,
+                backgroundTaskLifecycleApi,
+                0L,
+                Clock.systemUTC()
+        );
     }
 
     public FileService(StoredFileRepository storedFileRepository,
@@ -151,88 +179,244 @@ public class FileService implements WorkspaceBootstrapApi, WorkspaceArchiveApi {
                        FileEntityRepository fileEntityRepository,
                        StoredFileEntityRepository storedFileEntityRepository,
                        FileContentStorage fileContentStorage,
-                       AdminMetricsService adminMetricsService,
                        StoragePolicyQuery storagePolicyQuery,
-                       FileStorageProperties properties) {
-        this(storedFileRepository, fileBlobRepository, fileEntityRepository, storedFileEntityRepository, fileContentStorage, adminMetricsService, storagePolicyQuery, null, properties, null, Clock.systemUTC());
+                       WorkspaceDownloadMetricsPort workspaceDownloadMetricsPort,
+                       WorkspaceDownloadOptions workspaceDownloadOptions,
+                       long maxFileSize) {
+        this(
+                storedFileRepository,
+                fileEntityRepository,
+                storedFileEntityRepository,
+                fileContentStorage,
+                storagePolicyQuery,
+                null,
+                workspaceDownloadOptions,
+                createWorkspaceNodeRulesService(storedFileRepository, fileContentStorage),
+                createWorkspaceDirectoryApi(storedFileRepository, fileContentStorage),
+                createWorkspaceMutationApi(storedFileRepository, fileContentStorage),
+                createWorkspaceLifecycleApi(storedFileRepository, fileContentStorage),
+                createFileUploadRulesService(storedFileRepository, storagePolicyQuery, null, fileContentStorage, maxFileSize),
+                createExternalImportRulesService(storedFileRepository, storagePolicyQuery, null, fileContentStorage, maxFileSize),
+                createContentAssetApi(storedFileRepository, fileEntityRepository, storedFileEntityRepository, storagePolicyQuery),
+                createContentRegistrationApi(storedFileRepository, fileEntityRepository, storedFileEntityRepository, storagePolicyQuery),
+                createUploadCompletionApi(storedFileRepository, fileEntityRepository, storedFileEntityRepository, fileBlobRepository, fileContentStorage, storagePolicyQuery),
+                new ContentBlobLifecycleService(storedFileRepository, fileBlobRepository, fileContentStorage),
+                workspaceDownloadMetricsPort,
+                null,
+                maxFileSize,
+                Clock.systemUTC()
+        );
     }
 
     FileService(StoredFileRepository storedFileRepository,
-                FileBlobRepository fileBlobRepository,
                 FileEntityRepository fileEntityRepository,
                 StoredFileEntityRepository storedFileEntityRepository,
                 FileContentStorage fileContentStorage,
-                AdminMetricsService adminMetricsService,
                 StoragePolicyQuery storagePolicyQuery,
-                UploadCompletionApi uploadCompletionApi,
-                FileStorageProperties properties,
                 UploadConstraintPolicy uploadConstraintPolicy,
+                WorkspaceDownloadOptions workspaceDownloadOptions,
+                WorkspaceNodeRulesService workspaceNodeRulesService,
+                WorkspaceDirectoryApi workspaceDirectoryApi,
+                WorkspaceMutationApi workspaceMutationApi,
+                WorkspaceLifecycleApi workspaceLifecycleApi,
+                FileUploadRulesService fileUploadRulesService,
+                ExternalImportRulesService externalImportRulesService,
+                ContentAssetApi contentAssetApi,
+                ContentRegistrationApi contentRegistrationApi,
+                UploadCompletionApi uploadCompletionApi,
+                ContentBlobLifecycleService contentBlobLifecycleService,
+                WorkspaceDownloadMetricsPort workspaceDownloadMetricsPort,
+                BackgroundTaskLifecycleApi backgroundTaskLifecycleApi,
+                long maxFileSize,
                 Clock clock) {
         this.storedFileRepository = storedFileRepository;
         this.fileEntityRepository = fileEntityRepository;
         this.storedFileEntityRepository = storedFileEntityRepository;
         this.fileContentStorage = fileContentStorage;
-        this.adminMetricsService = adminMetricsService;
         this.storagePolicyQuery = storagePolicyQuery;
         this.uploadConstraintPolicy = uploadConstraintPolicy;
-        this.maxFileSize = properties.getMaxFileSize();
-        this.packageDownloadBaseUrl = StringUtils.hasText(properties.getS3().getPackageDownloadBaseUrl())
-                ? properties.getS3().getPackageDownloadBaseUrl().trim()
+        this.maxFileSize = maxFileSize;
+        this.packageDownloadBaseUrl = workspaceDownloadOptions != null && StringUtils.hasText(workspaceDownloadOptions.packageDownloadBaseUrl())
+                ? workspaceDownloadOptions.packageDownloadBaseUrl().trim()
                 : null;
-        this.packageDownloadSecret = StringUtils.hasText(properties.getS3().getPackageDownloadSecret())
-                ? properties.getS3().getPackageDownloadSecret().trim()
+        this.packageDownloadSecret = workspaceDownloadOptions != null && StringUtils.hasText(workspaceDownloadOptions.packageDownloadSecret())
+                ? workspaceDownloadOptions.packageDownloadSecret().trim()
                 : null;
-        this.packageDownloadTtlSeconds = Math.max(1, properties.getS3().getPackageDownloadTtlSeconds());
+        this.packageDownloadTtlSeconds = workspaceDownloadOptions == null ? 300L : Math.max(1, workspaceDownloadOptions.packageDownloadTtlSeconds());
         this.clock = clock;
-        WorkspacePathPolicy workspacePathPolicy = new RuntimeWorkspacePathPolicy(storedFileRepository, fileContentStorage);
-        this.workspaceNodeRulesService = new WorkspaceNodeRulesService(storedFileRepository, fileContentStorage);
-        this.workspaceDirectoryApi = new RuntimeWorkspaceDirectoryApi(storedFileRepository, fileContentStorage);
-        this.workspaceMutationApi = new RuntimeWorkspaceMutationApi(storedFileRepository, fileContentStorage);
-        this.fileUploadRulesService = new FileUploadRulesService(storedFileRepository, storagePolicyQuery, uploadConstraintPolicy, workspaceNodeRulesService, maxFileSize);
-        this.externalImportRulesService = new ExternalImportRulesService(workspaceNodeRulesService, fileUploadRulesService);
-        RuntimeContentAssetApi runtimeContentAssetApi = new RuntimeContentAssetApi(
+        this.workspaceNodeRulesService = workspaceNodeRulesService;
+        this.workspaceDirectoryApi = workspaceDirectoryApi;
+        this.workspaceMutationApi = workspaceMutationApi;
+        this.workspaceLifecycleApi = workspaceLifecycleApi;
+        this.fileUploadRulesService = fileUploadRulesService;
+        this.externalImportRulesService = externalImportRulesService;
+        this.contentAssetApi = contentAssetApi;
+        this.contentRegistrationApi = contentRegistrationApi;
+        this.uploadCompletionApi = uploadCompletionApi;
+        this.contentBlobLifecycleService = contentBlobLifecycleService;
+        this.workspaceDownloadMetricsPort = workspaceDownloadMetricsPort == null
+                ? WorkspaceDownloadMetricsPort.noOp()
+                : workspaceDownloadMetricsPort;
+        this.backgroundTaskLifecycleApi = backgroundTaskLifecycleApi;
+    }
+
+    FileService(StoredFileRepository storedFileRepository,
+                FileBlobRepository fileBlobRepository,
+                FileContentStorage fileContentStorage,
+                WorkspaceDownloadMetricsPort workspaceDownloadMetricsPort,
+                WorkspaceDownloadOptions workspaceDownloadOptions,
+                long maxFileSize) {
+        this(storedFileRepository, fileBlobRepository, null, null, fileContentStorage, null, workspaceDownloadMetricsPort, workspaceDownloadOptions, maxFileSize);
+    }
+
+    FileService(StoredFileRepository storedFileRepository,
+                FileBlobRepository fileBlobRepository,
+                FileContentStorage fileContentStorage,
+                WorkspaceDownloadMetricsPort workspaceDownloadMetricsPort,
+                WorkspaceDownloadOptions workspaceDownloadOptions,
+                long maxFileSize,
+                Clock clock) {
+        this(
+                storedFileRepository,
+                null,
+                null,
+                fileContentStorage,
+                null,
+                null,
+                workspaceDownloadOptions,
+                createWorkspaceNodeRulesService(storedFileRepository, fileContentStorage),
+                createWorkspaceDirectoryApi(storedFileRepository, fileContentStorage),
+                createWorkspaceMutationApi(storedFileRepository, fileContentStorage),
+                createWorkspaceLifecycleApi(storedFileRepository, fileContentStorage),
+                createFileUploadRulesService(storedFileRepository, null, null, fileContentStorage, maxFileSize),
+                createExternalImportRulesService(storedFileRepository, null, null, fileContentStorage, maxFileSize),
+                createContentAssetApi(storedFileRepository, null, null, null),
+                createContentRegistrationApi(storedFileRepository, null, null, null),
+                createUploadCompletionApi(storedFileRepository, null, null, fileBlobRepository, fileContentStorage, null),
+                new ContentBlobLifecycleService(storedFileRepository, fileBlobRepository, fileContentStorage),
+                workspaceDownloadMetricsPort,
+                null,
+                maxFileSize,
+                clock
+        );
+    }
+
+    private static RuntimeWorkspacePathPolicy createWorkspacePathPolicy(StoredFileRepository storedFileRepository,
+                                                                        FileContentStorage fileContentStorage) {
+        return new RuntimeWorkspacePathPolicy(storedFileRepository, fileContentStorage);
+    }
+
+    private static WorkspaceNodeRulesService createWorkspaceNodeRulesService(StoredFileRepository storedFileRepository,
+                                                                            FileContentStorage fileContentStorage) {
+        return new WorkspaceNodeRulesService(createWorkspacePathPolicy(storedFileRepository, fileContentStorage));
+    }
+
+    private static WorkspaceDirectoryApi createWorkspaceDirectoryApi(StoredFileRepository storedFileRepository,
+                                                                     FileContentStorage fileContentStorage) {
+        RuntimeWorkspacePathPolicy workspacePathPolicy = createWorkspacePathPolicy(storedFileRepository, fileContentStorage);
+        return new RuntimeWorkspaceDirectoryApi(storedFileRepository, fileContentStorage, workspacePathPolicy);
+    }
+
+    private static WorkspaceMutationApi createWorkspaceMutationApi(StoredFileRepository storedFileRepository,
+                                                                   FileContentStorage fileContentStorage) {
+        return new RuntimeWorkspaceMutationApi(storedFileRepository, createWorkspacePathPolicy(storedFileRepository, fileContentStorage));
+    }
+
+    private static WorkspaceLifecycleApi createWorkspaceLifecycleApi(StoredFileRepository storedFileRepository,
+                                                                     FileContentStorage fileContentStorage) {
+        RuntimeWorkspacePathPolicy workspacePathPolicy = createWorkspacePathPolicy(storedFileRepository, fileContentStorage);
+        WorkspaceNodeRulesService workspaceNodeRulesService = new WorkspaceNodeRulesService(workspacePathPolicy);
+        RuntimeContentRegistrationApi contentRegistrationApi = new RuntimeContentRegistrationApi(
+                storedFileRepository,
+                new RuntimeContentAssetApi(storedFileRepository, null, null, null)
+        );
+        return new RuntimeWorkspaceLifecycleApi(
+                storedFileRepository,
+                contentRegistrationApi,
+                workspacePathPolicy,
+                workspaceNodeRulesService
+        );
+    }
+
+    private static ContentBlobLifecycleService createContentBlobLifecycleService(StoredFileRepository storedFileRepository,
+                                                                                 FileBlobRepository fileBlobRepository,
+                                                                                 FileContentStorage fileContentStorage) {
+        return new ContentBlobLifecycleService(storedFileRepository, fileBlobRepository, fileContentStorage);
+    }
+
+    private static FileUploadRulesService createFileUploadRulesService(StoredFileRepository storedFileRepository,
+                                                                       StoragePolicyQuery storagePolicyQuery,
+                                                                       UploadConstraintPolicy uploadConstraintPolicy,
+                                                                       FileContentStorage fileContentStorage,
+                                                                       long maxFileSize) {
+        return new FileUploadRulesService(
+                storedFileRepository,
+                storagePolicyQuery,
+                uploadConstraintPolicy,
+                createWorkspaceNodeRulesService(storedFileRepository, fileContentStorage),
+                maxFileSize
+        );
+    }
+
+    private static ExternalImportRulesService createExternalImportRulesService(StoredFileRepository storedFileRepository,
+                                                                               StoragePolicyQuery storagePolicyQuery,
+                                                                               UploadConstraintPolicy uploadConstraintPolicy,
+                                                                               FileContentStorage fileContentStorage,
+                                                                               long maxFileSize) {
+        WorkspaceNodeRulesService workspaceNodeRulesService = createWorkspaceNodeRulesService(storedFileRepository, fileContentStorage);
+        return new ExternalImportRulesService(
+                workspaceNodeRulesService,
+                new FileUploadRulesService(
+                        storedFileRepository,
+                        storagePolicyQuery,
+                        uploadConstraintPolicy,
+                        workspaceNodeRulesService,
+                        maxFileSize
+                )
+        );
+    }
+
+    private static ContentAssetApi createContentAssetApi(StoredFileRepository storedFileRepository,
+                                                         FileEntityRepository fileEntityRepository,
+                                                         StoredFileEntityRepository storedFileEntityRepository,
+                                                         StoragePolicyQuery storagePolicyQuery) {
+        return new RuntimeContentAssetApi(
                 storedFileRepository,
                 fileEntityRepository,
                 storedFileEntityRepository,
                 storagePolicyQuery
         );
-        this.contentAssetApi = runtimeContentAssetApi;
-        RuntimeContentRegistrationApi runtimeContentRegistrationApi = new RuntimeContentRegistrationApi(
-                storedFileRepository,
-                runtimeContentAssetApi
-        );
-        this.contentRegistrationApi = runtimeContentRegistrationApi;
-        this.workspaceLifecycleApi = new RuntimeWorkspaceLifecycleApi(
-                storedFileRepository,
-                fileContentStorage,
-                runtimeContentRegistrationApi
-        );
-        this.uploadCompletionApi = uploadCompletionApi != null
-                ? uploadCompletionApi
-                : new RuntimeUploadCompletionApi(
-                        workspacePathPolicy,
-                        runtimeContentRegistrationApi,
-                        fileBlobRepository,
-                        fileContentStorage
-                );
-        this.contentBlobLifecycleService = new ContentBlobLifecycleService(storedFileRepository, fileBlobRepository, fileContentStorage);
     }
 
-    FileService(StoredFileRepository storedFileRepository,
-                FileBlobRepository fileBlobRepository,
-                FileContentStorage fileContentStorage,
-                AdminMetricsService adminMetricsService,
-                FileStorageProperties properties) {
-        this(storedFileRepository, fileBlobRepository, null, null, fileContentStorage, adminMetricsService, null, null, properties, null, Clock.systemUTC());
+    private static ContentRegistrationApi createContentRegistrationApi(StoredFileRepository storedFileRepository,
+                                                                       FileEntityRepository fileEntityRepository,
+                                                                       StoredFileEntityRepository storedFileEntityRepository,
+                                                                       StoragePolicyQuery storagePolicyQuery) {
+        return new RuntimeContentRegistrationApi(
+                storedFileRepository,
+                createContentAssetApi(storedFileRepository, fileEntityRepository, storedFileEntityRepository, storagePolicyQuery)
+        );
     }
 
-    FileService(StoredFileRepository storedFileRepository,
-                FileBlobRepository fileBlobRepository,
-                FileContentStorage fileContentStorage,
-                AdminMetricsService adminMetricsService,
-                FileStorageProperties properties,
-                Clock clock) {
-        this(storedFileRepository, fileBlobRepository, null, null, fileContentStorage, adminMetricsService, null, null, properties, null, clock);
+    private static UploadCompletionApi createUploadCompletionApi(StoredFileRepository storedFileRepository,
+                                                                 FileEntityRepository fileEntityRepository,
+                                                                 StoredFileEntityRepository storedFileEntityRepository,
+                                                                 FileBlobRepository fileBlobRepository,
+                                                                 FileContentStorage fileContentStorage,
+                                                                 StoragePolicyQuery storagePolicyQuery) {
+        WorkspacePathPolicy workspacePathPolicy = createWorkspacePathPolicy(storedFileRepository, fileContentStorage);
+        ContentRegistrationApi contentRegistrationApi = createContentRegistrationApi(
+                storedFileRepository,
+                fileEntityRepository,
+                storedFileEntityRepository,
+                storagePolicyQuery
+        );
+        return new RuntimeUploadCompletionApi(
+                workspacePathPolicy,
+                contentRegistrationApi,
+                fileBlobRepository,
+                fileContentStorage
+        );
     }
 
     @Transactional
@@ -514,32 +698,31 @@ public class FileService implements WorkspaceBootstrapApi, WorkspaceArchiveApi {
         return result.file();
     }
 
-    public ResponseEntity<?> download(User user, Long fileId) {
+    public WorkspaceDownloadResult download(User user, Long fileId) {
         StoredFile storedFile = getOwnedActiveFile(user, fileId, "下载");
         if (storedFile.isDirectory()) {
             return downloadDirectory(user, storedFile);
         }
 
         if (shouldUsePublicPackageDownload(storedFile)) {
-            return ResponseEntity.status(302)
-                    .location(URI.create(buildPublicPackageDownloadUrl(storedFile)))
-                    .build();
+            recordWorkspaceDownloadTraffic(storedFile.getSize());
+            return WorkspaceDownloadResult.redirect(buildPublicPackageDownloadUrl(storedFile));
         }
 
         if (fileContentStorage.supportsDirectDownload()) {
-            return ResponseEntity.status(302)
-                    .location(URI.create(fileContentStorage.createBlobDownloadUrl(
-                            contentBlobLifecycleService.getRequiredBlob(storedFile).getObjectKey(),
-                            storedFile.getFilename())))
-                    .build();
+            recordWorkspaceDownloadTraffic(storedFile.getSize());
+            return WorkspaceDownloadResult.redirect(fileContentStorage.createBlobDownloadUrl(
+                    contentBlobLifecycleService.getRequiredBlob(storedFile).getObjectKey(),
+                    storedFile.getFilename()
+            ));
         }
 
-        return ResponseEntity.ok()
-                .header(HttpHeaders.CONTENT_DISPOSITION,
-                        "attachment; filename*=UTF-8''" + URLEncoder.encode(storedFile.getFilename(), StandardCharsets.UTF_8))
-                .contentType(MediaType.parseMediaType(
-                        storedFile.getContentType() == null ? MediaType.APPLICATION_OCTET_STREAM_VALUE : storedFile.getContentType()))
-                .body(fileContentStorage.readBlob(contentBlobLifecycleService.getRequiredBlob(storedFile).getObjectKey()));
+        recordWorkspaceDownloadTraffic(storedFile.getSize());
+        return WorkspaceDownloadResult.inline(
+                storedFile.getFilename(),
+                storedFile.getContentType() == null ? MediaType.APPLICATION_OCTET_STREAM_VALUE : storedFile.getContentType(),
+                fileContentStorage.readBlob(contentBlobLifecycleService.getRequiredBlob(storedFile).getObjectKey())
+        );
     }
 
     public DownloadUrlResponse getDownloadUrl(User user, Long fileId) {
@@ -547,7 +730,6 @@ public class FileService implements WorkspaceBootstrapApi, WorkspaceArchiveApi {
         if (storedFile.isDirectory()) {
             throw new BusinessException(ErrorCode.UNKNOWN, "目录不支持下载");
         }
-        adminMetricsService.recordDownloadTraffic(storedFile.getSize());
 
         if (shouldUsePublicPackageDownload(storedFile)) {
             return new DownloadUrlResponse(buildPublicPackageDownloadUrl(storedFile));
@@ -630,15 +812,18 @@ public class FileService implements WorkspaceBootstrapApi, WorkspaceArchiveApi {
         }
     }
 
-    private ResponseEntity<byte[]> downloadDirectory(User user, StoredFile directory) {
+    private WorkspaceDownloadResult downloadDirectory(User user, StoredFile directory) {
         String archiveName = directory.getFilename() + ".zip";
         byte[] archiveBytes = buildArchiveBytes(directory);
+        recordWorkspaceDownloadTraffic((long) archiveBytes.length);
+        return WorkspaceDownloadResult.inline(archiveName, "application/zip", archiveBytes);
+    }
 
-        return ResponseEntity.ok()
-                .header(HttpHeaders.CONTENT_DISPOSITION,
-                        "attachment; filename*=UTF-8''" + URLEncoder.encode(archiveName, StandardCharsets.UTF_8))
-                .contentType(MediaType.parseMediaType("application/zip"))
-                .body(archiveBytes);
+    private void recordWorkspaceDownloadTraffic(Long bytes) {
+        if (bytes == null || bytes <= 0L) {
+            return;
+        }
+        workspaceDownloadMetricsPort.recordDownloadTraffic(bytes);
     }
 
     public byte[] buildArchiveBytes(StoredFile source) {
@@ -832,20 +1017,16 @@ public class FileService implements WorkspaceBootstrapApi, WorkspaceArchiveApi {
                                                       String normalizedPath,
                                                       RegisteredContentFile savedFile) {
         touchDirectoryListings(user, normalizedPath);
-        publishMediaMetadataTrigger(savedFile);
+        publishMediaMetadataTrigger(user, savedFile);
         recordFileEvent(user, FileEventType.CREATED, savedFile, null, buildLogicalPath(savedFile.path(), savedFile.filename()));
         return toResponse(savedFile);
     }
 
-    private void publishMediaMetadataTrigger(RegisteredContentFile storedFile) {
-        if (mediaMetadataTaskBrokerPublisher == null) {
+    private void publishMediaMetadataTrigger(User user, RegisteredContentFile storedFile) {
+        if (backgroundTaskLifecycleApi == null) {
             return;
         }
-        StoredFile payload = new StoredFile();
-        payload.setId(storedFile.id());
-        payload.setFilename(storedFile.filename());
-        payload.setContentType(storedFile.contentType());
-        mediaMetadataTaskBrokerPublisher.publishAfterCommit(payload);
+        backgroundTaskLifecycleApi.createQueuedAutoMediaMetadataTask(user.getId(), storedFile.id(), null);
     }
 
     private RecycleBinItemResponse toRecycleBinResponse(StoredFile storedFile) {

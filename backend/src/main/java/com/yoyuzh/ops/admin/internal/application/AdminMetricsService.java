@@ -1,5 +1,6 @@
 package com.yoyuzh.ops.admin.internal.application;
 
+import com.yoyuzh.files.workspace.api.WorkspaceDownloadMetricsPort;
 import com.yoyuzh.ops.admin.api.AdminOfflineTransferStorageLimitResponse;
 import com.yoyuzh.ops.admin.internal.infra.AdminDailyActiveUserEntity;
 import com.yoyuzh.ops.admin.internal.infra.AdminDailyActiveUserRepository;
@@ -22,7 +23,7 @@ import java.util.stream.IntStream;
 
 @Service
 @RequiredArgsConstructor
-public class AdminMetricsService {
+public class AdminMetricsService implements WorkspaceDownloadMetricsPort {
 
     private static final Long STATE_ID = 1L;
     private static final long DEFAULT_OFFLINE_TRANSFER_STORAGE_LIMIT_BYTES = 20L * 1024 * 1024 * 1024;
@@ -71,6 +72,7 @@ public class AdminMetricsService {
     }
 
     @Transactional
+    @Override
     public void recordDownloadTraffic(long bytes) {
         if (bytes <= 0) {
             return;
