@@ -1,6 +1,5 @@
 package com.yoyuzh.files.workspace.internal.web;
 
-import com.yoyuzh.boot.web.v2.ApiV2Exception;
 import com.yoyuzh.boot.security.CustomUserDetailsService;
 import com.yoyuzh.shared.kernel.ApiResponse;
 import com.yoyuzh.shared.kernel.BusinessException;
@@ -174,51 +173,43 @@ public class FileController {
     @PostMapping("/{fileId}/share-links")
     public ApiResponse<CreateFileShareLinkResponse> createShareLink(@AuthenticationPrincipal UserDetails userDetails,
                                                                      @PathVariable Long fileId) {
-        try {
-            ShareV2Response response = sharingApi.createShare(currentUserId(userDetails), new CreateShareCommand(
-                    fileId,
-                    null,
-                    null,
-                    null,
-                    null,
-                    null,
-                    null
-            ));
-            if (response.file() == null) {
-                throw new BusinessException(ErrorCode.UNKNOWN, "share file metadata missing");
-            }
-            return ApiResponse.success(new CreateFileShareLinkResponse(
-                    response.token(),
-                    response.file().filename(),
-                    response.file().size(),
-                    response.file().contentType(),
-                    response.createdAt()
-            ));
-        } catch (ApiV2Exception ex) {
-            throw mapLegacyShareApiException(ex);
+        ShareV2Response response = sharingApi.createShare(currentUserId(userDetails), new CreateShareCommand(
+                fileId,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null
+        ));
+        if (response.file() == null) {
+            throw new BusinessException(ErrorCode.UNKNOWN, "share file metadata missing");
         }
+        return ApiResponse.success(new CreateFileShareLinkResponse(
+                response.token(),
+                response.file().filename(),
+                response.file().size(),
+                response.file().contentType(),
+                response.createdAt()
+        ));
     }
 
     @Operation(summary = "查看分享详情")
     @GetMapping("/share-links/{token}")
     public ApiResponse<FileShareDetailsResponse> getShareDetails(@PathVariable String token) {
-        try {
-            ShareV2Response response = sharingApi.getShare(token);
-            if (response.file() == null) {
-                throw new BusinessException(ErrorCode.PERMISSION_DENIED, "该分享链接需要先验证提取码");
-            }
-            return ApiResponse.success(new FileShareDetailsResponse(
-                    response.token(),
-                    response.ownerUsername(),
-                    response.file().filename(),
-                    response.file().size(),
-                    response.file().contentType(),
-                    response.file().directory(),
-                    response.createdAt()
-            ));
-        } catch (ApiV2Exception ex) {
-            throw mapLegacyShareApiException(ex);
+        ShareV2Response response = sharingApi.getShare(token);
+        if (response.file() == null) {
+            throw new BusinessException(ErrorCode.PERMISSION_DENIED, "该分享链接需要先验证提取码");
         }
+        return ApiResponse.success(new FileShareDetailsResponse(
+                response.token(),
+                response.ownerUsername(),
+                response.file().filename(),
+                response.file().size(),
+                response.file().contentType(),
+                response.file().directory(),
+                response.createdAt()
+        ));
     }
 
     @Operation(summary = "导入共享文件")
@@ -226,15 +217,11 @@ public class FileController {
     public ApiResponse<FileMetadataResponse> importSharedFile(@AuthenticationPrincipal UserDetails userDetails,
                                                               @PathVariable String token,
                                                               @Valid @RequestBody ImportSharedFileRequest request) {
-        try {
-            return ApiResponse.success(sharingApi.importSharedFile(
-                    currentUserId(userDetails),
-                    token,
-                    new ImportShareCommand(request.path(), null)
-            ));
-        } catch (ApiV2Exception ex) {
-            throw mapLegacyShareApiException(ex);
-        }
+        return ApiResponse.success(sharingApi.importSharedFile(
+                currentUserId(userDetails),
+                token,
+                new ImportShareCommand(request.path(), null)
+        ));
     }
 
     @Operation(summary = "删除文件")
@@ -253,16 +240,6 @@ public class FileController {
                 userDetailsService.loadDomainUser(userDetails.getUsername()),
                 fileId
         ));
-    }
-
-    private BusinessException mapLegacyShareApiException(ApiV2Exception ex) {
-        ErrorCode code = switch (ex.getErrorCode()) {
-            case FILE_NOT_FOUND -> ErrorCode.FILE_NOT_FOUND;
-            case PERMISSION_DENIED -> ErrorCode.PERMISSION_DENIED;
-            case NOT_LOGGED_IN -> ErrorCode.NOT_LOGGED_IN;
-            case BAD_REQUEST, INTERNAL_ERROR -> ErrorCode.UNKNOWN;
-        };
-        return new BusinessException(code, ex.getMessage());
     }
 
     private Long currentUserId(UserDetails userDetails) {

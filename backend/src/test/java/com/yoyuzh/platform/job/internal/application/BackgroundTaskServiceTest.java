@@ -9,11 +9,11 @@ import com.yoyuzh.platform.job.api.BackgroundTaskStatus;
 import com.yoyuzh.platform.job.api.BackgroundTaskType;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.yoyuzh.boot.web.v2.ApiV2Exception;
 import com.yoyuzh.identity.access.internal.domain.User;
 import com.yoyuzh.files.workspace.internal.domain.StoredFile;
 import com.yoyuzh.files.workspace.internal.infra.StoredFileRepository;
 import com.yoyuzh.infra.lock.DistributedLockGateway;
+import com.yoyuzh.shared.kernel.BusinessException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -81,7 +81,7 @@ class BackgroundTaskServiceTest {
                 99L,
                 "/docs/foreign.txt",
                 null
-        )).isInstanceOf(ApiV2Exception.class)
+        )).isInstanceOf(BusinessException.class)
                 .hasMessage("file not found");
     }
 
@@ -96,7 +96,7 @@ class BackgroundTaskServiceTest {
                 100L,
                 "/docs/deleted.txt",
                 null
-        )).isInstanceOf(ApiV2Exception.class)
+        )).isInstanceOf(BusinessException.class)
                 .hasMessage("file not found");
     }
 
@@ -112,7 +112,7 @@ class BackgroundTaskServiceTest {
                 11L,
                 "/docs/fake.txt",
                 null
-        )).isInstanceOf(ApiV2Exception.class)
+        )).isInstanceOf(BusinessException.class)
                 .hasMessage("task path does not match file path");
     }
 
@@ -128,7 +128,7 @@ class BackgroundTaskServiceTest {
                 12L,
                 "/bundle",
                 null
-        )).isInstanceOf(ApiV2Exception.class)
+        )).isInstanceOf(BusinessException.class)
                 .hasMessage("task target type is not supported");
     }
 
@@ -144,7 +144,7 @@ class BackgroundTaskServiceTest {
                 17L,
                 "/docs/backup.7z",
                 null
-        )).isInstanceOf(ApiV2Exception.class)
+        )).isInstanceOf(BusinessException.class)
                 .hasMessage("extract task only supports zip-compatible archives");
     }
 
@@ -160,7 +160,7 @@ class BackgroundTaskServiceTest {
                 13L,
                 "/docs/notes.txt",
                 null
-        )).isInstanceOf(ApiV2Exception.class)
+        )).isInstanceOf(BusinessException.class)
                 .hasMessage("media metadata task only supports media files");
     }
 
@@ -531,7 +531,7 @@ class BackgroundTaskServiceTest {
         when(backgroundTaskRepository.findByIdAndUserId(9L, 7L)).thenReturn(Optional.of(task));
 
         assertThatThrownBy(() -> backgroundTaskService.retryOwnedTask(user, 9L))
-                .isInstanceOf(ApiV2Exception.class)
+                .isInstanceOf(BusinessException.class)
                 .hasMessage("only failed tasks can be retried");
     }
 

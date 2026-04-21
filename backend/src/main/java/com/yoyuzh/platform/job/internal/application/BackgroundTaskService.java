@@ -8,12 +8,12 @@ import com.yoyuzh.platform.job.api.BackgroundTaskFailureCategory;
 import com.yoyuzh.platform.job.api.BackgroundTaskStatus;
 import com.yoyuzh.platform.job.api.BackgroundTaskType;
 
-import com.yoyuzh.boot.web.v2.ApiV2ErrorCode;
-import com.yoyuzh.boot.web.v2.ApiV2Exception;
 import com.yoyuzh.identity.access.internal.domain.User;
 import com.yoyuzh.files.workspace.internal.domain.StoredFile;
 import com.yoyuzh.files.workspace.internal.infra.StoredFileRepository;
 import com.yoyuzh.infra.lock.DistributedLockGateway;
+import com.yoyuzh.shared.kernel.BusinessException;
+import com.yoyuzh.shared.kernel.ErrorCode;
 import jakarta.transaction.Transactional;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.Page;
@@ -115,10 +115,10 @@ public class BackgroundTaskService {
                                                String requestedPath,
                                                String correlationId) {
         StoredFile file = storedFileRepository.findByIdAndUserIdAndDeletedAtIsNull(fileId, userId)
-                .orElseThrow(() -> new ApiV2Exception(ApiV2ErrorCode.FILE_NOT_FOUND, "file not found"));
+                .orElseThrow(() -> new BusinessException(ErrorCode.FILE_NOT_FOUND, "file not found"));
         String logicalPath = buildLogicalPath(file);
         if (!logicalPath.equals(normalizeLogicalPath(requestedPath))) {
-            throw new ApiV2Exception(ApiV2ErrorCode.BAD_REQUEST, "task path does not match file path");
+            throw new BusinessException(ErrorCode.UNKNOWN, "task path does not match file path");
         }
         return createQueuedFileTaskInternal(userId, type, file, correlationId, false);
     }
@@ -217,7 +217,7 @@ public class BackgroundTaskService {
 
     public BackgroundTask getOwnedTask(Long userId, Long id) {
         return backgroundTaskRepository.findByIdAndUserId(id, userId)
-                .orElseThrow(() -> new ApiV2Exception(ApiV2ErrorCode.FILE_NOT_FOUND, "task not found"));
+                .orElseThrow(() -> new BusinessException(ErrorCode.FILE_NOT_FOUND, "task not found"));
     }
 
     @Transactional
@@ -258,7 +258,7 @@ public class BackgroundTaskService {
     public BackgroundTask retryOwnedTask(Long userId, Long id) {
         BackgroundTask task = getOwnedTask(userId, id);
         if (task.getStatus() != BackgroundTaskStatus.FAILED) {
-            throw new ApiV2Exception(ApiV2ErrorCode.BAD_REQUEST, "only failed tasks can be retried");
+            throw new BusinessException(ErrorCode.UNKNOWN, "only failed tasks can be retried");
         }
 
         task.setAttemptCount(0);
@@ -350,14 +350,14 @@ public class BackgroundTaskService {
             return;
         }
         if (file.isDirectory()) {
-            throw new ApiV2Exception(ApiV2ErrorCode.BAD_REQUEST, "task target type is not supported");
+            throw new BusinessException(ErrorCode.UNKNOWN, "task target type is not supported");
         }
         if (type == BackgroundTaskType.EXTRACT && !isZipCompatibleArchive(file)) {
-            throw new ApiV2Exception(ApiV2ErrorCode.BAD_REQUEST, "extract task only supports zip-compatible archives");
+            throw new BusinessException(ErrorCode.UNKNOWN, "extract task only supports zip-compatible archives");
         }
         if (type == BackgroundTaskType.MEDIA_META
                 && !MediaTaskSupport.isMediaLike(file.getFilename(), file.getContentType())) {
-            throw new ApiV2Exception(ApiV2ErrorCode.BAD_REQUEST, "media metadata task only supports media files");
+            throw new BusinessException(ErrorCode.UNKNOWN, "media metadata task only supports media files");
         }
     }
 

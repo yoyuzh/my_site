@@ -1,7 +1,5 @@
 package com.yoyuzh.files.sharing.internal.application;
 
-import com.yoyuzh.boot.web.v2.ApiV2ErrorCode;
-import com.yoyuzh.boot.web.v2.ApiV2Exception;
 import com.yoyuzh.identity.access.internal.domain.User;
 import com.yoyuzh.files.content.api.ContentDuplicationApi;
 import com.yoyuzh.files.content.api.ContentBlobReference;
@@ -24,6 +22,8 @@ import com.yoyuzh.files.upload.api.UploadTargetPolicy;
 import com.yoyuzh.files.upload.api.ValidatedUploadTarget;
 import com.yoyuzh.files.workspace.api.FileMetadataResponse;
 import com.yoyuzh.files.workspace.api.WorkspacePathPolicy;
+import com.yoyuzh.shared.kernel.BusinessException;
+import com.yoyuzh.shared.kernel.ErrorCode;
 import com.yoyuzh.shared.kernel.PageResponse;
 import jakarta.persistence.EntityManager;
 import jakarta.transaction.Transactional;
@@ -78,9 +78,9 @@ public class RuntimeSharingApi implements SharingApi {
     @Transactional
     public ShareV2Response createShare(Long ownerUserId, CreateShareCommand command) {
         StoredFile file = storedFileRepository.findByIdAndUserIdAndDeletedAtIsNull(command.fileId(), ownerUserId)
-                .orElseThrow(() -> new ApiV2Exception(ApiV2ErrorCode.FILE_NOT_FOUND, "file not found"));
+                .orElseThrow(() -> new BusinessException(ErrorCode.FILE_NOT_FOUND, "file not found"));
         if (file.isDirectory()) {
-            throw new ApiV2Exception(ApiV2ErrorCode.BAD_REQUEST, "directories are not supported");
+            throw new BusinessException(ErrorCode.UNKNOWN, "directories are not supported");
         }
 
         validateSharePolicy(command.expiresAt(), command.maxDownloads());
@@ -117,7 +117,7 @@ public class RuntimeSharingApi implements SharingApi {
         ensureShareNotExpired(shareLink);
         if (shareLink.hasPassword()) {
             if (!StringUtils.hasText(password) || !passwordEncoder.matches(password, shareLink.getPasswordHash())) {
-                throw new ApiV2Exception(ApiV2ErrorCode.BAD_REQUEST, "invalid password");
+                throw new BusinessException(ErrorCode.UNKNOWN, "invalid password");
             }
         }
         shareLink.setViewCount(shareLink.getViewCountOrZero() + 1);
@@ -197,7 +197,7 @@ public class RuntimeSharingApi implements SharingApi {
     @Transactional
     public void deleteOwnedShare(Long ownerUserId, Long id) {
         FileShareLink shareLink = fileShareLinkRepository.findByIdAndOwnerId(id, ownerUserId)
-                .orElseThrow(() -> new ApiV2Exception(ApiV2ErrorCode.FILE_NOT_FOUND, "share not found"));
+                .orElseThrow(() -> new BusinessException(ErrorCode.FILE_NOT_FOUND, "share not found"));
         fileShareLinkRepository.delete(shareLink);
     }
 
@@ -238,25 +238,25 @@ public class RuntimeSharingApi implements SharingApi {
 
     private FileShareLink getShareLink(String token) {
         return fileShareLinkRepository.findByToken(token)
-                .orElseThrow(() -> new ApiV2Exception(ApiV2ErrorCode.FILE_NOT_FOUND, "share not found"));
+                .orElseThrow(() -> new BusinessException(ErrorCode.FILE_NOT_FOUND, "share not found"));
     }
 
     private void ensureShareNotExpired(FileShareLink shareLink) {
         if (shareLink.getExpiresAt() != null && !LocalDateTime.now().isBefore(shareLink.getExpiresAt())) {
-            throw new ApiV2Exception(ApiV2ErrorCode.FILE_NOT_FOUND, "share not found");
+            throw new BusinessException(ErrorCode.FILE_NOT_FOUND, "share not found");
         }
     }
 
     private void ensureImportAllowed(FileShareLink shareLink) {
         if (!shareLink.isAllowImportEnabled()) {
-            throw new ApiV2Exception(ApiV2ErrorCode.PERMISSION_DENIED, "import disabled");
+            throw new BusinessException(ErrorCode.PERMISSION_DENIED, "import disabled");
         }
         ensureQuotaAvailable(shareLink);
     }
 
     private void ensureDownloadAllowed(FileShareLink shareLink) {
         if (!shareLink.isAllowDownloadEnabled()) {
-            throw new ApiV2Exception(ApiV2ErrorCode.PERMISSION_DENIED, "download disabled");
+            throw new BusinessException(ErrorCode.PERMISSION_DENIED, "download disabled");
         }
         ensureQuotaAvailable(shareLink);
     }
@@ -264,7 +264,7 @@ public class RuntimeSharingApi implements SharingApi {
     private void ensureQuotaAvailable(FileShareLink shareLink) {
         Integer maxDownloads = shareLink.getMaxDownloads();
         if (maxDownloads != null && shareLink.getDownloadCountOrZero() >= maxDownloads) {
-            throw new ApiV2Exception(ApiV2ErrorCode.PERMISSION_DENIED, "share quota exceeded");
+            throw new BusinessException(ErrorCode.PERMISSION_DENIED, "share quota exceeded");
         }
     }
 
@@ -273,16 +273,16 @@ public class RuntimeSharingApi implements SharingApi {
             return;
         }
         if (!StringUtils.hasText(password) || !passwordEncoder.matches(password, shareLink.getPasswordHash())) {
-            throw new ApiV2Exception(ApiV2ErrorCode.BAD_REQUEST, "invalid password");
+            throw new BusinessException(ErrorCode.UNKNOWN, "invalid password");
         }
     }
 
     private void validateSharePolicy(LocalDateTime expiresAt, Integer maxDownloads) {
         if (expiresAt != null && !expiresAt.isAfter(LocalDateTime.now())) {
-            throw new ApiV2Exception(ApiV2ErrorCode.BAD_REQUEST, "expiresAt must be in the future");
+            throw new BusinessException(ErrorCode.UNKNOWN, "expiresAt must be in the future");
         }
         if (maxDownloads != null && maxDownloads <= 0) {
-            throw new ApiV2Exception(ApiV2ErrorCode.BAD_REQUEST, "maxDownloads must be greater than 0");
+            throw new BusinessException(ErrorCode.UNKNOWN, "maxDownloads must be greater than 0");
         }
     }
 
@@ -293,7 +293,7 @@ public class RuntimeSharingApi implements SharingApi {
     private User requireUser(Long userId) {
         User user = entityManager.find(User.class, userId);
         if (user == null) {
-            throw new ApiV2Exception(ApiV2ErrorCode.NOT_LOGGED_IN, "user not found");
+            throw new BusinessException(ErrorCode.NOT_LOGGED_IN, "user not found");
         }
         return user;
     }
@@ -301,14 +301,14 @@ public class RuntimeSharingApi implements SharingApi {
     private StoredFile requireShareFile(FileShareLink shareLink) {
         StoredFile sourceFile = shareLink.getFile();
         if (sourceFile == null || sourceFile.isDirectory()) {
-            throw new ApiV2Exception(ApiV2ErrorCode.BAD_REQUEST, "directories are not supported");
+            throw new BusinessException(ErrorCode.UNKNOWN, "directories are not supported");
         }
         return sourceFile;
     }
 
     private FileBlob requireShareBlob(StoredFile storedFile) {
         if (storedFile.getBlob() == null) {
-            throw new ApiV2Exception(ApiV2ErrorCode.FILE_NOT_FOUND, "file blob missing");
+            throw new BusinessException(ErrorCode.FILE_NOT_FOUND, "file blob missing");
         }
         return storedFile.getBlob();
     }

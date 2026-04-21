@@ -1,9 +1,9 @@
 package com.yoyuzh.files.search;
 
-import com.yoyuzh.boot.web.v2.ApiV2Exception;
 import com.yoyuzh.identity.access.internal.domain.User;
 import com.yoyuzh.files.workspace.internal.domain.StoredFile;
 import com.yoyuzh.files.workspace.internal.infra.StoredFileRepository;
+import com.yoyuzh.shared.kernel.BusinessException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -121,7 +121,7 @@ class FileSearchServiceTest {
                 null,
                 0,
                 20
-        ))).isInstanceOf(ApiV2Exception.class)
+        ))).isInstanceOf(BusinessException.class)
                 .hasMessageContaining("文件大小范围不合法");
     }
 

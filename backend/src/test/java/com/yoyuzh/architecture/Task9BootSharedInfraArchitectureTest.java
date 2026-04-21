@@ -107,7 +107,15 @@ class Task9BootSharedInfraArchitectureTest {
                 .should()
                 .beAnnotatedWith(RestController.class);
 
+        ArchRule applicationServicesMustNotDependOnV2WebProtocol = noClasses()
+                .that()
+                .resideInAnyPackage("com.yoyuzh..internal.application..")
+                .should()
+                .dependOnClassesThat()
+                .resideInAnyPackage("com.yoyuzh.boot.web.v2..");
+
         noV2ControllersInTopLevelApiRule.check(classes);
+        applicationServicesMustNotDependOnV2WebProtocol.check(classes);
         assertThat(classes.stream().map(JavaClass::getPackageName))
                 .noneMatch(packageName -> packageName.equals("com.yoyuzh.api") || packageName.startsWith("com.yoyuzh.api."))
                 .doesNotContain(

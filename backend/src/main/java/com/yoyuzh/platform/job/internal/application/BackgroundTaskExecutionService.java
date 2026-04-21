@@ -8,8 +8,8 @@ import com.yoyuzh.platform.job.api.BackgroundTaskFailureCategory;
 import com.yoyuzh.platform.job.api.BackgroundTaskStatus;
 import com.yoyuzh.platform.job.api.BackgroundTaskType;
 
-import com.yoyuzh.boot.web.v2.ApiV2ErrorCode;
-import com.yoyuzh.boot.web.v2.ApiV2Exception;
+import com.yoyuzh.shared.kernel.BusinessException;
+import com.yoyuzh.shared.kernel.ErrorCode;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
@@ -64,7 +64,7 @@ public class BackgroundTaskExecutionService {
                 continue;
             }
             BackgroundTask task = backgroundTaskRepository.findById(taskId)
-                    .orElseThrow(() -> new ApiV2Exception(ApiV2ErrorCode.FILE_NOT_FOUND, "task not found"));
+                    .orElseThrow(() -> new BusinessException(ErrorCode.FILE_NOT_FOUND, "task not found"));
             resetTaskToQueued(task);
             backgroundTaskRepository.save(task);
             recovered += 1;
@@ -121,7 +121,7 @@ public class BackgroundTaskExecutionService {
                                                  long leaseDurationSeconds) {
         LeaseTouch leaseTouch = refreshLease(id, workerOwner, leaseDurationSeconds);
         BackgroundTask task = backgroundTaskRepository.findById(id)
-                .orElseThrow(() -> new ApiV2Exception(ApiV2ErrorCode.FILE_NOT_FOUND, "task not found"));
+                .orElseThrow(() -> new BusinessException(ErrorCode.FILE_NOT_FOUND, "task not found"));
         task.setLeaseOwner(workerOwner);
         task.setLeaseExpiresAt(leaseTouch.leaseExpiresAt());
         task.setHeartbeatAt(leaseTouch.now());
@@ -146,7 +146,7 @@ public class BackgroundTaskExecutionService {
                                                   long leaseDurationSeconds) {
         LeaseTouch leaseTouch = refreshLease(id, workerOwner, leaseDurationSeconds);
         BackgroundTask task = backgroundTaskRepository.findById(id)
-                .orElseThrow(() -> new ApiV2Exception(ApiV2ErrorCode.FILE_NOT_FOUND, "task not found"));
+                .orElseThrow(() -> new BusinessException(ErrorCode.FILE_NOT_FOUND, "task not found"));
         task.setPublicStateJson(stateManager.merge(
                 task.getPublicStateJson(),
                 stateManager.completedStatePatch(task, leaseTouch.now(), publicStatePatch),
@@ -168,7 +168,7 @@ public class BackgroundTaskExecutionService {
                                                long leaseDurationSeconds) {
         LeaseTouch leaseTouch = refreshLease(id, workerOwner, leaseDurationSeconds);
         BackgroundTask task = backgroundTaskRepository.findById(id)
-                .orElseThrow(() -> new ApiV2Exception(ApiV2ErrorCode.FILE_NOT_FOUND, "task not found"));
+                .orElseThrow(() -> new BusinessException(ErrorCode.FILE_NOT_FOUND, "task not found"));
         String normalizedErrorMessage = StringUtils.hasText(errorMessage) ? errorMessage.trim() : "task failed";
         LocalDateTime now = leaseTouch.now();
         if (failureCategory.isRetryable() && retryPolicy.hasRemainingAttempts(task)) {
