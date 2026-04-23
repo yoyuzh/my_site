@@ -19,9 +19,9 @@ import com.yoyuzh.identity.access.api.IdentityAdminUserView;
 import com.yoyuzh.identity.access.api.IdentityCredentialRevocationPolicy;
 import com.yoyuzh.identity.access.api.IdentityRoleName;
 import com.yoyuzh.identity.access.api.PasswordPolicy;
+import com.yoyuzh.ops.admin.api.AdminRuntimeSettingsApi;
 import com.yoyuzh.shared.kernel.BusinessException;
 import com.yoyuzh.shared.kernel.PageResponse;
-import com.yoyuzh.ops.admin.internal.application.AdminRuntimeSettingsService;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
@@ -43,7 +43,7 @@ class RuntimeIdentityAdminUserGovernanceApiTest {
     @Mock
     private IdentityCredentialRevocationPolicy identityCredentialRevocationPolicy;
     @Mock
-    private AdminRuntimeSettingsService adminRuntimeSettingsService;
+    private AdminRuntimeSettingsApi adminRuntimeSettingsApi;
 
     private AdminAccessContinuityGuard adminAccessContinuityGuard;
     private RuntimeIdentityAdminUserGovernanceApi runtimeIdentityAdminUserGovernanceApi;
@@ -51,7 +51,7 @@ class RuntimeIdentityAdminUserGovernanceApiTest {
     @BeforeEach
     void setUp() {
         adminAccessContinuityGuard =
-                new RuntimeAdminAccessContinuityGuard(userRepository, adminRuntimeSettingsService);
+                new RuntimeAdminAccessContinuityGuard(userRepository, adminRuntimeSettingsApi);
         runtimeIdentityAdminUserGovernanceApi = new RuntimeIdentityAdminUserGovernanceApi(
                 userRepository,
                 passwordEncoder,
@@ -88,7 +88,7 @@ class RuntimeIdentityAdminUserGovernanceApiTest {
     void shouldUpdateUserRole() {
         User user = createUser(1L, "alice", "alice@example.com");
         when(userRepository.findById(1L)).thenReturn(Optional.of(user));
-        when(adminRuntimeSettingsService.snapshot()).thenReturn(runtimeState("MODERATOR", "ADMIN"));
+        when(adminRuntimeSettingsApi.registrationManagementRoles()).thenReturn(List.of("MODERATOR", "ADMIN"));
         when(userRepository.save(user)).thenReturn(user);
 
         IdentityAdminUserView response =
@@ -112,13 +112,12 @@ class RuntimeIdentityAdminUserGovernanceApiTest {
     void shouldBanUserAndRevokeTokens() {
         User user = createUser(1L, "alice", "alice@example.com");
         when(userRepository.findById(1L)).thenReturn(Optional.of(user));
-        when(adminRuntimeSettingsService.snapshot()).thenReturn(runtimeState("MODERATOR", "ADMIN"));
         when(userRepository.save(user)).thenReturn(user);
 
         runtimeIdentityAdminUserGovernanceApi.updateUserBannedAsAdmin(1L, true);
 
         assertThat(user.isBanned()).isTrue();
-        verify(identityCredentialRevocationPolicy).revokeAll(user);
+        verify(identityCredentialRevocationPolicy).revokeAll(user.getId());
         verify(userRepository).save(user);
     }
 
@@ -127,13 +126,12 @@ class RuntimeIdentityAdminUserGovernanceApiTest {
         User user = createUser(1L, "alice", "alice@example.com");
         user.setBanned(true);
         when(userRepository.findById(1L)).thenReturn(Optional.of(user));
-        when(adminRuntimeSettingsService.snapshot()).thenReturn(runtimeState("MODERATOR", "ADMIN"));
         when(userRepository.save(user)).thenReturn(user);
 
         runtimeIdentityAdminUserGovernanceApi.updateUserBannedAsAdmin(1L, false);
 
         assertThat(user.isBanned()).isFalse();
-        verify(identityCredentialRevocationPolicy).revokeAll(user);
+        verify(identityCredentialRevocationPolicy).revokeAll(user.getId());
     }
 
     @Test
@@ -146,7 +144,7 @@ class RuntimeIdentityAdminUserGovernanceApiTest {
         runtimeIdentityAdminUserGovernanceApi.updateUserPasswordAsAdmin(1L, "NewStr0ng!Pass");
 
         assertThat(user.getPasswordHash()).isEqualTo("hashed");
-        verify(identityCredentialRevocationPolicy).revokeAll(user);
+        verify(identityCredentialRevocationPolicy).revokeAll(user.getId());
     }
 
     @Test
@@ -186,7 +184,7 @@ class RuntimeIdentityAdminUserGovernanceApiTest {
         User user = createUser(1L, "alice", "alice@example.com");
         user.setRole(UserRole.ADMIN);
         when(userRepository.findById(1L)).thenReturn(Optional.of(user));
-        when(adminRuntimeSettingsService.snapshot()).thenReturn(runtimeState("ADMIN"));
+        when(adminRuntimeSettingsApi.registrationManagementRoles()).thenReturn(List.of("ADMIN"));
         when(userRepository.countByBannedFalseAndRoleIn(anyCollection())).thenReturn(1L);
 
         assertThatThrownBy(() -> runtimeIdentityAdminUserGovernanceApi.updateUserRoleAsAdmin(1L, IdentityRoleName.USER))
@@ -202,7 +200,7 @@ class RuntimeIdentityAdminUserGovernanceApiTest {
         user.setRole(UserRole.ADMIN);
         when(userRepository.findById(1L)).thenReturn(Optional.of(user));
         when(userRepository.countByBannedFalseAndRoleIn(anyCollection())).thenReturn(2L);
-        when(adminRuntimeSettingsService.snapshot()).thenReturn(runtimeState("ADMIN"));
+        when(adminRuntimeSettingsApi.registrationManagementRoles()).thenReturn(List.of("ADMIN"));
         when(userRepository.save(user)).thenReturn(user);
 
         IdentityAdminUserView response = runtimeIdentityAdminUserGovernanceApi.updateUserRoleAsAdmin(1L, IdentityRoleName.USER);
@@ -216,7 +214,7 @@ class RuntimeIdentityAdminUserGovernanceApiTest {
         User user = createUser(1L, "alice", "alice@example.com");
         user.setRole(UserRole.ADMIN);
         when(userRepository.findById(1L)).thenReturn(Optional.of(user));
-        when(adminRuntimeSettingsService.snapshot()).thenReturn(runtimeState("ADMIN"));
+        when(adminRuntimeSettingsApi.registrationManagementRoles()).thenReturn(List.of("ADMIN"));
         when(userRepository.countByBannedFalseAndRoleIn(anyCollection())).thenReturn(1L);
 
         assertThatThrownBy(() -> runtimeIdentityAdminUserGovernanceApi.updateUserBannedAsAdmin(1L, true))
@@ -240,24 +238,4 @@ class RuntimeIdentityAdminUserGovernanceApiTest {
         return user;
     }
 
-    private AdminRuntimeSettingsService.State runtimeState(String... managementRoles) {
-        return new AdminRuntimeSettingsService.State(
-                false,
-                true,
-                List.of(managementRoles),
-                900L,
-                1209600L,
-                false,
-                60L,
-                true,
-                false,
-                false,
-                "in-memory",
-                3000L,
-                15000L,
-                false,
-                "local",
-                false
-        );
-    }
 }

@@ -7,9 +7,10 @@ import com.yoyuzh.platform.job.api.BackgroundTaskStatus;
 import com.yoyuzh.platform.job.api.BackgroundTaskType;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.yoyuzh.files.content.internal.domain.FileBlob;
-import com.yoyuzh.files.workspace.internal.domain.StoredFile;
-import com.yoyuzh.files.workspace.internal.infra.StoredFileRepository;
+import com.yoyuzh.files.content.api.ContentBlobQueryApi;
+import com.yoyuzh.files.content.api.ContentBlobReference;
+import com.yoyuzh.files.workspace.api.WorkspaceFileQueryApi;
+import com.yoyuzh.files.workspace.api.WorkspaceFileSnapshot;
 import com.yoyuzh.files.search.FileMetadata;
 import com.yoyuzh.files.search.FileMetadataRepository;
 import com.yoyuzh.files.storage.FileContentStorage;
@@ -38,7 +39,9 @@ import static org.mockito.Mockito.when;
 class MediaMetadataBackgroundTaskHandlerTest {
 
     @Mock
-    private StoredFileRepository storedFileRepository;
+    private WorkspaceFileQueryApi workspaceFileQueryApi;
+    @Mock
+    private ContentBlobQueryApi contentBlobQueryApi;
     @Mock
     private FileMetadataRepository fileMetadataRepository;
     @Mock
@@ -49,7 +52,8 @@ class MediaMetadataBackgroundTaskHandlerTest {
     @BeforeEach
     void setUp() {
         handler = new MediaMetadataBackgroundTaskHandler(
-                storedFileRepository,
+                workspaceFileQueryApi,
+                contentBlobQueryApi,
                 fileMetadataRepository,
                 fileContentStorage,
                 new BackgroundTaskStateManager(new ObjectMapper())
@@ -59,10 +63,12 @@ class MediaMetadataBackgroundTaskHandlerTest {
     @Test
     void shouldExtractImageMetadataFromPngBlob() throws Exception {
         BackgroundTask task = createTask(11L);
-        StoredFile file = createFile(11L, false, "image/png", 64L, "blobs/photo.png");
+        WorkspaceFileSnapshot file = createFile(11L, false, "image/png", 64L, 100L);
         byte[] pngBytes = createPngBytes(2, 1);
 
-        when(storedFileRepository.findByIdAndUserIdAndDeletedAtIsNull(11L, 7L)).thenReturn(Optional.of(file));
+        when(workspaceFileQueryApi.findOwnedActiveFile(7L, 11L)).thenReturn(Optional.of(file));
+        when(contentBlobQueryApi.findBlobReferenceById(100L))
+                .thenReturn(Optional.of(new ContentBlobReference(100L, "blobs/photo.png", "image/png", 64L)));
         when(fileContentStorage.readBlob("blobs/photo.png")).thenReturn(pngBytes);
         when(fileMetadataRepository.findByFileIdAndName(11L, "media:contentType")).thenReturn(Optional.empty());
         when(fileMetadataRepository.findByFileIdAndName(11L, "media:size")).thenReturn(Optional.empty());
@@ -92,9 +98,11 @@ class MediaMetadataBackgroundTaskHandlerTest {
     @Test
     void shouldWriteBaseMetadataForVideoBlobWithoutDimensions() {
         BackgroundTask task = createTask(12L);
-        StoredFile file = createFile(12L, false, "video/mp4", 128L, "blobs/movie.mp4");
+        WorkspaceFileSnapshot file = createFile(12L, false, "video/mp4", 128L, 100L);
 
-        when(storedFileRepository.findByIdAndUserIdAndDeletedAtIsNull(12L, 7L)).thenReturn(Optional.of(file));
+        when(workspaceFileQueryApi.findOwnedActiveFile(7L, 12L)).thenReturn(Optional.of(file));
+        when(contentBlobQueryApi.findBlobReferenceById(100L))
+                .thenReturn(Optional.of(new ContentBlobReference(100L, "blobs/movie.mp4", "video/mp4", 128L)));
         when(fileContentStorage.readBlob("blobs/movie.mp4")).thenReturn(new byte[] {0, 1, 2});
         when(fileMetadataRepository.findByFileIdAndName(12L, "media:contentType")).thenReturn(Optional.empty());
         when(fileMetadataRepository.findByFileIdAndName(12L, "media:size")).thenReturn(Optional.empty());
@@ -114,19 +122,19 @@ class MediaMetadataBackgroundTaskHandlerTest {
     void shouldRejectMissingFileDirectoryOrBlob() {
         BackgroundTask task = createTask(13L);
 
-        when(storedFileRepository.findByIdAndUserIdAndDeletedAtIsNull(13L, 7L)).thenReturn(Optional.empty());
+        when(workspaceFileQueryApi.findOwnedActiveFile(7L, 13L)).thenReturn(Optional.empty());
         assertThatThrownBy(() -> handler.handle(task))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessage("media metadata task file not found");
 
-        StoredFile directory = createFile(13L, true, null, 0L, null);
-        when(storedFileRepository.findByIdAndUserIdAndDeletedAtIsNull(13L, 7L)).thenReturn(Optional.of(directory));
+        WorkspaceFileSnapshot directory = createFile(13L, true, null, 0L, null);
+        when(workspaceFileQueryApi.findOwnedActiveFile(7L, 13L)).thenReturn(Optional.of(directory));
         assertThatThrownBy(() -> handler.handle(task))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessage("media metadata task only supports files");
 
-        StoredFile missingBlob = createFile(13L, false, "image/png", 10L, null);
-        when(storedFileRepository.findByIdAndUserIdAndDeletedAtIsNull(13L, 7L)).thenReturn(Optional.of(missingBlob));
+        WorkspaceFileSnapshot missingBlob = createFile(13L, false, "image/png", 10L, null);
+        when(workspaceFileQueryApi.findOwnedActiveFile(7L, 13L)).thenReturn(Optional.of(missingBlob));
         assertThatThrownBy(() -> handler.handle(task))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessage("media metadata task requires blob");
@@ -151,21 +159,18 @@ class MediaMetadataBackgroundTaskHandlerTest {
         return task;
     }
 
-    private StoredFile createFile(Long id, boolean directory, String contentType, Long size, String objectKey) {
-        StoredFile file = new StoredFile();
-        file.setId(id);
-        file.setDirectory(directory);
-        file.setContentType(contentType);
-        file.setSize(size);
-        if (objectKey != null) {
-            FileBlob blob = new FileBlob();
-            blob.setId(100L);
-            blob.setObjectKey(objectKey);
-            blob.setContentType(contentType);
-            blob.setSize(size);
-            file.setBlob(blob);
-        }
-        return file;
+    private WorkspaceFileSnapshot createFile(Long id, boolean directory, String contentType, Long size, Long blobId) {
+        return new WorkspaceFileSnapshot(
+                id,
+                7L,
+                "media-" + id,
+                "/media",
+                size,
+                contentType,
+                directory,
+                blobId,
+                java.time.LocalDateTime.now()
+        );
     }
 
     private byte[] createPngBytes(int width, int height) throws Exception {

@@ -111,13 +111,13 @@ class FileShareControllerIntegrationTest {
         blob = fileBlobRepository.save(blob);
 
         StoredFile file = new StoredFile();
-        file.setUser(owner);
+        file.setUserId(owner.getId());
         file.setFilename("notes.txt");
         file.setPath("/docs");
         file.setContentType("text/plain");
         file.setSize(5L);
         file.setDirectory(false);
-        file.setBlob(blob);
+        file.setBlobId(blob == null ? null : blob.getId());
         sharedFileId = storedFileRepository.save(file).getId();
 
         Path blobPath = STORAGE_ROOT.resolve("blobs").resolve("share-notes");
@@ -180,7 +180,7 @@ class FileShareControllerIntegrationTest {
                 .sorted(Comparator.comparing(StoredFile::getId))
                 .toList();
         assertThat(allFiles).hasSize(2);
-        assertThat(allFiles.get(0).getBlob().getId()).isEqualTo(allFiles.get(1).getBlob().getId());
+        assertThat(allFiles.get(0).getBlobId()).isEqualTo(allFiles.get(1).getBlobId());
         assertThat(fileBlobRepository.count()).isEqualTo(1L);
         try (var paths = Files.walk(STORAGE_ROOT)) {
             long physicalObjects = paths.filter(Files::isRegularFile).count();
@@ -192,7 +192,7 @@ class FileShareControllerIntegrationTest {
     void shouldRejectLegacyCreateShareForDirectoryUsingUnifiedShareRules() throws Exception {
         User owner = userRepository.findByUsername("alice").orElseThrow();
         StoredFile directory = new StoredFile();
-        directory.setUser(owner);
+        directory.setUserId(owner.getId());
         directory.setFilename("docs");
         directory.setPath("/");
         directory.setContentType("directory");
@@ -276,7 +276,7 @@ class FileShareControllerIntegrationTest {
         User owner = userRepository.findByUsername("alice").orElseThrow();
 
         StoredFile downloadDirectory = new StoredFile();
-        downloadDirectory.setUser(owner);
+        downloadDirectory.setUserId(owner.getId());
         downloadDirectory.setFilename("下载");
         downloadDirectory.setPath("/");
         downloadDirectory.setContentType("directory");
@@ -311,7 +311,7 @@ class FileShareControllerIntegrationTest {
         User owner = userRepository.findByUsername("alice").orElseThrow();
 
         StoredFile downloadDirectory = new StoredFile();
-        downloadDirectory.setUser(owner);
+        downloadDirectory.setUserId(owner.getId());
         downloadDirectory.setFilename("下载");
         downloadDirectory.setPath("/");
         downloadDirectory.setContentType("directory");
@@ -345,7 +345,7 @@ class FileShareControllerIntegrationTest {
                 .sorted(Comparator.comparing(StoredFile::getId))
                 .toList();
         assertThat(allFiles).hasSize(2);
-        assertThat(allFiles.get(0).getBlob().getId()).isEqualTo(allFiles.get(1).getBlob().getId());
+        assertThat(allFiles.get(0).getBlobId()).isEqualTo(allFiles.get(1).getBlobId());
         assertThat(fileBlobRepository.count()).isEqualTo(1L);
     }
 }

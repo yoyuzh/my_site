@@ -19,6 +19,8 @@ import com.yoyuzh.files.upload.InitiateUploadRequest;
 import com.yoyuzh.files.upload.InitiateUploadResponse;
 import com.yoyuzh.files.storage.FileContentStorage;
 import com.yoyuzh.files.storage.PreparedUpload;
+import com.yoyuzh.files.workspace.api.FavoriteFileResponse;
+import com.yoyuzh.files.workspace.api.FileDetailResponse;
 import com.yoyuzh.files.workspace.api.DownloadUrlResponse;
 import com.yoyuzh.files.workspace.api.FileMetadataResponse;
 import com.yoyuzh.files.workspace.api.WorkspaceDownloadOptions;
@@ -62,6 +64,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentCaptor.forClass;
 import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -97,7 +100,7 @@ class FileServiceTest {
     void setUp() {
         FileStorageProperties properties = new FileStorageProperties();
         properties.setMaxFileSize(500L * 1024 * 1024);
-        fileService = new FileService(
+        fileService = FileServiceTestSupport.create(
                 storedFileRepository,
                 fileBlobRepository,
                 fileContentStorage,
@@ -105,6 +108,10 @@ class FileServiceTest {
                 toDownloadOptions(properties),
                 properties.getMaxFileSize()
         );
+        lenient().when(fileBlobRepository.findById(anyLong())).thenAnswer(invocation -> {
+            Long blobId = invocation.getArgument(0);
+            return Optional.of(createBlob(blobId, "blobs/blob-" + blobId, 5L, "text/plain"));
+        });
     }
 
     @Test
@@ -124,7 +131,7 @@ class FileServiceTest {
             return file;
         });
 
-        FileMetadataResponse response = fileService.upload(user, "/docs", multipartFile);
+        FileMetadataResponse response = fileService.upload(FileServiceTestSupport.workspaceUser(user), "/docs", multipartFile);
 
         assertThat(response.id()).isEqualTo(10L);
         assertThat(response.path()).isEqualTo("/docs");
@@ -154,13 +161,24 @@ class FileServiceTest {
             return file;
         });
 
-        fileService.upload(user, "/docs", multipartFile);
+        fileService.upload(FileServiceTestSupport.workspaceUser(user), "/docs", multipartFile);
 
         verify(backgroundTaskLifecycleApi).createQueuedAutoMediaMetadataTask(7L, 10L, null);
     }
 
     @Test
     void shouldAttachPrimaryEntityWhenUploadingFile() {
+        fileService = FileServiceTestSupport.create(
+                storedFileRepository,
+                fileBlobRepository,
+                fileEntityRepository,
+                storedFileEntityRepository,
+                fileContentStorage,
+                storagePolicyQuery,
+                adminMetricsService,
+                WorkspaceDownloadOptions.disabled(),
+                new FileStorageProperties().getMaxFileSize()
+        );
         User user = createUser(7L);
         MockMultipartFile multipartFile = new MockMultipartFile(
                 "file", "notes.txt", "text/plain", "hello".getBytes());
@@ -175,8 +193,21 @@ class FileServiceTest {
             file.setId(10L);
             return file;
         });
+        when(fileEntityRepository.findByObjectKeyAndEntityType(anyString(), eq(FileEntityType.VERSION)))
+                .thenReturn(Optional.empty());
+        when(fileEntityRepository.save(any(FileEntity.class))).thenAnswer(invocation -> {
+            FileEntity entity = invocation.getArgument(0);
+            entity.setId(200L);
+            return entity;
+        });
+        when(storagePolicyQuery.readDefaultPolicySnapshot()).thenReturn(new DefaultStoragePolicySnapshot(
+                42L,
+                500L * 1024 * 1024,
+                defaultCapabilities()
+        ));
+        when(storagePolicyQuery.readDefaultPolicyId()).thenReturn(42L);
 
-        fileService.upload(user, "/docs", multipartFile);
+        fileService.upload(FileServiceTestSupport.workspaceUser(user), "/docs", multipartFile);
 
         var savedFileCaptor = forClass(StoredFile.class);
         verify(storedFileRepository, times(2)).save(savedFileCaptor.capture());
@@ -184,15 +215,13 @@ class FileServiceTest {
                 .filter(file -> !file.isDirectory())
                 .findFirst()
                 .orElseThrow();
-        assertThat(storedFile.getPrimaryEntity()).isNotNull();
-        assertThat(storedFile.getPrimaryEntity().getObjectKey()).isEqualTo(storedFile.getBlob().getObjectKey());
-        assertThat(storedFile.getPrimaryEntity().getEntityType()).isEqualTo(FileEntityType.VERSION);
-        assertThat(storedFile.getPrimaryEntity().getReferenceCount()).isEqualTo(1);
+        assertThat(storedFile.getBlobId()).isEqualTo(100L);
+        assertThat(storedFile.getPrimaryEntityId()).isEqualTo(200L);
     }
 
     @Test
     void shouldPersistFileEntityAndRelationWhenUploadingFile() {
-        fileService = new FileService(
+        fileService = FileServiceTestSupport.create(
                 storedFileRepository,
                 fileBlobRepository,
                 fileEntityRepository,
@@ -231,18 +260,18 @@ class FileServiceTest {
             return file;
         });
 
-        fileService.upload(user, "/docs", multipartFile);
+        fileService.upload(FileServiceTestSupport.workspaceUser(user), "/docs", multipartFile);
 
         var entityCaptor = forClass(FileEntity.class);
         verify(fileEntityRepository).save(entityCaptor.capture());
         assertThat(entityCaptor.getValue().getObjectKey()).startsWith("blobs/");
         assertThat(entityCaptor.getValue().getEntityType()).isEqualTo(FileEntityType.VERSION);
-        assertThat(entityCaptor.getValue().getCreatedBy().getId()).isEqualTo(user.getId());
+        assertThat(entityCaptor.getValue().getCreatedByUserId()).isEqualTo(user.getId());
         assertThat(entityCaptor.getValue().getStoragePolicyId()).isEqualTo(42L);
 
         var relationCaptor = forClass(StoredFileEntity.class);
         verify(storedFileEntityRepository).save(relationCaptor.capture());
-        assertThat(relationCaptor.getValue().getStoredFile().getId()).isEqualTo(10L);
+        assertThat(relationCaptor.getValue().getStoredFileId()).isEqualTo(10L);
         assertThat(relationCaptor.getValue().getFileEntity().getId()).isEqualTo(200L);
         assertThat(relationCaptor.getValue().getEntityRole()).isEqualTo("PRIMARY");
     }
@@ -254,7 +283,7 @@ class FileServiceTest {
         when(fileContentStorage.prepareBlobUpload(eq("/docs"), eq("notes.txt"), org.mockito.ArgumentMatchers.argThat((String key) -> key != null && key.startsWith("blobs/")), eq("text/plain"), eq(12L)))
                 .thenReturn(new PreparedUpload(true, "https://upload.example.com", "PUT", Map.of("Content-Type", "text/plain"), "blobs/upload-1"));
 
-        InitiateUploadResponse response = fileService.initiateUpload(user,
+        InitiateUploadResponse response = fileService.initiateUpload(FileServiceTestSupport.workspaceUser(user),
                 new InitiateUploadRequest("/docs", "notes.txt", "text/plain", 12L));
 
         assertThat(response.direct()).isTrue();
@@ -271,7 +300,7 @@ class FileServiceTest {
         when(fileContentStorage.prepareBlobUpload(eq("/docs"), eq("movie.zip"), org.mockito.ArgumentMatchers.argThat((String key) -> key != null && key.startsWith("blobs/")), eq("application/zip"), eq(uploadSize)))
                 .thenReturn(new PreparedUpload(true, "https://upload.example.com", "PUT", Map.of(), "blobs/upload-2"));
 
-        InitiateUploadResponse response = fileService.initiateUpload(user,
+        InitiateUploadResponse response = fileService.initiateUpload(FileServiceTestSupport.workspaceUser(user),
                 new InitiateUploadRequest("/docs", "movie.zip", "application/zip", uploadSize));
 
         assertThat(response.direct()).isTrue();
@@ -280,7 +309,7 @@ class FileServiceTest {
 
     @Test
     void shouldInitiateProxyUploadWhenDefaultPolicyDisablesDirectUpload() {
-        fileService = new FileService(
+        fileService = FileServiceTestSupport.create(
                 storedFileRepository,
                 fileBlobRepository,
                 fileEntityRepository,
@@ -304,7 +333,7 @@ class FileServiceTest {
                 false,
                 500L * 1024 * 1024
         )));
-        InitiateUploadResponse response = fileService.initiateUpload(user,
+        InitiateUploadResponse response = fileService.initiateUpload(FileServiceTestSupport.workspaceUser(user),
                 new InitiateUploadRequest("/docs", "notes.txt", "text/plain", 12L));
 
         assertThat(response.direct()).isFalse();
@@ -327,7 +356,7 @@ class FileServiceTest {
             return file;
         });
 
-        FileMetadataResponse response = fileService.completeUpload(user,
+        FileMetadataResponse response = fileService.completeUpload(FileServiceTestSupport.workspaceUser(user),
                 new CompleteUploadRequest("/docs", "notes.txt", "blobs/upload-3", "text/plain", 12L));
 
         assertThat(response.id()).isEqualTo(11L);
@@ -345,7 +374,7 @@ class FileServiceTest {
         when(fileBlobRepository.save(any(FileBlob.class))).thenAnswer(invocation -> invocation.getArgument(0));
         doThrow(new IllegalStateException("insert failed")).when(storedFileRepository).save(any(StoredFile.class));
 
-        assertThatThrownBy(() -> fileService.upload(user, "/docs", multipartFile))
+        assertThatThrownBy(() -> fileService.upload(FileServiceTestSupport.workspaceUser(user), "/docs", multipartFile))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("insert failed");
 
@@ -362,7 +391,7 @@ class FileServiceTest {
         when(fileBlobRepository.save(any(FileBlob.class))).thenAnswer(invocation -> invocation.getArgument(0));
         doThrow(new IllegalStateException("insert failed")).when(storedFileRepository).save(any(StoredFile.class));
 
-        assertThatThrownBy(() -> fileService.completeUpload(user,
+        assertThatThrownBy(() -> fileService.completeUpload(FileServiceTestSupport.workspaceUser(user),
                 new CompleteUploadRequest("/docs", "notes.txt", "blobs/upload-fail", "text/plain", 12L)))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("insert failed");
@@ -379,7 +408,7 @@ class FileServiceTest {
         when(fileBlobRepository.save(any(FileBlob.class))).thenAnswer(invocation -> invocation.getArgument(0));
         when(storedFileRepository.save(any(StoredFile.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
-        fileService.completeUpload(user,
+        fileService.completeUpload(FileServiceTestSupport.workspaceUser(user),
                 new CompleteUploadRequest("/projects/site", "logo.png", "blobs/upload-4", "image/png", 12L));
 
         verify(fileContentStorage).ensureDirectory(7L, "/projects");
@@ -396,7 +425,7 @@ class FileServiceTest {
         when(storedFileRepository.existsByUserIdAndPathAndFilename(7L, "/docs", "renamed.txt")).thenReturn(false);
         when(storedFileRepository.save(any(StoredFile.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
-        FileMetadataResponse response = fileService.rename(user, 10L, "renamed.txt");
+        FileMetadataResponse response = fileService.rename(FileServiceTestSupport.workspaceUser(user), 10L, "renamed.txt");
 
         assertThat(response.filename()).isEqualTo("renamed.txt");
         verify(fileContentStorage, never()).renameFile(any(), any(), any(), any());
@@ -413,7 +442,7 @@ class FileServiceTest {
         when(storedFileRepository.findByUserIdAndPathEqualsOrDescendant(7L, "/docs/archive")).thenReturn(List.of(childFile));
         when(storedFileRepository.save(any(StoredFile.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
-        FileMetadataResponse response = fileService.rename(user, 10L, "renamed-archive");
+        FileMetadataResponse response = fileService.rename(FileServiceTestSupport.workspaceUser(user), 10L, "renamed-archive");
 
         assertThat(response.filename()).isEqualTo("renamed-archive");
         assertThat(childFile.getPath()).isEqualTo("/docs/renamed-archive");
@@ -430,7 +459,7 @@ class FileServiceTest {
         when(storedFileRepository.existsByUserIdAndPathAndFilename(7L, "/下载", "notes.txt")).thenReturn(false);
         when(storedFileRepository.save(any(StoredFile.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
-        FileMetadataResponse response = fileService.move(user, 10L, "/下载");
+        FileMetadataResponse response = fileService.move(FileServiceTestSupport.workspaceUser(user), 10L, "/下载");
 
         assertThat(response.path()).isEqualTo("/下载");
         assertThat(file.getPath()).isEqualTo("/下载");
@@ -450,7 +479,7 @@ class FileServiceTest {
         when(storedFileRepository.save(any(StoredFile.class))).thenAnswer(invocation -> invocation.getArgument(0));
         when(storedFileRepository.saveAll(List.of(childFile))).thenReturn(List.of(childFile));
 
-        FileMetadataResponse response = fileService.move(user, 10L, "/图片");
+        FileMetadataResponse response = fileService.move(FileServiceTestSupport.workspaceUser(user), 10L, "/图片");
 
         assertThat(response.path()).isEqualTo("/图片/archive");
         assertThat(directory.getPath()).isEqualTo("/图片");
@@ -473,7 +502,7 @@ class FileServiceTest {
         when(storedFileRepository.findByUserIdAndPathAndFilename(7L, "/docs/archive", "nested"))
                 .thenReturn(Optional.of(descendantDirectory));
 
-        assertThatThrownBy(() -> fileService.move(user, 10L, "/docs/archive/nested"))
+        assertThatThrownBy(() -> fileService.move(FileServiceTestSupport.workspaceUser(user), 10L, "/docs/archive/nested"))
                 .isInstanceOf(BusinessException.class)
                 .hasMessageContaining("不能移动到当前目录或其子目录");
     }
@@ -495,15 +524,14 @@ class FileServiceTest {
             return storedFile;
         });
 
-        FileMetadataResponse response = fileService.copy(user, 10L, "/下载");
+        FileMetadataResponse response = fileService.copy(FileServiceTestSupport.workspaceUser(user), 10L, "/下载");
 
         assertThat(response.id()).isEqualTo(20L);
         assertThat(response.path()).isEqualTo("/下载");
-        assertThat(file.getBlob()).isSameAs(blob);
+        assertThat(file.getBlobId()).isEqualTo(blob.getId());
         var copiedFileCaptor = forClass(StoredFile.class);
         verify(storedFileRepository).save(copiedFileCaptor.capture());
-        assertThat(copiedFileCaptor.getValue().getPrimaryEntity()).isNotNull();
-        assertThat(copiedFileCaptor.getValue().getPrimaryEntity().getObjectKey()).isEqualTo(blob.getObjectKey());
+        assertThat(copiedFileCaptor.getValue().getBlobId()).isEqualTo(blob.getId());
         verify(fileContentStorage, never()).copyFile(any(), any(), any(), any());
     }
 
@@ -533,7 +561,7 @@ class FileServiceTest {
             return storedFile;
         });
 
-        FileMetadataResponse response = fileService.copy(user, 10L, "/图片");
+        FileMetadataResponse response = fileService.copy(FileServiceTestSupport.workspaceUser(user), 10L, "/图片");
 
         assertThat(response.path()).isEqualTo("/图片/archive");
         verify(fileContentStorage, never()).copyFile(any(), any(), any(), any());
@@ -554,7 +582,7 @@ class FileServiceTest {
         when(storedFileRepository.findByUserIdAndPathAndFilename(7L, "/docs/archive", "nested"))
                 .thenReturn(Optional.of(descendantDirectory));
 
-        assertThatThrownBy(() -> fileService.copy(user, 10L, "/docs/archive/nested"))
+        assertThatThrownBy(() -> fileService.copy(FileServiceTestSupport.workspaceUser(user), 10L, "/docs/archive/nested"))
                 .isInstanceOf(BusinessException.class)
                 .hasMessageContaining("不能复制到当前目录或其子目录");
     }
@@ -566,7 +594,7 @@ class FileServiceTest {
         StoredFile storedFile = createFile(100L, owner, "/docs", "notes.txt");
         when(storedFileRepository.findDetailedById(100L)).thenReturn(Optional.of(storedFile));
 
-        assertThatThrownBy(() -> fileService.delete(requester, 100L))
+        assertThatThrownBy(() -> fileService.delete(FileServiceTestSupport.workspaceUser(requester), 100L))
                 .isInstanceOf(BusinessException.class)
                 .hasMessageContaining("没有权限");
     }
@@ -582,7 +610,7 @@ class FileServiceTest {
         when(storedFileRepository.findDetailedById(10L)).thenReturn(Optional.of(directory));
         when(storedFileRepository.findByUserIdAndPathEqualsOrDescendant(7L, "/docs/archive")).thenReturn(List.of(nestedDirectory, childFile));
 
-        fileService.delete(user, 10L);
+        fileService.delete(FileServiceTestSupport.workspaceUser(user), 10L);
 
         assertThat(directory.getDeletedAt()).isNotNull();
         assertThat(directory.isRecycleRoot()).isTrue();
@@ -613,7 +641,7 @@ class FileServiceTest {
         StoredFile storedFile = createFile(15L, user, "/docs", "shared.txt", blob);
         when(storedFileRepository.findDetailedById(15L)).thenReturn(Optional.of(storedFile));
 
-        fileService.delete(user, 15L);
+        fileService.delete(FileServiceTestSupport.workspaceUser(user), 15L);
 
         assertThat(storedFile.getDeletedAt()).isNotNull();
         assertThat(storedFile.isRecycleRoot()).isTrue();
@@ -634,6 +662,7 @@ class FileServiceTest {
         storedFile.setPath("/.recycle/recycle-group-1/docs");
         when(storedFileRepository.findByDeletedAtBefore(any(LocalDateTime.class))).thenReturn(List.of(storedFile));
         when(storedFileRepository.countByBlobId(71L)).thenReturn(1L);
+        when(fileBlobRepository.findById(71L)).thenReturn(Optional.of(blob));
 
         fileService.pruneExpiredRecycleBinItems();
 
@@ -654,11 +683,73 @@ class FileServiceTest {
         when(cacheService.getOrLoad(eq(7L), eq("/docs"), eq(0), eq(10), any()))
                 .thenAnswer(invocation -> invocation.<java.util.function.Supplier<com.yoyuzh.shared.kernel.PageResponse<FileMetadataResponse>>>getArgument(4).get());
 
-        var result = fileService.list(user, "/docs", 0, 10);
+        var result = fileService.list(FileServiceTestSupport.workspaceUser(user), "/docs", 0, 10);
 
         assertThat(result.items()).hasSize(1);
         assertThat(result.items().get(0).filename()).isEqualTo("notes.txt");
         verify(cacheService).getOrLoad(eq(7L), eq("/docs"), eq(0), eq(10), any());
+    }
+
+    @Test
+    void shouldExposeFileDetailForOwnedActiveFile() {
+        User user = createUser(7L);
+        StoredFile file = createFile(100L, user, "/docs", "notes.txt");
+        file.setFavorite(true);
+        when(storedFileRepository.findByIdAndUserIdAndDeletedAtIsNull(100L, 7L)).thenReturn(Optional.of(file));
+
+        FileDetailResponse result = fileService.detail(FileServiceTestSupport.workspaceUser(user), 100L);
+
+        assertThat(result.id()).isEqualTo(100L);
+        assertThat(result.filename()).isEqualTo("notes.txt");
+        assertThat(result.favorite()).isTrue();
+        assertThat(result.shared()).isFalse();
+    }
+
+    @Test
+    void shouldToggleFavoriteFlagForOwnedFile() {
+        User user = createUser(7L);
+        StoredFile file = createFile(101L, user, "/docs", "notes.txt");
+        when(storedFileRepository.findByIdAndUserIdAndDeletedAtIsNull(101L, 7L)).thenReturn(Optional.of(file));
+        when(storedFileRepository.save(any(StoredFile.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        FavoriteFileResponse result = fileService.setFavorite(FileServiceTestSupport.workspaceUser(user), 101L, true);
+
+        assertThat(result.fileId()).isEqualTo(101L);
+        assertThat(result.favorite()).isTrue();
+        assertThat(file.isFavorite()).isTrue();
+        verify(storedFileRepository).save(file);
+    }
+
+    @Test
+    void shouldListFavoriteFiles() {
+        User user = createUser(7L);
+        StoredFile first = createFile(110L, user, "/docs", "notes.txt");
+        StoredFile second = createFile(111L, user, "/docs", "todo.txt");
+        first.setFavorite(true);
+        second.setFavorite(true);
+        when(storedFileRepository.findTop20ByUserIdAndFavoriteTrueAndDeletedAtIsNullOrderByUpdatedAtDesc(7L))
+                .thenReturn(List.of(first, second));
+
+        List<FavoriteFileResponse> result = fileService.listFavorites(FileServiceTestSupport.workspaceUser(user));
+
+        assertThat(result).containsExactly(
+                new FavoriteFileResponse(110L, true),
+                new FavoriteFileResponse(111L, true)
+        );
+    }
+
+    @Test
+    void shouldBatchDeleteEachFileId() {
+        User user = createUser(7L);
+        StoredFile first = createFile(120L, user, "/docs", "notes.txt");
+        StoredFile second = createFile(121L, user, "/docs", "todo.txt");
+        when(storedFileRepository.findDetailedById(120L)).thenReturn(Optional.of(first));
+        when(storedFileRepository.findDetailedById(121L)).thenReturn(Optional.of(second));
+
+        fileService.batchDelete(FileServiceTestSupport.workspaceUser(user), List.of(120L, 121L));
+
+        assertThat(first.getDeletedAt()).isNotNull();
+        assertThat(second.getDeletedAt()).isNotNull();
     }
 
     @Test
@@ -669,7 +760,7 @@ class FileServiceTest {
         when(storedFileRepository.existsByUserIdAndPathAndFilename(7L, "/", "图片")).thenReturn(false);
         when(storedFileRepository.save(any(StoredFile.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
-        fileService.ensureDefaultDirectories(user);
+        fileService.ensureDefaultDirectories(FileServiceTestSupport.workspaceUser(user));
 
         verify(fileContentStorage).ensureDirectory(7L, "/下载");
         verify(fileContentStorage).ensureDirectory(7L, "/文档");
@@ -686,7 +777,7 @@ class FileServiceTest {
         when(fileContentStorage.createBlobDownloadUrl("blobs/blob-22", "notes.txt"))
                 .thenReturn("https://download.example.com/file");
 
-        DownloadUrlResponse response = fileService.getDownloadUrl(user, 22L);
+        DownloadUrlResponse response = fileService.getDownloadUrl(FileServiceTestSupport.workspaceUser(user), 22L);
 
         assertThat(response.url()).isEqualTo("https://download.example.com/file");
         verify(adminMetricsService, never()).recordDownloadTraffic(anyLong());
@@ -698,7 +789,7 @@ class FileServiceTest {
         when(storedFileRepository.existsByUserIdAndPathAndFilename(anyLong(), anyString(), anyString())).thenReturn(false);
         when(storedFileRepository.save(any(StoredFile.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
-        fileService.ensureDefaultDirectories(user);
+        fileService.ensureDefaultDirectories(FileServiceTestSupport.workspaceUser(user));
 
         ArgumentCaptor<StoredFile> captor = ArgumentCaptor.forClass(StoredFile.class);
         verify(storedFileRepository, times(3)).save(captor.capture());
@@ -714,7 +805,7 @@ class FileServiceTest {
         properties.getS3().setPackageDownloadBaseUrl("https://api.yoyuzh.xyz/_dl");
         properties.getS3().setPackageDownloadSecret("test-secret");
         properties.getS3().setPackageDownloadTtlSeconds(300);
-        fileService = new FileService(
+        fileService = FileServiceTestSupport.create(
                 storedFileRepository,
                 fileBlobRepository,
                 fileContentStorage,
@@ -730,7 +821,7 @@ class FileServiceTest {
         when(storedFileRepository.findDetailedById(22L)).thenReturn(Optional.of(file));
         when(fileContentStorage.supportsDirectDownload()).thenReturn(true);
 
-        DownloadUrlResponse response = fileService.getDownloadUrl(user, 22L);
+        DownloadUrlResponse response = fileService.getDownloadUrl(FileServiceTestSupport.workspaceUser(user), 22L);
 
         URI uri = URI.create(response.url());
         assertThat(uri.getScheme()).isEqualTo("https");
@@ -749,7 +840,7 @@ class FileServiceTest {
         properties.getS3().setPackageDownloadBaseUrl("https://api.yoyuzh.xyz/_dl");
         properties.getS3().setPackageDownloadSecret("test-secret");
         properties.getS3().setPackageDownloadTtlSeconds(300);
-        fileService = new FileService(
+        fileService = FileServiceTestSupport.create(
                 storedFileRepository,
                 fileBlobRepository,
                 fileContentStorage,
@@ -765,7 +856,7 @@ class FileServiceTest {
         when(storedFileRepository.findDetailedById(22L)).thenReturn(Optional.of(file));
         when(fileContentStorage.supportsDirectDownload()).thenReturn(true);
 
-        WorkspaceDownloadResult response = fileService.download(user, 22L);
+        WorkspaceDownloadResult response = fileService.download(FileServiceTestSupport.workspaceUser(user), 22L);
 
         assertThat(response.redirect()).isTrue();
         URI uri = URI.create(response.redirectUrl());
@@ -778,13 +869,79 @@ class FileServiceTest {
     }
 
     @Test
+    void shouldUseDlUrlForPrivateIpaDetectedByFilenameAndOctetStreamContentType() {
+        FileStorageProperties properties = new FileStorageProperties();
+        properties.setMaxFileSize(500L * 1024 * 1024);
+        properties.getS3().setPackageDownloadBaseUrl("https://packages.example.com/downloads/");
+        properties.getS3().setPackageDownloadSecret("test-secret");
+        properties.getS3().setPackageDownloadTtlSeconds(300);
+        fileService = FileServiceTestSupport.create(
+                storedFileRepository,
+                fileBlobRepository,
+                fileContentStorage,
+                adminMetricsService,
+                toDownloadOptions(properties),
+                properties.getMaxFileSize(),
+                Clock.fixed(Instant.parse("2026-04-04T04:30:00Z"), ZoneOffset.UTC)
+        );
+
+        User user = createUser(7L);
+        FileBlob blob = createBlob(23L, "/blobs/blob-23", 5L, "application/octet-stream");
+        StoredFile file = createFile(23L, user, "/apps", "客户端.ipa", blob);
+        file.setContentType("application/octet-stream");
+        when(storedFileRepository.findDetailedById(23L)).thenReturn(Optional.of(file));
+        when(fileBlobRepository.findById(23L)).thenReturn(Optional.of(blob));
+        when(fileContentStorage.supportsDirectDownload()).thenReturn(true);
+
+        DownloadUrlResponse response = fileService.getDownloadUrl(FileServiceTestSupport.workspaceUser(user), 23L);
+
+        URI uri = URI.create(response.url());
+        assertThat(uri.getHost()).isEqualTo("packages.example.com");
+        assertThat(uri.getPath()).isEqualTo("/downloads/blobs/blob-23");
+        assertThat(response.url()).contains("expires=1775277300");
+        assertThat(response.url()).contains("response-content-disposition=attachment%3B%20filename%3D%22download.ipa%22%3B%20filename*%3DUTF-8%27%27%E5%AE%A2%E6%88%B7%E7%AB%AF.ipa");
+        verify(fileContentStorage, never()).createBlobDownloadUrl(any(), any());
+    }
+
+    @Test
+    void shouldNotUseDlUrlForNonPackageOctetStreamFile() {
+        FileStorageProperties properties = new FileStorageProperties();
+        properties.setMaxFileSize(500L * 1024 * 1024);
+        properties.getS3().setPackageDownloadBaseUrl("https://api.yoyuzh.xyz/_dl");
+        properties.getS3().setPackageDownloadSecret("test-secret");
+        properties.getS3().setPackageDownloadTtlSeconds(300);
+        fileService = FileServiceTestSupport.create(
+                storedFileRepository,
+                fileBlobRepository,
+                fileContentStorage,
+                adminMetricsService,
+                toDownloadOptions(properties),
+                properties.getMaxFileSize(),
+                Clock.fixed(Instant.parse("2026-04-04T04:30:00Z"), ZoneOffset.UTC)
+        );
+
+        User user = createUser(7L);
+        StoredFile file = createFile(24L, user, "/docs", "payload.bin");
+        file.setContentType("application/octet-stream");
+        when(storedFileRepository.findDetailedById(24L)).thenReturn(Optional.of(file));
+        when(fileContentStorage.supportsDirectDownload()).thenReturn(true);
+        when(fileContentStorage.createBlobDownloadUrl("blobs/blob-24", "payload.bin"))
+                .thenReturn("https://download.example.com/payload.bin");
+
+        DownloadUrlResponse response = fileService.getDownloadUrl(FileServiceTestSupport.workspaceUser(user), 24L);
+
+        assertThat(response.url()).isEqualTo("https://download.example.com/payload.bin");
+        verify(fileContentStorage).createBlobDownloadUrl("blobs/blob-24", "payload.bin");
+    }
+
+    @Test
     void shouldFallbackToBackendDownloadUrlWhenStorageIsLocal() {
         User user = createUser(7L);
         StoredFile file = createFile(22L, user, "/docs", "notes.txt");
         when(storedFileRepository.findDetailedById(22L)).thenReturn(Optional.of(file));
         when(fileContentStorage.supportsDirectDownload()).thenReturn(false);
 
-        DownloadUrlResponse response = fileService.getDownloadUrl(user, 22L);
+        DownloadUrlResponse response = fileService.getDownloadUrl(FileServiceTestSupport.workspaceUser(user), 22L);
 
         assertThat(response.url()).isEqualTo("/api/files/download/22");
         verify(fileContentStorage, never()).createDownloadUrl(any(), any(), any(), any());
@@ -806,7 +963,7 @@ class FileServiceTest {
         when(fileContentStorage.readBlob("blobs/blob-13"))
                 .thenReturn("world".getBytes(StandardCharsets.UTF_8));
 
-        WorkspaceDownloadResult response = fileService.download(user, 10L);
+        WorkspaceDownloadResult response = fileService.download(FileServiceTestSupport.workspaceUser(user), 10L);
 
         assertThat(response.redirect()).isFalse();
         assertThat(response.filename()).isEqualTo("archive.zip");
@@ -924,6 +1081,29 @@ class FileServiceTest {
     }
 
     @Test
+    void shouldReadEmptyZipCompatibleArchiveWhenSignatureIsValid() throws Exception {
+        User user = createUser(7L);
+        StoredFile archive = createFile(22L, user, "/docs", "empty.zip", createBlob(22L, "blobs/blob-22", 22L, "application/zip"));
+        when(fileContentStorage.readBlob("blobs/blob-22")).thenReturn(createZipArchive(Map.of()));
+
+        FileService.ZipCompatibleArchive zipArchive = fileService.readZipCompatibleArchive(archive);
+
+        assertThat(zipArchive.entries()).isEmpty();
+        assertThat(zipArchive.commonRootDirectoryName()).isNull();
+    }
+
+    @Test
+    void shouldRejectZipCompatibleArchiveWhenNoEntryAndSignatureIsInvalid() {
+        User user = createUser(7L);
+        StoredFile archive = createFile(25L, user, "/docs", "broken.zip", createBlob(25L, "blobs/blob-25", 9L, "application/zip"));
+        when(fileContentStorage.readBlob("blobs/blob-25")).thenReturn("not-a-zip".getBytes(StandardCharsets.UTF_8));
+
+        assertThatThrownBy(() -> fileService.readZipCompatibleArchive(archive))
+                .isInstanceOf(BusinessException.class)
+                .hasMessage("压缩包读取失败");
+    }
+
+    @Test
     void shouldDeleteWrittenBlobsWhenBatchExternalImportFails() {
         User user = createUser(8L);
         StoredFile docs = createDirectory(300L, user, "/", "docs");
@@ -946,7 +1126,7 @@ class FileServiceTest {
                 });
 
         assertThatThrownBy(() -> fileService.importExternalFilesAtomically(
-                user,
+                FileServiceTestSupport.workspaceUser(user),
                 List.of(),
                 List.of(
                         new FileService.ExternalFileImport("/docs", "first.txt", "text/plain", "first".getBytes(StandardCharsets.UTF_8)),
@@ -973,7 +1153,7 @@ class FileServiceTest {
         when(fileBlobRepository.save(any(FileBlob.class))).thenAnswer(invocation -> invocation.getArgument(0));
         doThrow(new IllegalStateException("insert failed")).when(storedFileRepository).save(any(StoredFile.class));
 
-        assertThatThrownBy(() -> fileService.importExternalFile(recipient, "/下载", "notes.txt", "text/plain", content.length, content))
+        assertThatThrownBy(() -> fileService.importExternalFile(FileServiceTestSupport.workspaceUser(recipient), "/下载", "notes.txt", "text/plain", content.length, content))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("insert failed");
 
@@ -1008,13 +1188,13 @@ class FileServiceTest {
     private StoredFile createFile(Long id, User user, String path, String filename, FileBlob blob) {
         StoredFile file = new StoredFile();
         file.setId(id);
-        file.setUser(user);
+        file.setUserId(user.getId());
         file.setFilename(filename);
         file.setPath(path);
         file.setSize(5L);
         file.setDirectory(false);
         file.setContentType("text/plain");
-        file.setBlob(blob);
+        file.setBlobId(blob == null ? null : blob.getId());
         file.setCreatedAt(LocalDateTime.now());
         return file;
     }
@@ -1024,7 +1204,7 @@ class FileServiceTest {
         directory.setDirectory(true);
         directory.setContentType("directory");
         directory.setSize(0L);
-        directory.setBlob(null);
+        directory.setBlobId(null);
         return directory;
     }
 

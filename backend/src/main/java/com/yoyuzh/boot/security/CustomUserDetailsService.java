@@ -1,7 +1,7 @@
 package com.yoyuzh.boot.security;
 
-import com.yoyuzh.identity.access.internal.domain.User;
-import com.yoyuzh.identity.access.internal.infra.UserRepository;
+import com.yoyuzh.identity.access.api.IdentityAuthenticatedUser;
+import com.yoyuzh.identity.access.api.IdentityAuthenticationApi;
 import com.yoyuzh.shared.kernel.BusinessException;
 import com.yoyuzh.shared.kernel.ErrorCode;
 import lombok.RequiredArgsConstructor;
@@ -14,21 +14,25 @@ import org.springframework.stereotype.Service;
 @RequiredArgsConstructor
 public class CustomUserDetailsService implements UserDetailsService {
 
-    private final UserRepository userRepository;
+    private final IdentityAuthenticationApi identityAuthenticationApi;
 
     @Override
     public UserDetails loadUserByUsername(String username) throws UsernameNotFoundException {
-        User user = userRepository.findByUsername(username)
+        IdentityAuthenticatedUser user = identityAuthenticationApi.findByUsername(username)
                 .orElseThrow(() -> new UsernameNotFoundException("用户不存在"));
-        return org.springframework.security.core.userdetails.User.withUsername(user.getUsername())
-                .password(user.getPasswordHash())
-                .authorities("ROLE_" + user.getRole().name())
-                .disabled(user.isBanned())
+        return org.springframework.security.core.userdetails.User.withUsername(user.username())
+                .password(user.passwordHash())
+                .authorities("ROLE_" + user.role().name())
+                .disabled(user.banned())
                 .build();
     }
 
-    public User loadDomainUser(String username) {
-        return userRepository.findByUsername(username)
+    public IdentityAuthenticatedUser loadAuthenticatedUser(String username) {
+        return identityAuthenticationApi.findByUsername(username)
                 .orElseThrow(() -> new BusinessException(ErrorCode.NOT_LOGGED_IN, "用户不存在"));
+    }
+
+    public Long loadUserId(String username) {
+        return loadAuthenticatedUser(username).id();
     }
 }

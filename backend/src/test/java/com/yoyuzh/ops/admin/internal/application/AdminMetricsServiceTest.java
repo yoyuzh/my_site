@@ -6,6 +6,9 @@ import com.yoyuzh.ops.admin.internal.infra.AdminMetricsState;
 import com.yoyuzh.ops.admin.internal.infra.AdminMetricsStateRepository;
 import com.yoyuzh.ops.admin.internal.infra.AdminRequestTimelinePointEntity;
 import com.yoyuzh.ops.admin.internal.infra.AdminRequestTimelinePointRepository;
+import com.yoyuzh.files.workspace.api.WorkspaceAdminMetricsApi;
+import com.yoyuzh.files.sharing.api.SharingAdminMetricsApi;
+import com.yoyuzh.platform.job.api.BackgroundTaskAdminQueryApi;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -32,6 +35,12 @@ class AdminMetricsServiceTest {
     private AdminRequestTimelinePointRepository adminRequestTimelinePointRepository;
     @Mock
     private AdminDailyActiveUserRepository adminDailyActiveUserRepository;
+    @Mock
+    private WorkspaceAdminMetricsApi workspaceAdminMetricsApi;
+    @Mock
+    private SharingAdminMetricsApi sharingAdminMetricsApi;
+    @Mock
+    private BackgroundTaskAdminQueryApi backgroundTaskAdminQueryApi;
 
     private AdminMetricsService adminMetricsService;
 
@@ -40,7 +49,10 @@ class AdminMetricsServiceTest {
         adminMetricsService = new AdminMetricsService(
                 adminMetricsStateRepository,
                 adminRequestTimelinePointRepository,
-                adminDailyActiveUserRepository
+                adminDailyActiveUserRepository,
+                workspaceAdminMetricsApi,
+                sharingAdminMetricsApi,
+                backgroundTaskAdminQueryApi
         );
     }
 
@@ -57,10 +69,16 @@ class AdminMetricsServiceTest {
         when(adminRequestTimelinePointRepository.findAllByMetricDateOrderByHourAsc(LocalDate.now())).thenReturn(java.util.List.of());
         when(adminDailyActiveUserRepository.findAllByMetricDateBetweenOrderByMetricDateAscUsernameAsc(LocalDate.now().minusDays(6), LocalDate.now()))
                 .thenReturn(java.util.List.of());
+        when(workspaceAdminMetricsApi.countFavoriteFilesAsAdmin()).thenReturn(3L);
+        when(sharingAdminMetricsApi.totalDownloadCountAsAdmin()).thenReturn(7L);
+        when(backgroundTaskAdminQueryApi.countActiveTasks()).thenReturn(2L);
 
         AdminMetricsSnapshot snapshot = adminMetricsService.getSnapshot();
 
         assertThat(snapshot.requestCount()).isZero();
+        assertThat(snapshot.favoriteFileCount()).isEqualTo(3L);
+        assertThat(snapshot.shareDownloadCount()).isEqualTo(7L);
+        assertThat(snapshot.activeTaskCount()).isEqualTo(2L);
         assertThat(state.getRequestCount()).isZero();
         assertThat(state.getRequestCountDate()).isEqualTo(LocalDate.now());
         assertThat(snapshot.requestTimeline()).hasSize(LocalTime.now().getHour() + 1);
@@ -115,6 +133,9 @@ class AdminMetricsServiceTest {
                 .thenReturn(java.util.List.of(yesterday, existing));
         when(adminMetricsStateRepository.findById(1L)).thenReturn(Optional.of(createCurrentState(today)));
         when(adminRequestTimelinePointRepository.findAllByMetricDateOrderByHourAsc(today)).thenReturn(java.util.List.of());
+        when(workspaceAdminMetricsApi.countFavoriteFilesAsAdmin()).thenReturn(0L);
+        when(sharingAdminMetricsApi.totalDownloadCountAsAdmin()).thenReturn(0L);
+        when(backgroundTaskAdminQueryApi.countActiveTasks()).thenReturn(0L);
 
         adminMetricsService.recordUserOnline(7L, "alice");
         AdminMetricsSnapshot snapshot = adminMetricsService.getSnapshot();

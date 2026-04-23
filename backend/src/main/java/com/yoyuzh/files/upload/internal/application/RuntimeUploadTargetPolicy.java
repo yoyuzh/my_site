@@ -2,12 +2,13 @@ package com.yoyuzh.files.upload.internal.application;
 
 import com.yoyuzh.shared.kernel.BusinessException;
 import com.yoyuzh.shared.kernel.ErrorCode;
-import com.yoyuzh.files.workspace.internal.infra.StoredFileRepository;
 import com.yoyuzh.files.upload.api.UploadTargetPolicy;
 import com.yoyuzh.files.upload.api.ValidatedUploadTarget;
+import com.yoyuzh.files.workspace.api.WorkspaceFileQueryApi;
 import com.yoyuzh.files.workspace.api.WorkspacePathPolicy;
 import com.yoyuzh.platform.storage.api.DefaultStoragePolicySnapshot;
 import com.yoyuzh.platform.storage.api.StoragePolicyQuery;
+import com.yoyuzh.platform.storage.api.StorageRuntimeProperties;
 import com.yoyuzh.platform.storage.api.UploadConstraintPolicy;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
@@ -15,27 +16,27 @@ import org.springframework.stereotype.Service;
 @Service
 public final class RuntimeUploadTargetPolicy implements UploadTargetPolicy {
 
-    private final StoredFileRepository storedFileRepository;
+    private final WorkspaceFileQueryApi workspaceFileQueryApi;
     private final WorkspacePathPolicy workspacePathPolicy;
     private final StoragePolicyQuery storagePolicyQuery;
     private final UploadConstraintPolicy uploadConstraintPolicy;
     private final long maxFileSize;
 
     @Autowired
-    public RuntimeUploadTargetPolicy(StoredFileRepository storedFileRepository,
+    public RuntimeUploadTargetPolicy(WorkspaceFileQueryApi workspaceFileQueryApi,
                                      WorkspacePathPolicy workspacePathPolicy,
                                      StoragePolicyQuery storagePolicyQuery,
                                      UploadConstraintPolicy uploadConstraintPolicy,
-                                     com.yoyuzh.platform.storage.internal.infra.FileStorageProperties properties) {
-        this(storedFileRepository, workspacePathPolicy, storagePolicyQuery, uploadConstraintPolicy, properties.getMaxFileSize());
+                                     StorageRuntimeProperties storageRuntimeProperties) {
+        this(workspaceFileQueryApi, workspacePathPolicy, storagePolicyQuery, uploadConstraintPolicy, storageRuntimeProperties.getMaxFileSize());
     }
 
-    RuntimeUploadTargetPolicy(StoredFileRepository storedFileRepository,
+    RuntimeUploadTargetPolicy(WorkspaceFileQueryApi workspaceFileQueryApi,
                               WorkspacePathPolicy workspacePathPolicy,
                               StoragePolicyQuery storagePolicyQuery,
                               UploadConstraintPolicy uploadConstraintPolicy,
                               long maxFileSize) {
-        this.storedFileRepository = storedFileRepository;
+        this.workspaceFileQueryApi = workspaceFileQueryApi;
         this.workspacePathPolicy = workspacePathPolicy;
         this.storagePolicyQuery = storagePolicyQuery;
         this.uploadConstraintPolicy = uploadConstraintPolicy;
@@ -71,7 +72,7 @@ public final class RuntimeUploadTargetPolicy implements UploadTargetPolicy {
             return;
         }
 
-        long usedBytes = storedFileRepository.sumFileSizeByUserId(userId);
+        long usedBytes = workspaceFileQueryApi.sumFileSizeByUserId(userId);
         if (usedBytes > Long.MAX_VALUE - additionalBytes || usedBytes + additionalBytes > storageQuotaBytes) {
             throw new BusinessException(ErrorCode.UNKNOWN, "存储空间不足");
         }

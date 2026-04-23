@@ -1,6 +1,6 @@
 package com.yoyuzh.identity.access.internal.application;
 
-import com.yoyuzh.ops.admin.internal.application.AdminRuntimeSettingsService;
+import com.yoyuzh.ops.admin.api.AdminRuntimeSettingsApi;
 import com.yoyuzh.identity.access.internal.infra.UserRepository;
 import com.yoyuzh.shared.kernel.BusinessException;
 import com.yoyuzh.shared.kernel.ErrorCode;
@@ -16,7 +16,7 @@ public class RuntimeRegistrationAdmissionPolicy implements RegistrationAdmission
 
     private final UserRepository userRepository;
     private final RegistrationInviteService registrationInviteService;
-    private final AdminRuntimeSettingsService adminRuntimeSettingsService;
+    private final AdminRuntimeSettingsApi adminRuntimeSettingsApi;
 
     @Override
     public void assertAllowed(RegistrationAttempt attempt) {
@@ -29,7 +29,7 @@ public class RuntimeRegistrationAdmissionPolicy implements RegistrationAdmission
         if (userRepository.existsByPhoneNumber(attempt.phoneNumber())) {
             throw new BusinessException(ErrorCode.UNKNOWN, "手机号已存在");
         }
-        if (adminRuntimeSettingsService.isInviteCodeRequired()) {
+        if (adminRuntimeSettingsApi.isInviteCodeRequired()) {
             registrationInviteService.consumeInviteCode(attempt.inviteCode());
         }
     }

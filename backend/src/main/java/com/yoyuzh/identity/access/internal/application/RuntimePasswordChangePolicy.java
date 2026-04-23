@@ -1,7 +1,7 @@
 package com.yoyuzh.identity.access.internal.application;
 
-import com.yoyuzh.identity.access.internal.application.AuthSessionPolicy;
 import com.yoyuzh.identity.access.internal.domain.User;
+import com.yoyuzh.identity.access.internal.infra.UserRepository;
 import com.yoyuzh.shared.kernel.BusinessException;
 import com.yoyuzh.shared.kernel.ErrorCode;
 import com.yoyuzh.identity.access.api.IdentityCredentialIssuer;
@@ -21,16 +21,20 @@ public class RuntimePasswordChangePolicy implements PasswordChangePolicy {
     private final PasswordEncoder passwordEncoder;
     private final IdentityCredentialRevocationPolicy identityCredentialRevocationPolicy;
     private final IdentityCredentialIssuer identityCredentialIssuer;
+    private final UserRepository userRepository;
 
     @Override
     @Transactional
-    public IssuedAuthCredentials changePassword(User user, PasswordChangeAttempt attempt) {
+    public IssuedAuthCredentials changePassword(Long userId, PasswordChangeAttempt attempt) {
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.NOT_LOGGED_IN, "用户不存在"));
         if (!passwordEncoder.matches(attempt.currentPassword(), user.getPasswordHash())) {
             throw new BusinessException(ErrorCode.UNKNOWN, "当前密码错误");
         }
 
         user.setPasswordHash(passwordEncoder.encode(attempt.newPassword()));
-        identityCredentialRevocationPolicy.revokeAll(user);
-        return identityCredentialIssuer.issueFresh(user, attempt.clientType());
+        userRepository.save(user);
+        identityCredentialRevocationPolicy.revokeAll(user.getId());
+        return identityCredentialIssuer.issueFresh(user.getId(), attempt.clientType());
     }
 }

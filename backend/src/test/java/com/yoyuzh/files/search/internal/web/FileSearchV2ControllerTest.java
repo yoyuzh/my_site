@@ -2,7 +2,6 @@ package com.yoyuzh.files.search.internal.web;
 
 import com.yoyuzh.boot.web.v2.ApiV2ExceptionHandler;
 import com.yoyuzh.boot.security.CustomUserDetailsService;
-import com.yoyuzh.identity.access.internal.domain.User;
 import com.yoyuzh.shared.kernel.PageResponse;
 import com.yoyuzh.files.search.api.FileSearchApi;
 import com.yoyuzh.files.search.api.SearchFilesQuery;
@@ -50,8 +49,7 @@ class FileSearchV2ControllerTest {
 
     @Test
     void shouldSearchFilesWithV2Envelope() throws Exception {
-        User user = createUser(7L);
-        when(userDetailsService.loadDomainUser("alice")).thenReturn(user);
+        when(userDetailsService.loadUserId("alice")).thenReturn(7L);
         when(fileSearchApi.search(eq(7L), any(SearchFilesQuery.class))).thenReturn(new PageResponse<>(
                 List.of(new FileMetadataResponse(
                         10L,
@@ -123,11 +121,4 @@ class FileSearchV2ControllerTest {
         };
     }
 
-    private User createUser(Long id) {
-        User user = new User();
-        user.setId(id);
-        user.setUsername("alice");
-        user.setEmail("alice@example.com");
-        return user;
-    }
 }

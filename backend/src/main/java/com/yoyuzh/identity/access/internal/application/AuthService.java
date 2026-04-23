@@ -5,6 +5,8 @@ import com.yoyuzh.identity.access.api.DevLoginRoleResolver;
 import com.yoyuzh.identity.access.api.IdentityClientType;
 import com.yoyuzh.identity.access.api.IdentityRoleName;
 import com.yoyuzh.identity.access.api.IdentityCredentialIssuer;
+import com.yoyuzh.identity.access.api.IdentityStorageUsageQuery;
+import com.yoyuzh.identity.access.api.IdentityUserSnapshot;
 import com.yoyuzh.identity.access.api.IssuedAuthCredentials;
 import com.yoyuzh.identity.access.api.LoginRequest;
 import com.yoyuzh.identity.access.api.LoginAdmissionPolicy;
@@ -18,7 +20,9 @@ import com.yoyuzh.identity.access.api.RegisterRequest;
 import com.yoyuzh.identity.access.api.UpdateUserAvatarRequest;
 import com.yoyuzh.identity.access.api.UpdateUserPasswordRequest;
 import com.yoyuzh.identity.access.api.UpdateUserProfileRequest;
+import com.yoyuzh.identity.access.api.UserCapacityResponse;
 import com.yoyuzh.identity.access.api.UserProfileResponse;
+import com.yoyuzh.identity.access.api.UserSettingsResponse;
 import com.yoyuzh.identity.access.internal.domain.User;
 import com.yoyuzh.identity.access.internal.domain.UserRole;
 import com.yoyuzh.identity.access.internal.infra.UserRepository;
@@ -61,6 +65,7 @@ public class AuthService {
     private final LoginAdmissionPolicy loginAdmissionPolicy;
     private final PasswordChangePolicy passwordChangePolicy;
     private final IdentityCredentialIssuer identityCredentialIssuer;
+    private final IdentityStorageUsageQuery identityStorageUsageQuery;
 
     @Transactional
     public AuthResponse register(RegisterRequest request) {
@@ -86,7 +91,7 @@ public class AuthService {
         user.setPreferredLanguage("zh-CN");
         User saved = userRepository.save(user);
         workspaceBootstrapApi.ensureDefaultDirectories(workspaceUser(saved));
-        return toAuthResponse(identityCredentialIssuer.issueFresh(saved, clientType));
+        return toAuthResponse(identityCredentialIssuer.issueFresh(saved.getId(), clientType));
     }
 
     @Transactional
@@ -101,7 +106,7 @@ public class AuthService {
         User user = userRepository.findByUsername(request.username())
                 .orElseThrow(() -> new BusinessException(ErrorCode.NOT_LOGGED_IN, "用户不存在"));
         workspaceBootstrapApi.ensureDefaultDirectories(workspaceUser(user));
-        return toAuthResponse(identityCredentialIssuer.issueFresh(user, clientType));
+        return toAuthResponse(identityCredentialIssuer.issueFresh(user.getId(), clientType));
     }
 
     @Transactional
@@ -135,7 +140,7 @@ public class AuthService {
             return userRepository.save(created);
         });
         workspaceBootstrapApi.ensureDefaultDirectories(workspaceUser(user));
-        return toAuthResponse(identityCredentialIssuer.issueFresh(user, clientType));
+        return toAuthResponse(identityCredentialIssuer.issueFresh(user.getId(), clientType));
     }
 
     @Transactional
@@ -149,9 +154,25 @@ public class AuthService {
     }
 
     public UserProfileResponse getProfile(String username) {
-        User user = userRepository.findByUsername(username)
-                .orElseThrow(() -> new BusinessException(ErrorCode.NOT_LOGGED_IN, "用户不存在"));
-        return toProfile(user);
+        return toProfile(findUserByUsername(username));
+    }
+
+    public UserCapacityResponse getCapacity(String username) {
+        User user = findUserByUsername(username);
+        long totalBytes = user.getStorageQuotaBytes();
+        long usedBytes = identityStorageUsageQuery.usedStorageBytes(user.getId());
+        long availableBytes = Math.max(0L, totalBytes - usedBytes);
+        return new UserCapacityResponse(totalBytes, usedBytes, availableBytes, user.getMaxUploadSizeBytes());
+    }
+
+    public UserSettingsResponse getSettings(String username) {
+        User user = findUserByUsername(username);
+        return new UserSettingsResponse(
+                user.getDisplayName(),
+                user.getPreferredLanguage(),
+                "system",
+                false
+        );
     }
 
     @Transactional
@@ -177,7 +198,7 @@ public class AuthService {
         User user = userRepository.findByUsername(username)
                 .orElseThrow(() -> new BusinessException(ErrorCode.NOT_LOGGED_IN, "用户不存在"));
         return toAuthResponse(passwordChangePolicy.changePassword(
-                user,
+                user.getId(),
                 new PasswordChangeAttempt(request.currentPassword(), request.newPassword(), IdentityClientType.DESKTOP)));
     }
 
@@ -280,11 +301,16 @@ public class AuthService {
                 user.getBio(),
                 user.getPreferredLanguage(),
                 buildAvatarUrl(user),
-                user.getRole(),
+                toIdentityRoleName(user.getRole()),
                 user.getCreatedAt(),
                 user.getStorageQuotaBytes(),
                 user.getMaxUploadSizeBytes()
         );
+    }
+
+    private User findUserByUsername(String username) {
+        return userRepository.findByUsername(username)
+                .orElseThrow(() -> new BusinessException(ErrorCode.NOT_LOGGED_IN, "用户不存在"));
     }
 
     private AuthResponse toAuthResponse(IssuedAuthCredentials issuedAuthCredentials) {
@@ -292,6 +318,23 @@ public class AuthService {
                 issuedAuthCredentials.accessToken(),
                 issuedAuthCredentials.refreshToken(),
                 toProfile(issuedAuthCredentials.user()));
+    }
+
+    private UserProfileResponse toProfile(IdentityUserSnapshot user) {
+        return new UserProfileResponse(
+                user.id(),
+                user.username(),
+                user.displayName(),
+                user.email(),
+                user.phoneNumber(),
+                user.bio(),
+                user.preferredLanguage(),
+                buildAvatarUrl(user),
+                user.role(),
+                user.createdAt(),
+                user.storageQuotaBytes(),
+                user.maxUploadSizeBytes()
+        );
     }
 
     private String normalizeOptionalText(String value) {
@@ -311,6 +354,13 @@ public class AuthService {
             case MODERATOR -> UserRole.MODERATOR;
             case USER -> UserRole.USER;
         };
+    }
+
+    private IdentityRoleName toIdentityRoleName(UserRole role) {
+        if (role == null) {
+            return IdentityRoleName.USER;
+        }
+        return IdentityRoleName.valueOf(role.name());
     }
 
     private String normalizePreferredLanguage(String preferredLanguage) {
@@ -380,6 +430,26 @@ public class AuthService {
         }
 
         long version = user.getAvatarUpdatedAt() == null ? 0L : user.getAvatarUpdatedAt().atZone(java.time.ZoneId.systemDefault()).toInstant().toEpochMilli();
+        return "/user/avatar/content?v=" + version;
+    }
+
+    private String buildAvatarUrl(IdentityUserSnapshot user) {
+        if (!StringUtils.hasText(user.avatarStorageName())) {
+            return null;
+        }
+
+        if (fileContentStorage.supportsDirectDownload()) {
+            return fileContentStorage.createDownloadUrl(
+                    user.id(),
+                    AVATAR_PATH,
+                    user.avatarStorageName(),
+                    buildAvatarDownloadName(user.avatarStorageName(), user.avatarContentType())
+            );
+        }
+
+        long version = user.avatarUpdatedAt() == null
+                ? 0L
+                : user.avatarUpdatedAt().atZone(java.time.ZoneId.systemDefault()).toInstant().toEpochMilli();
         return "/user/avatar/content?v=" + version;
     }
 

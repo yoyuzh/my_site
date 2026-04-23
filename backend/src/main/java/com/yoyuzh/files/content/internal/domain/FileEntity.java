@@ -1,21 +1,15 @@
 package com.yoyuzh.files.content.internal.domain;
 
-import com.yoyuzh.identity.access.internal.domain.User;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
-import jakarta.persistence.FetchType;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Index;
-import jakarta.persistence.JoinColumn;
-import jakarta.persistence.ManyToOne;
 import jakarta.persistence.PrePersist;
 import jakarta.persistence.Table;
-import org.hibernate.annotations.OnDelete;
-import org.hibernate.annotations.OnDeleteAction;
 
 import java.time.LocalDateTime;
 
@@ -52,10 +46,8 @@ public class FileEntity {
     @Column(name = "upload_session_id", length = 64)
     private String uploadSessionId;
 
-    @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "created_by")
-    @OnDelete(action = OnDeleteAction.SET_NULL)
-    private User createdBy;
+    @Column(name = "created_by")
+    private Long createdByUserId;
 
     @Column(name = "props_json", columnDefinition = "TEXT")
     private String propsJson;
@@ -137,12 +129,12 @@ public class FileEntity {
         this.uploadSessionId = uploadSessionId;
     }
 
-    public User getCreatedBy() {
-        return createdBy;
+    public Long getCreatedByUserId() {
+        return createdByUserId;
     }
 
-    public void setCreatedBy(User createdBy) {
-        this.createdBy = createdBy;
+    public void setCreatedByUserId(Long createdByUserId) {
+        this.createdByUserId = createdByUserId;
     }
 
     public String getPropsJson() {

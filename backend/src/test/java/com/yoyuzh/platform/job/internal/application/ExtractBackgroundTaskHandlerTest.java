@@ -7,8 +7,9 @@ import com.yoyuzh.platform.job.api.BackgroundTaskStatus;
 import com.yoyuzh.platform.job.api.BackgroundTaskType;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.yoyuzh.identity.access.internal.domain.User;
-import com.yoyuzh.identity.access.internal.infra.UserRepository;
+import com.yoyuzh.identity.access.api.IdentityRoleName;
+import com.yoyuzh.identity.access.api.IdentityUserDirectoryApi;
+import com.yoyuzh.identity.access.api.IdentityUserSnapshot;
 import com.yoyuzh.shared.kernel.BusinessException;
 import com.yoyuzh.shared.kernel.ErrorCode;
 import com.yoyuzh.files.content.internal.domain.FileBlob;
@@ -42,7 +43,7 @@ import static org.mockito.Mockito.when;
 class ExtractBackgroundTaskHandlerTest {
 
     @Mock
-    private UserRepository userRepository;
+    private IdentityUserDirectoryApi identityUserDirectoryApi;
     @Mock
     private WorkspaceArchiveApi workspaceArchiveApi;
     @Mock
@@ -53,7 +54,7 @@ class ExtractBackgroundTaskHandlerTest {
     @BeforeEach
     void setUp() {
         handler = new ExtractBackgroundTaskHandler(
-                userRepository,
+                identityUserDirectoryApi,
                 workspaceArchiveApi,
                 workspaceBootstrapApi,
                 new BackgroundTaskStateManager(new ObjectMapper())
@@ -62,8 +63,7 @@ class ExtractBackgroundTaskHandlerTest {
 
     @Test
     void shouldExtractArchivedDirectoryIntoSiblingFolder() throws Exception {
-        User user = createUser(7L);
-        when(userRepository.findById(7L)).thenReturn(Optional.of(user));
+        when(identityUserDirectoryApi.findSnapshotById(7L)).thenReturn(Optional.of(createUser(7L)));
         when(workspaceArchiveApi.readZipCompatibleArchive(7L, 11L)).thenReturn(new WorkspaceZipArchive(
                 java.util.List.of(
                         new WorkspaceZipArchiveEntry("archive", true, new byte[0]),
@@ -102,8 +102,7 @@ class ExtractBackgroundTaskHandlerTest {
 
     @Test
     void shouldExtractSingleArchivedFileBackIntoParentPath() throws Exception {
-        User user = createUser(7L);
-        when(userRepository.findById(7L)).thenReturn(Optional.of(user));
+        when(identityUserDirectoryApi.findSnapshotById(7L)).thenReturn(Optional.of(createUser(7L)));
         when(workspaceArchiveApi.readZipCompatibleArchive(7L, 21L)).thenReturn(new WorkspaceZipArchive(
                 java.util.List.of(
                         new WorkspaceZipArchiveEntry("notes.txt", false, "hello".getBytes(StandardCharsets.UTF_8))
@@ -135,8 +134,7 @@ class ExtractBackgroundTaskHandlerTest {
 
     @Test
     void shouldRejectNonZipCompatibleArchiveContent() {
-        User user = createUser(7L);
-        when(userRepository.findById(7L)).thenReturn(Optional.of(user));
+        when(identityUserDirectoryApi.findSnapshotById(7L)).thenReturn(Optional.of(createUser(7L)));
         when(workspaceArchiveApi.readZipCompatibleArchive(7L, 31L))
                 .thenThrow(new BusinessException(ErrorCode.UNKNOWN, "压缩包读取失败"));
 
@@ -162,22 +160,32 @@ class ExtractBackgroundTaskHandlerTest {
         return task;
     }
 
-    private User createUser(Long id) {
-        User user = new User();
-        user.setId(id);
-        user.setUsername("alice");
-        return user;
+    private IdentityUserSnapshot createUser(Long id) {
+        return new IdentityUserSnapshot(
+                id,
+                "alice",
+                "Alice",
+                "alice@example.com",
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                IdentityRoleName.USER,
+                null,
+                1024L,
+                1024L
+        );
     }
 
     private StoredFile createArchiveFile(Long id,
-                                         User user,
                                          String path,
                                          String filename,
                                          String contentType,
                                          String objectKey) {
         StoredFile file = new StoredFile();
         file.setId(id);
-        file.setUser(user);
         file.setPath(path);
         file.setFilename(filename);
         file.setDirectory(false);
@@ -188,7 +196,7 @@ class ExtractBackgroundTaskHandlerTest {
         blob.setObjectKey(objectKey);
         blob.setContentType(contentType);
         blob.setSize(12L);
-        file.setBlob(blob);
+        file.setBlobId(blob == null ? null : blob.getId());
         return file;
     }
 }

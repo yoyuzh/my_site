@@ -2,6 +2,7 @@ package com.yoyuzh.architecture;
 
 import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.classes;
 import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.noClasses;
+import static org.assertj.core.api.Assertions.assertThat;
 
 import com.tngtech.archunit.core.domain.JavaClasses;
 import com.tngtech.archunit.core.importer.ClassFileImporter;
@@ -17,28 +18,26 @@ class Task7TransferArchitectureTest {
     void transferEntryPointsMustDependOnTransferApis() {
         ArchRule controllerRule = classes()
                 .that()
-                .haveFullyQualifiedName("com.yoyuzh.transfer.TransferController")
-                .should()
-                .dependOnClassesThat()
-                .haveFullyQualifiedName("com.yoyuzh.transfer.api.TransferSessionApi");
-
-        ArchRule compatibilityShellRule = classes()
-                .that()
-                .haveFullyQualifiedName("com.yoyuzh.transfer.TransferService")
+                .haveFullyQualifiedName("com.yoyuzh.transfer.internal.web.TransferController")
                 .should()
                 .dependOnClassesThat()
                 .haveFullyQualifiedName("com.yoyuzh.transfer.api.TransferSessionApi");
 
         ArchRule importShellRule = classes()
                 .that()
-                .haveFullyQualifiedName("com.yoyuzh.transfer.TransferImportService")
+                .haveFullyQualifiedName("com.yoyuzh.transfer.internal.application.TransferImportService")
                 .should()
                 .dependOnClassesThat()
                 .haveFullyQualifiedName("com.yoyuzh.transfer.api.TransferImportApi");
 
         controllerRule.check(classes);
-        compatibilityShellRule.check(classes);
         importShellRule.check(classes);
+    }
+
+    @Test
+    void transferRootPackageMustNotOwnRuntimeClasses() {
+        assertThat(classes.stream().map(javaClass -> javaClass.getPackageName()))
+                .doesNotContain("com.yoyuzh.transfer");
     }
 
     @Test
@@ -57,7 +56,7 @@ class Task7TransferArchitectureTest {
     void transferImportMustStopDependingOnLegacyFileService() {
         ArchRule legacyDependencyRule = noClasses()
                 .that()
-                .haveFullyQualifiedName("com.yoyuzh.transfer.TransferImportService")
+                .haveFullyQualifiedName("com.yoyuzh.transfer.internal.application.TransferImportService")
                 .or()
                 .haveFullyQualifiedName("com.yoyuzh.transfer.internal.application.RuntimeTransferImportApi")
                 .should()
@@ -81,5 +80,27 @@ class Task7TransferArchitectureTest {
         legacyDependencyRule.check(classes);
         workspaceAndContentRule.check(classes);
         contentRule.check(classes);
+    }
+
+    @Test
+    void transferRuntimeApplicationMustUseApiSeamsForOtherModules() {
+        ArchRule rule = noClasses()
+                .that()
+                .haveFullyQualifiedName("com.yoyuzh.transfer.internal.application.RuntimeTransferImportApi")
+                .or()
+                .haveFullyQualifiedName("com.yoyuzh.transfer.internal.application.RuntimeTransferSessionApi")
+                .or()
+                .haveFullyQualifiedName("com.yoyuzh.transfer.internal.application.OfflineTransferQuotaService")
+                .should()
+                .dependOnClassesThat()
+                .resideInAnyPackage(
+                        "com.yoyuzh.identity.access.internal..",
+                        "com.yoyuzh.files.content.internal..",
+                        "com.yoyuzh.files.workspace.internal..",
+                        "com.yoyuzh.platform.storage.internal..",
+                        "com.yoyuzh.ops.admin.internal.."
+                );
+
+        rule.check(classes);
     }
 }

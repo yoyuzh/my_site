@@ -4,7 +4,6 @@ import com.yoyuzh.identity.access.internal.domain.User;
 import com.yoyuzh.identity.access.internal.infra.UserRepository;
 import com.yoyuzh.files.workspace.api.WorkspaceBootstrapApi;
 import com.yoyuzh.files.workspace.api.WorkspaceUserContext;
-import com.yoyuzh.files.workspace.internal.infra.StoredFileRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.boot.CommandLineRunner;
 import org.springframework.context.annotation.Profile;
@@ -56,7 +55,6 @@ public class DevBootstrapDataInitializer implements CommandLineRunner {
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
     private final WorkspaceBootstrapApi workspaceBootstrapApi;
-    private final StoredFileRepository storedFileRepository;
 
     @Override
     @Transactional
@@ -97,7 +95,7 @@ public class DevBootstrapDataInitializer implements CommandLineRunner {
 
     private void ensureDemoFiles(User user, List<DemoFileSpec> files) {
         for (DemoFileSpec file : files) {
-            if (storedFileRepository.existsByUserIdAndPathAndFilename(user.getId(), file.path(), file.filename())) {
+            if (workspaceBootstrapApi.existsNode(workspaceUser(user), file.path(), file.filename())) {
                 continue;
             }
             workspaceBootstrapApi.importExternalFile(

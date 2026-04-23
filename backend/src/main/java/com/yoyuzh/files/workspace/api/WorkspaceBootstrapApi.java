@@ -6,6 +6,8 @@ public interface WorkspaceBootstrapApi {
 
     void ensureDefaultDirectories(WorkspaceUserContext user);
 
+    boolean existsNode(WorkspaceUserContext user, String path, String filename);
+
     FileMetadataResponse importExternalFile(WorkspaceUserContext user,
                                             String path,
                                             String filename,

@@ -5,12 +5,15 @@ import com.yoyuzh.boot.security.CustomUserDetailsService;
 import com.yoyuzh.shared.kernel.PageResponse;
 import com.yoyuzh.platform.job.api.BackgroundTaskResponse;
 import com.yoyuzh.platform.job.api.BackgroundTaskLifecycleApi;
+import com.yoyuzh.platform.job.api.TaskProgressResponse;
 import com.yoyuzh.platform.job.api.BackgroundTaskType;
 import com.yoyuzh.platform.job.api.BackgroundTaskView;
+import com.yoyuzh.platform.job.internal.application.BackgroundTaskService;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import lombok.RequiredArgsConstructor;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -28,6 +31,7 @@ import org.springframework.web.bind.annotation.RestController;
 public class BackgroundTaskV2Controller {
 
     private final BackgroundTaskLifecycleApi backgroundTaskLifecycleApi;
+    private final BackgroundTaskService backgroundTaskService;
     private final CustomUserDetailsService userDetailsService;
 
     @GetMapping
@@ -45,6 +49,12 @@ public class BackgroundTaskV2Controller {
     public ApiV2Response<BackgroundTaskResponse> get(@AuthenticationPrincipal UserDetails userDetails,
                                                      @PathVariable Long id) {
         return ApiV2Response.success(toResponse(backgroundTaskLifecycleApi.getOwnedTask(currentUserId(userDetails), id)));
+    }
+
+    @GetMapping("/{id}/progress")
+    public ApiV2Response<TaskProgressResponse> progress(@AuthenticationPrincipal UserDetails userDetails,
+                                                        @PathVariable Long id) {
+        return ApiV2Response.success(backgroundTaskService.getOwnedTaskProgress(currentUserId(userDetails), id));
     }
 
     @DeleteMapping("/{id}")
@@ -77,6 +87,12 @@ public class BackgroundTaskV2Controller {
         return ApiV2Response.success(createTask(userDetails, BackgroundTaskType.MEDIA_META, request));
     }
 
+    @PostMapping("/search-index/rebuild")
+    @PreAuthorize("@adminAccessEvaluator.isAdmin(authentication)")
+    public ApiV2Response<BackgroundTaskResponse> rebuildSearchIndex(@AuthenticationPrincipal UserDetails userDetails) {
+        return ApiV2Response.success(toResponse(backgroundTaskLifecycleApi.createSearchIndexRebuildTask(currentUserId(userDetails))));
+    }
+
     private BackgroundTaskResponse createTask(UserDetails userDetails,
                                               BackgroundTaskType type,
                                               CreateBackgroundTaskRequest request) {
@@ -91,11 +107,11 @@ public class BackgroundTaskV2Controller {
     }
 
     private Long currentUserId(UserDetails userDetails) {
-        return userDetailsService.loadDomainUser(userDetails.getUsername()).getId();
+        return userDetailsService.loadUserId(userDetails.getUsername());
     }
 
     private BackgroundTaskResponse toResponse(BackgroundTaskView task) {
-        return new BackgroundTaskResponse(
+        return toResponse(
                 task.id(),
                 task.type(),
                 task.status(),
@@ -106,6 +122,30 @@ public class BackgroundTaskV2Controller {
                 task.createdAt(),
                 task.updatedAt(),
                 task.finishedAt()
+        );
+    }
+
+    private BackgroundTaskResponse toResponse(Long id,
+                                              BackgroundTaskType type,
+                                              com.yoyuzh.platform.job.api.BackgroundTaskStatus status,
+                                              Long userId,
+                                              String publicStateJson,
+                                              String correlationId,
+                                              String errorMessage,
+                                              java.time.LocalDateTime createdAt,
+                                              java.time.LocalDateTime updatedAt,
+                                              java.time.LocalDateTime finishedAt) {
+        return new BackgroundTaskResponse(
+                id,
+                type,
+                status,
+                userId,
+                publicStateJson,
+                correlationId,
+                errorMessage,
+                createdAt,
+                updatedAt,
+                finishedAt
         );
     }
 }

@@ -7,13 +7,11 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-import com.yoyuzh.identity.access.internal.domain.User;
 import com.yoyuzh.files.content.api.ContentBlobReference;
+import com.yoyuzh.files.content.api.ContentBlobRegistrationApi;
 import com.yoyuzh.files.content.api.ContentRegistrationApi;
 import com.yoyuzh.files.content.api.ContentRegistrationCommand;
 import com.yoyuzh.files.content.api.RegisteredContentFile;
-import com.yoyuzh.files.content.internal.domain.FileBlob;
-import com.yoyuzh.files.content.internal.infra.FileBlobRepository;
 import com.yoyuzh.files.storage.FileContentStorage;
 import com.yoyuzh.files.upload.api.UploadCompletionCommand;
 import com.yoyuzh.files.workspace.api.WorkspacePathPolicy;
@@ -33,7 +31,7 @@ class RuntimeUploadCompletionApiTest {
     @Mock
     private ContentRegistrationApi contentRegistrationApi;
     @Mock
-    private FileBlobRepository fileBlobRepository;
+    private ContentBlobRegistrationApi contentBlobRegistrationApi;
     @Mock
     private FileContentStorage fileContentStorage;
 
@@ -44,25 +42,21 @@ class RuntimeUploadCompletionApiTest {
         uploadCompletionApi = new RuntimeUploadCompletionApi(
                 workspacePathPolicy,
                 contentRegistrationApi,
-                fileBlobRepository,
+                contentBlobRegistrationApi,
                 fileContentStorage
         );
     }
 
     @Test
     void shouldEnsureDirectoryAndRegisterStoredBlobThroughContentApi() {
-        User user = createUser(7L);
-        when(fileBlobRepository.save(any(FileBlob.class))).thenAnswer(invocation -> {
-            FileBlob blob = invocation.getArgument(0);
-            blob.setId(100L);
-            return blob;
-        });
+        when(contentBlobRegistrationApi.registerStoredBlob("blobs/session-1", "video/mp4", 20L))
+                .thenReturn(new ContentBlobReference(100L, "blobs/session-1", "video/mp4", 20L));
         when(contentRegistrationApi.registerBlob(any(ContentRegistrationCommand.class))).thenReturn(
                 new RegisteredContentFile(10L, "movie.mp4", "/docs", 20L, "video/mp4", false, LocalDateTime.now())
         );
 
         RegisteredContentFile result = uploadCompletionApi.completeStoredBlob(new UploadCompletionCommand(
-                user.getId(),
+                7L,
                 "/docs",
                 "movie.mp4",
                 "blobs/session-1",
@@ -83,13 +77,13 @@ class RuntimeUploadCompletionApiTest {
 
     @Test
     void shouldDeleteStoredBlobWhenRegistrationFails() {
-        User user = createUser(7L);
-        when(fileBlobRepository.save(any(FileBlob.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(contentBlobRegistrationApi.registerStoredBlob("blobs/session-1", "video/mp4", 20L))
+                .thenReturn(new ContentBlobReference(100L, "blobs/session-1", "video/mp4", 20L));
         when(contentRegistrationApi.registerBlob(any(ContentRegistrationCommand.class)))
                 .thenThrow(new IllegalStateException("registration failed"));
 
         assertThatThrownBy(() -> uploadCompletionApi.completeStoredBlob(new UploadCompletionCommand(
-                user.getId(),
+                7L,
                 "/docs",
                 "movie.mp4",
                 "blobs/session-1",
@@ -98,15 +92,5 @@ class RuntimeUploadCompletionApiTest {
         ))).isInstanceOf(IllegalStateException.class);
 
         verify(fileContentStorage).deleteBlob(eq("blobs/session-1"));
-    }
-
-    private User createUser(Long id) {
-        User user = new User();
-        user.setId(id);
-        user.setUsername("user-" + id);
-        user.setEmail("user-" + id + "@example.com");
-        user.setPasswordHash("encoded");
-        user.setCreatedAt(LocalDateTime.now());
-        return user;
     }
 }

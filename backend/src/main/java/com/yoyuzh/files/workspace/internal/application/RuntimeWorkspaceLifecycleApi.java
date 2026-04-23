@@ -1,8 +1,8 @@
 package com.yoyuzh.files.workspace.internal.application;
 
-import com.yoyuzh.identity.access.internal.domain.User;
 import com.yoyuzh.shared.kernel.BusinessException;
 import com.yoyuzh.shared.kernel.ErrorCode;
+import com.yoyuzh.files.content.api.ContentBlobQueryApi;
 import com.yoyuzh.files.content.api.ContentBlobReference;
 import com.yoyuzh.files.content.api.ContentDuplicationApi;
 import com.yoyuzh.files.content.api.ContentRegistrationCommand;
@@ -29,25 +29,41 @@ public final class RuntimeWorkspaceLifecycleApi implements WorkspaceLifecycleApi
 
     private final StoredFileRepository storedFileRepository;
     private final ContentDuplicationApi contentDuplicationApi;
+    private final ContentBlobQueryApi contentBlobQueryApi;
     private final WorkspacePathPolicy workspacePathPolicy;
     private final WorkspaceNodeRulesService workspaceNodeRulesService;
-
-    public RuntimeWorkspaceLifecycleApi(StoredFileRepository storedFileRepository,
-                                        ContentDuplicationApi contentDuplicationApi,
-                                        WorkspacePathPolicy workspacePathPolicy,
-                                        WorkspaceNodeRulesService workspaceNodeRulesService) {
-        this.storedFileRepository = storedFileRepository;
-        this.contentDuplicationApi = contentDuplicationApi;
-        this.workspacePathPolicy = workspacePathPolicy;
-        this.workspaceNodeRulesService = workspaceNodeRulesService;
-    }
 
     public RuntimeWorkspaceLifecycleApi(StoredFileRepository storedFileRepository,
                                         FileContentStorage fileContentStorage,
                                         ContentDuplicationApi contentDuplicationApi) {
         this(
                 storedFileRepository,
+                fileContentStorage,
                 contentDuplicationApi,
+                blobId -> java.util.Optional.empty()
+        );
+    }
+
+    public RuntimeWorkspaceLifecycleApi(StoredFileRepository storedFileRepository,
+                                        ContentDuplicationApi contentDuplicationApi,
+                                        ContentBlobQueryApi contentBlobQueryApi,
+                                        WorkspacePathPolicy workspacePathPolicy,
+                                        WorkspaceNodeRulesService workspaceNodeRulesService) {
+        this.storedFileRepository = storedFileRepository;
+        this.contentDuplicationApi = contentDuplicationApi;
+        this.contentBlobQueryApi = contentBlobQueryApi;
+        this.workspacePathPolicy = workspacePathPolicy;
+        this.workspaceNodeRulesService = workspaceNodeRulesService;
+    }
+
+    public RuntimeWorkspaceLifecycleApi(StoredFileRepository storedFileRepository,
+                                        FileContentStorage fileContentStorage,
+                                        ContentDuplicationApi contentDuplicationApi,
+                                        ContentBlobQueryApi contentBlobQueryApi) {
+        this(
+                storedFileRepository,
+                contentDuplicationApi,
+                contentBlobQueryApi,
                 new RuntimeWorkspacePathPolicy(storedFileRepository, fileContentStorage),
                 new WorkspaceNodeRulesService(storedFileRepository, fileContentStorage)
         );
@@ -55,14 +71,13 @@ public final class RuntimeWorkspaceLifecycleApi implements WorkspaceLifecycleApi
 
     @Override
     public WorkspaceLifecycleResult copy(Long userId, Long fileId, String normalizedTargetPath, WorkspaceQuotaGuard quotaGuard) {
-        User user = userReference(userId);
         StoredFile storedFile = getOwnedActiveFile(userId, fileId, "复制");
         workspacePathPolicy.ensureExistingDirectoryPath(userId, normalizedTargetPath);
         workspacePathPolicy.ensureNodeNameAvailable(userId, normalizedTargetPath, storedFile.getFilename(), "目标目录已存在同名文件");
 
         if (!storedFile.isDirectory()) {
             quotaGuard.ensureWithinQuota(storedFile.getSize());
-            RegisteredContentFile savedFile = duplicateBlobBackedFile(copyStoredFile(storedFile, user, normalizedTargetPath), user);
+            RegisteredContentFile savedFile = duplicateBlobBackedFile(copyStoredFile(storedFile, userId, normalizedTargetPath), userId);
             return new WorkspaceLifecycleResult(
                     toResponse(savedFile),
                     buildLogicalPath(storedFile),
@@ -85,7 +100,7 @@ public final class RuntimeWorkspaceLifecycleApi implements WorkspaceLifecycleApi
         quotaGuard.ensureWithinQuota(additionalBytes);
         List<StoredFile> copiedEntries = new ArrayList<>();
 
-        StoredFile copiedRoot = copyStoredFile(storedFile, user, normalizedTargetPath);
+        StoredFile copiedRoot = copyStoredFile(storedFile, userId, normalizedTargetPath);
         copiedEntries.add(copiedRoot);
 
         descendants.stream()
@@ -96,14 +111,14 @@ public final class RuntimeWorkspaceLifecycleApi implements WorkspaceLifecycleApi
                 .forEach(descendant -> {
                     String copiedPath = remapCopiedPath(descendant.getPath(), oldLogicalPath, newLogicalPath);
                     workspacePathPolicy.ensureNodeNameAvailable(userId, copiedPath, descendant.getFilename(), "目标目录已存在同名文件");
-                    copiedEntries.add(copyStoredFile(descendant, user, copiedPath));
+                    copiedEntries.add(copyStoredFile(descendant, userId, copiedPath));
                 });
 
         StoredFile savedRoot = null;
         for (StoredFile copiedEntry : copiedEntries) {
             StoredFile savedEntry = copiedEntry.isDirectory()
                     ? storedFileRepository.save(copiedEntry)
-                    : toStoredFile(duplicateBlobBackedFile(copiedEntry, user));
+                    : toStoredFile(duplicateBlobBackedFile(copiedEntry, userId));
             if (savedRoot == null) {
                 savedRoot = savedEntry;
             }
@@ -171,7 +186,7 @@ public final class RuntimeWorkspaceLifecycleApi implements WorkspaceLifecycleApi
     private StoredFile getOwnedActiveFile(Long userId, Long fileId, String action) {
         StoredFile storedFile = storedFileRepository.findDetailedById(fileId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.FILE_NOT_FOUND, "文件不存在"));
-        if (!storedFile.getUser().getId().equals(userId)) {
+        if (!userId.equals(storedFile.getUserId())) {
             throw new BusinessException(ErrorCode.PERMISSION_DENIED, "没有权限" + action + "该文件");
         }
         if (storedFile.getDeletedAt() != null) {
@@ -183,7 +198,7 @@ public final class RuntimeWorkspaceLifecycleApi implements WorkspaceLifecycleApi
     private StoredFile getOwnedRecycleRootFile(Long userId, Long fileId) {
         StoredFile storedFile = storedFileRepository.findDetailedById(fileId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.FILE_NOT_FOUND, "文件不存在"));
-        if (!storedFile.getUser().getId().equals(userId)) {
+        if (!userId.equals(storedFile.getUserId())) {
             throw new BusinessException(ErrorCode.PERMISSION_DENIED, "没有权限恢复该文件");
         }
         if (storedFile.getDeletedAt() == null || !storedFile.isRecycleRoot()) {
@@ -251,15 +266,15 @@ public final class RuntimeWorkspaceLifecycleApi implements WorkspaceLifecycleApi
         return storedFile.getRecycleOriginalPath();
     }
 
-    private StoredFile copyStoredFile(StoredFile source, User owner, String nextPath) {
+    private StoredFile copyStoredFile(StoredFile source, Long ownerUserId, String nextPath) {
         StoredFile copiedFile = new StoredFile();
-        copiedFile.setUser(owner);
+        copiedFile.setUserId(ownerUserId);
         copiedFile.setFilename(source.getFilename());
         copiedFile.setPath(nextPath);
         copiedFile.setContentType(source.getContentType());
         copiedFile.setSize(source.getSize());
         copiedFile.setDirectory(source.isDirectory());
-        copiedFile.setBlob(source.getBlob());
+        copiedFile.setBlobId(source.getBlobId());
         return copiedFile;
     }
 
@@ -270,28 +285,26 @@ public final class RuntimeWorkspaceLifecycleApi implements WorkspaceLifecycleApi
         return newLogicalPath + currentPath.substring(oldLogicalPath.length());
     }
 
-    private RegisteredContentFile duplicateBlobBackedFile(StoredFile copiedFile, User owner) {
+    private RegisteredContentFile duplicateBlobBackedFile(StoredFile copiedFile, Long ownerUserId) {
+        ContentBlobReference blob = requireBlobReference(copiedFile);
         return contentDuplicationApi.duplicateBlobBackedFile(
                 new ContentRegistrationCommand(
-                        owner.getId(),
+                        ownerUserId,
                         copiedFile.getPath(),
                         copiedFile.getFilename(),
                         copiedFile.getContentType(),
                         copiedFile.getSize(),
-                        new ContentBlobReference(
-                                copiedFile.getBlob().getId(),
-                                copiedFile.getBlob().getObjectKey(),
-                                copiedFile.getBlob().getContentType(),
-                                copiedFile.getBlob().getSize()
-                        )
+                        blob
                 )
         );
     }
 
-    private User userReference(Long userId) {
-        User user = new User();
-        user.setId(userId);
-        return user;
+    private ContentBlobReference requireBlobReference(StoredFile storedFile) {
+        if (storedFile.getBlobId() == null) {
+            throw new BusinessException(ErrorCode.FILE_NOT_FOUND, "文件内容不存在");
+        }
+        return contentBlobQueryApi.findBlobReferenceById(storedFile.getBlobId())
+                .orElseThrow(() -> new BusinessException(ErrorCode.FILE_NOT_FOUND, "文件内容不存在"));
     }
 
     private StoredFile toStoredFile(RegisteredContentFile savedFile) {

@@ -1,7 +1,9 @@
 package com.yoyuzh.identity.access.internal.infra;
 
 import org.springframework.boot.context.properties.ConfigurationProperties;
+import org.springframework.stereotype.Component;
 
+@Component
 @ConfigurationProperties(prefix = "app.registration")
 public class RegistrationProperties {
 

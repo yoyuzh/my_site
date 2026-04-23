@@ -21,6 +21,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 
 import java.time.LocalDateTime;
+import java.util.List;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
@@ -58,6 +59,14 @@ public class RuntimeBackgroundTaskAdminQueryApi implements BackgroundTaskAdminQu
         BackgroundTask task = backgroundTaskRepository.findById(taskId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.FILE_NOT_FOUND, "task not found"));
         return toAdminView(task);
+    }
+
+    @Override
+    public long countActiveTasks() {
+        return backgroundTaskRepository.countByStatuses(List.of(
+                com.yoyuzh.platform.job.api.BackgroundTaskStatus.QUEUED,
+                com.yoyuzh.platform.job.api.BackgroundTaskStatus.RUNNING
+        ));
     }
 
     private AdminBackgroundTaskView toAdminView(BackgroundTask task) {

@@ -1,16 +1,15 @@
 package com.yoyuzh.transfer.internal.application;
 
-import com.yoyuzh.ops.admin.internal.application.AdminMetricsService;
 import com.yoyuzh.shared.kernel.BusinessException;
 import com.yoyuzh.shared.kernel.ErrorCode;
-import com.yoyuzh.transfer.LookupTransferSessionResponse;
-import com.yoyuzh.transfer.OfflineTransferService;
-import com.yoyuzh.transfer.OnlineTransferService;
-import com.yoyuzh.transfer.TransferFileItem;
-import com.yoyuzh.transfer.TransferMode;
-import com.yoyuzh.transfer.TransferSessionResponse;
 import com.yoyuzh.transfer.api.CreateTransferSessionCommand;
+import com.yoyuzh.transfer.api.LookupTransferSessionResponse;
+import com.yoyuzh.transfer.api.OfflineDownloadResult;
+import com.yoyuzh.transfer.api.TransferFileItem;
 import com.yoyuzh.transfer.api.TransferImportApi;
+import com.yoyuzh.transfer.api.TransferMode;
+import com.yoyuzh.transfer.api.TransferRuntimeMetricsPort;
+import com.yoyuzh.transfer.api.TransferSessionResponse;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -22,6 +21,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -30,7 +30,7 @@ class RuntimeTransferSessionApiTest {
     private OnlineTransferService onlineTransferService;
     private OfflineTransferService offlineTransferService;
     private TransferImportApi transferImportApi;
-    private AdminMetricsService adminMetricsService;
+    private TransferRuntimeMetricsPort transferRuntimeMetricsPort;
     private RuntimeTransferSessionApi transferSessionApi;
 
     @BeforeEach
@@ -38,12 +38,12 @@ class RuntimeTransferSessionApiTest {
         onlineTransferService = mock(OnlineTransferService.class);
         offlineTransferService = mock(OfflineTransferService.class);
         transferImportApi = mock(TransferImportApi.class);
-        adminMetricsService = mock(AdminMetricsService.class);
+        transferRuntimeMetricsPort = mock(TransferRuntimeMetricsPort.class);
         transferSessionApi = new RuntimeTransferSessionApi(
                 onlineTransferService,
                 offlineTransferService,
                 transferImportApi,
-                adminMetricsService
+                transferRuntimeMetricsPort
         );
     }
 
@@ -65,7 +65,7 @@ class RuntimeTransferSessionApiTest {
         TransferSessionResponse actual = transferSessionApi.createSession(null, command);
 
         assertThat(actual.sessionId()).isEqualTo("session-1");
-        verify(adminMetricsService).recordTransferUsage(12L);
+        verify(transferRuntimeMetricsPort).recordTransferUsage(12L);
         verify(onlineTransferService).createSession(any());
     }
 
@@ -101,7 +101,7 @@ class RuntimeTransferSessionApiTest {
         TransferSessionResponse actual = transferSessionApi.createSession(senderUserId, command);
 
         assertThat(actual.sessionId()).isEqualTo("offline-1");
-        verify(adminMetricsService).recordTransferUsage(12L);
+        verify(transferRuntimeMetricsPort).recordTransferUsage(12L);
         verify(offlineTransferService).createSession(anyLong(), any());
     }
 
@@ -118,5 +118,20 @@ class RuntimeTransferSessionApiTest {
         LookupTransferSessionResponse actual = transferSessionApi.lookupSession("123456");
 
         assertThat(actual.sessionId()).isEqualTo("session-1");
+    }
+
+    @Test
+    void shouldReturnOfflineDownloadResultAndRecordTraffic() {
+        OfflineDownloadResult response = OfflineDownloadResult.redirect("https://download.example.com/file");
+        when(offlineTransferService.getReadyFileSize("session-1", "file-1")).thenReturn(128L);
+        when(offlineTransferService.downloadOfflineFile("session-1", "file-1")).thenReturn(response);
+
+        OfflineDownloadResult actual = transferSessionApi.downloadOfflineFile("session-1", "file-1");
+
+        assertThat(actual.redirect()).isTrue();
+        assertThat(actual.redirectUrl()).isEqualTo("https://download.example.com/file");
+        verify(transferRuntimeMetricsPort).recordDownloadTraffic(128L);
+        verify(offlineTransferService).downloadOfflineFile("session-1", "file-1");
+        verify(onlineTransferService, never()).lookupSession(any());
     }
 }

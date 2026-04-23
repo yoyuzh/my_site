@@ -7,8 +7,9 @@ import com.yoyuzh.platform.job.api.BackgroundTaskStatus;
 import com.yoyuzh.platform.job.api.BackgroundTaskType;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.yoyuzh.identity.access.internal.domain.User;
-import com.yoyuzh.identity.access.internal.infra.UserRepository;
+import com.yoyuzh.identity.access.api.IdentityRoleName;
+import com.yoyuzh.identity.access.api.IdentityUserDirectoryApi;
+import com.yoyuzh.identity.access.api.IdentityUserSnapshot;
 import com.yoyuzh.files.content.internal.domain.FileBlob;
 import com.yoyuzh.files.workspace.api.WorkspaceArchiveApi;
 import com.yoyuzh.files.workspace.api.WorkspaceArchiveSummary;
@@ -44,7 +45,7 @@ import static org.mockito.Mockito.when;
 class BackgroundTaskArchiveHandlerTest {
 
     @Mock
-    private UserRepository userRepository;
+    private IdentityUserDirectoryApi identityUserDirectoryApi;
     @Mock
     private WorkspaceArchiveApi workspaceArchiveApi;
     @Mock
@@ -56,7 +57,7 @@ class BackgroundTaskArchiveHandlerTest {
     @BeforeEach
     void setUp() {
         handler = new ArchiveBackgroundTaskHandler(
-                userRepository,
+                identityUserDirectoryApi,
                 workspaceArchiveApi,
                 workspaceBootstrapApi,
                 new BackgroundTaskStateManager(new ObjectMapper())
@@ -66,7 +67,6 @@ class BackgroundTaskArchiveHandlerTest {
 
     @Test
     void shouldArchiveDirectoryAndImportZipIntoSameParentPath() throws Exception {
-        User user = createUser(7L);
         FileMetadataResponse importedArchive = new FileMetadataResponse(
                 99L,
                 "archive.zip",
@@ -77,7 +77,7 @@ class BackgroundTaskArchiveHandlerTest {
                 null
         );
 
-        when(userRepository.findById(7L)).thenReturn(Optional.of(user));
+        when(identityUserDirectoryApi.findSnapshotById(7L)).thenReturn(Optional.of(createUser(7L)));
         when(workspaceArchiveApi.summarizeArchiveSource(7L, 11L)).thenReturn(new WorkspaceArchiveSummary(2, 2));
         when(workspaceArchiveApi.buildArchiveBytes(eq(7L), eq(11L), any())).thenReturn(buildArchiveBytes(Map.of(
                 "archive/", "",
@@ -118,7 +118,6 @@ class BackgroundTaskArchiveHandlerTest {
 
     @Test
     void shouldArchiveSingleFileIntoZipWithoutLoadingDescendants() throws Exception {
-        User user = createUser(7L);
         FileMetadataResponse importedArchive = new FileMetadataResponse(
                 100L,
                 "notes.txt.zip",
@@ -129,7 +128,7 @@ class BackgroundTaskArchiveHandlerTest {
                 null
         );
 
-        when(userRepository.findById(7L)).thenReturn(Optional.of(user));
+        when(identityUserDirectoryApi.findSnapshotById(7L)).thenReturn(Optional.of(createUser(7L)));
         when(workspaceArchiveApi.summarizeArchiveSource(7L, 21L)).thenReturn(new WorkspaceArchiveSummary(1, 0));
         when(workspaceArchiveApi.buildArchiveBytes(eq(7L), eq(21L), any())).thenReturn(buildArchiveBytes(Map.of(
                 "notes.txt", "hello"
@@ -164,17 +163,28 @@ class BackgroundTaskArchiveHandlerTest {
         return task;
     }
 
-    private User createUser(Long id) {
-        User user = new User();
-        user.setId(id);
-        user.setUsername("alice");
-        return user;
+    private IdentityUserSnapshot createUser(Long id) {
+        return new IdentityUserSnapshot(
+                id,
+                "alice",
+                "Alice",
+                "alice@example.com",
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                IdentityRoleName.USER,
+                null,
+                1024L,
+                1024L
+        );
     }
 
-    private StoredFile createDirectory(Long id, User user, String path, String filename) {
+    private StoredFile createDirectory(Long id, String path, String filename) {
         StoredFile file = new StoredFile();
         file.setId(id);
-        file.setUser(user);
         file.setPath(path);
         file.setFilename(filename);
         file.setDirectory(true);
@@ -183,14 +193,12 @@ class BackgroundTaskArchiveHandlerTest {
     }
 
     private StoredFile createFile(Long id,
-                                  User user,
                                   String path,
                                   String filename,
                                   String contentType,
                                   String objectKey) {
         StoredFile file = new StoredFile();
         file.setId(id);
-        file.setUser(user);
         file.setPath(path);
         file.setFilename(filename);
         file.setDirectory(false);
@@ -201,7 +209,7 @@ class BackgroundTaskArchiveHandlerTest {
         blob.setObjectKey(objectKey);
         blob.setContentType(contentType);
         blob.setSize(5L);
-        file.setBlob(blob);
+        file.setBlobId(blob == null ? null : blob.getId());
         return file;
     }
 

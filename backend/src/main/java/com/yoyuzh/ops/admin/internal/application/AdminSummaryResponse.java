@@ -11,6 +11,9 @@ public record AdminSummaryResponse(
         long transferUsageBytes,
         long offlineTransferStorageBytes,
         long offlineTransferStorageLimitBytes,
+        long favoriteFileCount,
+        long shareDownloadCount,
+        long activeTaskCount,
         List<AdminDailyActiveUserSummary> dailyActiveUsers,
         List<AdminRequestTimelinePoint> requestTimeline,
         String inviteCode

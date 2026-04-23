@@ -46,7 +46,7 @@ public class ApiV2ExceptionHandler {
             case NOT_LOGGED_IN -> ApiV2ErrorCode.NOT_LOGGED_IN;
             case PERMISSION_DENIED -> ApiV2ErrorCode.PERMISSION_DENIED;
             case FILE_NOT_FOUND -> ApiV2ErrorCode.FILE_NOT_FOUND;
-            case UNKNOWN -> ApiV2ErrorCode.BAD_REQUEST;
+            case UNKNOWN, INVALID_INPUT, SESSION_EXPIRED, QUOTA_EXCEEDED, DUPLICATE_NAME -> ApiV2ErrorCode.BAD_REQUEST;
         };
     }
 }

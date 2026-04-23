@@ -6,13 +6,15 @@ import com.yoyuzh.platform.job.api.BackgroundTaskFailureCategory;
 import com.yoyuzh.platform.job.api.BackgroundTaskStatus;
 import com.yoyuzh.platform.job.api.BackgroundTaskType;
 
-import com.yoyuzh.files.content.internal.domain.FileBlob;
-import com.yoyuzh.files.workspace.internal.domain.StoredFile;
-import com.yoyuzh.files.workspace.internal.infra.StoredFileRepository;
+import com.yoyuzh.files.content.api.ContentBlobQueryApi;
+import com.yoyuzh.files.content.api.ContentBlobReference;
+import com.yoyuzh.files.workspace.api.WorkspaceFileQueryApi;
+import com.yoyuzh.files.workspace.api.WorkspaceFileSnapshot;
 import com.yoyuzh.files.search.FileMetadata;
 import com.yoyuzh.files.search.FileMetadataRepository;
 import com.yoyuzh.files.storage.FileContentStorage;
 import jakarta.transaction.Transactional;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 
@@ -33,16 +35,33 @@ public class MediaMetadataBackgroundTaskHandler implements BackgroundTaskHandler
     private static final String MEDIA_WIDTH = "media:width";
     private static final String MEDIA_HEIGHT = "media:height";
 
-    private final StoredFileRepository storedFileRepository;
+    private final WorkspaceFileQueryApi workspaceFileQueryApi;
+    private final ContentBlobQueryApi contentBlobQueryApi;
     private final FileMetadataRepository fileMetadataRepository;
     private final FileContentStorage fileContentStorage;
     private final BackgroundTaskStateManager stateManager;
 
-    public MediaMetadataBackgroundTaskHandler(StoredFileRepository storedFileRepository,
+    public MediaMetadataBackgroundTaskHandler(WorkspaceFileQueryApi workspaceFileQueryApi,
                                               FileMetadataRepository fileMetadataRepository,
                                               FileContentStorage fileContentStorage,
                                               BackgroundTaskStateManager stateManager) {
-        this.storedFileRepository = storedFileRepository;
+        this(
+                workspaceFileQueryApi,
+                blobId -> Optional.empty(),
+                fileMetadataRepository,
+                fileContentStorage,
+                stateManager
+        );
+    }
+
+    @Autowired
+    public MediaMetadataBackgroundTaskHandler(WorkspaceFileQueryApi workspaceFileQueryApi,
+                                              ContentBlobQueryApi contentBlobQueryApi,
+                                              FileMetadataRepository fileMetadataRepository,
+                                              FileContentStorage fileContentStorage,
+                                              BackgroundTaskStateManager stateManager) {
+        this.workspaceFileQueryApi = workspaceFileQueryApi;
+        this.contentBlobQueryApi = contentBlobQueryApi;
         this.fileMetadataRepository = fileMetadataRepository;
         this.fileContentStorage = fileContentStorage;
         this.stateManager = stateManager;
@@ -62,21 +81,22 @@ public class MediaMetadataBackgroundTaskHandler implements BackgroundTaskHandler
     @Override
     public BackgroundTaskHandlerResult handle(BackgroundTask task, BackgroundTaskProgressReporter progressReporter) {
         Long fileId = readFileId(task);
-        StoredFile file = storedFileRepository.findByIdAndUserIdAndDeletedAtIsNull(fileId, task.getUserId())
+        WorkspaceFileSnapshot file = workspaceFileQueryApi.findOwnedActiveFile(task.getUserId(), fileId)
                 .orElseThrow(() -> new IllegalStateException("media metadata task file not found"));
-        if (file.isDirectory()) {
+        if (file.directory()) {
             throw new IllegalStateException("media metadata task only supports files");
         }
-        FileBlob blob = Optional.ofNullable(file.getBlob())
+        ContentBlobReference blob = Optional.ofNullable(file.blobId())
+                .flatMap(contentBlobQueryApi::findBlobReferenceById)
                 .orElseThrow(() -> new IllegalStateException("media metadata task requires blob"));
-        if (!StringUtils.hasText(blob.getObjectKey())) {
+        if (!StringUtils.hasText(blob.objectKey())) {
             throw new IllegalStateException("media metadata task requires blob");
         }
 
-        String contentType = firstText(file.getContentType(), blob.getContentType());
-        long size = firstLong(file.getSize(), blob.getSize());
+        String contentType = firstText(file.contentType(), blob.contentType());
+        long size = firstLong(file.size(), blob.size());
         progressReporter.report(Map.of("metadataStage", "loading-content"));
-        byte[] content = Optional.ofNullable(fileContentStorage.readBlob(blob.getObjectKey()))
+        byte[] content = Optional.ofNullable(fileContentStorage.readBlob(blob.objectKey()))
                 .orElseThrow(() -> new IllegalStateException("media metadata task requires blob content"));
 
         Map<String, Object> publicStatePatch = new LinkedHashMap<>();
@@ -105,10 +125,10 @@ public class MediaMetadataBackgroundTaskHandler implements BackgroundTaskHandler
         return new BackgroundTaskHandlerResult(publicStatePatch);
     }
 
-    private void upsertMetadata(StoredFile file, String name, String value) {
-        FileMetadata metadata = fileMetadataRepository.findByFileIdAndName(file.getId(), name)
+    private void upsertMetadata(WorkspaceFileSnapshot file, String name, String value) {
+        FileMetadata metadata = fileMetadataRepository.findByFileIdAndName(file.id(), name)
                 .orElseGet(FileMetadata::new);
-        metadata.setFile(file);
+        metadata.setFileId(file.id());
         metadata.setName(name);
         metadata.setValue(value == null ? "" : value);
         metadata.setPublicVisible(true);

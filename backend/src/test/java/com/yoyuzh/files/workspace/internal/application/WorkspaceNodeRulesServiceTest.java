@@ -61,7 +61,7 @@ class WorkspaceNodeRulesServiceTest {
         when(storedFileRepository.findByUserIdAndPathAndFilename(eq(7L), any(), any())).thenReturn(Optional.empty());
         when(storedFileRepository.save(any(StoredFile.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
-        rulesService.ensureDirectoryHierarchy(user, "/projects/site");
+        rulesService.ensureDirectoryHierarchy(user.getId(), "/projects/site");
 
         verify(fileContentStorage).ensureDirectory(7L, "/projects");
         verify(fileContentStorage).ensureDirectory(7L, "/projects/site");
@@ -117,7 +117,7 @@ class WorkspaceNodeRulesServiceTest {
         User user = createUser(userId);
         StoredFile file = new StoredFile();
         file.setId(id);
-        file.setUser(user);
+        file.setUserId(user.getId());
         file.setFilename(filename);
         file.setPath(path);
         file.setSize(5L);

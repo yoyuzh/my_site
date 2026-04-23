@@ -1,7 +1,11 @@
 package com.yoyuzh.ops.admin.internal.application;
 
 import com.yoyuzh.files.workspace.api.WorkspaceDownloadMetricsPort;
+import com.yoyuzh.files.workspace.api.WorkspaceAdminMetricsApi;
+import com.yoyuzh.files.sharing.api.SharingAdminMetricsApi;
 import com.yoyuzh.ops.admin.api.AdminOfflineTransferStorageLimitResponse;
+import com.yoyuzh.ops.admin.api.AdminRequestMetricsApi;
+import com.yoyuzh.platform.job.api.BackgroundTaskAdminQueryApi;
 import com.yoyuzh.ops.admin.internal.infra.AdminDailyActiveUserEntity;
 import com.yoyuzh.ops.admin.internal.infra.AdminDailyActiveUserRepository;
 import com.yoyuzh.ops.admin.internal.infra.AdminMetricsState;
@@ -23,7 +27,7 @@ import java.util.stream.IntStream;
 
 @Service
 @RequiredArgsConstructor
-public class AdminMetricsService implements WorkspaceDownloadMetricsPort {
+public class AdminMetricsService implements WorkspaceDownloadMetricsPort, AdminRequestMetricsApi {
 
     private static final Long STATE_ID = 1L;
     private static final long DEFAULT_OFFLINE_TRANSFER_STORAGE_LIMIT_BYTES = 20L * 1024 * 1024 * 1024;
@@ -32,6 +36,9 @@ public class AdminMetricsService implements WorkspaceDownloadMetricsPort {
     private final AdminMetricsStateRepository adminMetricsStateRepository;
     private final AdminRequestTimelinePointRepository adminRequestTimelinePointRepository;
     private final AdminDailyActiveUserRepository adminDailyActiveUserRepository;
+    private final WorkspaceAdminMetricsApi workspaceAdminMetricsApi;
+    private final SharingAdminMetricsApi sharingAdminMetricsApi;
+    private final BackgroundTaskAdminQueryApi backgroundTaskAdminQueryApi;
 
     @Transactional
     public AdminMetricsSnapshot getSnapshot() {
@@ -47,6 +54,7 @@ public class AdminMetricsService implements WorkspaceDownloadMetricsPort {
     }
 
     @Transactional
+    @Override
     public void recordUserOnline(Long userId, String username) {
         if (userId == null || username == null || username.isBlank()) {
             return;
@@ -62,6 +70,7 @@ public class AdminMetricsService implements WorkspaceDownloadMetricsPort {
     }
 
     @Transactional
+    @Override
     public void incrementRequestCount() {
         LocalDateTime now = LocalDateTime.now();
         LocalDate today = now.toLocalDate();
@@ -106,6 +115,9 @@ public class AdminMetricsService implements WorkspaceDownloadMetricsPort {
                 state.getDownloadTrafficBytes(),
                 state.getTransferUsageBytes(),
                 state.getOfflineTransferStorageLimitBytes(),
+                workspaceAdminMetricsApi.countFavoriteFilesAsAdmin(),
+                sharingAdminMetricsApi.totalDownloadCountAsAdmin(),
+                backgroundTaskAdminQueryApi.countActiveTasks(),
                 buildDailyActiveUsers(metricDate),
                 buildRequestTimeline(metricDate)
         );

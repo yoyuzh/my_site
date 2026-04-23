@@ -35,7 +35,8 @@ class SecurityConfigTest {
                 null,
                 null,
                 new ObjectMapper(),
-                corsProperties
+                corsProperties,
+                authentication -> false
         );
 
         CorsConfigurationSource source = securityConfig.corsConfigurationSource();

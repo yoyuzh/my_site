@@ -32,7 +32,7 @@ class Task9InfraGatewayArchitectureTest {
 
         ArchRule transferStoreRule = classes()
                 .that()
-                .haveFullyQualifiedName("com.yoyuzh.transfer.TransferSessionStore")
+                .haveFullyQualifiedName("com.yoyuzh.transfer.internal.infra.TransferSessionStore")
                 .should()
                 .dependOnClassesThat()
                 .haveFullyQualifiedName("com.yoyuzh.infra.lock.DistributedLockGateway");
@@ -71,7 +71,7 @@ class Task9InfraGatewayArchitectureTest {
 
         ArchRule noLegacyLockRule = noClasses()
                 .that()
-                .haveFullyQualifiedName("com.yoyuzh.transfer.TransferSessionStore")
+                .haveFullyQualifiedName("com.yoyuzh.transfer.internal.infra.TransferSessionStore")
                 .or()
                 .haveFullyQualifiedName("com.yoyuzh.platform.job.internal.application.BackgroundTaskService")
                 .or()

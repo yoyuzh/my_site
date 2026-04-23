@@ -28,7 +28,7 @@ import com.yoyuzh.ops.admin.api.AdminSettingsUpdateRequest;
 import com.yoyuzh.ops.admin.internal.infra.AdminAuditLogRepository;
 import com.yoyuzh.ops.admin.internal.infra.AdminMetricsStateRepository;
 import com.yoyuzh.ops.admin.internal.infra.AdminRuntimeSettingsStateRepository;
-import com.yoyuzh.transfer.OfflineTransferSessionRepository;
+import com.yoyuzh.transfer.internal.infra.OfflineTransferSessionRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -160,14 +160,14 @@ class AdminControllerIntegrationTest {
                 LocalDateTime.now().minusMinutes(10)
         );
         storedFile = new StoredFile();
-        storedFile.setUser(portalUser);
+        storedFile.setUserId(portalUser.getId());
         storedFile.setFilename("report.pdf");
         storedFile.setPath("/");
         storedFile.setContentType("application/pdf");
         storedFile.setSize(1024L);
         storedFile.setDirectory(false);
-        storedFile.setBlob(reportBlob);
-        storedFile.setPrimaryEntity(reportEntity);
+        storedFile.setBlobId(reportBlob.getId());
+        storedFile.setPrimaryEntityId(reportEntity == null ? null : reportEntity.getId());
         storedFile.setCreatedAt(LocalDateTime.now());
         storedFile = storedFileRepository.save(storedFile);
         createRelation(storedFile, reportEntity, "PRIMARY");
@@ -184,14 +184,14 @@ class AdminControllerIntegrationTest {
                 LocalDateTime.now().minusHours(3)
         );
         secondaryFile = new StoredFile();
-        secondaryFile.setUser(secondaryUser);
+        secondaryFile.setUserId(secondaryUser.getId());
         secondaryFile.setFilename("notes.txt");
         secondaryFile.setPath("/docs");
         secondaryFile.setContentType("text/plain");
         secondaryFile.setSize(256L);
         secondaryFile.setDirectory(false);
-        secondaryFile.setBlob(notesBlob);
-        secondaryFile.setPrimaryEntity(notesEntity);
+        secondaryFile.setBlobId(notesBlob.getId());
+        secondaryFile.setPrimaryEntityId(notesEntity == null ? null : notesEntity.getId());
         secondaryFile.setCreatedAt(LocalDateTime.now().minusHours(2));
         secondaryFile = storedFileRepository.save(secondaryFile);
         createRelation(secondaryFile, notesEntity, "PRIMARY");
@@ -221,14 +221,14 @@ class AdminControllerIntegrationTest {
         entity.setSize(size);
         entity.setContentType(contentType);
         entity.setReferenceCount(referenceCount);
-        entity.setCreatedBy(createdBy);
+        entity.setCreatedByUserId(createdBy.getId());
         entity.setCreatedAt(createdAt);
         return fileEntityRepository.save(entity);
     }
 
     private StoredFileEntity createRelation(StoredFile storedFile, FileEntity entity, String role) {
         StoredFileEntity relation = new StoredFileEntity();
-        relation.setStoredFile(storedFile);
+        relation.setStoredFileId(storedFile.getId());
         relation.setFileEntity(entity);
         relation.setEntityRole(role);
         relation.setCreatedAt(LocalDateTime.now());
@@ -261,6 +261,9 @@ class AdminControllerIntegrationTest {
                 .andExpect(jsonPath("$.data.totalStorageBytes").value(1280L))
                 .andExpect(jsonPath("$.data.downloadTrafficBytes").value(0L))
                 .andExpect(jsonPath("$.data.requestCount", greaterThanOrEqualTo(1)))
+                .andExpect(jsonPath("$.data.favoriteFileCount").value(0))
+                .andExpect(jsonPath("$.data.shareDownloadCount").value(0))
+                .andExpect(jsonPath("$.data.activeTaskCount").value(0))
                 .andExpect(jsonPath("$.data.requestTimeline.length()").value(currentHour + 1))
                 .andExpect(jsonPath("$.data.requestTimeline[" + currentHour + "].hour").value(currentHour))
                 .andExpect(jsonPath("$.data.requestTimeline[" + currentHour + "].label").value(String.format("%02d:00", currentHour)))
@@ -710,7 +713,10 @@ class AdminControllerIntegrationTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.downloadTrafficBytes").value(1024L))
                 .andExpect(jsonPath("$.data.transferUsageBytes").value(13L))
-                .andExpect(jsonPath("$.data.requestCount", greaterThanOrEqualTo(2)));
+                .andExpect(jsonPath("$.data.requestCount", greaterThanOrEqualTo(2)))
+                .andExpect(jsonPath("$.data.favoriteFileCount").value(0))
+                .andExpect(jsonPath("$.data.shareDownloadCount").value(0))
+                .andExpect(jsonPath("$.data.activeTaskCount").value(0));
     }
 
     @Test
@@ -719,7 +725,9 @@ class AdminControllerIntegrationTest {
         mockMvc.perform(get("/api/admin/files?page=0&size=10"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.items[0].filename").value("report.pdf"))
-                .andExpect(jsonPath("$.data.items[0].ownerUsername").value("alice"));
+                .andExpect(jsonPath("$.data.items[0].ownerUsername").value("alice"))
+                .andExpect(jsonPath("$.data.items[0].favorite").value(false))
+                .andExpect(jsonPath("$.data.items[0].thumbnailAvailable").value(false));
 
         mockMvc.perform(get("/api/admin/files?page=0&size=10&query=report&ownerQuery=ali"))
                 .andExpect(status().isOk())
@@ -766,8 +774,8 @@ class AdminControllerIntegrationTest {
     @WithMockUser(username = "service-admin", roles = "ADMIN")
     void shouldAllowAdminRoleToListAndDeleteShares() throws Exception {
         FileShareLink share = new FileShareLink();
-        share.setOwner(secondaryUser);
-        share.setFile(secondaryFile);
+        share.setOwnerId(secondaryUser.getId());
+        share.setFileId(secondaryFile.getId());
         share.setToken("secret-token");
         share.setShareName("Bob Private Notes");
         share.setPasswordHash("hashed-secret");
@@ -790,6 +798,9 @@ class AdminControllerIntegrationTest {
                 .andExpect(jsonPath("$.data.items[0].fileName").value("notes.txt"))
                 .andExpect(jsonPath("$.data.items[0].passwordProtected").value(true))
                 .andExpect(jsonPath("$.data.items[0].expired").value(true))
+                .andExpect(jsonPath("$.data.items[0].viewCount").value(4))
+                .andExpect(jsonPath("$.data.items[0].downloadCount").value(2))
+                .andExpect(jsonPath("$.data.items[0].maxDownloads").value(5))
                 .andExpect(jsonPath("$.data.items[0].allowImport").value(false))
                 .andExpect(jsonPath("$.data.items[0].allowDownload").value(true));
 

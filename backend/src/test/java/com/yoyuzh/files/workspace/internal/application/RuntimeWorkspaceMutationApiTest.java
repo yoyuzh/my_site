@@ -101,7 +101,7 @@ class RuntimeWorkspaceMutationApiTest {
     private StoredFile createDirectory(Long id, User user, String path, String filename) {
         StoredFile storedFile = new StoredFile();
         storedFile.setId(id);
-        storedFile.setUser(user);
+        storedFile.setUserId(user.getId());
         storedFile.setPath(path);
         storedFile.setFilename(filename);
         storedFile.setDirectory(true);
@@ -114,7 +114,7 @@ class RuntimeWorkspaceMutationApiTest {
     private StoredFile createFile(Long id, User user, String path, String filename) {
         StoredFile storedFile = new StoredFile();
         storedFile.setId(id);
-        storedFile.setUser(user);
+        storedFile.setUserId(user.getId());
         storedFile.setPath(path);
         storedFile.setFilename(filename);
         storedFile.setDirectory(false);

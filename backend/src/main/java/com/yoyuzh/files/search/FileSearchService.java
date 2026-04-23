@@ -1,11 +1,8 @@
 package com.yoyuzh.files.search;
 
-import com.yoyuzh.identity.access.internal.domain.User;
 import com.yoyuzh.shared.kernel.PageResponse;
-import com.yoyuzh.files.workspace.internal.infra.StoredFileRepository;
 import com.yoyuzh.files.search.api.FileSearchApi;
 import com.yoyuzh.files.search.api.SearchFilesQuery;
-import com.yoyuzh.files.search.internal.application.RuntimeFileSearchApi;
 import com.yoyuzh.files.workspace.api.FileMetadataResponse;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
@@ -20,13 +17,9 @@ public class FileSearchService {
         this.fileSearchApi = fileSearchApi;
     }
 
-    FileSearchService(StoredFileRepository storedFileRepository) {
-        this(new RuntimeFileSearchApi(storedFileRepository));
-    }
-
-    public PageResponse<FileMetadataResponse> search(User user, FileSearchQuery query) {
+    public PageResponse<FileMetadataResponse> search(Long userId, FileSearchQuery query) {
         return fileSearchApi.search(
-                user.getId(),
+                userId,
                 new SearchFilesQuery(
                         query.name(),
                         query.directory(),

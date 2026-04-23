@@ -91,7 +91,7 @@ class RecycleBinControllerIntegrationTest {
         owner = userRepository.save(owner);
 
         StoredFile docsDirectory = new StoredFile();
-        docsDirectory.setUser(owner);
+        docsDirectory.setUserId(owner.getId());
         docsDirectory.setFilename("docs");
         docsDirectory.setPath("/");
         docsDirectory.setContentType("directory");
@@ -107,13 +107,13 @@ class RecycleBinControllerIntegrationTest {
         blob = fileBlobRepository.save(blob);
 
         StoredFile file = new StoredFile();
-        file.setUser(owner);
+        file.setUserId(owner.getId());
         file.setFilename("notes.txt");
         file.setPath("/docs");
         file.setContentType("text/plain");
         file.setSize(5L);
         file.setDirectory(false);
-        file.setBlob(blob);
+        file.setBlobId(blob == null ? null : blob.getId());
         deletedFileId = storedFileRepository.save(file).getId();
 
         Path blobPath = STORAGE_ROOT.resolve("blobs").resolve("recycle-notes");

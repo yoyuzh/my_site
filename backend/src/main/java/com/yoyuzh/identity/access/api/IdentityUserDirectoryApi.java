@@ -10,5 +10,7 @@ public interface IdentityUserDirectoryApi {
 
     Optional<IdentityUserProfileSummary> findProfileById(Long userId);
 
+    Optional<IdentityUserSnapshot> findSnapshotById(Long userId);
+
     Optional<IdentityUserProfileSummary> findProfileByUsername(String username);
 }

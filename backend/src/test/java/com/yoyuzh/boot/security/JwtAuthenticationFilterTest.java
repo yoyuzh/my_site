@@ -5,14 +5,14 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-import com.yoyuzh.ops.admin.internal.application.AdminMetricsService;
 import com.yoyuzh.identity.access.api.IdentityClientType;
-import com.yoyuzh.identity.access.internal.domain.User;
+import com.yoyuzh.identity.access.api.IdentityAuthenticatedUser;
+import com.yoyuzh.identity.access.api.IdentityRoleName;
+import com.yoyuzh.ops.admin.api.AdminRequestMetricsApi;
 import com.yoyuzh.shared.kernel.BusinessException;
 import com.yoyuzh.shared.kernel.ErrorCode;
 import jakarta.servlet.FilterChain;
 import java.time.Instant;
-import java.time.LocalDateTime;
 import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -35,7 +35,7 @@ class JwtAuthenticationFilterTest {
     @Mock
     private CustomUserDetailsService userDetailsService;
     @Mock
-    private AdminMetricsService adminMetricsService;
+    private AdminRequestMetricsApi adminRequestMetricsApi;
     @Mock
     private FilterChain filterChain;
 
@@ -47,7 +47,7 @@ class JwtAuthenticationFilterTest {
                 jwtTokenProvider,
                 authTokenInvalidationService,
                 userDetailsService,
-                adminMetricsService
+                adminRequestMetricsApi
         );
         SecurityContextHolder.clearContext();
     }
@@ -104,7 +104,7 @@ class JwtAuthenticationFilterTest {
         filter.doFilterInternal(request, response, filterChain);
 
         verify(filterChain).doFilter(request, response);
-        verify(userDetailsService, never()).loadDomainUser(any());
+        verify(userDetailsService, never()).loadAuthenticatedUser(any());
         assertThat(SecurityContextHolder.getContext().getAuthentication()).isNull();
     }
 
@@ -118,7 +118,7 @@ class JwtAuthenticationFilterTest {
         when(jwtTokenProvider.getClientType("valid-token")).thenReturn(IdentityClientType.DESKTOP);
         when(jwtTokenProvider.getIssuedAt("valid-token")).thenReturn(Instant.now());
         when(jwtTokenProvider.getUsername("valid-token")).thenReturn("alice");
-        when(userDetailsService.loadDomainUser("alice"))
+        when(userDetailsService.loadAuthenticatedUser("alice"))
                 .thenThrow(new BusinessException(ErrorCode.NOT_LOGGED_IN, "user not found"));
 
         filter.doFilterInternal(request, response, filterChain);
@@ -132,14 +132,14 @@ class JwtAuthenticationFilterTest {
         MockHttpServletRequest request = new MockHttpServletRequest();
         request.addHeader("Authorization", "Bearer valid-token");
         MockHttpServletResponse response = new MockHttpServletResponse();
-        User domainUser = createDomainUser("alice", "session-1", null);
+        IdentityAuthenticatedUser authenticatedUser = createAuthenticatedUser("alice", "session-1", null);
         when(jwtTokenProvider.validateToken("valid-token")).thenReturn(true);
         when(jwtTokenProvider.getUserId("valid-token")).thenReturn(1L);
         when(jwtTokenProvider.getClientType("valid-token")).thenReturn(IdentityClientType.DESKTOP);
         when(jwtTokenProvider.getIssuedAt("valid-token")).thenReturn(Instant.now());
         when(jwtTokenProvider.getUsername("valid-token")).thenReturn("alice");
-        when(userDetailsService.loadDomainUser("alice")).thenReturn(domainUser);
-        when(jwtTokenProvider.hasMatchingSession("valid-token", domainUser)).thenReturn(false);
+        when(userDetailsService.loadAuthenticatedUser("alice")).thenReturn(authenticatedUser);
+        when(jwtTokenProvider.hasMatchingSession("valid-token", authenticatedUser)).thenReturn(false);
 
         filter.doFilterInternal(request, response, filterChain);
 
@@ -152,7 +152,7 @@ class JwtAuthenticationFilterTest {
         MockHttpServletRequest request = new MockHttpServletRequest();
         request.addHeader("Authorization", "Bearer valid-token");
         MockHttpServletResponse response = new MockHttpServletResponse();
-        User domainUser = createDomainUser("alice", "session-1", null);
+        IdentityAuthenticatedUser authenticatedUser = createAuthenticatedUser("alice", "session-1", null);
         UserDetails disabledUserDetails = org.springframework.security.core.userdetails.User.builder()
                 .username("alice")
                 .password("hashed")
@@ -164,8 +164,8 @@ class JwtAuthenticationFilterTest {
         when(jwtTokenProvider.getClientType("valid-token")).thenReturn(IdentityClientType.DESKTOP);
         when(jwtTokenProvider.getIssuedAt("valid-token")).thenReturn(Instant.now());
         when(jwtTokenProvider.getUsername("valid-token")).thenReturn("alice");
-        when(userDetailsService.loadDomainUser("alice")).thenReturn(domainUser);
-        when(jwtTokenProvider.hasMatchingSession("valid-token", domainUser)).thenReturn(true);
+        when(userDetailsService.loadAuthenticatedUser("alice")).thenReturn(authenticatedUser);
+        when(jwtTokenProvider.hasMatchingSession("valid-token", authenticatedUser)).thenReturn(true);
         when(userDetailsService.loadUserByUsername("alice")).thenReturn(disabledUserDetails);
 
         filter.doFilterInternal(request, response, filterChain);
@@ -179,7 +179,7 @@ class JwtAuthenticationFilterTest {
         MockHttpServletRequest request = new MockHttpServletRequest();
         request.addHeader("Authorization", "Bearer valid-token");
         MockHttpServletResponse response = new MockHttpServletResponse();
-        User domainUser = createDomainUser("alice", "session-1", null);
+        IdentityAuthenticatedUser authenticatedUser = createAuthenticatedUser("alice", "session-1", null);
         UserDetails activeUserDetails = org.springframework.security.core.userdetails.User.builder()
                 .username("alice")
                 .password("hashed")
@@ -190,8 +190,8 @@ class JwtAuthenticationFilterTest {
         when(jwtTokenProvider.getClientType("valid-token")).thenReturn(IdentityClientType.DESKTOP);
         when(jwtTokenProvider.getIssuedAt("valid-token")).thenReturn(Instant.now());
         when(jwtTokenProvider.getUsername("valid-token")).thenReturn("alice");
-        when(userDetailsService.loadDomainUser("alice")).thenReturn(domainUser);
-        when(jwtTokenProvider.hasMatchingSession("valid-token", domainUser)).thenReturn(true);
+        when(userDetailsService.loadAuthenticatedUser("alice")).thenReturn(authenticatedUser);
+        when(jwtTokenProvider.hasMatchingSession("valid-token", authenticatedUser)).thenReturn(true);
         when(userDetailsService.loadUserByUsername("alice")).thenReturn(activeUserDetails);
 
         filter.doFilterInternal(request, response, filterChain);
@@ -199,20 +199,22 @@ class JwtAuthenticationFilterTest {
         verify(filterChain).doFilter(request, response);
         assertThat(SecurityContextHolder.getContext().getAuthentication()).isNotNull();
         assertThat(SecurityContextHolder.getContext().getAuthentication().getName()).isEqualTo("alice");
-        verify(adminMetricsService).recordUserOnline(1L, "alice");
+        verify(adminRequestMetricsApi).recordUserOnline(1L, "alice");
     }
 
-    private User createDomainUser(String username, String desktopSessionId, String mobileSessionId) {
-        User user = new User();
-        user.setId(1L);
-        user.setUsername(username);
-        user.setEmail(username + "@example.com");
-        user.setPasswordHash("hashed");
-        user.setActiveSessionId(desktopSessionId);
-        user.setDesktopActiveSessionId(desktopSessionId);
-        user.setMobileActiveSessionId(mobileSessionId);
-        user.setCreatedAt(LocalDateTime.now());
-        return user;
+    private IdentityAuthenticatedUser createAuthenticatedUser(String username, String desktopSessionId, String mobileSessionId) {
+        return new IdentityAuthenticatedUser(
+                1L,
+                username,
+                "hashed",
+                IdentityRoleName.USER,
+                false,
+                desktopSessionId,
+                desktopSessionId,
+                mobileSessionId,
+                1024L,
+                1024L
+        );
     }
 
     private static <T> T any() {

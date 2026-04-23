@@ -6,12 +6,13 @@ import com.yoyuzh.platform.job.internal.domain.BackgroundTask;
 
 import com.yoyuzh.platform.job.api.BackgroundTaskFailureCategory;
 import com.yoyuzh.platform.job.api.BackgroundTaskStatus;
+import com.yoyuzh.platform.job.api.TaskProgressResponse;
 import com.yoyuzh.platform.job.api.BackgroundTaskType;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.yoyuzh.files.workspace.api.WorkspaceFileQueryApi;
+import com.yoyuzh.files.workspace.api.WorkspaceFileSnapshot;
 import com.yoyuzh.identity.access.internal.domain.User;
-import com.yoyuzh.files.workspace.internal.domain.StoredFile;
-import com.yoyuzh.files.workspace.internal.infra.StoredFileRepository;
 import com.yoyuzh.infra.lock.DistributedLockGateway;
 import com.yoyuzh.shared.kernel.BusinessException;
 import org.junit.jupiter.api.BeforeEach;
@@ -42,7 +43,7 @@ class BackgroundTaskServiceTest {
     private BackgroundTaskRepository backgroundTaskRepository;
 
     @Mock
-    private StoredFileRepository storedFileRepository;
+    private WorkspaceFileQueryApi workspaceFileQueryApi;
 
     @Mock
     private DistributedLockGateway distributedLockGateway;
@@ -54,7 +55,7 @@ class BackgroundTaskServiceTest {
     void setUp() {
         backgroundTaskService = new BackgroundTaskService(
                 backgroundTaskRepository,
-                storedFileRepository,
+                workspaceFileQueryApi,
                 new ObjectMapper(),
                 distributedLockGateway
         );
@@ -73,10 +74,10 @@ class BackgroundTaskServiceTest {
     @Test
     void shouldRejectTaskCreationForForeignFile() {
         User user = createUser(7L);
-        when(storedFileRepository.findByIdAndUserIdAndDeletedAtIsNull(99L, 7L)).thenReturn(Optional.empty());
+        when(workspaceFileQueryApi.findOwnedActiveFile(7L, 99L)).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> backgroundTaskService.createQueuedFileTask(
-                user,
+                user.getId(),
                 BackgroundTaskType.ARCHIVE,
                 99L,
                 "/docs/foreign.txt",
@@ -88,10 +89,10 @@ class BackgroundTaskServiceTest {
     @Test
     void shouldRejectTaskCreationForDeletedFile() {
         User user = createUser(7L);
-        when(storedFileRepository.findByIdAndUserIdAndDeletedAtIsNull(100L, 7L)).thenReturn(Optional.empty());
+        when(workspaceFileQueryApi.findOwnedActiveFile(7L, 100L)).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> backgroundTaskService.createQueuedFileTask(
-                user,
+                user.getId(),
                 BackgroundTaskType.ARCHIVE,
                 100L,
                 "/docs/deleted.txt",
@@ -103,11 +104,11 @@ class BackgroundTaskServiceTest {
     @Test
     void shouldRejectTaskCreationWhenRequestedPathDoesNotMatchFile() {
         User user = createUser(7L);
-        StoredFile file = createStoredFile(11L, user, "/docs", "real.txt", false, "text/plain", 3L);
-        when(storedFileRepository.findByIdAndUserIdAndDeletedAtIsNull(11L, 7L)).thenReturn(Optional.of(file));
+        WorkspaceFileSnapshot file = createStoredFile(11L, user, "/docs", "real.txt", false, "text/plain", 3L);
+        when(workspaceFileQueryApi.findOwnedActiveFile(7L, 11L)).thenReturn(Optional.of(file));
 
         assertThatThrownBy(() -> backgroundTaskService.createQueuedFileTask(
-                user,
+                user.getId(),
                 BackgroundTaskType.ARCHIVE,
                 11L,
                 "/docs/fake.txt",
@@ -119,11 +120,11 @@ class BackgroundTaskServiceTest {
     @Test
     void shouldRejectExtractTaskForDirectory() {
         User user = createUser(7L);
-        StoredFile directory = createStoredFile(12L, user, "/", "bundle", true, null, 0L);
-        when(storedFileRepository.findByIdAndUserIdAndDeletedAtIsNull(12L, 7L)).thenReturn(Optional.of(directory));
+        WorkspaceFileSnapshot directory = createStoredFile(12L, user, "/", "bundle", true, null, 0L);
+        when(workspaceFileQueryApi.findOwnedActiveFile(7L, 12L)).thenReturn(Optional.of(directory));
 
         assertThatThrownBy(() -> backgroundTaskService.createQueuedFileTask(
-                user,
+                user.getId(),
                 BackgroundTaskType.EXTRACT,
                 12L,
                 "/bundle",
@@ -135,11 +136,11 @@ class BackgroundTaskServiceTest {
     @Test
     void shouldRejectExtractTaskForNonZipCompatibleArchive() {
         User user = createUser(7L);
-        StoredFile archive = createStoredFile(17L, user, "/docs", "backup.7z", false, "application/x-7z-compressed", 64L);
-        when(storedFileRepository.findByIdAndUserIdAndDeletedAtIsNull(17L, 7L)).thenReturn(Optional.of(archive));
+        WorkspaceFileSnapshot archive = createStoredFile(17L, user, "/docs", "backup.7z", false, "application/x-7z-compressed", 64L);
+        when(workspaceFileQueryApi.findOwnedActiveFile(7L, 17L)).thenReturn(Optional.of(archive));
 
         assertThatThrownBy(() -> backgroundTaskService.createQueuedFileTask(
-                user,
+                user.getId(),
                 BackgroundTaskType.EXTRACT,
                 17L,
                 "/docs/backup.7z",
@@ -151,11 +152,11 @@ class BackgroundTaskServiceTest {
     @Test
     void shouldRejectMediaMetadataTaskForNonMediaFile() {
         User user = createUser(7L);
-        StoredFile file = createStoredFile(13L, user, "/docs", "notes.txt", false, "text/plain", 9L);
-        when(storedFileRepository.findByIdAndUserIdAndDeletedAtIsNull(13L, 7L)).thenReturn(Optional.of(file));
+        WorkspaceFileSnapshot file = createStoredFile(13L, user, "/docs", "notes.txt", false, "text/plain", 9L);
+        when(workspaceFileQueryApi.findOwnedActiveFile(7L, 13L)).thenReturn(Optional.of(file));
 
         assertThatThrownBy(() -> backgroundTaskService.createQueuedFileTask(
-                user,
+                user.getId(),
                 BackgroundTaskType.MEDIA_META,
                 13L,
                 "/docs/notes.txt",
@@ -167,12 +168,12 @@ class BackgroundTaskServiceTest {
     @Test
     void shouldCreateTaskStateFromServerFilePath() {
         User user = createUser(7L);
-        StoredFile file = createStoredFile(14L, user, "/docs", "photo.png", false, "image/png", 15L);
-        when(storedFileRepository.findByIdAndUserIdAndDeletedAtIsNull(14L, 7L)).thenReturn(Optional.of(file));
+        WorkspaceFileSnapshot file = createStoredFile(14L, user, "/docs", "photo.png", false, "image/png", 15L);
+        when(workspaceFileQueryApi.findOwnedActiveFile(7L, 14L)).thenReturn(Optional.of(file));
         when(backgroundTaskRepository.save(any(BackgroundTask.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
         BackgroundTask task = backgroundTaskService.createQueuedFileTask(
-                user,
+                user.getId(),
                 BackgroundTaskType.MEDIA_META,
                 14L,
                 "/docs/photo.png",
@@ -194,12 +195,12 @@ class BackgroundTaskServiceTest {
     @Test
     void shouldCreateArchiveTaskStateWithDerivedOutputTarget() {
         User user = createUser(7L);
-        StoredFile directory = createStoredFile(15L, user, "/docs", "archive", true, null, 0L);
-        when(storedFileRepository.findByIdAndUserIdAndDeletedAtIsNull(15L, 7L)).thenReturn(Optional.of(directory));
+        WorkspaceFileSnapshot directory = createStoredFile(15L, user, "/docs", "archive", true, null, 0L);
+        when(workspaceFileQueryApi.findOwnedActiveFile(7L, 15L)).thenReturn(Optional.of(directory));
         when(backgroundTaskRepository.save(any(BackgroundTask.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
         BackgroundTask task = backgroundTaskService.createQueuedFileTask(
-                user,
+                user.getId(),
                 BackgroundTaskType.ARCHIVE,
                 15L,
                 "/docs/archive",
@@ -216,12 +217,12 @@ class BackgroundTaskServiceTest {
     @Test
     void shouldCreateExtractTaskStateWithDerivedOutputTarget() {
         User user = createUser(7L);
-        StoredFile archive = createStoredFile(16L, user, "/docs", "extract.zip", false, "application/zip", 32L);
-        when(storedFileRepository.findByIdAndUserIdAndDeletedAtIsNull(16L, 7L)).thenReturn(Optional.of(archive));
+        WorkspaceFileSnapshot archive = createStoredFile(16L, user, "/docs", "extract.zip", false, "application/zip", 32L);
+        when(workspaceFileQueryApi.findOwnedActiveFile(7L, 16L)).thenReturn(Optional.of(archive));
         when(backgroundTaskRepository.save(any(BackgroundTask.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
         BackgroundTask task = backgroundTaskService.createQueuedFileTask(
-                user,
+                user.getId(),
                 BackgroundTaskType.EXTRACT,
                 16L,
                 "/docs/extract.zip",
@@ -495,7 +496,6 @@ class BackgroundTaskServiceTest {
 
     @Test
     void shouldRetryFailedTaskAndResetPublicState() {
-        User user = createUser(7L);
         BackgroundTask task = createTask(8L, BackgroundTaskType.EXTRACT, BackgroundTaskStatus.FAILED);
         task.setPublicStateJson("""
                 {"fileId":11,"path":"/docs/extract.zip","phase":"failed","worker":"extract","processedFileCount":1,"totalFileCount":2}
@@ -508,7 +508,7 @@ class BackgroundTaskServiceTest {
         when(backgroundTaskRepository.findByIdAndUserId(8L, 7L)).thenReturn(Optional.of(task));
         when(backgroundTaskRepository.save(any(BackgroundTask.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
-        BackgroundTask result = backgroundTaskService.retryOwnedTask(user, 8L);
+        BackgroundTask result = backgroundTaskService.retryOwnedTask(7L, 8L);
 
         assertThat(result.getStatus()).isEqualTo(BackgroundTaskStatus.QUEUED);
         assertThat(result.getFinishedAt()).isNull();
@@ -526,13 +526,47 @@ class BackgroundTaskServiceTest {
 
     @Test
     void shouldRejectRetryForNonFailedTask() {
-        User user = createUser(7L);
         BackgroundTask task = createTask(9L, BackgroundTaskType.ARCHIVE, BackgroundTaskStatus.COMPLETED);
         when(backgroundTaskRepository.findByIdAndUserId(9L, 7L)).thenReturn(Optional.of(task));
 
-        assertThatThrownBy(() -> backgroundTaskService.retryOwnedTask(user, 9L))
+        assertThatThrownBy(() -> backgroundTaskService.retryOwnedTask(7L, 9L))
                 .isInstanceOf(BusinessException.class)
                 .hasMessage("only failed tasks can be retried");
+    }
+
+    @Test
+    void shouldReadOwnedTaskProgressFromPublicState() {
+        User user = createUser(7L);
+        BackgroundTask task = createTask(22L, BackgroundTaskType.EXTRACT, BackgroundTaskStatus.RUNNING);
+        task.setPublicStateJson("""
+                {"phase":"extracting","processedFileCount":2,"totalFileCount":3,"processedDirectoryCount":1,"totalDirectoryCount":1,"message":"extracting nested files"}
+                """);
+        when(backgroundTaskRepository.findByIdAndUserId(22L, 7L)).thenReturn(Optional.of(task));
+
+        TaskProgressResponse response = backgroundTaskService.getOwnedTaskProgress(user.getId(), 22L);
+
+        assertThat(response.taskId()).isEqualTo(22L);
+        assertThat(response.status()).isEqualTo("RUNNING");
+        assertThat(response.processedItems()).isEqualTo(3L);
+        assertThat(response.totalItems()).isEqualTo(4L);
+        assertThat(response.progressPercent()).isEqualTo(75);
+        assertThat(response.message()).isEqualTo("extracting nested files");
+    }
+
+    @Test
+    void shouldCreateSearchIndexRebuildTaskWithInitialProgressState() {
+        when(backgroundTaskRepository.save(any(BackgroundTask.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        BackgroundTask task = backgroundTaskService.createSearchIndexRebuildTask(7L);
+
+        assertThat(task.getType()).isEqualTo(BackgroundTaskType.SEARCH_INDEX_REBUILD);
+        assertThat(task.getUserId()).isEqualTo(7L);
+        assertThat(task.getCorrelationId()).startsWith("search-index-rebuild:");
+        assertThat(task.getPublicStateJson()).contains("\"message\":\"search index rebuild queued\"");
+        assertThat(task.getPublicStateJson()).contains("\"processedItems\":0");
+        assertThat(task.getPublicStateJson()).contains("\"totalItems\":1");
+        assertThat(task.getPublicStateJson()).contains("\"progressPercent\":0");
+        assertThat(task.getPublicStateJson()).contains("\"phase\":\"queued\"");
     }
 
     @Test
@@ -603,9 +637,9 @@ class BackgroundTaskServiceTest {
 
     @Test
     void shouldCreateAutoMediaMetadataTaskWhenCorrelationIsNew() {
-        StoredFile file = createStoredFile(19L, createUser(7L), "/docs", "photo.png", false, "image/png", 18L);
+        WorkspaceFileSnapshot file = createStoredFile(19L, createUser(7L), "/docs", "photo.png", false, "image/png", 18L);
         when(backgroundTaskRepository.existsByCorrelationId("media-meta:auto:file:19")).thenReturn(false);
-        when(storedFileRepository.findByIdAndUserIdAndDeletedAtIsNull(19L, 7L)).thenReturn(Optional.of(file));
+        when(workspaceFileQueryApi.findOwnedActiveFile(7L, 19L)).thenReturn(Optional.of(file));
         when(backgroundTaskRepository.saveAndFlush(any(BackgroundTask.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
         Optional<BackgroundTask> result = backgroundTaskService.createQueuedAutoMediaMetadataTask(
@@ -633,15 +667,15 @@ class BackgroundTaskServiceTest {
         );
 
         assertThat(result).isEmpty();
-        verify(storedFileRepository, never()).findByIdAndUserIdAndDeletedAtIsNull(20L, 7L);
+        verify(workspaceFileQueryApi, never()).findOwnedActiveFile(7L, 20L);
         verify(backgroundTaskRepository, never()).save(any(BackgroundTask.class));
     }
 
     @Test
     void shouldTreatDuplicateCorrelationInsertAsIdempotentNoOp() {
-        StoredFile file = createStoredFile(21L, createUser(7L), "/docs", "photo.png", false, "image/png", 18L);
+        WorkspaceFileSnapshot file = createStoredFile(21L, createUser(7L), "/docs", "photo.png", false, "image/png", 18L);
         when(backgroundTaskRepository.existsByCorrelationId("media-meta:auto:file:21")).thenReturn(false);
-        when(storedFileRepository.findByIdAndUserIdAndDeletedAtIsNull(21L, 7L)).thenReturn(Optional.of(file));
+        when(workspaceFileQueryApi.findOwnedActiveFile(7L, 21L)).thenReturn(Optional.of(file));
         when(backgroundTaskRepository.saveAndFlush(any(BackgroundTask.class)))
                 .thenThrow(new DataIntegrityViolationException("duplicate correlation id"));
 
@@ -665,6 +699,7 @@ class BackgroundTaskServiceTest {
             case ARCHIVE -> 4;
             case EXTRACT -> 3;
             case MEDIA_META -> 2;
+            case SEARCH_INDEX_REBUILD -> 1;
             default -> 1;
         });
         task.setPublicStateJson("{}");
@@ -679,21 +714,23 @@ class BackgroundTaskServiceTest {
         return user;
     }
 
-    private StoredFile createStoredFile(Long id,
-                                        User user,
-                                        String path,
-                                        String filename,
-                                        boolean directory,
-                                        String contentType,
-                                        Long size) {
-        StoredFile file = new StoredFile();
-        file.setId(id);
-        file.setUser(user);
-        file.setPath(path);
-        file.setFilename(filename);
-        file.setDirectory(directory);
-        file.setContentType(contentType);
-        file.setSize(size);
-        return file;
+    private WorkspaceFileSnapshot createStoredFile(Long id,
+                                                   User user,
+                                                   String path,
+                                                   String filename,
+                                                   boolean directory,
+                                                   String contentType,
+                                                   Long size) {
+        return new WorkspaceFileSnapshot(
+                id,
+                user.getId(),
+                filename,
+                path,
+                size,
+                contentType,
+                directory,
+                null,
+                java.time.LocalDateTime.now()
+        );
     }
 }

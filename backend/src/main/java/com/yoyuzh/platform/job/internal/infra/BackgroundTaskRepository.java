@@ -14,6 +14,7 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 import java.time.LocalDateTime;
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 
@@ -134,4 +135,11 @@ public interface BackgroundTaskRepository extends JpaRepository<BackgroundTask, 
                                 @Param("leaseExpiresAt") LocalDateTime leaseExpiresAt,
                                 @Param("heartbeatAt") LocalDateTime heartbeatAt,
                                 @Param("updatedAt") LocalDateTime updatedAt);
+
+    @Query("""
+            select count(task)
+            from BackgroundTask task
+            where task.status in :statuses
+            """)
+    long countByStatuses(@Param("statuses") Collection<BackgroundTaskStatus> statuses);
 }

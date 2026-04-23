@@ -10,6 +10,8 @@ import com.yoyuzh.files.content.internal.domain.FileEntity;
 import com.yoyuzh.files.content.internal.infra.FileEntityRepository;
 import com.yoyuzh.files.content.internal.domain.FileEntityType;
 import com.yoyuzh.files.content.internal.infra.StoredFileEntityRepository;
+import com.yoyuzh.identity.access.api.IdentityUserDirectoryApi;
+import com.yoyuzh.identity.access.api.IdentityUserProfileSummary;
 import com.yoyuzh.shared.kernel.PageResponse;
 import java.util.Collections;
 import java.util.List;
@@ -17,6 +19,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.function.Function;
 import java.util.stream.Collectors;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
@@ -29,13 +32,48 @@ public final class RuntimeContentAdminInspectionApi implements ContentAdminInspe
     private final FileEntityRepository fileEntityRepository;
     private final FileBlobRepository fileBlobRepository;
     private final StoredFileEntityRepository storedFileEntityRepository;
+    private final IdentityUserDirectoryApi identityUserDirectoryApi;
 
     public RuntimeContentAdminInspectionApi(FileEntityRepository fileEntityRepository,
                                             FileBlobRepository fileBlobRepository,
                                             StoredFileEntityRepository storedFileEntityRepository) {
+        this(
+                fileEntityRepository,
+                fileBlobRepository,
+                storedFileEntityRepository,
+                new IdentityUserDirectoryApi() {
+                    @Override
+                    public java.util.Map<Long, com.yoyuzh.identity.access.api.IdentityUserProfileSummary> findProfilesByIds(java.util.Set<Long> userIds) {
+                        return java.util.Map.of();
+                    }
+
+                    @Override
+                    public java.util.Optional<com.yoyuzh.identity.access.api.IdentityUserProfileSummary> findProfileById(Long userId) {
+                        return java.util.Optional.empty();
+                    }
+
+                    @Override
+                    public java.util.Optional<com.yoyuzh.identity.access.api.IdentityUserSnapshot> findSnapshotById(Long userId) {
+                        return java.util.Optional.empty();
+                    }
+
+                    @Override
+                    public java.util.Optional<com.yoyuzh.identity.access.api.IdentityUserProfileSummary> findProfileByUsername(String username) {
+                        return java.util.Optional.empty();
+                    }
+                }
+        );
+    }
+
+    @Autowired
+    public RuntimeContentAdminInspectionApi(FileEntityRepository fileEntityRepository,
+                                            FileBlobRepository fileBlobRepository,
+                                            StoredFileEntityRepository storedFileEntityRepository,
+                                            IdentityUserDirectoryApi identityUserDirectoryApi) {
         this.fileEntityRepository = fileEntityRepository;
         this.fileBlobRepository = fileBlobRepository;
         this.storedFileEntityRepository = storedFileEntityRepository;
+        this.identityUserDirectoryApi = identityUserDirectoryApi;
     }
 
     @Override
@@ -95,6 +133,9 @@ public final class RuntimeContentAdminInspectionApi implements ContentAdminInspe
                 : linkStats.getLinkedOwnerCount();
         String sampleOwnerUsername = linkStats == null ? null : linkStats.getSampleOwnerUsername();
         String sampleOwnerEmail = linkStats == null ? null : linkStats.getSampleOwnerEmail();
+        IdentityUserProfileSummary creator = entity.getCreatedByUserId() == null
+                ? null
+                : identityUserDirectoryApi.findProfileById(entity.getCreatedByUserId()).orElse(null);
 
         return new ContentAdminFileBlobView(
                 entity.getId(),
@@ -109,8 +150,8 @@ public final class RuntimeContentAdminInspectionApi implements ContentAdminInspe
                 linkedOwnerCount,
                 sampleOwnerUsername,
                 sampleOwnerEmail,
-                entity.getCreatedBy() == null ? null : entity.getCreatedBy().getId(),
-                entity.getCreatedBy() == null ? null : entity.getCreatedBy().getUsername(),
+                entity.getCreatedByUserId(),
+                creator == null ? null : creator.username(),
                 entity.getCreatedAt(),
                 blob == null ? null : blob.getCreatedAt(),
                 blob == null,

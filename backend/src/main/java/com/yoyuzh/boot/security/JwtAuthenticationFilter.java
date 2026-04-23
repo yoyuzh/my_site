@@ -1,8 +1,8 @@
 package com.yoyuzh.boot.security;
 
-import com.yoyuzh.ops.admin.internal.application.AdminMetricsService;
 import com.yoyuzh.identity.access.api.IdentityClientType;
-import com.yoyuzh.identity.access.internal.domain.User;
+import com.yoyuzh.identity.access.api.IdentityAuthenticatedUser;
+import com.yoyuzh.ops.admin.api.AdminRequestMetricsApi;
 import com.yoyuzh.shared.kernel.BusinessException;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
@@ -24,7 +24,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
     private final JwtTokenProvider jwtTokenProvider;
     private final AuthTokenInvalidationService authTokenInvalidationService;
     private final CustomUserDetailsService userDetailsService;
-    private final AdminMetricsService adminMetricsService;
+    private final AdminRequestMetricsApi adminRequestMetricsApi;
 
     @Override
     protected void doFilterInternal(HttpServletRequest request,
@@ -45,14 +45,14 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                     return;
                 }
                 String username = jwtTokenProvider.getUsername(token);
-                User domainUser;
+                IdentityAuthenticatedUser authenticatedUser;
                 try {
-                    domainUser = userDetailsService.loadDomainUser(username);
+                    authenticatedUser = userDetailsService.loadAuthenticatedUser(username);
                 } catch (BusinessException ex) {
                     filterChain.doFilter(request, response);
                     return;
                 }
-                if (!jwtTokenProvider.hasMatchingSession(token, domainUser)) {
+                if (!jwtTokenProvider.hasMatchingSession(token, authenticatedUser)) {
                     filterChain.doFilter(request, response);
                     return;
                 }
@@ -65,7 +65,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                         userDetails, null, userDetails.getAuthorities());
                 authentication.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
                 SecurityContextHolder.getContext().setAuthentication(authentication);
-                adminMetricsService.recordUserOnline(domainUser.getId(), domainUser.getUsername());
+                adminRequestMetricsApi.recordUserOnline(authenticatedUser.id(), authenticatedUser.username());
             }
         }
         filterChain.doFilter(request, response);

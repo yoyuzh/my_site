@@ -1,21 +1,17 @@
 package com.yoyuzh.files.content.internal.application;
 
-import com.yoyuzh.files.workspace.internal.application.*;
-import com.yoyuzh.files.workspace.internal.domain.*;
-import com.yoyuzh.files.workspace.internal.infra.*;
-import com.yoyuzh.files.workspace.internal.web.*;
-import com.yoyuzh.files.content.internal.application.*;
-import com.yoyuzh.files.content.internal.domain.*;
-import com.yoyuzh.files.content.internal.infra.*;
-
-import com.yoyuzh.identity.access.internal.domain.User;
+import com.yoyuzh.files.content.internal.domain.FileBlob;
+import com.yoyuzh.files.content.internal.domain.FileEntity;
+import com.yoyuzh.files.content.internal.domain.FileEntityType;
+import com.yoyuzh.files.content.internal.domain.StoredFileEntity;
+import com.yoyuzh.files.content.internal.infra.FileEntityRepository;
+import com.yoyuzh.files.content.internal.infra.StoredFileEntityRepository;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
-import java.time.LocalDateTime;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -35,7 +31,7 @@ class ContentAssetBindingServiceTest {
     void shouldCreateTransientPrimaryEntityWhenRepositoryIsUnavailable() {
         ContentAssetBindingService service = new ContentAssetBindingService(null, null, null);
 
-        FileEntity entity = service.createOrReferencePrimaryEntity(createUser(7L), createBlob("blobs/blob-1"));
+        FileEntity entity = service.createOrReferencePrimaryEntity(7L, createBlob("blobs/blob-1"));
 
         assertThat(entity.getObjectKey()).isEqualTo("blobs/blob-1");
         assertThat(entity.getEntityType()).isEqualTo(FileEntityType.VERSION);
@@ -54,7 +50,7 @@ class ContentAssetBindingServiceTest {
                 .thenReturn(Optional.of(existing));
         when(fileEntityRepository.save(existing)).thenReturn(existing);
 
-        FileEntity entity = service.createOrReferencePrimaryEntity(createUser(7L), createBlob("blobs/blob-1"));
+        FileEntity entity = service.createOrReferencePrimaryEntity(7L, createBlob("blobs/blob-1"));
 
         assertThat(entity.getReferenceCount()).isEqualTo(3);
         verify(fileEntityRepository).save(existing);
@@ -63,28 +59,16 @@ class ContentAssetBindingServiceTest {
     @Test
     void shouldSavePrimaryEntityRelationWhenRepositoryAvailable() {
         ContentAssetBindingService service = new ContentAssetBindingService(null, storedFileEntityRepository, null);
-        StoredFile storedFile = new StoredFile();
-        storedFile.setId(10L);
         FileEntity fileEntity = new FileEntity();
         fileEntity.setId(20L);
 
-        service.savePrimaryEntityRelation(storedFile, fileEntity);
+        service.savePrimaryEntityRelation(10L, fileEntity);
 
         ArgumentCaptor<StoredFileEntity> captor = ArgumentCaptor.forClass(StoredFileEntity.class);
         verify(storedFileEntityRepository).save(captor.capture());
-        assertThat(captor.getValue().getStoredFile().getId()).isEqualTo(10L);
+        assertThat(captor.getValue().getStoredFileId()).isEqualTo(10L);
         assertThat(captor.getValue().getFileEntity().getId()).isEqualTo(20L);
         assertThat(captor.getValue().getEntityRole()).isEqualTo("PRIMARY");
-    }
-
-    private User createUser(Long id) {
-        User user = new User();
-        user.setId(id);
-        user.setUsername("user-" + id);
-        user.setEmail("user-" + id + "@example.com");
-        user.setPasswordHash("encoded");
-        user.setCreatedAt(LocalDateTime.now());
-        return user;
     }
 
     private FileBlob createBlob(String objectKey) {

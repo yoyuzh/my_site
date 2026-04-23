@@ -1,23 +1,20 @@
 package com.yoyuzh.transfer.internal.application;
 
-import com.yoyuzh.ops.admin.internal.application.AdminMetricsService;
 import com.yoyuzh.shared.kernel.BusinessException;
 import com.yoyuzh.shared.kernel.ErrorCode;
-import com.yoyuzh.transfer.CreateTransferSessionRequest;
-import com.yoyuzh.transfer.LookupTransferSessionResponse;
-import com.yoyuzh.transfer.OfflineTransferService;
-import com.yoyuzh.transfer.OnlineTransferService;
-import com.yoyuzh.transfer.PollTransferSignalsResponse;
-import com.yoyuzh.transfer.TransferFileItem;
-import com.yoyuzh.transfer.TransferMode;
-import com.yoyuzh.transfer.TransferSessionResponse;
-import com.yoyuzh.transfer.TransferSignalRequest;
 import com.yoyuzh.transfer.api.CreateTransferSessionCommand;
+import com.yoyuzh.transfer.api.LookupTransferSessionResponse;
+import com.yoyuzh.transfer.api.OfflineDownloadResult;
+import com.yoyuzh.transfer.api.PollTransferSignalsResponse;
 import com.yoyuzh.transfer.api.TransferImportApi;
 import com.yoyuzh.transfer.api.TransferImportCommand;
+import com.yoyuzh.transfer.api.TransferFileItem;
+import com.yoyuzh.transfer.api.TransferMode;
+import com.yoyuzh.transfer.api.TransferRuntimeMetricsPort;
 import com.yoyuzh.transfer.api.TransferSessionApi;
+import com.yoyuzh.transfer.api.TransferSessionResponse;
+import com.yoyuzh.transfer.api.TransferSignalRequest;
 import com.yoyuzh.files.workspace.api.FileMetadataResponse;
-import org.springframework.http.ResponseEntity;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -33,30 +30,30 @@ public class RuntimeTransferSessionApi implements TransferSessionApi {
     private final OnlineTransferService onlineTransferService;
     private final OfflineTransferService offlineTransferService;
     private final TransferImportApi transferImportApi;
-    private final AdminMetricsService adminMetricsService;
+    private final TransferRuntimeMetricsPort transferRuntimeMetricsPort;
 
     public RuntimeTransferSessionApi(OnlineTransferService onlineTransferService,
                                      OfflineTransferService offlineTransferService,
                                      TransferImportApi transferImportApi,
-                                     AdminMetricsService adminMetricsService) {
+                                     TransferRuntimeMetricsPort transferRuntimeMetricsPort) {
         this.onlineTransferService = onlineTransferService;
         this.offlineTransferService = offlineTransferService;
         this.transferImportApi = transferImportApi;
-        this.adminMetricsService = adminMetricsService;
+        this.transferRuntimeMetricsPort = transferRuntimeMetricsPort;
     }
 
     @Override
     @Transactional
     public TransferSessionResponse createSession(Long senderUserId, CreateTransferSessionCommand command) {
         pruneExpiredSessions();
-        adminMetricsService.recordTransferUsage(command.files().stream().mapToLong(TransferFileItem::size).sum());
+        transferRuntimeMetricsPort.recordTransferUsage(command.files().stream().mapToLong(TransferFileItem::size).sum());
         if (command.mode() == TransferMode.OFFLINE) {
             if (senderUserId == null) {
                 throw new BusinessException(ErrorCode.NOT_LOGGED_IN, "offline transfer requires authenticated user");
             }
-            return offlineTransferService.createSession(senderUserId, new CreateTransferSessionRequest(command.mode(), command.files()));
+            return offlineTransferService.createSession(senderUserId, command);
         }
-        return onlineTransferService.createSession(new CreateTransferSessionRequest(command.mode(), command.files()));
+        return onlineTransferService.createSession(command);
     }
 
     @Override
@@ -101,7 +98,7 @@ public class RuntimeTransferSessionApi implements TransferSessionApi {
             return;
         }
         if (offlineTransferService.hasSession(sessionId)) {
-            throw new BusinessException(ErrorCode.UNKNOWN, "offline transfer does not need realtime signals");
+            throw new BusinessException(ErrorCode.INVALID_INPUT, "offline transfer does not need realtime signals");
         }
         throw new BusinessException(ErrorCode.FILE_NOT_FOUND, "transfer session not found or expired");
     }
@@ -114,15 +111,15 @@ public class RuntimeTransferSessionApi implements TransferSessionApi {
             return online;
         }
         if (offlineTransferService.hasSession(sessionId)) {
-            throw new BusinessException(ErrorCode.UNKNOWN, "offline transfer does not need signal polling");
+            throw new BusinessException(ErrorCode.INVALID_INPUT, "offline transfer does not need signal polling");
         }
         throw new BusinessException(ErrorCode.FILE_NOT_FOUND, "transfer session not found or expired");
     }
 
     @Override
-    public ResponseEntity<?> downloadOfflineFile(String sessionId, String fileId) {
+    public OfflineDownloadResult downloadOfflineFile(String sessionId, String fileId) {
         pruneExpiredSessions();
-        adminMetricsService.recordDownloadTraffic(offlineTransferService.getReadyFileSize(sessionId, fileId));
+        transferRuntimeMetricsPort.recordDownloadTraffic(offlineTransferService.getReadyFileSize(sessionId, fileId));
         return offlineTransferService.downloadOfflineFile(sessionId, fileId);
     }
 
@@ -147,10 +144,6 @@ public class RuntimeTransferSessionApi implements TransferSessionApi {
     }
 
     private String normalizePickupCode(String pickupCode) {
-        String normalized = Objects.requireNonNullElse(pickupCode, "").replaceAll("\\D", "");
-        if (normalized.length() != 6) {
-            throw new BusinessException(ErrorCode.UNKNOWN, "invalid pickup code");
-        }
-        return normalized;
+        return TransferPathNormalizer.normalizePickupCode(pickupCode);
     }
 }

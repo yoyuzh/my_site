@@ -1,6 +1,5 @@
 package com.yoyuzh.files.workspace.internal.application;
 
-import com.yoyuzh.identity.access.internal.domain.User;
 import com.yoyuzh.shared.kernel.BusinessException;
 import com.yoyuzh.shared.kernel.ErrorCode;
 import com.yoyuzh.shared.kernel.PageResponse;
@@ -44,7 +43,7 @@ public final class RuntimeWorkspaceDirectoryApi implements WorkspaceDirectoryApi
         fileContentStorage.createDirectory(userId, normalizedPath);
 
         StoredFile storedFile = new StoredFile();
-        storedFile.setUser(userReference(userId));
+        storedFile.setUserId(userId);
         storedFile.setFilename(directoryName);
         storedFile.setPath(parentPath);
         storedFile.setLegacyStorageName(directoryName);
@@ -62,12 +61,6 @@ public final class RuntimeWorkspaceDirectoryApi implements WorkspaceDirectoryApi
                 PageRequest.of(page, size)
         );
         return new PageResponse<>(result.getContent().stream().map(this::toResponse).toList(), result.getTotalElements(), page, size);
-    }
-
-    private User userReference(Long userId) {
-        User user = new User();
-        user.setId(userId);
-        return user;
     }
 
     private FileMetadataResponse toResponse(StoredFile storedFile) {

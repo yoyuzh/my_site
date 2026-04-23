@@ -2,6 +2,7 @@ package com.yoyuzh.identity.access.internal.application;
 
 import com.yoyuzh.identity.access.api.IdentityClientType;
 import com.yoyuzh.identity.access.internal.domain.User;
+import com.yoyuzh.identity.access.internal.infra.UserRepository;
 import com.yoyuzh.boot.security.AuthTokenInvalidationService;
 import com.yoyuzh.shared.kernel.BusinessException;
 import com.yoyuzh.shared.kernel.ErrorCode;
@@ -32,13 +33,16 @@ public class RuntimeIdentityRefreshTokenManager implements IdentityRefreshTokenM
     private static final int REFRESH_TOKEN_BYTES = 48;
 
     private final RefreshTokenRepository refreshTokenRepository;
+    private final UserRepository userRepository;
     private final JwtProperties jwtProperties;
     private final AuthTokenInvalidationService authTokenInvalidationService;
     private final SecureRandom secureRandom = new SecureRandom();
 
     @Override
     @Transactional
-    public String issue(User user, IdentityClientType clientType) {
+    public String issue(Long userId, IdentityClientType clientType) {
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.NOT_LOGGED_IN, "用户不存在"));
         String rawToken = generateRawToken();
 
         RefreshToken refreshToken = new RefreshToken();
@@ -79,8 +83,8 @@ public class RuntimeIdentityRefreshTokenManager implements IdentityRefreshTokenM
         authTokenInvalidationService.blacklistRefreshTokenHash(existing.getTokenHash(), toInstant(existing.getExpiresAt()));
         revokeAll(user.getId(), clientType);
 
-        String nextRefreshToken = issue(user, clientType);
-        return new RotatedIdentityRefreshToken(user, nextRefreshToken, clientType);
+        String nextRefreshToken = issue(user.getId(), clientType);
+        return new RotatedIdentityRefreshToken(user.getId(), nextRefreshToken, clientType);
     }
 
     @Override

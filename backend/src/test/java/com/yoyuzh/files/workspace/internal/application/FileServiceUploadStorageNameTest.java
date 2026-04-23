@@ -45,7 +45,7 @@ class FileServiceUploadStorageNameTest {
     void setUp() {
         FileStorageProperties properties = new FileStorageProperties();
         properties.setMaxFileSize(500L * 1024 * 1024);
-        fileService = new FileService(
+        fileService = FileServiceTestSupport.create(
                 storedFileRepository,
                 fileBlobRepository,
                 fileContentStorage,
@@ -73,7 +73,7 @@ class FileServiceUploadStorageNameTest {
             return storedFile;
         });
 
-        fileService.upload(user, "/", multipartFile);
+        fileService.upload(FileServiceTestSupport.workspaceUser(user), "/", multipartFile);
 
         ArgumentCaptor<StoredFile> storedFileCaptor = ArgumentCaptor.forClass(StoredFile.class);
         verify(storedFileRepository).save(storedFileCaptor.capture());

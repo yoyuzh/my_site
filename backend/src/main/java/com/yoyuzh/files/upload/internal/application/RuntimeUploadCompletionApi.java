@@ -1,11 +1,10 @@
 package com.yoyuzh.files.upload.internal.application;
 
+import com.yoyuzh.files.content.api.ContentBlobRegistrationApi;
 import com.yoyuzh.files.content.api.ContentRegistrationApi;
 import com.yoyuzh.files.content.api.ContentBlobReference;
 import com.yoyuzh.files.content.api.ContentRegistrationCommand;
 import com.yoyuzh.files.content.api.RegisteredContentFile;
-import com.yoyuzh.files.content.internal.domain.FileBlob;
-import com.yoyuzh.files.content.internal.infra.FileBlobRepository;
 import com.yoyuzh.files.storage.FileContentStorage;
 import com.yoyuzh.files.upload.api.UploadCompletionApi;
 import com.yoyuzh.files.upload.api.UploadCompletionCommand;
@@ -17,16 +16,16 @@ public final class RuntimeUploadCompletionApi implements UploadCompletionApi {
 
     private final WorkspacePathPolicy workspacePathPolicy;
     private final ContentRegistrationApi contentRegistrationApi;
-    private final FileBlobRepository fileBlobRepository;
+    private final ContentBlobRegistrationApi contentBlobRegistrationApi;
     private final FileContentStorage fileContentStorage;
 
     public RuntimeUploadCompletionApi(WorkspacePathPolicy workspacePathPolicy,
                                       ContentRegistrationApi contentRegistrationApi,
-                                      FileBlobRepository fileBlobRepository,
+                                      ContentBlobRegistrationApi contentBlobRegistrationApi,
                                       FileContentStorage fileContentStorage) {
         this.workspacePathPolicy = workspacePathPolicy;
         this.contentRegistrationApi = contentRegistrationApi;
-        this.fileBlobRepository = fileBlobRepository;
+        this.contentBlobRegistrationApi = contentBlobRegistrationApi;
         this.fileContentStorage = fileContentStorage;
     }
 
@@ -35,14 +34,18 @@ public final class RuntimeUploadCompletionApi implements UploadCompletionApi {
         try {
             fileContentStorage.completeBlobUpload(command.objectKey(), command.contentType(), command.size());
             workspacePathPolicy.ensureDirectoryHierarchy(command.userId(), command.normalizedPath());
-            FileBlob blob = createAndSaveBlob(command.objectKey(), command.contentType(), command.size());
+            ContentBlobReference blob = contentBlobRegistrationApi.registerStoredBlob(
+                    command.objectKey(),
+                    command.contentType(),
+                    command.size()
+            );
             return contentRegistrationApi.registerBlob(new ContentRegistrationCommand(
                     command.userId(),
                     command.normalizedPath(),
                     command.filename(),
                     command.contentType(),
                     command.size(),
-                    new ContentBlobReference(blob.getId(), blob.getObjectKey(), blob.getContentType(), blob.getSize())
+                    blob
             ));
         } catch (RuntimeException ex) {
             try {
@@ -52,13 +55,5 @@ public final class RuntimeUploadCompletionApi implements UploadCompletionApi {
             }
             throw ex;
         }
-    }
-
-    private FileBlob createAndSaveBlob(String objectKey, String contentType, long size) {
-        FileBlob blob = new FileBlob();
-        blob.setObjectKey(objectKey);
-        blob.setContentType(contentType);
-        blob.setSize(size);
-        return fileBlobRepository.save(blob);
     }
 }

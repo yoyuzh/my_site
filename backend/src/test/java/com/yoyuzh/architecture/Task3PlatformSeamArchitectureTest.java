@@ -65,6 +65,13 @@ class Task3PlatformSeamArchitectureTest {
                 .dependOnClassesThat()
                 .resideInAnyPackage("com.yoyuzh.files.tasks..");
 
+        ArchRule v2DomainEntityRule = noClasses()
+                .that()
+                .haveFullyQualifiedName("com.yoyuzh.platform.job.internal.web.BackgroundTaskV2Controller")
+                .should()
+                .dependOnClassesThat()
+                .resideInAnyPackage("com.yoyuzh.platform.job.internal.domain..");
+
         ArchRule adminRule = classes()
                 .that()
                 .haveFullyQualifiedName("com.yoyuzh.ops.admin.internal.web.AdminTaskController")
@@ -169,6 +176,7 @@ class Task3PlatformSeamArchitectureTest {
 
         v2Rule.check(classes);
         v2LegacyRule.check(classes);
+        v2DomainEntityRule.check(classes);
         adminRule.check(classes);
         adminStorageServiceRule.check(classes);
         adminStorageControllerRule.check(classes);

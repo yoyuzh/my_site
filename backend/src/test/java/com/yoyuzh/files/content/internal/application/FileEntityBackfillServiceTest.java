@@ -1,14 +1,14 @@
 package com.yoyuzh.files.content.internal.application;
 
-import com.yoyuzh.files.workspace.internal.application.*;
-import com.yoyuzh.files.workspace.internal.domain.*;
-import com.yoyuzh.files.workspace.internal.infra.*;
-import com.yoyuzh.files.workspace.internal.web.*;
-import com.yoyuzh.files.content.internal.application.*;
-import com.yoyuzh.files.content.internal.domain.*;
-import com.yoyuzh.files.content.internal.infra.*;
-
-import com.yoyuzh.identity.access.internal.domain.User;
+import com.yoyuzh.files.content.internal.domain.FileBlob;
+import com.yoyuzh.files.content.internal.domain.FileEntity;
+import com.yoyuzh.files.content.internal.domain.FileEntityType;
+import com.yoyuzh.files.content.internal.domain.StoredFileEntity;
+import com.yoyuzh.files.content.internal.infra.FileBlobRepository;
+import com.yoyuzh.files.content.internal.infra.FileEntityRepository;
+import com.yoyuzh.files.content.internal.infra.StoredFileEntityRepository;
+import com.yoyuzh.files.workspace.api.WorkspaceContentBindingApi;
+import com.yoyuzh.files.workspace.api.WorkspaceContentBindingFile;
 import com.yoyuzh.platform.storage.api.StoragePolicyQuery;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -30,7 +30,9 @@ import static org.mockito.Mockito.when;
 class FileEntityBackfillServiceTest {
 
     @Mock
-    private StoredFileRepository storedFileRepository;
+    private WorkspaceContentBindingApi workspaceContentBindingApi;
+    @Mock
+    private FileBlobRepository fileBlobRepository;
     @Mock
     private FileEntityRepository fileEntityRepository;
     @Mock
@@ -43,7 +45,8 @@ class FileEntityBackfillServiceTest {
     @BeforeEach
     void setUp() {
         backfillService = new FileEntityBackfillService(
-                storedFileRepository,
+                workspaceContentBindingApi,
+                fileBlobRepository,
                 fileEntityRepository,
                 storedFileEntityRepository,
                 storagePolicyQuery
@@ -52,9 +55,10 @@ class FileEntityBackfillServiceTest {
 
     @Test
     void shouldBackfillPrimaryEntityFromExistingBlob() {
-        StoredFile storedFile = createStoredFile(10L, 7L, "notes.txt", createBlob(20L, "blobs/blob-20"));
-        when(storedFileRepository.findAllByDirectoryFalseAndBlobIsNotNullAndPrimaryEntityIsNull())
+        WorkspaceContentBindingFile storedFile = createStoredFile(10L, 7L, createBlob(20L, "blobs/blob-20"));
+        when(workspaceContentBindingApi.findFilesMissingPrimaryEntityBindings())
                 .thenReturn(List.of(storedFile));
+        when(fileBlobRepository.findById(20L)).thenReturn(Optional.of(createBlob(20L, "blobs/blob-20")));
         when(fileEntityRepository.findByObjectKeyAndEntityType("blobs/blob-20", FileEntityType.VERSION))
                 .thenReturn(Optional.empty());
         when(fileEntityRepository.save(any(FileEntity.class))).thenAnswer(invocation -> {
@@ -66,57 +70,35 @@ class FileEntityBackfillServiceTest {
 
         backfillService.backfillPrimaryEntities();
 
-        assertThat(storedFile.getPrimaryEntity()).isNotNull();
-        assertThat(storedFile.getPrimaryEntity().getObjectKey()).isEqualTo("blobs/blob-20");
-        assertThat(storedFile.getPrimaryEntity().getEntityType()).isEqualTo(FileEntityType.VERSION);
-        assertThat(storedFile.getPrimaryEntity().getReferenceCount()).isEqualTo(1);
-        assertThat(storedFile.getPrimaryEntity().getStoragePolicyId()).isEqualTo(42L);
         verify(fileEntityRepository).save(any(FileEntity.class));
-        verify(storedFileRepository).save(storedFile);
+        verify(workspaceContentBindingApi).attachPrimaryEntity(10L, 100L);
         verify(storedFileEntityRepository).save(any(StoredFileEntity.class));
     }
 
     @Test
     void shouldReuseExistingFileEntityWhenBackfillRunsAgain() {
-        StoredFile storedFile = createStoredFile(11L, 8L, "report.pdf", createBlob(21L, "blobs/blob-21"));
+        WorkspaceContentBindingFile storedFile = createStoredFile(11L, 8L, createBlob(21L, "blobs/blob-21"));
         FileEntity existingEntity = new FileEntity();
         existingEntity.setId(101L);
         existingEntity.setObjectKey("blobs/blob-21");
         existingEntity.setEntityType(FileEntityType.VERSION);
         existingEntity.setReferenceCount(3);
-        when(storedFileRepository.findAllByDirectoryFalseAndBlobIsNotNullAndPrimaryEntityIsNull())
+        when(workspaceContentBindingApi.findFilesMissingPrimaryEntityBindings())
                 .thenReturn(List.of(storedFile));
+        when(fileBlobRepository.findById(21L)).thenReturn(Optional.of(createBlob(21L, "blobs/blob-21")));
         when(fileEntityRepository.findByObjectKeyAndEntityType("blobs/blob-21", FileEntityType.VERSION))
                 .thenReturn(Optional.of(existingEntity));
 
         backfillService.backfillPrimaryEntities();
 
-        assertThat(storedFile.getPrimaryEntity()).isNotNull();
-        assertThat(storedFile.getPrimaryEntity().getId()).isEqualTo(existingEntity.getId());
-        assertThat(storedFile.getPrimaryEntity().getEntityType()).isEqualTo(FileEntityType.VERSION);
-        assertThat(storedFile.getPrimaryEntity().getObjectKey()).isEqualTo(existingEntity.getObjectKey());
         assertThat(existingEntity.getReferenceCount()).isEqualTo(4);
         verify(fileEntityRepository).save(existingEntity);
-        verify(storedFileRepository).save(storedFile);
+        verify(workspaceContentBindingApi).attachPrimaryEntity(11L, existingEntity.getId());
         verify(storedFileEntityRepository).save(any(StoredFileEntity.class));
     }
 
-    private StoredFile createStoredFile(Long id, Long userId, String filename, FileBlob blob) {
-        User user = new User();
-        user.setId(userId);
-        user.setUsername("user-" + userId);
-
-        StoredFile file = new StoredFile();
-        file.setId(id);
-        file.setUser(user);
-        file.setPath("/docs");
-        file.setFilename(filename);
-        file.setBlob(blob);
-        file.setContentType(blob.getContentType());
-        file.setSize(blob.getSize());
-        file.setDirectory(false);
-        file.setCreatedAt(LocalDateTime.now());
-        return file;
+    private WorkspaceContentBindingFile createStoredFile(Long id, Long userId, FileBlob blob) {
+        return new WorkspaceContentBindingFile(id, userId, "/docs", null, blob.getContentType(), blob.getSize(), blob.getId());
     }
 
     private FileBlob createBlob(Long id, String objectKey) {

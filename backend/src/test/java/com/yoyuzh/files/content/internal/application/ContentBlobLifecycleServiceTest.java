@@ -1,13 +1,8 @@
 package com.yoyuzh.files.content.internal.application;
 
-import com.yoyuzh.files.workspace.internal.application.*;
-import com.yoyuzh.files.workspace.internal.domain.*;
-import com.yoyuzh.files.workspace.internal.infra.*;
-import com.yoyuzh.files.workspace.internal.web.*;
-import com.yoyuzh.files.content.internal.application.*;
-import com.yoyuzh.files.content.internal.domain.*;
-import com.yoyuzh.files.content.internal.infra.*;
-
+import com.yoyuzh.files.content.internal.domain.FileBlob;
+import com.yoyuzh.files.content.internal.infra.FileBlobRepository;
+import com.yoyuzh.files.workspace.api.WorkspaceContentBindingApi;
 import com.yoyuzh.shared.kernel.BusinessException;
 import com.yoyuzh.files.storage.FileContentStorage;
 import org.junit.jupiter.api.Test;
@@ -30,7 +25,7 @@ import static org.mockito.Mockito.when;
 class ContentBlobLifecycleServiceTest {
 
     @Mock
-    private StoredFileRepository storedFileRepository;
+    private WorkspaceContentBindingApi workspaceContentBindingApi;
 
     @Mock
     private FileBlobRepository fileBlobRepository;
@@ -92,14 +87,16 @@ class ContentBlobLifecycleServiceTest {
         ContentBlobLifecycleService service = createService();
         FileBlob onlyReferencedByDeletedFiles = createBlob(10L, "blobs/blob-10");
         FileBlob stillReferencedElsewhere = createBlob(20L, "blobs/blob-20");
-        StoredFile fileA = createStoredFile(false, onlyReferencedByDeletedFiles);
-        StoredFile fileB = createStoredFile(false, onlyReferencedByDeletedFiles);
-        StoredFile fileC = createStoredFile(false, stillReferencedElsewhere);
+        Long fileABlobId = onlyReferencedByDeletedFiles.getId();
+        Long fileBBlobId = onlyReferencedByDeletedFiles.getId();
+        Long fileCBlobId = stillReferencedElsewhere.getId();
 
-        when(storedFileRepository.countByBlobId(10L)).thenReturn(2L);
-        when(storedFileRepository.countByBlobId(20L)).thenReturn(3L);
+        when(fileBlobRepository.findById(10L)).thenReturn(java.util.Optional.of(onlyReferencedByDeletedFiles));
+        when(fileBlobRepository.findById(20L)).thenReturn(java.util.Optional.of(stillReferencedElsewhere));
+        when(workspaceContentBindingApi.countFilesByBlobId(10L)).thenReturn(2L);
+        when(workspaceContentBindingApi.countFilesByBlobId(20L)).thenReturn(3L);
 
-        List<FileBlob> blobsToDelete = service.collectBlobsToDelete(List.of(fileA, fileB, fileC));
+        List<FileBlob> blobsToDelete = service.collectBlobsToDelete(List.of(fileABlobId, fileBBlobId, fileCBlobId));
 
         assertThat(blobsToDelete).containsExactly(onlyReferencedByDeletedFiles);
     }
@@ -119,9 +116,9 @@ class ContentBlobLifecycleServiceTest {
     void shouldReturnRequiredBlobForRegularFile() {
         ContentBlobLifecycleService service = createService();
         FileBlob blob = createBlob(10L, "blobs/blob-10");
-        StoredFile storedFile = createStoredFile(false, blob);
+        when(fileBlobRepository.findById(10L)).thenReturn(java.util.Optional.of(blob));
 
-        FileBlob resolved = service.getRequiredBlob(storedFile);
+        FileBlob resolved = service.getRequiredBlob(blob.getId(), false);
 
         assertThat(resolved).isSameAs(blob);
     }
@@ -129,11 +126,8 @@ class ContentBlobLifecycleServiceTest {
     @Test
     void shouldRejectMissingBlobForDirectoryOrDetachedFile() {
         ContentBlobLifecycleService service = createService();
-        StoredFile directory = createStoredFile(true, null);
-        StoredFile detachedFile = createStoredFile(false, null);
-
-        assertThatThrownBy(() -> service.getRequiredBlob(directory)).isInstanceOf(BusinessException.class);
-        assertThatThrownBy(() -> service.getRequiredBlob(detachedFile)).isInstanceOf(BusinessException.class);
+        assertThatThrownBy(() -> service.getRequiredBlob(null, true)).isInstanceOf(BusinessException.class);
+        assertThatThrownBy(() -> service.getRequiredBlob(null, false)).isInstanceOf(BusinessException.class);
     }
 
     @Test
@@ -159,14 +153,7 @@ class ContentBlobLifecycleServiceTest {
     }
 
     private ContentBlobLifecycleService createService() {
-        return new ContentBlobLifecycleService(storedFileRepository, fileBlobRepository, fileContentStorage);
-    }
-
-    private StoredFile createStoredFile(boolean directory, FileBlob blob) {
-        StoredFile storedFile = new StoredFile();
-        storedFile.setDirectory(directory);
-        storedFile.setBlob(blob);
-        return storedFile;
+        return new ContentBlobLifecycleService(workspaceContentBindingApi, fileBlobRepository, fileContentStorage);
     }
 
     private FileBlob createBlob(Long id, String objectKey) {

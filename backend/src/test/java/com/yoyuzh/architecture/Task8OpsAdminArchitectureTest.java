@@ -259,7 +259,7 @@ class Task8OpsAdminArchitectureTest {
                 .haveFullyQualifiedName("com.yoyuzh.ops.admin.internal.application.AdminInspectionQueryService")
                 .should()
                 .dependOnClassesThat()
-                .haveFullyQualifiedName("com.yoyuzh.transfer.OfflineTransferSessionRepository");
+                .haveFullyQualifiedName("com.yoyuzh.transfer.internal.infra.OfflineTransferSessionRepository");
 
         workspaceDependencyRule.check(classes);
         contentDependencyRule.check(classes);

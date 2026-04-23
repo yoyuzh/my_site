@@ -10,6 +10,8 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import software.amazon.awssdk.core.ResponseBytes;
 import software.amazon.awssdk.core.sync.RequestBody;
+import software.amazon.awssdk.http.SdkHttpFullRequest;
+import software.amazon.awssdk.http.SdkHttpMethod;
 import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.s3.model.AbortMultipartUploadRequest;
 import software.amazon.awssdk.services.s3.model.CompleteMultipartUploadRequest;
@@ -34,8 +36,10 @@ import software.amazon.awssdk.services.s3.presigner.model.PresignedUploadPartReq
 import software.amazon.awssdk.services.s3.presigner.model.PutObjectPresignRequest;
 import software.amazon.awssdk.services.s3.presigner.model.UploadPartPresignRequest;
 
+import java.net.URI;
 import java.net.URL;
 import java.util.List;
+import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -84,6 +88,29 @@ class S3FileContentStorageTest {
         assertThat(putObjectRequest.bucket()).isEqualTo("demo-bucket");
         assertThat(putObjectRequest.key()).isEqualTo("users/7/docs/notes.txt");
         assertThat(putObjectRequest.contentType()).isEqualTo("text/plain");
+    }
+
+    @Test
+    void prepareBlobUploadFlattensSignedHeadersAndUsesPostFallbackMethod() throws Exception {
+        PresignedPutObjectRequest presignedRequest = org.mockito.Mockito.mock(PresignedPutObjectRequest.class);
+        when(presignedRequest.url()).thenReturn(new URL("https://upload.example.com/blobs/object-1"));
+        when(presignedRequest.httpRequest()).thenReturn(SdkHttpFullRequest.builder()
+                .method(SdkHttpMethod.POST)
+                .uri(URI.create("https://upload.example.com/blobs/object-1"))
+                .build());
+        when(presignedRequest.signedHeaders()).thenReturn(Map.of(
+                "x-amz-meta-demo", List.of("left", "right"),
+                "x-empty", List.of()
+        ));
+        when(s3Presigner.presignPutObject(any(PutObjectPresignRequest.class))).thenReturn(presignedRequest);
+
+        PreparedUpload preparedUpload = storage.prepareBlobUpload("/docs", "notes.txt", "blobs/object-1", "", 12L);
+
+        assertThat(preparedUpload.method()).isEqualTo("POST");
+        assertThat(preparedUpload.headers())
+                .containsEntry("x-amz-meta-demo", "left,right")
+                .doesNotContainKey("x-empty")
+                .doesNotContainKey("Content-Type");
     }
 
     @Test
@@ -204,6 +231,23 @@ class S3FileContentStorageTest {
     }
 
     @Test
+    void prepareMultipartPartUploadUsesHttpRequestMethodAndAddsContentTypeHeader() throws Exception {
+        PresignedUploadPartRequest presignedRequest = org.mockito.Mockito.mock(PresignedUploadPartRequest.class);
+        when(presignedRequest.url()).thenReturn(new URL("https://upload.example.com/blobs/object-1?partNumber=1"));
+        when(presignedRequest.httpRequest()).thenReturn(SdkHttpFullRequest.builder()
+                .method(SdkHttpMethod.POST)
+                .uri(URI.create("https://upload.example.com/blobs/object-1?partNumber=1"))
+                .build());
+        when(presignedRequest.signedHeaders()).thenReturn(null);
+        when(s3Presigner.presignUploadPart(any(UploadPartPresignRequest.class))).thenReturn(presignedRequest);
+
+        PreparedUpload preparedUpload = storage.prepareMultipartPartUpload("blobs/object-1", "upload-123", 1, "video/mp4", 1024L);
+
+        assertThat(preparedUpload.method()).isEqualTo("POST");
+        assertThat(preparedUpload.headers()).containsOnly(Map.entry("Content-Type", "video/mp4"));
+    }
+
+    @Test
     void completeMultipartUploadSubmitsSortedCompletedParts() {
         when(s3Client.completeMultipartUpload(any(CompleteMultipartUploadRequest.class)))
                 .thenReturn(CompleteMultipartUploadResponse.builder().build());
@@ -245,5 +289,76 @@ class S3FileContentStorageTest {
         byte[] content = storage.readFile(7L, "/docs", "notes.txt");
 
         assertThat(content).isEqualTo("hello".getBytes());
+    }
+
+    @Test
+    void resolveLegacyFileObjectKeyNormalizesRootNullAndBackslashPaths() {
+        assertThat(storage.resolveLegacyFileObjectKey(7L, null, "notes.txt"))
+                .isEqualTo("users/7/notes.txt");
+        assertThat(storage.resolveLegacyFileObjectKey(7L, "/", "notes.txt"))
+                .isEqualTo("users/7/notes.txt");
+        assertThat(storage.resolveLegacyFileObjectKey(7L, "/docs\\nested", "notes.txt"))
+                .isEqualTo("users/7/docs/nested/notes.txt");
+    }
+
+    @Test
+    void resolveLegacyFileObjectKeyRejectsUnsafePathAndFilename() {
+        assertThatThrownBy(() -> storage.resolveLegacyFileObjectKey(7L, "../docs", "notes.txt"))
+                .isInstanceOf(BusinessException.class)
+                .hasMessage("Invalid storage path");
+        assertThatThrownBy(() -> storage.resolveLegacyFileObjectKey(7L, "/docs", "../notes.txt"))
+                .isInstanceOf(BusinessException.class)
+                .hasMessage("Invalid storage filename");
+        assertThatThrownBy(() -> storage.resolveLegacyFileObjectKey(7L, "/docs", "/notes.txt"))
+                .isInstanceOf(BusinessException.class)
+                .hasMessage("Invalid storage filename");
+    }
+
+    @Test
+    void createBlobDownloadUrlRejectsUnsafeObjectKey() {
+        assertThatThrownBy(() -> storage.createBlobDownloadUrl("/blobs/object-1", "notes.txt"))
+                .isInstanceOf(BusinessException.class)
+                .hasMessage("Invalid storage object key");
+        assertThatThrownBy(() -> storage.createBlobDownloadUrl("blobs/../object-1", "notes.txt"))
+                .isInstanceOf(BusinessException.class)
+                .hasMessage("Invalid storage object key");
+    }
+
+    @Test
+    void createTransferDownloadUrlRejectsUnsafeTransferNames() {
+        assertThatThrownBy(() -> storage.createTransferDownloadUrl("../session", "notes.txt", "notes.txt"))
+                .isInstanceOf(BusinessException.class)
+                .hasMessage("Invalid storage filename");
+        assertThatThrownBy(() -> storage.createTransferDownloadUrl("session-1", "/notes.txt", "notes.txt"))
+                .isInstanceOf(BusinessException.class)
+                .hasMessage("Invalid storage filename");
+    }
+
+    @Test
+    void createBlobDownloadUrlSkipsDispositionWhenFilenameIsBlank() throws Exception {
+        PresignedGetObjectRequest presignedRequest = org.mockito.Mockito.mock(PresignedGetObjectRequest.class);
+        when(presignedRequest.url()).thenReturn(new URL("https://download.example.com/object"));
+        when(s3Presigner.presignGetObject(any(GetObjectPresignRequest.class))).thenReturn(presignedRequest);
+
+        String url = storage.createBlobDownloadUrl("blobs/object-1", " ");
+
+        assertThat(url).isEqualTo("https://download.example.com/object");
+        ArgumentCaptor<GetObjectPresignRequest> requestCaptor = ArgumentCaptor.forClass(GetObjectPresignRequest.class);
+        verify(s3Presigner).presignGetObject(requestCaptor.capture());
+        assertThat(requestCaptor.getValue().getObjectRequest().responseContentDisposition()).isNull();
+    }
+
+    @Test
+    void createBlobDownloadUrlDropsUnsafeAsciiExtensionFromFallbackName() throws Exception {
+        PresignedGetObjectRequest presignedRequest = org.mockito.Mockito.mock(PresignedGetObjectRequest.class);
+        when(presignedRequest.url()).thenReturn(new URL("https://download.example.com/object"));
+        when(s3Presigner.presignGetObject(any(GetObjectPresignRequest.class))).thenReturn(presignedRequest);
+
+        storage.createBlobDownloadUrl("blobs/object-1", "报告.bad;ext");
+
+        ArgumentCaptor<GetObjectPresignRequest> requestCaptor = ArgumentCaptor.forClass(GetObjectPresignRequest.class);
+        verify(s3Presigner).presignGetObject(requestCaptor.capture());
+        assertThat(requestCaptor.getValue().getObjectRequest().responseContentDisposition())
+                .isEqualTo("attachment; filename=\"download\"; filename*=UTF-8''%E6%8A%A5%E5%91%8A.bad%3Bext");
     }
 }

@@ -1,6 +1,6 @@
 package com.yoyuzh.identity.access.internal.application;
 
-import com.yoyuzh.ops.admin.internal.application.AdminRuntimeSettingsService;
+import com.yoyuzh.ops.admin.api.AdminRuntimeSettingsApi;
 import com.yoyuzh.identity.access.internal.domain.UserRole;
 import com.yoyuzh.identity.access.internal.infra.UserRepository;
 import com.yoyuzh.shared.kernel.BusinessException;
@@ -24,13 +24,13 @@ class RuntimeAdminAccessContinuityGuardTest {
     private UserRepository userRepository;
 
     @Mock
-    private AdminRuntimeSettingsService adminRuntimeSettingsService;
+    private AdminRuntimeSettingsApi adminRuntimeSettingsApi;
 
     @Test
     void shouldRejectDemotingLastAdminCapableUser() {
         RuntimeAdminAccessContinuityGuard guard =
-                new RuntimeAdminAccessContinuityGuard(userRepository, adminRuntimeSettingsService);
-        when(adminRuntimeSettingsService.snapshot()).thenReturn(runtimeState("ADMIN"));
+                new RuntimeAdminAccessContinuityGuard(userRepository, adminRuntimeSettingsApi);
+        when(adminRuntimeSettingsApi.registrationManagementRoles()).thenReturn(List.of("ADMIN"));
         when(userRepository.countByBannedFalseAndRoleIn(anyCollection())).thenReturn(1L);
 
         assertThatThrownBy(() -> guard.ensureAdminAccessRemainsAvailable(
@@ -45,8 +45,8 @@ class RuntimeAdminAccessContinuityGuardTest {
     @Test
     void shouldAllowUpdateWhenAnotherAdminCapableUserRemains() {
         RuntimeAdminAccessContinuityGuard guard =
-                new RuntimeAdminAccessContinuityGuard(userRepository, adminRuntimeSettingsService);
-        when(adminRuntimeSettingsService.snapshot()).thenReturn(runtimeState("ADMIN"));
+                new RuntimeAdminAccessContinuityGuard(userRepository, adminRuntimeSettingsApi);
+        when(adminRuntimeSettingsApi.registrationManagementRoles()).thenReturn(List.of("ADMIN"));
         when(userRepository.countByBannedFalseAndRoleIn(anyCollection())).thenReturn(2L);
 
         assertThatCode(() -> guard.ensureAdminAccessRemainsAvailable(
@@ -60,8 +60,8 @@ class RuntimeAdminAccessContinuityGuardTest {
     @Test
     void shouldSkipCountWhenCurrentUserIsNotAdminCapable() {
         RuntimeAdminAccessContinuityGuard guard =
-                new RuntimeAdminAccessContinuityGuard(userRepository, adminRuntimeSettingsService);
-        when(adminRuntimeSettingsService.snapshot()).thenReturn(runtimeState("ADMIN"));
+                new RuntimeAdminAccessContinuityGuard(userRepository, adminRuntimeSettingsApi);
+        when(adminRuntimeSettingsApi.registrationManagementRoles()).thenReturn(List.of("ADMIN"));
 
         assertThatCode(() -> guard.ensureAdminAccessRemainsAvailable(
                         UserRole.USER.name(),
@@ -73,24 +73,4 @@ class RuntimeAdminAccessContinuityGuardTest {
         verifyNoInteractions(userRepository);
     }
 
-    private static AdminRuntimeSettingsService.State runtimeState(String... managementRoles) {
-        return new AdminRuntimeSettingsService.State(
-                false,
-                true,
-                List.of(managementRoles),
-                900L,
-                1209600L,
-                false,
-                60L,
-                true,
-                false,
-                false,
-                "in-memory",
-                3000L,
-                15000L,
-                false,
-                "local",
-                false
-        );
-    }
 }

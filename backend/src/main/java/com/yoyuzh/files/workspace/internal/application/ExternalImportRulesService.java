@@ -1,6 +1,6 @@
 package com.yoyuzh.files.workspace.internal.application;
 
-import com.yoyuzh.identity.access.internal.domain.User;
+import com.yoyuzh.files.workspace.api.WorkspaceUserContext;
 import com.yoyuzh.shared.kernel.BusinessException;
 import com.yoyuzh.shared.kernel.ErrorCode;
 import org.springframework.util.StringUtils;
@@ -46,7 +46,7 @@ final class ExternalImportRulesService {
                 .toList();
     }
 
-    void validateBatch(User recipient,
+    void validateBatch(WorkspaceUserContext recipient,
                        List<String> directories,
                        List<FileService.ExternalFileImport> files) {
         fileUploadRulesService.ensureWithinStorageQuota(recipient, files.stream().mapToLong(FileService.ExternalFileImport::size).sum());
@@ -61,7 +61,7 @@ final class ExternalImportRulesService {
             }
             String parentPath = workspaceNodeRulesService.extractParentPath(directory);
             String directoryName = workspaceNodeRulesService.extractLeafName(directory);
-            workspaceNodeRulesService.ensureNodeNameAvailable(recipient.getId(), parentPath, directoryName, "解压目标已存在");
+            workspaceNodeRulesService.ensureNodeNameAvailable(recipient.userId(), parentPath, directoryName, "解压目标已存在");
         }
 
         for (FileService.ExternalFileImport file : files) {
@@ -69,7 +69,7 @@ final class ExternalImportRulesService {
             if (plannedTargets.contains(logicalPath) || !plannedTargets.add(logicalPath)) {
                 throw new BusinessException(ErrorCode.UNKNOWN, "解压目标已存在");
             }
-            workspaceNodeRulesService.ensureNodeNameAvailable(recipient.getId(), file.path(), file.filename(), "同目录下文件已存在");
+            workspaceNodeRulesService.ensureNodeNameAvailable(recipient.userId(), file.path(), file.filename(), "同目录下文件已存在");
         }
     }
 }

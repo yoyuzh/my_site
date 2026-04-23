@@ -1,6 +1,5 @@
 package com.yoyuzh.files.content.internal.application;
 
-import com.yoyuzh.identity.access.internal.domain.User;
 import com.yoyuzh.files.content.api.ContentBlobReference;
 import com.yoyuzh.files.content.api.ContentPrimaryEntity;
 import com.yoyuzh.files.content.api.ContentPrimaryEntityRelationCommand;
@@ -8,10 +7,10 @@ import com.yoyuzh.files.content.internal.domain.FileBlob;
 import com.yoyuzh.files.content.internal.domain.FileEntity;
 import com.yoyuzh.files.content.internal.infra.FileEntityRepository;
 import com.yoyuzh.files.content.internal.domain.FileEntityType;
-import com.yoyuzh.files.workspace.internal.domain.StoredFile;
 import com.yoyuzh.files.content.internal.domain.StoredFileEntity;
 import com.yoyuzh.files.content.internal.infra.StoredFileEntityRepository;
-import com.yoyuzh.files.workspace.internal.infra.StoredFileRepository;
+import com.yoyuzh.files.workspace.api.WorkspaceContentBindingApi;
+import com.yoyuzh.files.workspace.api.WorkspaceContentBindingFile;
 import com.yoyuzh.platform.storage.api.StoragePolicyQuery;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -19,7 +18,6 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
-import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 
@@ -32,7 +30,10 @@ import static org.mockito.Mockito.when;
 class RuntimeContentAssetApiTest {
 
     @Mock
-    private StoredFileRepository storedFileRepository;
+    private WorkspaceContentBindingApi workspaceContentBindingApi;
+
+    @Mock
+    private com.yoyuzh.files.content.internal.infra.FileBlobRepository fileBlobRepository;
 
     @Mock
     private FileEntityRepository fileEntityRepository;
@@ -46,7 +47,8 @@ class RuntimeContentAssetApiTest {
     @Test
     void shouldCreateOrReferencePrimaryEntity() {
         RuntimeContentAssetApi api = new RuntimeContentAssetApi(
-                storedFileRepository,
+                workspaceContentBindingApi,
+                fileBlobRepository,
                 fileEntityRepository,
                 storedFileEntityRepository,
                 storagePolicyQuery
@@ -70,17 +72,16 @@ class RuntimeContentAssetApiTest {
     @Test
     void shouldSavePrimaryEntityRelation() {
         RuntimeContentAssetApi api = new RuntimeContentAssetApi(
-                storedFileRepository,
+                workspaceContentBindingApi,
+                fileBlobRepository,
                 fileEntityRepository,
                 storedFileEntityRepository,
                 storagePolicyQuery
         );
-        StoredFile storedFile = new StoredFile();
-        storedFile.setId(10L);
         FileEntity fileEntity = new FileEntity();
         fileEntity.setId(20L);
 
-        api.savePrimaryEntityRelation(new ContentPrimaryEntityRelationCommand(storedFile.getId(), fileEntity.getId()));
+        api.savePrimaryEntityRelation(new ContentPrimaryEntityRelationCommand(10L, fileEntity.getId()));
 
         ArgumentCaptor<StoredFileEntity> captor = ArgumentCaptor.forClass(StoredFileEntity.class);
         verify(storedFileEntityRepository).save(captor.capture());
@@ -90,14 +91,16 @@ class RuntimeContentAssetApiTest {
     @Test
     void shouldBackfillPrimaryEntities() {
         RuntimeContentAssetApi api = new RuntimeContentAssetApi(
-                storedFileRepository,
+                workspaceContentBindingApi,
+                fileBlobRepository,
                 fileEntityRepository,
                 storedFileEntityRepository,
                 storagePolicyQuery
         );
-        StoredFile storedFile = createStoredFile(10L, 7L, "notes.txt", createBlob("blobs/blob-20"));
-        when(storedFileRepository.findAllByDirectoryFalseAndBlobIsNotNullAndPrimaryEntityIsNull())
+        WorkspaceContentBindingFile storedFile = createStoredFile(10L, 7L, createBlob("blobs/blob-20"));
+        when(workspaceContentBindingApi.findFilesMissingPrimaryEntityBindings())
                 .thenReturn(List.of(storedFile));
+        when(fileBlobRepository.findById(99L)).thenReturn(Optional.of(createBlob("blobs/blob-20")));
         when(fileEntityRepository.findByObjectKeyAndEntityType("blobs/blob-20", FileEntityType.VERSION))
                 .thenReturn(Optional.empty());
         when(fileEntityRepository.save(any(FileEntity.class))).thenAnswer(invocation -> {
@@ -109,24 +112,12 @@ class RuntimeContentAssetApiTest {
 
         api.backfillPrimaryEntities();
 
-        assertThat(storedFile.getPrimaryEntity()).isNotNull();
-        assertThat(storedFile.getPrimaryEntity().getObjectKey()).isEqualTo("blobs/blob-20");
-        verify(storedFileRepository).save(storedFile);
+        verify(workspaceContentBindingApi).attachPrimaryEntity(10L, 100L);
         verify(storedFileEntityRepository).save(any(StoredFileEntity.class));
     }
 
-    private StoredFile createStoredFile(Long id, Long userId, String filename, FileBlob blob) {
-        StoredFile file = new StoredFile();
-        file.setId(id);
-        file.setUser(createUser(userId));
-        file.setPath("/docs");
-        file.setFilename(filename);
-        file.setBlob(blob);
-        file.setContentType(blob.getContentType());
-        file.setSize(blob.getSize());
-        file.setDirectory(false);
-        file.setCreatedAt(LocalDateTime.now());
-        return file;
+    private WorkspaceContentBindingFile createStoredFile(Long id, Long userId, FileBlob blob) {
+        return new WorkspaceContentBindingFile(id, userId, "/docs", null, blob.getContentType(), blob.getSize(), blob.getId());
     }
 
     private FileBlob createBlob(String objectKey) {
@@ -136,13 +127,5 @@ class RuntimeContentAssetApiTest {
         blob.setContentType("text/plain");
         blob.setSize(5L);
         return blob;
-    }
-
-    private User createUser(Long id) {
-        User user = new User();
-        user.setId(id);
-        user.setUsername("user-" + id);
-        user.setCreatedAt(LocalDateTime.now());
-        return user;
     }
 }

@@ -28,6 +28,6 @@ public class FileEventsV2Controller {
     }
 
     private Long currentUserId(UserDetails userDetails) {
-        return userDetailsService.loadDomainUser(userDetails.getUsername()).getId();
+        return userDetailsService.loadUserId(userDetails.getUsername());
     }
 }

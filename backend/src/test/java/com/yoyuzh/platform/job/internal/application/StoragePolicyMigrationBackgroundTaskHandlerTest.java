@@ -7,11 +7,8 @@ import com.yoyuzh.platform.job.api.BackgroundTaskStatus;
 import com.yoyuzh.platform.job.api.BackgroundTaskType;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.yoyuzh.files.content.internal.domain.FileBlob;
-import com.yoyuzh.files.content.internal.infra.FileBlobRepository;
-import com.yoyuzh.files.content.internal.domain.FileEntityType;
-import com.yoyuzh.files.content.internal.infra.FileEntityRepository;
-import com.yoyuzh.files.workspace.internal.infra.StoredFileRepository;
+import com.yoyuzh.files.content.api.ContentStoragePolicyMigrationApi;
+import com.yoyuzh.files.content.api.ContentStoragePolicyMigrationItem;
 import com.yoyuzh.platform.storage.api.StoragePolicyBlobAccessApi;
 import com.yoyuzh.platform.storage.api.StoragePolicyCredentialMode;
 import com.yoyuzh.platform.storage.api.StoragePolicyDescriptor;
@@ -24,8 +21,6 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.util.List;
-import java.util.Optional;
-
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
@@ -41,11 +36,7 @@ class StoragePolicyMigrationBackgroundTaskHandlerTest {
     @Mock
     private StoragePolicyQuery storagePolicyQuery;
     @Mock
-    private FileEntityRepository fileEntityRepository;
-    @Mock
-    private FileBlobRepository fileBlobRepository;
-    @Mock
-    private StoredFileRepository storedFileRepository;
+    private ContentStoragePolicyMigrationApi contentStoragePolicyMigrationApi;
     @Mock
     private StoragePolicyBlobAccessApi storagePolicyBlobAccessApi;
 
@@ -55,9 +46,7 @@ class StoragePolicyMigrationBackgroundTaskHandlerTest {
     void setUp() {
         handler = new StoragePolicyMigrationBackgroundTaskHandler(
                 storagePolicyQuery,
-                fileEntityRepository,
-                fileBlobRepository,
-                storedFileRepository,
+                contentStoragePolicyMigrationApi,
                 storagePolicyBlobAccessApi,
                 new BackgroundTaskStateManager(new ObjectMapper())
         );
@@ -67,25 +56,10 @@ class StoragePolicyMigrationBackgroundTaskHandlerTest {
     void shouldMigrateCandidateEntitiesAndUpdatePolicyCounts() {
         StoragePolicyDescriptor sourcePolicy = createPolicy(3L, "Source Policy");
         StoragePolicyDescriptor targetPolicy = createPolicy(4L, "Target Policy");
-        FileBlob blob = new FileBlob();
-        blob.setId(30L);
-        blob.setObjectKey("blobs/source-1");
-        blob.setContentType("video/mp4");
-        blob.setSize(12L);
-        var entity = new com.yoyuzh.files.content.internal.domain.FileEntity();
-        entity.setId(21L);
-        entity.setObjectKey("blobs/source-1");
-        entity.setContentType("video/mp4");
-        entity.setSize(12L);
-        entity.setEntityType(FileEntityType.VERSION);
-        entity.setStoragePolicyId(3L);
+        ContentStoragePolicyMigrationItem entity = createMigrationItem(21L, 30L);
         when(storagePolicyQuery.readPolicyDescriptor(3L)).thenReturn(sourcePolicy);
         when(storagePolicyQuery.readPolicyDescriptor(4L)).thenReturn(targetPolicy);
-        when(fileEntityRepository.findByStoragePolicyIdAndEntityTypeOrderByIdAsc(3L, FileEntityType.VERSION)).thenReturn(List.of(entity));
-        when(fileBlobRepository.findByObjectKey("blobs/source-1")).thenReturn(Optional.of(blob));
-        when(storedFileRepository.countByBlobId(30L)).thenReturn(2L);
-        when(fileEntityRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
-        when(fileBlobRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
+        when(contentStoragePolicyMigrationApi.listVersionItemsByStoragePolicyId(3L)).thenReturn(List.of(entity));
         when(storagePolicyBlobAccessApi.readBlob(sourcePolicy, "blobs/source-1")).thenReturn("payload".getBytes());
 
         BackgroundTask task = new BackgroundTask();
@@ -109,9 +83,7 @@ class StoragePolicyMigrationBackgroundTaskHandlerTest {
         assertThat(result.publicStatePatch()).containsEntry("migratedStoredFileCount", 2L);
         assertThat(result.publicStatePatch()).containsEntry("processedEntityCount", 1L);
         assertThat(result.publicStatePatch()).containsEntry("progressPercent", 100);
-        assertThat(entity.getStoragePolicyId()).isEqualTo(4L);
-        assertThat(entity.getObjectKey()).startsWith("policies/4/blobs/");
-        assertThat(blob.getObjectKey()).startsWith("policies/4/blobs/");
+        verify(contentStoragePolicyMigrationApi).reassignVersionItem(eq(21L), eq(30L), eq(4L), startsWith("policies/4/blobs/"));
         verify(storagePolicyBlobAccessApi).storeBlob(eq(targetPolicy), startsWith("policies/4/blobs/"), eq("video/mp4"), any());
     }
 
@@ -119,23 +91,10 @@ class StoragePolicyMigrationBackgroundTaskHandlerTest {
     void shouldDeleteCopiedObjectsWhenMigrationFails() {
         StoragePolicyDescriptor sourcePolicy = createPolicy(3L, "Source Policy");
         StoragePolicyDescriptor targetPolicy = createPolicy(4L, "Target Policy");
-        FileBlob blob = new FileBlob();
-        blob.setId(30L);
-        blob.setObjectKey("blobs/source-1");
-        blob.setContentType("video/mp4");
-        blob.setSize(12L);
-        var entity = new com.yoyuzh.files.content.internal.domain.FileEntity();
-        entity.setId(21L);
-        entity.setObjectKey("blobs/source-1");
-        entity.setContentType("video/mp4");
-        entity.setSize(12L);
-        entity.setEntityType(FileEntityType.VERSION);
-        entity.setStoragePolicyId(3L);
+        ContentStoragePolicyMigrationItem entity = createMigrationItem(21L, 30L);
         when(storagePolicyQuery.readPolicyDescriptor(3L)).thenReturn(sourcePolicy);
         when(storagePolicyQuery.readPolicyDescriptor(4L)).thenReturn(targetPolicy);
-        when(fileEntityRepository.findByStoragePolicyIdAndEntityTypeOrderByIdAsc(3L, FileEntityType.VERSION)).thenReturn(List.of(entity));
-        when(fileBlobRepository.findByObjectKey("blobs/source-1")).thenReturn(Optional.of(blob));
-        when(storedFileRepository.countByBlobId(30L)).thenReturn(2L);
+        when(contentStoragePolicyMigrationApi.listVersionItemsByStoragePolicyId(3L)).thenReturn(List.of(entity));
         when(storagePolicyBlobAccessApi.readBlob(sourcePolicy, "blobs/source-1")).thenReturn("payload".getBytes());
         doThrow(new IllegalStateException("store failed")).when(storagePolicyBlobAccessApi)
                 .storeBlob(eq(targetPolicy), startsWith("policies/4/blobs/"), eq("video/mp4"), any());
@@ -154,6 +113,20 @@ class StoragePolicyMigrationBackgroundTaskHandlerTest {
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("store failed");
         verify(storagePolicyBlobAccessApi).deleteBlob(eq(targetPolicy), startsWith("policies/4/blobs/"));
+    }
+
+    private ContentStoragePolicyMigrationItem createMigrationItem(Long entityId, Long blobId) {
+        return new ContentStoragePolicyMigrationItem(
+                entityId,
+                "blobs/source-1",
+                12L,
+                "video/mp4",
+                blobId,
+                "video/mp4",
+                12L,
+                2L,
+                ContentStoragePolicyMigrationApi.VERSION_ENTITY_TYPE
+        );
     }
 
     private StoragePolicyDescriptor createPolicy(Long id, String name) {

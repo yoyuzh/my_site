@@ -1,6 +1,7 @@
 package com.yoyuzh.files.upload;
 
-import com.yoyuzh.identity.access.internal.domain.User;
+import com.yoyuzh.identity.access.api.IdentityAuthenticatedUser;
+import com.yoyuzh.identity.access.api.IdentityRoleName;
 import com.yoyuzh.shared.kernel.BusinessException;
 import com.yoyuzh.platform.storage.internal.domain.StoragePolicy;
 import com.yoyuzh.platform.storage.api.StoragePolicyCapabilities;
@@ -37,6 +38,7 @@ import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.when;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.never;
 
 @ExtendWith(MockitoExtension.class)
 class UploadSessionServiceTest {
@@ -71,7 +73,7 @@ class UploadSessionServiceTest {
 
     @Test
     void shouldCreateUploadSessionWithoutChangingLegacyUploadPath() {
-        User user = createUser(7L);
+        IdentityAuthenticatedUser user = createUser(7L);
         StoragePolicy policy = createDefaultStoragePolicy();
         StoragePolicyCapabilities capabilities = new StoragePolicyCapabilities(
                 true,
@@ -84,7 +86,7 @@ class UploadSessionServiceTest {
                 false,
                 500L * 1024 * 1024
         );
-        when(uploadTargetPolicy.validateUpload(7L, user.getMaxUploadSizeBytes(), user.getStorageQuotaBytes(),
+        when(uploadTargetPolicy.validateUpload(7L, user.maxUploadSizeBytes(), user.storageQuotaBytes(),
                 "/docs", "movie.mp4", 20L * 1024 * 1024))
                 .thenReturn(new ValidatedUploadTarget(
                         "/docs",
@@ -116,7 +118,7 @@ class UploadSessionServiceTest {
 
     @Test
     void shouldPrepareMultipartPartUploadForOwnedSession() {
-        User user = createUser(7L);
+        IdentityAuthenticatedUser user = createUser(7L);
         UploadSession session = createSession(user);
         session.setMultipartUploadId("upload-123");
         session.setChunkCount(3);
@@ -138,7 +140,7 @@ class UploadSessionServiceTest {
                 "blobs/session-1"
         ));
 
-        PreparedUpload preparedUpload = uploadSessionService.prepareOwnedPartUpload(user, "session-1", 2);
+        PreparedUpload preparedUpload = uploadSessionService.prepareOwnedPartUpload(user.id(), "session-1", 2);
 
         assertThat(preparedUpload.uploadUrl()).isEqualTo("https://upload.example.com/session-1/part-3");
         assertThat(preparedUpload.method()).isEqualTo("PUT");
@@ -146,7 +148,7 @@ class UploadSessionServiceTest {
 
     @Test
     void shouldPrepareDirectSingleUploadForOwnedSessionWhenPolicyDisablesMultipart() {
-        User user = createUser(7L);
+        IdentityAuthenticatedUser user = createUser(7L);
         UploadSession session = createSession(user);
         session.setStoragePolicyId(42L);
         session.setMultipartUploadId(null);
@@ -173,7 +175,7 @@ class UploadSessionServiceTest {
                         "blobs/session-1"
                 ));
 
-        PreparedUpload preparedUpload = uploadSessionService.prepareOwnedUpload(user, "session-1");
+        PreparedUpload preparedUpload = uploadSessionService.prepareOwnedUpload(user.id(), "session-1");
 
         assertThat(preparedUpload.direct()).isTrue();
         assertThat(preparedUpload.uploadUrl()).isEqualTo("https://upload.example.com/session-1");
@@ -182,7 +184,7 @@ class UploadSessionServiceTest {
 
     @Test
     void shouldUploadProxyContentForOwnedSessionWhenPolicyDisablesDirectUpload() {
-        User user = createUser(7L);
+        IdentityAuthenticatedUser user = createUser(7L);
         UploadSession session = createSession(user);
         session.setStoragePolicyId(42L);
         session.setMultipartUploadId(null);
@@ -204,7 +206,7 @@ class UploadSessionServiceTest {
         when(uploadSessionRepository.save(any(UploadSession.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
         UploadSession result = uploadSessionService.uploadOwnedContent(
-                user,
+                user.id(),
                 "session-1",
                 new MockMultipartFile("file", "movie.mp4", "video/mp4", "payload".getBytes())
         );
@@ -215,9 +217,9 @@ class UploadSessionServiceTest {
 
     @Test
     void shouldCreateProxyUploadSessionWhenPolicyDisablesDirectUpload() {
-        User user = createUser(7L);
+        IdentityAuthenticatedUser user = createUser(7L);
         StoragePolicy policy = createDefaultStoragePolicy();
-        when(uploadTargetPolicy.validateUpload(7L, user.getMaxUploadSizeBytes(), user.getStorageQuotaBytes(),
+        when(uploadTargetPolicy.validateUpload(7L, user.maxUploadSizeBytes(), user.storageQuotaBytes(),
                 "/docs", "movie.mp4", 20L))
                 .thenReturn(new ValidatedUploadTarget(
                         "/docs",
@@ -251,23 +253,23 @@ class UploadSessionServiceTest {
 
     @Test
     void shouldOnlyReturnSessionOwnedByCurrentUser() {
-        User user = createUser(7L);
+        IdentityAuthenticatedUser user = createUser(7L);
         UploadSession session = new UploadSession();
         session.setSessionId("session-1");
-        session.setUser(user);
+        session.setUserId(user.id());
         session.setStatus(UploadSessionStatus.CREATED);
         when(uploadSessionRepository.findBySessionIdAndUserId("session-1", 7L))
                 .thenReturn(Optional.of(session));
 
-        UploadSession result = uploadSessionService.getOwnedSession(user, "session-1");
+        UploadSession result = uploadSessionService.getOwnedSession(user.id(), "session-1");
 
         assertThat(result).isSameAs(session);
     }
 
     @Test
     void shouldRejectDuplicateTargetWhenCreatingSession() {
-        User user = createUser(7L);
-        when(uploadTargetPolicy.validateUpload(7L, user.getMaxUploadSizeBytes(), user.getStorageQuotaBytes(),
+        IdentityAuthenticatedUser user = createUser(7L);
+        when(uploadTargetPolicy.validateUpload(7L, user.maxUploadSizeBytes(), user.storageQuotaBytes(),
                 "/docs", "movie.mp4", 20L))
                 .thenThrow(new BusinessException(com.yoyuzh.shared.kernel.ErrorCode.UNKNOWN, "duplicate"));
 
@@ -279,7 +281,7 @@ class UploadSessionServiceTest {
 
     @Test
     void shouldCompleteOwnedSessionThroughUploadCompletionApi() {
-        User user = createUser(7L);
+        IdentityAuthenticatedUser user = createUser(7L);
         UploadSession session = createSession(user);
         session.setMultipartUploadId("upload-123");
         session.setChunkCount(2);
@@ -294,7 +296,7 @@ class UploadSessionServiceTest {
                 .thenReturn(Optional.of(session));
         when(uploadSessionRepository.save(any(UploadSession.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
-        UploadSession result = uploadSessionService.completeOwnedSession(user, "session-1");
+        UploadSession result = uploadSessionService.completeOwnedSession(user.id(), "session-1");
 
         assertThat(result.getStatus()).isEqualTo(UploadSessionStatus.COMPLETED);
         assertThat(result.getUpdatedAt()).isEqualTo(LocalDateTime.of(2026, 4, 8, 6, 0));
@@ -312,19 +314,96 @@ class UploadSessionServiceTest {
 
     @Test
     void shouldRejectCompletingCancelledSession() {
-        User user = createUser(7L);
+        IdentityAuthenticatedUser user = createUser(7L);
         UploadSession session = createSession(user);
         session.setStatus(UploadSessionStatus.CANCELLED);
         when(uploadSessionRepository.findBySessionIdAndUserId("session-1", 7L))
                 .thenReturn(Optional.of(session));
 
-        assertThatThrownBy(() -> uploadSessionService.completeOwnedSession(user, "session-1"))
+        assertThatThrownBy(() -> uploadSessionService.completeOwnedSession(user.id(), "session-1"))
                 .isInstanceOf(BusinessException.class);
     }
 
     @Test
+    void shouldReturnCompletedSessionAsIsWhenCompletingAgain() {
+        IdentityAuthenticatedUser user = createUser(7L);
+        UploadSession session = createSession(user);
+        session.setStatus(UploadSessionStatus.COMPLETED);
+        when(uploadSessionRepository.findBySessionIdAndUserId("session-1", 7L))
+                .thenReturn(Optional.of(session));
+
+        UploadSession result = uploadSessionService.completeOwnedSession(user.id(), "session-1");
+
+        assertThat(result).isSameAs(session);
+        verify(uploadCompletionApi, never()).completeStoredBlob(any());
+        verify(uploadSessionRepository, never()).save(any());
+    }
+
+    @Test
+    void shouldExpireSessionWhenCompletingAfterExpiry() {
+        IdentityAuthenticatedUser user = createUser(7L);
+        UploadSession session = createSession(user);
+        session.setExpiresAt(LocalDateTime.of(2026, 4, 8, 5, 59));
+        when(uploadSessionRepository.findBySessionIdAndUserId("session-1", 7L))
+                .thenReturn(Optional.of(session));
+        when(uploadSessionRepository.save(any(UploadSession.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        assertThatThrownBy(() -> uploadSessionService.completeOwnedSession(user.id(), "session-1"))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("upload session has expired");
+
+        assertThat(session.getStatus()).isEqualTo(UploadSessionStatus.EXPIRED);
+        verify(uploadSessionRuntimeStateService).markExpired(session, LocalDateTime.of(2026, 4, 8, 6, 0));
+        verify(uploadCompletionApi, never()).completeStoredBlob(any());
+    }
+
+    @Test
+    void shouldMarkFailedWhenCompletionApiFails() {
+        IdentityAuthenticatedUser user = createUser(7L);
+        UploadSession session = createSession(user);
+        when(uploadSessionRepository.findBySessionIdAndUserId("session-1", 7L))
+                .thenReturn(Optional.of(session));
+        when(uploadSessionRepository.save(any(UploadSession.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        org.mockito.Mockito.doThrow(new IllegalStateException("metadata failed"))
+                .when(uploadCompletionApi)
+                .completeStoredBlob(any());
+
+        assertThatThrownBy(() -> uploadSessionService.completeOwnedSession(user.id(), "session-1"))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("metadata failed");
+
+        assertThat(session.getStatus()).isEqualTo(UploadSessionStatus.FAILED);
+        verify(uploadSessionRuntimeStateService).markFailed(session, LocalDateTime.of(2026, 4, 8, 6, 0));
+    }
+
+    @Test
+    void shouldRejectCompletingIncompleteMultipartSessionAndMarkFailed() {
+        IdentityAuthenticatedUser user = createUser(7L);
+        UploadSession session = createSession(user);
+        session.setMultipartUploadId("upload-123");
+        session.setChunkCount(2);
+        session.setChunkSize(8L * 1024 * 1024);
+        session.setUploadedPartsJson("""
+                [
+                  {"partIndex":0,"etag":"etag-1","size":8388608,"uploadedAt":"2026-04-08T06:00:00"}
+                ]
+                """);
+        when(uploadSessionRepository.findBySessionIdAndUserId("session-1", 7L))
+                .thenReturn(Optional.of(session));
+        when(uploadSessionRepository.save(any(UploadSession.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        assertThatThrownBy(() -> uploadSessionService.completeOwnedSession(user.id(), "session-1"))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("multipart upload is incomplete");
+
+        assertThat(session.getStatus()).isEqualTo(UploadSessionStatus.FAILED);
+        verify(fileContentStorage, never()).completeMultipartUpload(any(), any(), anyList());
+        verify(uploadCompletionApi, never()).completeStoredBlob(any());
+    }
+
+    @Test
     void shouldRecordUploadedPartAndMoveSessionToUploading() {
-        User user = createUser(7L);
+        IdentityAuthenticatedUser user = createUser(7L);
         UploadSession session = createSession(user);
         session.setChunkCount(3);
         when(uploadSessionRepository.findBySessionIdAndUserId("session-1", 7L))
@@ -332,7 +411,7 @@ class UploadSessionServiceTest {
         when(uploadSessionRepository.save(any(UploadSession.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
         UploadSession result = uploadSessionService.recordUploadedPart(
-                user,
+                user.id(),
                 "session-1",
                 1,
                 new UploadSessionPartCommand("etag-1", 8L * 1024 * 1024)
@@ -344,7 +423,7 @@ class UploadSessionServiceTest {
         assertThat(result.getUploadedPartsJson()).contains("\"size\":8388608");
 
         UploadSession secondResult = uploadSessionService.recordUploadedPart(
-                user,
+                user.id(),
                 "session-1",
                 2,
                 new UploadSessionPartCommand("etag-2", 4L)
@@ -359,14 +438,14 @@ class UploadSessionServiceTest {
 
     @Test
     void shouldRejectUploadedPartOutsideSessionRange() {
-        User user = createUser(7L);
+        IdentityAuthenticatedUser user = createUser(7L);
         UploadSession session = createSession(user);
         session.setChunkCount(3);
         when(uploadSessionRepository.findBySessionIdAndUserId("session-1", 7L))
                 .thenReturn(Optional.of(session));
 
         assertThatThrownBy(() -> uploadSessionService.recordUploadedPart(
-                user,
+                user.id(),
                 "session-1",
                 3,
                 new UploadSessionPartCommand("etag-3", 1L)
@@ -374,8 +453,103 @@ class UploadSessionServiceTest {
     }
 
     @Test
+    void shouldRejectUploadedPartWithoutEtag() {
+        IdentityAuthenticatedUser user = createUser(7L);
+        UploadSession session = createSession(user);
+        session.setChunkCount(3);
+        when(uploadSessionRepository.findBySessionIdAndUserId("session-1", 7L))
+                .thenReturn(Optional.of(session));
+
+        assertThatThrownBy(() -> uploadSessionService.recordUploadedPart(
+                user.id(),
+                "session-1",
+                1,
+                new UploadSessionPartCommand(" ", 1L)
+        )).isInstanceOf(BusinessException.class)
+                .hasMessageContaining("part etag is required");
+    }
+
+    @Test
+    void shouldRejectUploadedPartWithNegativeSize() {
+        IdentityAuthenticatedUser user = createUser(7L);
+        UploadSession session = createSession(user);
+        session.setChunkCount(3);
+        when(uploadSessionRepository.findBySessionIdAndUserId("session-1", 7L))
+                .thenReturn(Optional.of(session));
+
+        assertThatThrownBy(() -> uploadSessionService.recordUploadedPart(
+                user.id(),
+                "session-1",
+                1,
+                new UploadSessionPartCommand("etag-1", -1L)
+        )).isInstanceOf(BusinessException.class)
+                .hasMessageContaining("invalid part size");
+    }
+
+    @Test
+    void shouldCancelOwnedSessionAndUpdateRuntimeState() {
+        IdentityAuthenticatedUser user = createUser(7L);
+        UploadSession session = createSession(user);
+        when(uploadSessionRepository.findBySessionIdAndUserId("session-1", 7L))
+                .thenReturn(Optional.of(session));
+        when(uploadSessionRepository.save(any(UploadSession.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        UploadSession result = uploadSessionService.cancelOwnedSession(user.id(), "session-1");
+
+        assertThat(result.getStatus()).isEqualTo(UploadSessionStatus.CANCELLED);
+        verify(uploadSessionRuntimeStateService).markCancelled(result, LocalDateTime.of(2026, 4, 8, 6, 0));
+    }
+
+    @Test
+    void shouldRejectCancellingCompletedSession() {
+        IdentityAuthenticatedUser user = createUser(7L);
+        UploadSession session = createSession(user);
+        session.setStatus(UploadSessionStatus.COMPLETED);
+        when(uploadSessionRepository.findBySessionIdAndUserId("session-1", 7L))
+                .thenReturn(Optional.of(session));
+
+        assertThatThrownBy(() -> uploadSessionService.cancelOwnedSession(user.id(), "session-1"))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("completed upload session cannot be cancelled");
+
+        verify(uploadSessionRepository, never()).save(any());
+    }
+
+    @Test
+    void shouldRejectProxyUploadWhenContentSizeDoesNotMatchSession() {
+        IdentityAuthenticatedUser user = createUser(7L);
+        UploadSession session = createSession(user);
+        session.setSize(7L);
+        when(uploadSessionRepository.findBySessionIdAndUserId("session-1", 7L))
+                .thenReturn(Optional.of(session));
+
+        assertThatThrownBy(() -> uploadSessionService.uploadOwnedContent(
+                user.id(),
+                "session-1",
+                new MockMultipartFile("file", "movie.mp4", "video/mp4", "short".getBytes())
+        )).isInstanceOf(BusinessException.class)
+                .hasMessageContaining("upload size does not match session");
+
+        verify(fileContentStorage, never()).uploadBlob(any(), any());
+    }
+
+    @Test
+    void shouldRejectProxyUploadWhenContentIsMissing() {
+        IdentityAuthenticatedUser user = createUser(7L);
+        UploadSession session = createSession(user);
+        when(uploadSessionRepository.findBySessionIdAndUserId("session-1", 7L))
+                .thenReturn(Optional.of(session));
+
+        assertThatThrownBy(() -> uploadSessionService.uploadOwnedContent(user.id(), "session-1", null))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("upload content is required");
+
+        verify(fileContentStorage, never()).uploadBlob(any(), any());
+    }
+
+    @Test
     void shouldExpireUnfinishedSessionsAndDeleteTemporaryBlobs() {
-        User user = createUser(7L);
+        IdentityAuthenticatedUser user = createUser(7L);
         UploadSession session = createSession(user);
         session.setStatus(UploadSessionStatus.UPLOADING);
         session.setObjectKey("blobs/expired-session");
@@ -393,14 +567,41 @@ class UploadSessionServiceTest {
         verify(uploadSessionRepository).saveAll(List.of(session));
     }
 
-    private User createUser(Long id) {
-        User user = new User();
-        user.setId(id);
-        user.setUsername("user-" + id);
-        user.setEmail("user-" + id + "@example.com");
-        user.setPasswordHash("encoded");
-        user.setCreatedAt(LocalDateTime.now());
-        return user;
+    @Test
+    void shouldExpireUnfinishedSingleBlobSessionsAndIgnoreCleanupFailure() {
+        IdentityAuthenticatedUser user = createUser(7L);
+        UploadSession session = createSession(user);
+        session.setStatus(UploadSessionStatus.CREATED);
+        session.setObjectKey("blobs/expired-single");
+        session.setMultipartUploadId(null);
+        session.setExpiresAt(LocalDateTime.of(2026, 4, 8, 5, 0));
+        when(uploadSessionRepository.findByStatusInAndExpiresAtBefore(anyList(), eq(LocalDateTime.of(2026, 4, 8, 6, 0))))
+                .thenReturn(List.of(session));
+        org.mockito.Mockito.doThrow(new IllegalStateException("delete failed"))
+                .when(fileContentStorage)
+                .deleteBlob("blobs/expired-single");
+
+        int expiredCount = uploadSessionService.pruneExpiredSessions();
+
+        assertThat(expiredCount).isEqualTo(1);
+        assertThat(session.getStatus()).isEqualTo(UploadSessionStatus.EXPIRED);
+        verify(uploadSessionRepository).saveAll(List.of(session));
+        verify(uploadSessionRuntimeStateService).markExpired(session, LocalDateTime.of(2026, 4, 8, 6, 0));
+    }
+
+    private IdentityAuthenticatedUser createUser(Long id) {
+        return new IdentityAuthenticatedUser(
+                id,
+                "user-" + id,
+                "encoded",
+                IdentityRoleName.USER,
+                false,
+                "session-" + id,
+                "session-" + id,
+                null,
+                1024L * 1024 * 1024,
+                100L * 1024 * 1024
+        );
     }
 
     private StoragePolicy createDefaultStoragePolicy() {
@@ -414,10 +615,10 @@ class UploadSessionServiceTest {
         return policy;
     }
 
-    private UploadSession createSession(User user) {
+    private UploadSession createSession(IdentityAuthenticatedUser user) {
         UploadSession session = new UploadSession();
         session.setSessionId("session-1");
-        session.setUser(user);
+        session.setUserId(user.id());
         session.setTargetPath("/docs");
         session.setFilename("movie.mp4");
         session.setContentType("video/mp4");

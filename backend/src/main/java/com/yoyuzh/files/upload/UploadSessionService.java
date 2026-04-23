@@ -2,7 +2,7 @@ package com.yoyuzh.files.upload;
 
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.yoyuzh.identity.access.internal.domain.User;
+import com.yoyuzh.identity.access.api.IdentityAuthenticatedUser;
 import com.yoyuzh.shared.kernel.BusinessException;
 import com.yoyuzh.shared.kernel.ErrorCode;
 import com.yoyuzh.platform.storage.api.StoragePolicyCapabilities;
@@ -111,22 +111,26 @@ public class UploadSessionService {
     }
 
     @Transactional
-    public UploadSession createSession(User user, UploadSessionCreateCommand command) {
+    public UploadSession createSession(IdentityAuthenticatedUser user, UploadSessionCreateCommand command) {
         ValidatedUploadTarget target = uploadTargetPolicy.validateUpload(
-                user.getId(),
-                user.getMaxUploadSizeBytes(),
-                user.getStorageQuotaBytes(),
+                user.id(),
+                user.maxUploadSizeBytes(),
+                user.storageQuotaBytes(),
                 command.path(),
                 command.filename(),
                 command.size()
         );
+        return createSession(user.id(), target, command);
+    }
+
+    private UploadSession createSession(Long userId, ValidatedUploadTarget target, UploadSessionCreateCommand command) {
         var defaultPolicySnapshot = target.defaultPolicySnapshot();
         StoragePolicyCapabilities capabilities = defaultPolicySnapshot.capabilities();
         UploadSessionUploadMode uploadMode = uploadPolicyResolver.resolveUploadMode(capabilities);
 
         UploadSession session = new UploadSession();
         session.setSessionId(UUID.randomUUID().toString());
-        session.setUser(user);
+        session.setUserId(userId);
         session.setTargetPath(target.normalizedPath());
         session.setFilename(target.filename());
         session.setContentType(command.contentType());
@@ -152,8 +156,8 @@ public class UploadSessionService {
     }
 
     @Transactional(readOnly = true)
-    public UploadSession getOwnedSession(User user, String sessionId) {
-        return uploadSessionRepository.findBySessionIdAndUserId(sessionId, user.getId())
+    public UploadSession getOwnedSession(Long userId, String sessionId) {
+        return uploadSessionRepository.findBySessionIdAndUserId(sessionId, userId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.FILE_NOT_FOUND, "upload session not found"));
     }
 
@@ -163,8 +167,12 @@ public class UploadSessionService {
     }
 
     @Transactional
-    public UploadSession cancelOwnedSession(User user, String sessionId) {
-        UploadSession session = getOwnedSession(user, sessionId);
+    public UploadSession cancelOwnedSession(Long userId, String sessionId) {
+        UploadSession session = getOwnedSession(userId, sessionId);
+        return cancelSession(session);
+    }
+
+    private UploadSession cancelSession(UploadSession session) {
         if (session.getStatus() == UploadSessionStatus.COMPLETED) {
             throw new BusinessException(ErrorCode.UNKNOWN, "completed upload session cannot be cancelled");
         }
@@ -175,8 +183,12 @@ public class UploadSessionService {
     }
 
     @Transactional(readOnly = true)
-    public PreparedUpload prepareOwnedUpload(User user, String sessionId) {
-        UploadSession session = getOwnedSession(user, sessionId);
+    public PreparedUpload prepareOwnedUpload(Long userId, String sessionId) {
+        UploadSession session = getOwnedSession(userId, sessionId);
+        return prepareUpload(session);
+    }
+
+    private PreparedUpload prepareUpload(UploadSession session) {
         ensureSessionCanReceiveContent(session, now());
         if (resolveUploadMode(session) != UploadSessionUploadMode.DIRECT_SINGLE) {
             throw new BusinessException(ErrorCode.UNKNOWN, "upload session does not support direct single upload");
@@ -191,8 +203,12 @@ public class UploadSessionService {
     }
 
     @Transactional(readOnly = true)
-    public PreparedUpload prepareOwnedPartUpload(User user, String sessionId, int partIndex) {
-        UploadSession session = getOwnedSession(user, sessionId);
+    public PreparedUpload prepareOwnedPartUpload(Long userId, String sessionId, int partIndex) {
+        UploadSession session = getOwnedSession(userId, sessionId);
+        return preparePartUpload(session, partIndex);
+    }
+
+    private PreparedUpload preparePartUpload(UploadSession session, int partIndex) {
         ensureSessionCanReceivePart(session, now());
         if (resolveUploadMode(session) != UploadSessionUploadMode.DIRECT_MULTIPART
                 || !StringUtils.hasText(session.getMultipartUploadId())) {
@@ -211,11 +227,17 @@ public class UploadSessionService {
     }
 
     @Transactional
-    public UploadSession recordUploadedPart(User user,
+    public UploadSession recordUploadedPart(Long userId,
                                             String sessionId,
                                             int partIndex,
                                             UploadSessionPartCommand command) {
-        UploadSession session = getOwnedSession(user, sessionId);
+        UploadSession session = getOwnedSession(userId, sessionId);
+        return recordUploadedPart(session, partIndex, command);
+    }
+
+    private UploadSession recordUploadedPart(UploadSession session,
+                                             int partIndex,
+                                             UploadSessionPartCommand command) {
         LocalDateTime now = now();
         ensureSessionCanReceivePart(session, now);
         if (resolveUploadMode(session) != UploadSessionUploadMode.DIRECT_MULTIPART) {
@@ -250,8 +272,12 @@ public class UploadSessionService {
     }
 
     @Transactional
-    public UploadSession uploadOwnedContent(User user, String sessionId, MultipartFile file) {
-        UploadSession session = getOwnedSession(user, sessionId);
+    public UploadSession uploadOwnedContent(Long userId, String sessionId, MultipartFile file) {
+        UploadSession session = getOwnedSession(userId, sessionId);
+        return uploadContent(session, file);
+    }
+
+    private UploadSession uploadContent(UploadSession session, MultipartFile file) {
         LocalDateTime now = now();
         ensureSessionCanReceiveContent(session, now);
         if (resolveUploadMode(session) != UploadSessionUploadMode.PROXY) {
@@ -276,8 +302,12 @@ public class UploadSessionService {
     }
 
     @Transactional
-    public UploadSession completeOwnedSession(User user, String sessionId) {
-        UploadSession session = getOwnedSession(user, sessionId);
+    public UploadSession completeOwnedSession(Long userId, String sessionId) {
+        UploadSession session = getOwnedSession(userId, sessionId);
+        return completeSession(session, userId);
+    }
+
+    private UploadSession completeSession(UploadSession session, Long userId) {
         if (session.getStatus() == UploadSessionStatus.COMPLETED) {
             return session;
         }
@@ -311,7 +341,7 @@ public class UploadSessionService {
                 );
             }
             uploadCompletionApi.completeStoredBlob(new UploadCompletionCommand(
-                    user.getId(),
+                    userId,
                     session.getTargetPath(),
                     session.getFilename(),
                     session.getObjectKey(),

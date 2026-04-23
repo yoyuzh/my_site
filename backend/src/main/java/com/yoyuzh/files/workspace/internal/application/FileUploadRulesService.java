@@ -1,6 +1,6 @@
 package com.yoyuzh.files.workspace.internal.application;
 
-import com.yoyuzh.identity.access.internal.domain.User;
+import com.yoyuzh.files.workspace.api.WorkspaceUserContext;
 import com.yoyuzh.shared.kernel.BusinessException;
 import com.yoyuzh.shared.kernel.ErrorCode;
 import com.yoyuzh.platform.storage.api.StoragePolicyCapabilities;
@@ -28,8 +28,8 @@ public final class FileUploadRulesService {
         this.maxFileSize = maxFileSize;
     }
 
-    public void validateUpload(User user, String normalizedPath, String filename, long size) {
-        long effectiveMaxUploadSize = Math.min(maxFileSize, user.getMaxUploadSizeBytes());
+    public void validateUpload(WorkspaceUserContext user, String normalizedPath, String filename, long size) {
+        long effectiveMaxUploadSize = Math.min(maxFileSize, user.maxUploadSizeBytes());
         long policyMaxSizeBytes = 0L;
         StoragePolicyCapabilities capabilities = null;
         if (storagePolicyQuery != null) {
@@ -40,7 +40,7 @@ public final class FileUploadRulesService {
         if (uploadConstraintPolicy != null) {
             effectiveMaxUploadSize = uploadConstraintPolicy.resolveEffectiveMaxUploadSize(
                     maxFileSize,
-                    user.getMaxUploadSizeBytes(),
+                    user.maxUploadSizeBytes(),
                     policyMaxSizeBytes,
                     capabilities == null ? 0L : capabilities.maxObjectSize()
             );
@@ -55,17 +55,17 @@ public final class FileUploadRulesService {
         if (size > effectiveMaxUploadSize) {
             throw new BusinessException(ErrorCode.UNKNOWN, "文件大小超出限制");
         }
-        workspaceNodeRulesService.ensureNodeNameAvailable(user.getId(), normalizedPath, filename, "同目录下文件已存在");
+        workspaceNodeRulesService.ensureNodeNameAvailable(user.userId(), normalizedPath, filename, "同目录下文件已存在");
         ensureWithinStorageQuota(user, size);
     }
 
-    public void ensureWithinStorageQuota(User user, long additionalBytes) {
+    public void ensureWithinStorageQuota(WorkspaceUserContext user, long additionalBytes) {
         if (additionalBytes <= 0) {
             return;
         }
 
-        long usedBytes = storedFileRepository.sumFileSizeByUserId(user.getId());
-        long quotaBytes = user.getStorageQuotaBytes();
+        long usedBytes = storedFileRepository.sumFileSizeByUserId(user.userId());
+        long quotaBytes = user.storageQuotaBytes();
         if (usedBytes > Long.MAX_VALUE - additionalBytes || usedBytes + additionalBytes > quotaBytes) {
             throw new BusinessException(ErrorCode.UNKNOWN, "存储空间不足");
         }

@@ -12,6 +12,8 @@ public record WorkspaceAdminFileView(
         LocalDateTime createdAt,
         Long ownerUserId,
         String ownerUsername,
-        String ownerEmail
+        String ownerEmail,
+        boolean favorite,
+        boolean thumbnailAvailable
 ) {
 }

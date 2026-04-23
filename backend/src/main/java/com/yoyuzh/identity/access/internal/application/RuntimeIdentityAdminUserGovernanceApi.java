@@ -63,7 +63,7 @@ public class RuntimeIdentityAdminUserGovernanceApi implements IdentityAdminUserG
         User user = getRequiredUser(userId);
         ensureAdminAccessRemainsAvailable(user, banned, user.getRole());
         user.setBanned(banned);
-        identityCredentialRevocationPolicy.revokeAll(user);
+        identityCredentialRevocationPolicy.revokeAll(user.getId());
         return toView(userRepository.save(user));
     }
 
@@ -75,7 +75,7 @@ public class RuntimeIdentityAdminUserGovernanceApi implements IdentityAdminUserG
         }
         User user = getRequiredUser(userId);
         user.setPasswordHash(passwordEncoder.encode(newPassword));
-        identityCredentialRevocationPolicy.revokeAll(user);
+        identityCredentialRevocationPolicy.revokeAll(user.getId());
         return toView(userRepository.save(user));
     }
 

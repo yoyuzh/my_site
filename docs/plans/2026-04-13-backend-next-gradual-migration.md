@@ -352,9 +352,9 @@ For Tasks 2-9, every `new backend/src/main/java/com/yoyuzh/...` path below means
 **Files:**
 - new `backend/src/main/java/com/yoyuzh/transfer/api/**`
 - new `backend/src/main/java/com/yoyuzh/transfer/internal/**`
-- `backend/src/main/java/com/yoyuzh/transfer/TransferService.java`
-- `backend/src/main/java/com/yoyuzh/transfer/TransferImportService.java`
-- `backend/src/main/java/com/yoyuzh/transfer/TransferController.java`
+- `backend/src/main/java/com/yoyuzh/transfer/internal/application/TransferService.java`
+- `backend/src/main/java/com/yoyuzh/transfer/internal/application/TransferImportService.java`
+- `backend/src/main/java/com/yoyuzh/transfer/internal/web/TransferController.java`
 
 **Completion definition:**
 - `transfer` in `backend/` materially matches the `backend-next` target shape, with explicit `api` plus `internal/{application,domain,infra,web}` ownership points created before new rule migration continues

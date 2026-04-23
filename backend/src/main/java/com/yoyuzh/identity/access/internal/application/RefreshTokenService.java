@@ -18,12 +18,12 @@ public class RefreshTokenService {
     }
 
     public String issueRefreshToken(User user, IdentityClientType clientType) {
-        return identityRefreshTokenManager.issue(user, clientType);
+        return identityRefreshTokenManager.issue(user.getId(), clientType);
     }
 
     public RotatedRefreshToken rotateRefreshToken(String rawToken) {
         RotatedIdentityRefreshToken rotated = identityRefreshTokenManager.rotate(rawToken);
-        return new RotatedRefreshToken(rotated.user(), rotated.refreshToken(), rotated.clientType());
+        return new RotatedRefreshToken(rotated.userId(), rotated.refreshToken(), rotated.clientType());
     }
 
     public void revokeAllForUser(Long userId) {
@@ -34,6 +34,6 @@ public class RefreshTokenService {
         identityRefreshTokenManager.revokeAll(userId, clientType);
     }
 
-    public record RotatedRefreshToken(User user, String refreshToken, IdentityClientType clientType) {
+    public record RotatedRefreshToken(Long userId, String refreshToken, IdentityClientType clientType) {
     }
 }

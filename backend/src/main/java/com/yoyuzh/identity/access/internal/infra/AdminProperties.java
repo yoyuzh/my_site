@@ -3,7 +3,9 @@ package com.yoyuzh.identity.access.internal.infra;
 import java.util.ArrayList;
 import java.util.List;
 import org.springframework.boot.context.properties.ConfigurationProperties;
+import org.springframework.stereotype.Component;
 
+@Component
 @ConfigurationProperties(prefix = "app.admin")
 public class AdminProperties {
 

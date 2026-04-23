@@ -6,21 +6,22 @@ import com.yoyuzh.platform.storage.api.StoragePolicyCapabilities;
 import com.yoyuzh.platform.storage.api.StorageUploadMode;
 import com.yoyuzh.platform.storage.api.UploadConstraintPolicy;
 import com.yoyuzh.platform.storage.api.UploadModePolicy;
-import com.yoyuzh.platform.storage.internal.application.RuntimeUploadConstraintPolicy;
-import com.yoyuzh.platform.storage.internal.application.RuntimeUploadModePolicy;
-import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
 @Component
-@RequiredArgsConstructor
 public class UploadPolicyResolver {
 
     private final UploadModePolicy uploadModePolicy;
     private final UploadConstraintPolicy uploadConstraintPolicy;
 
+    public UploadPolicyResolver(UploadModePolicy uploadModePolicy,
+                                UploadConstraintPolicy uploadConstraintPolicy) {
+        this.uploadModePolicy = uploadModePolicy;
+        this.uploadConstraintPolicy = uploadConstraintPolicy;
+    }
+
     public UploadPolicyResolver() {
-        this.uploadModePolicy = new RuntimeUploadModePolicy();
-        this.uploadConstraintPolicy = new RuntimeUploadConstraintPolicy();
+        this(UploadPolicyResolver::resolveDefaultUploadMode, UploadPolicyResolver::resolveDefaultEffectiveMaxUploadSize);
     }
 
     public UploadSessionUploadMode resolveUploadMode(StoragePolicyCapabilities capabilities) {
@@ -63,5 +64,29 @@ public class UploadPolicyResolver {
             case DIRECT_SINGLE -> UploadSessionUploadMode.DIRECT_SINGLE;
             case DIRECT_MULTIPART -> UploadSessionUploadMode.DIRECT_MULTIPART;
         };
+    }
+
+    private static StorageUploadMode resolveDefaultUploadMode(StoragePolicyCapabilities capabilities) {
+        if (!capabilities.directUpload()) {
+            return StorageUploadMode.PROXY;
+        }
+        if (capabilities.multipartUpload()) {
+            return StorageUploadMode.DIRECT_MULTIPART;
+        }
+        return StorageUploadMode.DIRECT_SINGLE;
+    }
+
+    private static long resolveDefaultEffectiveMaxUploadSize(long systemMaxFileSize,
+                                                             long userMaxUploadSizeBytes,
+                                                             long policyMaxSizeBytes,
+                                                             long maxObjectSize) {
+        long effectiveMaxUploadSize = Math.min(systemMaxFileSize, userMaxUploadSizeBytes);
+        if (policyMaxSizeBytes > 0) {
+            effectiveMaxUploadSize = Math.min(effectiveMaxUploadSize, policyMaxSizeBytes);
+        }
+        if (maxObjectSize > 0) {
+            effectiveMaxUploadSize = Math.min(effectiveMaxUploadSize, maxObjectSize);
+        }
+        return effectiveMaxUploadSize;
     }
 }

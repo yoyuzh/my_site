@@ -69,6 +69,9 @@ class AdminInspectionQueryServiceTest {
                 0L,
                 0L,
                 20L * 1024 * 1024 * 1024,
+                5L,
+                9L,
+                2L,
                 List.of(
                         new AdminDailyActiveUserSummary(LocalDateTime.now().toLocalDate().minusDays(1), "yesterday", 1L, List.of("alice")),
                         new AdminDailyActiveUserSummary(LocalDateTime.now().toLocalDate(), "today", 2L, List.of("alice", "bob"))
@@ -91,6 +94,9 @@ class AdminInspectionQueryServiceTest {
         assertThat(summary.transferUsageBytes()).isZero();
         assertThat(summary.offlineTransferStorageBytes()).isZero();
         assertThat(summary.offlineTransferStorageLimitBytes()).isGreaterThan(0L);
+        assertThat(summary.favoriteFileCount()).isEqualTo(5L);
+        assertThat(summary.shareDownloadCount()).isEqualTo(9L);
+        assertThat(summary.activeTaskCount()).isEqualTo(2L);
         assertThat(summary.dailyActiveUsers()).containsExactly(
                 new AdminDailyActiveUserSummary(LocalDateTime.now().toLocalDate().minusDays(1), "yesterday", 1L, List.of("alice")),
                 new AdminDailyActiveUserSummary(LocalDateTime.now().toLocalDate(), "today", 2L, List.of("alice", "bob"))
@@ -114,7 +120,9 @@ class AdminInspectionQueryServiceTest {
                 LocalDateTime.now(),
                 1L,
                 "alice",
-                "alice@example.com"
+                "alice@example.com",
+                true,
+                false
         );
         when(workspaceAdminGovernanceApi.listFilesAsAdmin(any(WorkspaceAdminFileQuery.class)))
                 .thenReturn(new PageResponse<>(List.of(file), 1L, 0, 10));
@@ -124,6 +132,8 @@ class AdminInspectionQueryServiceTest {
         assertThat(response.items()).hasSize(1);
         assertThat(response.items().get(0).filename()).isEqualTo("report.pdf");
         assertThat(response.items().get(0).ownerUsername()).isEqualTo("alice");
+        assertThat(response.items().get(0).favorite()).isTrue();
+        assertThat(response.items().get(0).thumbnailAvailable()).isFalse();
     }
 
     @Test

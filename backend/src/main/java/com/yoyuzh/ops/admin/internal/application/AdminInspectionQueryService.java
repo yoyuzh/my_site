@@ -42,6 +42,9 @@ public class AdminInspectionQueryService {
                 metrics.transferUsageBytes(),
                 transferAdminMetricsApi.currentOfflineStorageBytes(),
                 metrics.offlineTransferStorageLimitBytes(),
+                metrics.favoriteFileCount(),
+                metrics.shareDownloadCount(),
+                metrics.activeTaskCount(),
                 metrics.dailyActiveUsers(),
                 metrics.requestTimeline(),
                 identityAdminSummaryApi.currentInviteCode()
@@ -126,7 +129,9 @@ public class AdminInspectionQueryService {
                 file.createdAt(),
                 file.ownerUserId(),
                 file.ownerUsername(),
-                file.ownerEmail()
+                file.ownerEmail(),
+                file.favorite(),
+                file.thumbnailAvailable()
         );
     }
 

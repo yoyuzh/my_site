@@ -78,6 +78,11 @@ public class RuntimeBackgroundTaskLifecycleApi implements BackgroundTaskLifecycl
     }
 
     @Override
+    public BackgroundTaskView createSearchIndexRebuildTask(Long requestedByUserId) {
+        return toView(backgroundTaskService.createSearchIndexRebuildTask(requestedByUserId));
+    }
+
+    @Override
     public Optional<BackgroundTaskView> createQueuedAutoMediaMetadataTask(Long userId,
                                                                           Long fileId,
                                                                           String correlationId) {

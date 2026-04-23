@@ -8,12 +8,8 @@ import com.yoyuzh.platform.job.api.BackgroundTaskType;
 
 import com.yoyuzh.shared.kernel.BusinessException;
 import com.yoyuzh.shared.kernel.ErrorCode;
-import com.yoyuzh.files.content.internal.domain.FileBlob;
-import com.yoyuzh.files.content.internal.infra.FileBlobRepository;
-import com.yoyuzh.files.content.internal.domain.FileEntity;
-import com.yoyuzh.files.content.internal.infra.FileEntityRepository;
-import com.yoyuzh.files.content.internal.domain.FileEntityType;
-import com.yoyuzh.files.workspace.internal.infra.StoredFileRepository;
+import com.yoyuzh.files.content.api.ContentStoragePolicyMigrationApi;
+import com.yoyuzh.files.content.api.ContentStoragePolicyMigrationItem;
 import com.yoyuzh.platform.storage.api.StoragePolicyDescriptor;
 import com.yoyuzh.platform.storage.api.StoragePolicyBlobAccessApi;
 import com.yoyuzh.platform.storage.api.StoragePolicyQuery;
@@ -36,22 +32,16 @@ import java.util.UUID;
 public class StoragePolicyMigrationBackgroundTaskHandler implements BackgroundTaskHandler {
 
     private final StoragePolicyQuery storagePolicyQuery;
-    private final FileEntityRepository fileEntityRepository;
-    private final FileBlobRepository fileBlobRepository;
-    private final StoredFileRepository storedFileRepository;
+    private final ContentStoragePolicyMigrationApi contentStoragePolicyMigrationApi;
     private final StoragePolicyBlobAccessApi storagePolicyBlobAccessApi;
     private final BackgroundTaskStateManager stateManager;
 
     public StoragePolicyMigrationBackgroundTaskHandler(StoragePolicyQuery storagePolicyQuery,
-                                                       FileEntityRepository fileEntityRepository,
-                                                       FileBlobRepository fileBlobRepository,
-                                                       StoredFileRepository storedFileRepository,
+                                                       ContentStoragePolicyMigrationApi contentStoragePolicyMigrationApi,
                                                        StoragePolicyBlobAccessApi storagePolicyBlobAccessApi,
                                                        BackgroundTaskStateManager stateManager) {
         this.storagePolicyQuery = storagePolicyQuery;
-        this.fileEntityRepository = fileEntityRepository;
-        this.fileBlobRepository = fileBlobRepository;
-        this.storedFileRepository = storedFileRepository;
+        this.contentStoragePolicyMigrationApi = contentStoragePolicyMigrationApi;
         this.storagePolicyBlobAccessApi = storagePolicyBlobAccessApi;
         this.stateManager = stateManager;
     }
@@ -80,15 +70,13 @@ public class StoragePolicyMigrationBackgroundTaskHandler implements BackgroundTa
         StoragePolicyDescriptor targetPolicy = storagePolicyQuery.readPolicyDescriptor(targetPolicyId);
         validatePolicyPair(sourcePolicy, targetPolicy);
 
-        List<FileEntity> entities = fileEntityRepository.findByStoragePolicyIdAndEntityTypeOrderByIdAsc(
-                sourcePolicyId,
-                FileEntityType.VERSION
-        );
+        List<ContentStoragePolicyMigrationItem> entities =
+                contentStoragePolicyMigrationApi.listVersionItemsByStoragePolicyId(sourcePolicyId);
         long candidateEntityCount = entities.size();
         long candidateStoredFileCount = 0L;
-        for (FileEntity entity : entities) {
+        for (ContentStoragePolicyMigrationItem entity : entities) {
             validateTargetCapacity(entity, targetPolicy);
-            candidateStoredFileCount += storedFileRepository.countByBlobId(getRequiredBlob(entity).getId());
+            candidateStoredFileCount += entity.linkedStoredFileCount();
         }
 
         long processedEntityCount = 0L;
@@ -107,23 +95,22 @@ public class StoragePolicyMigrationBackgroundTaskHandler implements BackgroundTa
                 false
         ));
         try {
-            for (FileEntity entity : entities) {
-                FileBlob blob = getRequiredBlob(entity);
-                long storedFileCount = storedFileRepository.countByBlobId(blob.getId());
-                String oldObjectKey = entity.getObjectKey();
+            for (ContentStoragePolicyMigrationItem entity : entities) {
+                long storedFileCount = entity.linkedStoredFileCount();
+                String oldObjectKey = entity.objectKey();
                 String newObjectKey = buildTargetObjectKey(targetPolicy.id());
-                String contentType = StringUtils.hasText(entity.getContentType()) ? entity.getContentType() : blob.getContentType();
+                String contentType = StringUtils.hasText(entity.contentType()) ? entity.contentType() : entity.blobContentType();
 
                 byte[] content = storagePolicyBlobAccessApi.readBlob(sourcePolicy, oldObjectKey);
                 copiedObjectKeys.add(newObjectKey);
                 storagePolicyBlobAccessApi.storeBlob(targetPolicy, newObjectKey, contentType, content);
 
-                entity.setObjectKey(newObjectKey);
-                entity.setStoragePolicyId(targetPolicy.id());
-                fileEntityRepository.save(entity);
-
-                blob.setObjectKey(newObjectKey);
-                fileBlobRepository.save(blob);
+                contentStoragePolicyMigrationApi.reassignVersionItem(
+                        entity.entityId(),
+                        entity.blobId(),
+                        targetPolicy.id(),
+                        newObjectKey
+                );
 
                 staleObjectKeys.add(oldObjectKey);
                 processedEntityCount += 1;
@@ -163,15 +150,10 @@ public class StoragePolicyMigrationBackgroundTaskHandler implements BackgroundTa
         storagePolicyBlobAccessApi.validateMigration(sourcePolicy, targetPolicy);
     }
 
-    private void validateTargetCapacity(FileEntity entity, StoragePolicyDescriptor targetPolicy) {
-        if (targetPolicy.maxSizeBytes() > 0 && entity.getSize() != null && entity.getSize() > targetPolicy.maxSizeBytes()) {
+    private void validateTargetCapacity(ContentStoragePolicyMigrationItem entity, StoragePolicyDescriptor targetPolicy) {
+        if (targetPolicy.maxSizeBytes() > 0 && entity.size() != null && entity.size() > targetPolicy.maxSizeBytes()) {
             throw new BusinessException(ErrorCode.UNKNOWN, "目标存储策略容量上限不足以承载待迁移对象");
         }
-    }
-
-    private FileBlob getRequiredBlob(FileEntity entity) {
-        return fileBlobRepository.findByObjectKey(entity.getObjectKey())
-                .orElseThrow(() -> new IllegalStateException("storage policy migration blob not found"));
     }
 
     private String buildTargetObjectKey(Long targetPolicyId) {
@@ -205,7 +187,7 @@ public class StoragePolicyMigrationBackgroundTaskHandler implements BackgroundTa
         patch.put("totalStoredFileCount", candidateStoredFileCount);
         patch.put("migratedEntityCount", migratedEntityCount);
         patch.put("migratedStoredFileCount", migratedStoredFileCount);
-        patch.put("entityType", FileEntityType.VERSION.name());
+        patch.put("entityType", ContentStoragePolicyMigrationApi.VERSION_ENTITY_TYPE);
         patch.put("plannedAt", LocalDateTime.now().toString());
         patch.put("progressPercent", calculateProgressPercent(
                 processedEntityCount,

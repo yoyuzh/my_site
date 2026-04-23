@@ -1,6 +1,8 @@
 package com.yoyuzh.files.workspace.internal.application;
 
 import com.yoyuzh.identity.access.internal.domain.User;
+import com.yoyuzh.files.content.api.ContentBlobQueryApi;
+import com.yoyuzh.files.content.api.ContentBlobReference;
 import com.yoyuzh.shared.kernel.BusinessException;
 import com.yoyuzh.files.content.api.ContentDuplicationApi;
 import com.yoyuzh.files.content.api.ContentRegistrationCommand;
@@ -37,13 +39,16 @@ class RuntimeWorkspaceLifecycleApiTest {
 
     @Mock
     private ContentDuplicationApi contentDuplicationApi;
+    @Mock
+    private ContentBlobQueryApi contentBlobQueryApi;
 
     @Test
     void shouldCopyDirectoryAndDescendants() {
         RuntimeWorkspaceLifecycleApi api = new RuntimeWorkspaceLifecycleApi(
                 storedFileRepository,
                 fileContentStorage,
-                contentDuplicationApi
+                contentDuplicationApi,
+                contentBlobQueryApi
         );
         User user = createUser(7L);
         StoredFile directory = createDirectory(10L, user, "/docs", "archive");
@@ -63,6 +68,8 @@ class RuntimeWorkspaceLifecycleApiTest {
             }
             return storedFile;
         });
+        when(contentBlobQueryApi.findBlobReferenceById(51L))
+                .thenReturn(Optional.of(new ContentBlobReference(51L, "blobs/blob-archive-1", "text/plain", 5L)));
         when(contentDuplicationApi.duplicateBlobBackedFile(any(ContentRegistrationCommand.class)))
                 .thenReturn(new RegisteredContentFile(120L, "notes.txt", "/图片/archive", 5L, "text/plain", false, LocalDateTime.now()));
         AtomicLong guardedBytes = new AtomicLong(-1L);
@@ -79,7 +86,8 @@ class RuntimeWorkspaceLifecycleApiTest {
         RuntimeWorkspaceLifecycleApi api = new RuntimeWorkspaceLifecycleApi(
                 storedFileRepository,
                 fileContentStorage,
-                contentDuplicationApi
+                contentDuplicationApi,
+                contentBlobQueryApi
         );
         User user = createUser(7L);
         StoredFile directory = createDirectory(10L, user, "/docs", "archive");
@@ -102,7 +110,8 @@ class RuntimeWorkspaceLifecycleApiTest {
         RuntimeWorkspaceLifecycleApi api = new RuntimeWorkspaceLifecycleApi(
                 storedFileRepository,
                 fileContentStorage,
-                contentDuplicationApi
+                contentDuplicationApi,
+                contentBlobQueryApi
         );
         User user = createUser(7L);
         StoredFile docsDirectory = createDirectory(20L, user, "/", "docs");
@@ -129,7 +138,8 @@ class RuntimeWorkspaceLifecycleApiTest {
         RuntimeWorkspaceLifecycleApi api = new RuntimeWorkspaceLifecycleApi(
                 storedFileRepository,
                 fileContentStorage,
-                contentDuplicationApi
+                contentDuplicationApi,
+                contentBlobQueryApi
         );
         User user = createUser(7L);
         StoredFile directory = createDirectory(10L, user, "/docs", "archive");
@@ -157,7 +167,7 @@ class RuntimeWorkspaceLifecycleApiTest {
     private StoredFile createDirectory(Long id, User user, String path, String filename) {
         StoredFile storedFile = new StoredFile();
         storedFile.setId(id);
-        storedFile.setUser(user);
+        storedFile.setUserId(user.getId());
         storedFile.setPath(path);
         storedFile.setFilename(filename);
         storedFile.setDirectory(true);
@@ -170,10 +180,10 @@ class RuntimeWorkspaceLifecycleApiTest {
     private StoredFile createFile(Long id, User user, String path, String filename, FileBlob blob) {
         StoredFile storedFile = new StoredFile();
         storedFile.setId(id);
-        storedFile.setUser(user);
+        storedFile.setUserId(user.getId());
         storedFile.setPath(path);
         storedFile.setFilename(filename);
-        storedFile.setBlob(blob);
+        storedFile.setBlobId(blob == null ? null : blob.getId());
         storedFile.setDirectory(false);
         storedFile.setContentType("text/plain");
         storedFile.setSize(5L);

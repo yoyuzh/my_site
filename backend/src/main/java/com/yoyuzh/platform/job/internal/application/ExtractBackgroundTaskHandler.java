@@ -6,8 +6,8 @@ import com.yoyuzh.platform.job.api.BackgroundTaskFailureCategory;
 import com.yoyuzh.platform.job.api.BackgroundTaskStatus;
 import com.yoyuzh.platform.job.api.BackgroundTaskType;
 
-import com.yoyuzh.identity.access.internal.domain.User;
-import com.yoyuzh.identity.access.internal.infra.UserRepository;
+import com.yoyuzh.identity.access.api.IdentityUserDirectoryApi;
+import com.yoyuzh.identity.access.api.IdentityUserSnapshot;
 import com.yoyuzh.shared.kernel.BusinessException;
 import com.yoyuzh.files.workspace.api.WorkspaceArchiveApi;
 import com.yoyuzh.files.workspace.api.WorkspaceBootstrapApi;
@@ -31,16 +31,16 @@ import java.util.Optional;
 @Transactional
 public class ExtractBackgroundTaskHandler implements BackgroundTaskHandler {
 
-    private final UserRepository userRepository;
+    private final IdentityUserDirectoryApi identityUserDirectoryApi;
     private final WorkspaceArchiveApi workspaceArchiveApi;
     private final WorkspaceBootstrapApi workspaceBootstrapApi;
     private final BackgroundTaskStateManager stateManager;
 
-    public ExtractBackgroundTaskHandler(UserRepository userRepository,
+    public ExtractBackgroundTaskHandler(IdentityUserDirectoryApi identityUserDirectoryApi,
                                         WorkspaceArchiveApi workspaceArchiveApi,
                                         WorkspaceBootstrapApi workspaceBootstrapApi,
                                         BackgroundTaskStateManager stateManager) {
-        this.userRepository = userRepository;
+        this.identityUserDirectoryApi = identityUserDirectoryApi;
         this.workspaceArchiveApi = workspaceArchiveApi;
         this.workspaceBootstrapApi = workspaceBootstrapApi;
         this.stateManager = stateManager;
@@ -74,7 +74,7 @@ public class ExtractBackgroundTaskHandler implements BackgroundTaskHandler {
             throw new IllegalStateException("extract task missing output target");
         }
 
-        User user = userRepository.findById(task.getUserId())
+        IdentityUserSnapshot user = identityUserDirectoryApi.findSnapshotById(task.getUserId())
                 .orElseThrow(() -> new IllegalStateException("extract task user not found"));
 
         ExtractPlan plan = parseArchivePlan(task.getUserId(), fileId, outputPath, outputDirectoryName);
@@ -95,7 +95,7 @@ public class ExtractBackgroundTaskHandler implements BackgroundTaskHandler {
         return new BackgroundTaskHandlerResult(publicStatePatch);
     }
 
-    private void executePlan(User user, ExtractPlan plan, BackgroundTaskProgressReporter progressReporter) {
+    private void executePlan(IdentityUserSnapshot user, ExtractPlan plan, BackgroundTaskProgressReporter progressReporter) {
         workspaceBootstrapApi.importExternalFilesAtomically(
                 workspaceUser(user),
                 plan.directories(),
@@ -324,11 +324,11 @@ public class ExtractBackgroundTaskHandler implements BackgroundTaskHandler {
     private record ExtractPlan(List<String> directories, List<ExtractedFile> files, String extractedPath) {
     }
 
-    private WorkspaceUserContext workspaceUser(User user) {
+    private WorkspaceUserContext workspaceUser(IdentityUserSnapshot user) {
         return new WorkspaceUserContext(
-                user.getId(),
-                user.getStorageQuotaBytes(),
-                user.getMaxUploadSizeBytes()
+                user.id(),
+                user.storageQuotaBytes(),
+                user.maxUploadSizeBytes()
         );
     }
 }

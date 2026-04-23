@@ -7,4 +7,6 @@ public interface BackgroundTaskAdminQueryApi {
     PageResponse<AdminBackgroundTaskView> listTasks(AdminBackgroundTaskQuery query);
 
     AdminBackgroundTaskView getTask(Long taskId);
+
+    long countActiveTasks();
 }

@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.jayway.jsonpath.JsonPath;
 import com.yoyuzh.PortalBackendApplication;
 import com.yoyuzh.identity.access.internal.domain.User;
+import com.yoyuzh.identity.access.internal.domain.UserRole;
 import com.yoyuzh.identity.access.internal.infra.UserRepository;
 import com.yoyuzh.platform.job.internal.domain.BackgroundTask;
 import com.yoyuzh.platform.job.internal.infra.BackgroundTaskRepository;
@@ -119,6 +120,15 @@ class BackgroundTaskV2ControllerIntegrationTest {
         bob.setPasswordHash("encoded-password");
         bob.setCreatedAt(LocalDateTime.now());
         bob = userRepository.save(bob);
+
+        User admin = new User();
+        admin.setUsername("admin");
+        admin.setEmail("admin@example.com");
+        admin.setPhoneNumber("13800138002");
+        admin.setPasswordHash("encoded-password");
+        admin.setRole(UserRole.ADMIN);
+        admin.setCreatedAt(LocalDateTime.now());
+        userRepository.save(admin);
 
         archiveDirectoryId = storedFileRepository.save(createFile(alice, "/docs", "archive", true, null, 0L, null)).getId();
         storedFileRepository.save(createBlobBackedFile(
@@ -313,6 +323,52 @@ class BackgroundTaskV2ControllerIntegrationTest {
 
         mockMvc.perform(post("/api/v2/tasks/{id}/retry", taskId).with(user("bob")))
                 .andExpect(status().isNotFound());
+    }
+
+    @Test
+    void shouldExposeOwnedTaskProgress() throws Exception {
+        String response = mockMvc.perform(post("/api/v2/tasks/archive")
+                        .with(user("alice"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "fileId": %d,
+                                  "path": "/docs/archive-source.txt"
+                                }
+                                """.formatted(archiveFileId)))
+                .andExpect(status().isOk())
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+        Long taskId = ((Number) JsonPath.read(response, "$.data.id")).longValue();
+
+        mockMvc.perform(get("/api/v2/tasks/{id}/progress", taskId).with(user("alice")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.taskId").value(taskId))
+                .andExpect(jsonPath("$.data.status").value("QUEUED"))
+                .andExpect(jsonPath("$.data.progressPercent").value(0))
+                .andExpect(jsonPath("$.data.processedItems").value(0))
+                .andExpect(jsonPath("$.data.totalItems").value(0))
+                .andExpect(jsonPath("$.data.message").value("QUEUED"));
+    }
+
+    @Test
+    void shouldAllowAdminToQueueSearchIndexRebuildTask() throws Exception {
+        String response = mockMvc.perform(post("/api/v2/tasks/search-index/rebuild")
+                        .with(user("admin").roles("ADMIN")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(0))
+                .andExpect(jsonPath("$.data.type").value("SEARCH_INDEX_REBUILD"))
+                .andExpect(jsonPath("$.data.status").value("QUEUED"))
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+
+        Long taskId = ((Number) JsonPath.read(response, "$.data.id")).longValue();
+        BackgroundTask task = backgroundTaskRepository.findById(taskId).orElseThrow();
+        assertThat(task.getType()).isEqualTo(BackgroundTaskType.SEARCH_INDEX_REBUILD);
+        assertThat(task.getPublicStateJson()).contains("\"progressPercent\":0");
+        assertThat(task.getPublicStateJson()).contains("\"message\":\"search index rebuild queued\"");
     }
 
     @Test
@@ -642,7 +698,7 @@ class BackgroundTaskV2ControllerIntegrationTest {
                                   Long size,
                                   LocalDateTime deletedAt) {
         StoredFile file = new StoredFile();
-        file.setUser(user);
+        file.setUserId(user.getId());
         file.setPath(path);
         file.setFilename(filename);
         file.setDirectory(directory);
@@ -678,7 +734,7 @@ class BackgroundTaskV2ControllerIntegrationTest {
         blob = fileBlobRepository.save(blob);
 
         StoredFile file = createFile(user, path, filename, false, contentType, (long) content.length, deletedAt);
-        file.setBlob(blob);
+        file.setBlobId(blob == null ? null : blob.getId());
         return file;
     }
 

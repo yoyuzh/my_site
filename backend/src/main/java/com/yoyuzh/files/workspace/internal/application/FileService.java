@@ -1,18 +1,13 @@
 package com.yoyuzh.files.workspace.internal.application;
 
 import com.yoyuzh.files.content.api.ContentAssetApi;
+import com.yoyuzh.files.content.api.ContentBlobLifecycleApi;
 import com.yoyuzh.files.content.api.ContentBlobReference;
+import com.yoyuzh.files.content.api.ContentBlobQueryApi;
+import com.yoyuzh.files.content.api.ContentBlobRegistrationApi;
 import com.yoyuzh.files.content.api.ContentRegistrationApi;
 import com.yoyuzh.files.content.api.ContentRegistrationCommand;
 import com.yoyuzh.files.content.api.RegisteredContentFile;
-import com.yoyuzh.files.content.internal.application.ContentBlobLifecycleService;
-import com.yoyuzh.files.content.internal.application.RuntimeContentAssetApi;
-import com.yoyuzh.files.content.internal.application.RuntimeContentRegistrationApi;
-import com.yoyuzh.files.content.internal.domain.FileBlob;
-import com.yoyuzh.files.content.internal.domain.FileEntity;
-import com.yoyuzh.files.content.internal.infra.FileBlobRepository;
-import com.yoyuzh.files.content.internal.infra.FileEntityRepository;
-import com.yoyuzh.files.content.internal.infra.StoredFileEntityRepository;
 import com.yoyuzh.files.search.api.FileEventApi;
 import com.yoyuzh.files.search.api.FileEventRecordCommand;
 import com.yoyuzh.files.search.api.FileEventType;
@@ -23,8 +18,9 @@ import com.yoyuzh.files.upload.InitiateUploadRequest;
 import com.yoyuzh.files.upload.InitiateUploadResponse;
 import com.yoyuzh.files.upload.api.UploadCompletionApi;
 import com.yoyuzh.files.upload.api.UploadCompletionCommand;
-import com.yoyuzh.files.upload.internal.application.RuntimeUploadCompletionApi;
 import com.yoyuzh.files.workspace.api.DownloadUrlResponse;
+import com.yoyuzh.files.workspace.api.FavoriteFileResponse;
+import com.yoyuzh.files.workspace.api.FileDetailResponse;
 import com.yoyuzh.files.workspace.api.FileMetadataResponse;
 import com.yoyuzh.files.workspace.api.RecycleBinItemResponse;
 import com.yoyuzh.files.workspace.api.WorkspaceArchiveApi;
@@ -50,7 +46,7 @@ import com.yoyuzh.files.workspace.api.WorkspaceZipArchiveEntry;
 import com.yoyuzh.files.workspace.internal.domain.StoredFile;
 import com.yoyuzh.files.workspace.internal.infra.FileListDirectoryCacheService;
 import com.yoyuzh.files.workspace.internal.infra.StoredFileRepository;
-import com.yoyuzh.identity.access.internal.domain.User;
+import com.yoyuzh.identity.access.api.IdentityAuthenticatedUser;
 import com.yoyuzh.infra.lock.DistributedLockGateway;
 import com.yoyuzh.platform.job.api.BackgroundTaskLifecycleApi;
 import com.yoyuzh.platform.storage.api.StoragePolicyCapabilities;
@@ -63,7 +59,6 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.http.MediaType;
-import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
@@ -86,6 +81,7 @@ import java.util.HashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
@@ -100,8 +96,6 @@ public class FileService implements WorkspaceBootstrapApi, WorkspaceArchiveApi {
     private static final long RECYCLE_BIN_RETENTION_DAYS = 10L;
 
     private final StoredFileRepository storedFileRepository;
-    private final FileEntityRepository fileEntityRepository;
-    private final StoredFileEntityRepository storedFileEntityRepository;
     private final FileContentStorage fileContentStorage;
     private final StoragePolicyQuery storagePolicyQuery;
     private final UploadConstraintPolicy uploadConstraintPolicy;
@@ -118,8 +112,9 @@ public class FileService implements WorkspaceBootstrapApi, WorkspaceArchiveApi {
     private final ExternalImportRulesService externalImportRulesService;
     private final ContentAssetApi contentAssetApi;
     private final ContentRegistrationApi contentRegistrationApi;
+    private final ContentBlobRegistrationApi contentBlobRegistrationApi;
     private final UploadCompletionApi uploadCompletionApi;
-    private final ContentBlobLifecycleService contentBlobLifecycleService;
+    private final ContentBlobLifecycleApi contentBlobLifecycleApi;
     private final WorkspaceDownloadMetricsPort workspaceDownloadMetricsPort;
     private final BackgroundTaskLifecycleApi backgroundTaskLifecycleApi;
     @Autowired(required = false)
@@ -131,9 +126,6 @@ public class FileService implements WorkspaceBootstrapApi, WorkspaceArchiveApi {
 
     @Autowired
     public FileService(StoredFileRepository storedFileRepository,
-                       FileBlobRepository fileBlobRepository,
-                       FileEntityRepository fileEntityRepository,
-                       StoredFileEntityRepository storedFileEntityRepository,
                        FileContentStorage fileContentStorage,
                        StoragePolicyQuery storagePolicyQuery,
                        UploadCompletionApi uploadCompletionApi,
@@ -147,12 +139,12 @@ public class FileService implements WorkspaceBootstrapApi, WorkspaceArchiveApi {
                        ExternalImportRulesService externalImportRulesService,
                        ContentAssetApi contentAssetApi,
                        ContentRegistrationApi contentRegistrationApi,
+                       ContentBlobRegistrationApi contentBlobRegistrationApi,
+                       ContentBlobLifecycleApi contentBlobLifecycleApi,
                        WorkspaceDownloadMetricsPort workspaceDownloadMetricsPort,
                        BackgroundTaskLifecycleApi backgroundTaskLifecycleApi) {
         this(
                 storedFileRepository,
-                fileEntityRepository,
-                storedFileEntityRepository,
                 fileContentStorage,
                 storagePolicyQuery,
                 uploadConstraintPolicy,
@@ -165,8 +157,9 @@ public class FileService implements WorkspaceBootstrapApi, WorkspaceArchiveApi {
                 externalImportRulesService,
                 contentAssetApi,
                 contentRegistrationApi,
+                contentBlobRegistrationApi,
                 uploadCompletionApi,
-                createContentBlobLifecycleService(storedFileRepository, fileBlobRepository, fileContentStorage),
+                contentBlobLifecycleApi,
                 workspaceDownloadMetricsPort,
                 backgroundTaskLifecycleApi,
                 0L,
@@ -174,43 +167,7 @@ public class FileService implements WorkspaceBootstrapApi, WorkspaceArchiveApi {
         );
     }
 
-    public FileService(StoredFileRepository storedFileRepository,
-                       FileBlobRepository fileBlobRepository,
-                       FileEntityRepository fileEntityRepository,
-                       StoredFileEntityRepository storedFileEntityRepository,
-                       FileContentStorage fileContentStorage,
-                       StoragePolicyQuery storagePolicyQuery,
-                       WorkspaceDownloadMetricsPort workspaceDownloadMetricsPort,
-                       WorkspaceDownloadOptions workspaceDownloadOptions,
-                       long maxFileSize) {
-        this(
-                storedFileRepository,
-                fileEntityRepository,
-                storedFileEntityRepository,
-                fileContentStorage,
-                storagePolicyQuery,
-                null,
-                workspaceDownloadOptions,
-                createWorkspaceNodeRulesService(storedFileRepository, fileContentStorage),
-                createWorkspaceDirectoryApi(storedFileRepository, fileContentStorage),
-                createWorkspaceMutationApi(storedFileRepository, fileContentStorage),
-                createWorkspaceLifecycleApi(storedFileRepository, fileContentStorage),
-                createFileUploadRulesService(storedFileRepository, storagePolicyQuery, null, fileContentStorage, maxFileSize),
-                createExternalImportRulesService(storedFileRepository, storagePolicyQuery, null, fileContentStorage, maxFileSize),
-                createContentAssetApi(storedFileRepository, fileEntityRepository, storedFileEntityRepository, storagePolicyQuery),
-                createContentRegistrationApi(storedFileRepository, fileEntityRepository, storedFileEntityRepository, storagePolicyQuery),
-                createUploadCompletionApi(storedFileRepository, fileEntityRepository, storedFileEntityRepository, fileBlobRepository, fileContentStorage, storagePolicyQuery),
-                new ContentBlobLifecycleService(storedFileRepository, fileBlobRepository, fileContentStorage),
-                workspaceDownloadMetricsPort,
-                null,
-                maxFileSize,
-                Clock.systemUTC()
-        );
-    }
-
     FileService(StoredFileRepository storedFileRepository,
-                FileEntityRepository fileEntityRepository,
-                StoredFileEntityRepository storedFileEntityRepository,
                 FileContentStorage fileContentStorage,
                 StoragePolicyQuery storagePolicyQuery,
                 UploadConstraintPolicy uploadConstraintPolicy,
@@ -223,15 +180,14 @@ public class FileService implements WorkspaceBootstrapApi, WorkspaceArchiveApi {
                 ExternalImportRulesService externalImportRulesService,
                 ContentAssetApi contentAssetApi,
                 ContentRegistrationApi contentRegistrationApi,
+                ContentBlobRegistrationApi contentBlobRegistrationApi,
                 UploadCompletionApi uploadCompletionApi,
-                ContentBlobLifecycleService contentBlobLifecycleService,
+                ContentBlobLifecycleApi contentBlobLifecycleApi,
                 WorkspaceDownloadMetricsPort workspaceDownloadMetricsPort,
                 BackgroundTaskLifecycleApi backgroundTaskLifecycleApi,
                 long maxFileSize,
                 Clock clock) {
         this.storedFileRepository = storedFileRepository;
-        this.fileEntityRepository = fileEntityRepository;
-        this.storedFileEntityRepository = storedFileEntityRepository;
         this.fileContentStorage = fileContentStorage;
         this.storagePolicyQuery = storagePolicyQuery;
         this.uploadConstraintPolicy = uploadConstraintPolicy;
@@ -252,53 +208,13 @@ public class FileService implements WorkspaceBootstrapApi, WorkspaceArchiveApi {
         this.externalImportRulesService = externalImportRulesService;
         this.contentAssetApi = contentAssetApi;
         this.contentRegistrationApi = contentRegistrationApi;
+        this.contentBlobRegistrationApi = contentBlobRegistrationApi;
         this.uploadCompletionApi = uploadCompletionApi;
-        this.contentBlobLifecycleService = contentBlobLifecycleService;
+        this.contentBlobLifecycleApi = contentBlobLifecycleApi;
         this.workspaceDownloadMetricsPort = workspaceDownloadMetricsPort == null
                 ? WorkspaceDownloadMetricsPort.noOp()
                 : workspaceDownloadMetricsPort;
         this.backgroundTaskLifecycleApi = backgroundTaskLifecycleApi;
-    }
-
-    FileService(StoredFileRepository storedFileRepository,
-                FileBlobRepository fileBlobRepository,
-                FileContentStorage fileContentStorage,
-                WorkspaceDownloadMetricsPort workspaceDownloadMetricsPort,
-                WorkspaceDownloadOptions workspaceDownloadOptions,
-                long maxFileSize) {
-        this(storedFileRepository, fileBlobRepository, null, null, fileContentStorage, null, workspaceDownloadMetricsPort, workspaceDownloadOptions, maxFileSize);
-    }
-
-    FileService(StoredFileRepository storedFileRepository,
-                FileBlobRepository fileBlobRepository,
-                FileContentStorage fileContentStorage,
-                WorkspaceDownloadMetricsPort workspaceDownloadMetricsPort,
-                WorkspaceDownloadOptions workspaceDownloadOptions,
-                long maxFileSize,
-                Clock clock) {
-        this(
-                storedFileRepository,
-                null,
-                null,
-                fileContentStorage,
-                null,
-                null,
-                workspaceDownloadOptions,
-                createWorkspaceNodeRulesService(storedFileRepository, fileContentStorage),
-                createWorkspaceDirectoryApi(storedFileRepository, fileContentStorage),
-                createWorkspaceMutationApi(storedFileRepository, fileContentStorage),
-                createWorkspaceLifecycleApi(storedFileRepository, fileContentStorage),
-                createFileUploadRulesService(storedFileRepository, null, null, fileContentStorage, maxFileSize),
-                createExternalImportRulesService(storedFileRepository, null, null, fileContentStorage, maxFileSize),
-                createContentAssetApi(storedFileRepository, null, null, null),
-                createContentRegistrationApi(storedFileRepository, null, null, null),
-                createUploadCompletionApi(storedFileRepository, null, null, fileBlobRepository, fileContentStorage, null),
-                new ContentBlobLifecycleService(storedFileRepository, fileBlobRepository, fileContentStorage),
-                workspaceDownloadMetricsPort,
-                null,
-                maxFileSize,
-                clock
-        );
     }
 
     private static RuntimeWorkspacePathPolicy createWorkspacePathPolicy(StoredFileRepository storedFileRepository,
@@ -320,28 +236,6 @@ public class FileService implements WorkspaceBootstrapApi, WorkspaceArchiveApi {
     private static WorkspaceMutationApi createWorkspaceMutationApi(StoredFileRepository storedFileRepository,
                                                                    FileContentStorage fileContentStorage) {
         return new RuntimeWorkspaceMutationApi(storedFileRepository, createWorkspacePathPolicy(storedFileRepository, fileContentStorage));
-    }
-
-    private static WorkspaceLifecycleApi createWorkspaceLifecycleApi(StoredFileRepository storedFileRepository,
-                                                                     FileContentStorage fileContentStorage) {
-        RuntimeWorkspacePathPolicy workspacePathPolicy = createWorkspacePathPolicy(storedFileRepository, fileContentStorage);
-        WorkspaceNodeRulesService workspaceNodeRulesService = new WorkspaceNodeRulesService(workspacePathPolicy);
-        RuntimeContentRegistrationApi contentRegistrationApi = new RuntimeContentRegistrationApi(
-                storedFileRepository,
-                new RuntimeContentAssetApi(storedFileRepository, null, null, null)
-        );
-        return new RuntimeWorkspaceLifecycleApi(
-                storedFileRepository,
-                contentRegistrationApi,
-                workspacePathPolicy,
-                workspaceNodeRulesService
-        );
-    }
-
-    private static ContentBlobLifecycleService createContentBlobLifecycleService(StoredFileRepository storedFileRepository,
-                                                                                 FileBlobRepository fileBlobRepository,
-                                                                                 FileContentStorage fileContentStorage) {
-        return new ContentBlobLifecycleService(storedFileRepository, fileBlobRepository, fileContentStorage);
     }
 
     private static FileUploadRulesService createFileUploadRulesService(StoredFileRepository storedFileRepository,
@@ -376,65 +270,31 @@ public class FileService implements WorkspaceBootstrapApi, WorkspaceArchiveApi {
         );
     }
 
-    private static ContentAssetApi createContentAssetApi(StoredFileRepository storedFileRepository,
-                                                         FileEntityRepository fileEntityRepository,
-                                                         StoredFileEntityRepository storedFileEntityRepository,
-                                                         StoragePolicyQuery storagePolicyQuery) {
-        return new RuntimeContentAssetApi(
-                storedFileRepository,
-                fileEntityRepository,
-                storedFileEntityRepository,
-                storagePolicyQuery
-        );
-    }
-
-    private static ContentRegistrationApi createContentRegistrationApi(StoredFileRepository storedFileRepository,
-                                                                       FileEntityRepository fileEntityRepository,
-                                                                       StoredFileEntityRepository storedFileEntityRepository,
-                                                                       StoragePolicyQuery storagePolicyQuery) {
-        return new RuntimeContentRegistrationApi(
-                storedFileRepository,
-                createContentAssetApi(storedFileRepository, fileEntityRepository, storedFileEntityRepository, storagePolicyQuery)
-        );
-    }
-
-    private static UploadCompletionApi createUploadCompletionApi(StoredFileRepository storedFileRepository,
-                                                                 FileEntityRepository fileEntityRepository,
-                                                                 StoredFileEntityRepository storedFileEntityRepository,
-                                                                 FileBlobRepository fileBlobRepository,
-                                                                 FileContentStorage fileContentStorage,
-                                                                 StoragePolicyQuery storagePolicyQuery) {
-        WorkspacePathPolicy workspacePathPolicy = createWorkspacePathPolicy(storedFileRepository, fileContentStorage);
-        ContentRegistrationApi contentRegistrationApi = createContentRegistrationApi(
-                storedFileRepository,
-                fileEntityRepository,
-                storedFileEntityRepository,
-                storagePolicyQuery
-        );
-        return new RuntimeUploadCompletionApi(
-                workspacePathPolicy,
-                contentRegistrationApi,
-                fileBlobRepository,
-                fileContentStorage
-        );
+    @Transactional
+    public FileMetadataResponse upload(IdentityAuthenticatedUser user, String path, MultipartFile multipartFile) {
+        return upload(toWorkspaceUser(user), path, multipartFile);
     }
 
     @Transactional
-    public FileMetadataResponse upload(User user, String path, MultipartFile multipartFile) {
+    public FileMetadataResponse upload(WorkspaceUserContext user, String path, MultipartFile multipartFile) {
         String normalizedPath = normalizeDirectoryPath(path);
         String filename = normalizeUploadFilename(multipartFile.getOriginalFilename());
         fileUploadRulesService.validateUpload(user, normalizedPath, filename, multipartFile.getSize());
         ensureDirectoryHierarchy(user, normalizedPath);
 
         String objectKey = createBlobObjectKey();
-        return contentBlobLifecycleService.executeAfterBlobStored(objectKey, () -> {
+        return contentBlobLifecycleApi.executeAfterBlobStored(objectKey, () -> {
             fileContentStorage.uploadBlob(objectKey, multipartFile);
-            FileBlob blob = contentBlobLifecycleService.createAndSaveBlob(objectKey, multipartFile.getContentType(), multipartFile.getSize());
+            ContentBlobReference blob = contentBlobRegistrationApi.registerStoredBlob(objectKey, multipartFile.getContentType(), multipartFile.getSize());
             return saveFileMetadata(user, normalizedPath, filename, multipartFile.getContentType(), multipartFile.getSize(), blob);
         });
     }
 
-    public InitiateUploadResponse initiateUpload(User user, InitiateUploadRequest request) {
+    public InitiateUploadResponse initiateUpload(IdentityAuthenticatedUser user, InitiateUploadRequest request) {
+        return initiateUpload(toWorkspaceUser(user), request);
+    }
+
+    public InitiateUploadResponse initiateUpload(WorkspaceUserContext user, InitiateUploadRequest request) {
         String normalizedPath = normalizeDirectoryPath(request.path());
         String filename = normalizeLeafName(request.filename());
         fileUploadRulesService.validateUpload(user, normalizedPath, filename, request.size());
@@ -462,13 +322,18 @@ public class FileService implements WorkspaceBootstrapApi, WorkspaceArchiveApi {
     }
 
     @Transactional
-    public FileMetadataResponse completeUpload(User user, CompleteUploadRequest request) {
+    public FileMetadataResponse completeUpload(IdentityAuthenticatedUser user, CompleteUploadRequest request) {
+        return completeUpload(toWorkspaceUser(user), request);
+    }
+
+    @Transactional
+    public FileMetadataResponse completeUpload(WorkspaceUserContext user, CompleteUploadRequest request) {
         String normalizedPath = normalizeDirectoryPath(request.path());
         String filename = normalizeLeafName(request.filename());
         String objectKey = normalizeBlobObjectKey(request.storageName());
         fileUploadRulesService.validateUpload(user, normalizedPath, filename, request.size());
         RegisteredContentFile savedFile = uploadCompletionApi.completeStoredBlob(new UploadCompletionCommand(
-                user.getId(),
+                user.userId(),
                 normalizedPath,
                 filename,
                 objectKey,
@@ -479,34 +344,98 @@ public class FileService implements WorkspaceBootstrapApi, WorkspaceArchiveApi {
     }
 
     @Transactional
-    public FileMetadataResponse mkdir(User user, String path) {
+    public FileMetadataResponse mkdir(Long userId, String path) {
+        return mkdir(toWorkspaceUser(userId), path);
+    }
+
+    @Transactional
+    public FileMetadataResponse mkdir(WorkspaceUserContext user, String path) {
         String normalizedPath = normalizeDirectoryPath(path);
-        FileMetadataResponse response = workspaceDirectoryApi.createDirectory(user.getId(), normalizedPath);
+        FileMetadataResponse response = workspaceDirectoryApi.createDirectory(user.userId(), normalizedPath);
         String parentPath = extractParentPath(normalizedPath);
         touchDirectoryListings(user, parentPath);
         return response;
     }
 
-    public PageResponse<FileMetadataResponse> list(User user, String path, int page, int size) {
+    public PageResponse<FileMetadataResponse> list(Long userId, String path, int page, int size) {
+        return list(toWorkspaceUser(userId), path, page, size);
+    }
+
+    public PageResponse<FileMetadataResponse> list(WorkspaceUserContext user, String path, int page, int size) {
         String normalizedPath = normalizeDirectoryPath(path);
         return fileListDirectoryCacheService.getOrLoad(
-                user.getId(),
+                user.userId(),
                 normalizedPath,
                 page,
                 size,
-                () -> workspaceDirectoryApi.loadDirectoryPage(user.getId(), normalizedPath, page, size)
+                () -> workspaceDirectoryApi.loadDirectoryPage(user.userId(), normalizedPath, page, size)
         );
     }
 
-    public List<FileMetadataResponse> recent(User user) {
-        return storedFileRepository.findTop12ByUserIdAndDirectoryFalseAndDeletedAtIsNullOrderByCreatedAtDesc(user.getId())
+    public List<FileMetadataResponse> recent(Long userId) {
+        return recent(toWorkspaceUser(userId));
+    }
+
+    public List<FileMetadataResponse> recent(WorkspaceUserContext user) {
+        return storedFileRepository.findTop12ByUserIdAndDirectoryFalseAndDeletedAtIsNullOrderByCreatedAtDesc(user.userId())
                 .stream()
                 .map(this::toResponse)
                 .toList();
     }
 
-    public PageResponse<RecycleBinItemResponse> listRecycleBin(User user, int page, int size) {
-        Page<StoredFile> result = storedFileRepository.findRecycleBinRootsByUserId(user.getId(), PageRequest.of(page, size));
+    public FileDetailResponse detail(Long userId, Long fileId) {
+        return detail(toWorkspaceUser(userId), fileId);
+    }
+
+    public FileDetailResponse detail(WorkspaceUserContext user, Long fileId) {
+        StoredFile file = storedFileRepository.findByIdAndUserIdAndDeletedAtIsNull(fileId, user.userId())
+                .orElseThrow(() -> new BusinessException(ErrorCode.FILE_NOT_FOUND, "文件不存在"));
+        return toDetailResponse(file, false);
+    }
+
+    @Transactional
+    public void batchDelete(Long userId, List<Long> fileIds) {
+        batchDelete(toWorkspaceUser(userId), fileIds);
+    }
+
+    @Transactional
+    public void batchDelete(WorkspaceUserContext user, List<Long> fileIds) {
+        for (Long fileId : fileIds) {
+            delete(user, fileId);
+        }
+    }
+
+    @Transactional
+    public FavoriteFileResponse setFavorite(Long userId, Long fileId, boolean favorite) {
+        return setFavorite(toWorkspaceUser(userId), fileId, favorite);
+    }
+
+    @Transactional
+    public FavoriteFileResponse setFavorite(WorkspaceUserContext user, Long fileId, boolean favorite) {
+        StoredFile file = storedFileRepository.findByIdAndUserIdAndDeletedAtIsNull(fileId, user.userId())
+                .orElseThrow(() -> new BusinessException(ErrorCode.FILE_NOT_FOUND, "文件不存在"));
+        file.setFavorite(favorite);
+        storedFileRepository.save(file);
+        return new FavoriteFileResponse(file.getId(), file.isFavorite());
+    }
+
+    public List<FavoriteFileResponse> listFavorites(Long userId) {
+        return listFavorites(toWorkspaceUser(userId));
+    }
+
+    public List<FavoriteFileResponse> listFavorites(WorkspaceUserContext user) {
+        return storedFileRepository.findTop20ByUserIdAndFavoriteTrueAndDeletedAtIsNullOrderByUpdatedAtDesc(user.userId())
+                .stream()
+                .map(file -> new FavoriteFileResponse(file.getId(), true))
+                .toList();
+    }
+
+    public PageResponse<RecycleBinItemResponse> listRecycleBin(Long userId, int page, int size) {
+        return listRecycleBin(toWorkspaceUser(userId), page, size);
+    }
+
+    public PageResponse<RecycleBinItemResponse> listRecycleBin(WorkspaceUserContext user, int page, int size) {
+        Page<StoredFile> result = storedFileRepository.findRecycleBinRootsByUserId(user.userId(), PageRequest.of(page, size));
         List<RecycleBinItemResponse> items = result.getContent().stream().map(this::toRecycleBinResponse).toList();
         return new PageResponse<>(items, result.getTotalElements(), page, size);
     }
@@ -514,7 +443,17 @@ public class FileService implements WorkspaceBootstrapApi, WorkspaceArchiveApi {
     @Override
     @Transactional
     public void ensureDefaultDirectories(WorkspaceUserContext user) {
-        ensureDefaultDirectories(toWorkspaceUser(user));
+        ensureDefaultDirectoriesInternal(normalizeWorkspaceUser(user));
+    }
+
+    @Override
+    public boolean existsNode(WorkspaceUserContext user, String path, String filename) {
+        WorkspaceUserContext workspaceUser = normalizeWorkspaceUser(user);
+        return storedFileRepository.existsByUserIdAndPathAndFilename(
+                workspaceUser.userId(),
+                normalizeDirectoryPath(path),
+                normalizeLeafName(filename)
+        );
     }
 
     @Override
@@ -525,7 +464,7 @@ public class FileService implements WorkspaceBootstrapApi, WorkspaceArchiveApi {
                                                    String contentType,
                                                    long size,
                                                    byte[] content) {
-        return importExternalFile(toWorkspaceUser(user), path, filename, contentType, size, content);
+        return importExternalFileInternal(normalizeWorkspaceUser(user), path, filename, contentType, size, content);
     }
 
     @Override
@@ -535,7 +474,7 @@ public class FileService implements WorkspaceBootstrapApi, WorkspaceArchiveApi {
                                               List<WorkspaceExternalFileImport> files,
                                               WorkspaceExternalImportProgressListener progressListener) {
         importExternalFilesAtomically(
-                toWorkspaceUser(user),
+                normalizeWorkspaceUser(user),
                 directories,
                 files.stream()
                         .map(file -> new ExternalFileImport(file.path(), file.filename(), file.contentType(), file.content()))
@@ -587,18 +526,18 @@ public class FileService implements WorkspaceBootstrapApi, WorkspaceArchiveApi {
     }
 
     @Transactional
-    public void ensureDefaultDirectories(User user) {
+    private void ensureDefaultDirectoriesInternal(WorkspaceUserContext user) {
         boolean createdAny = false;
         for (String directoryName : DEFAULT_DIRECTORIES) {
-            if (workspaceNodeRulesService.existsNodeName(user.getId(), "/", directoryName)) {
+            if (workspaceNodeRulesService.existsNodeName(user.userId(), "/", directoryName)) {
                 continue;
             }
 
             String logicalPath = "/" + directoryName;
-            fileContentStorage.ensureDirectory(user.getId(), logicalPath);
+            fileContentStorage.ensureDirectory(user.userId(), logicalPath);
 
             StoredFile storedFile = new StoredFile();
-            storedFile.setUser(user);
+            storedFile.setUserId(user.userId());
             storedFile.setFilename(directoryName);
             storedFile.setPath("/");
             storedFile.setLegacyStorageName(directoryName);
@@ -614,8 +553,13 @@ public class FileService implements WorkspaceBootstrapApi, WorkspaceArchiveApi {
     }
 
     @Transactional
-    public void delete(User user, Long fileId) {
-        WorkspaceLifecycleResult result = workspaceLifecycleApi.recycle(user.getId(), fileId);
+    public void delete(Long userId, Long fileId) {
+        delete(toWorkspaceUser(userId), fileId);
+    }
+
+    @Transactional
+    public void delete(WorkspaceUserContext user, Long fileId) {
+        WorkspaceLifecycleResult result = workspaceLifecycleApi.recycle(user.userId(), fileId);
         if (!result.affectedPaths().isEmpty()) {
             touchDirectoryListings(user, result.affectedPaths().toArray(String[]::new));
         }
@@ -623,13 +567,18 @@ public class FileService implements WorkspaceBootstrapApi, WorkspaceArchiveApi {
     }
 
     @Transactional
-    public FileMetadataResponse restoreFromRecycleBin(User user, Long fileId) {
+    public FileMetadataResponse restoreFromRecycleBin(Long userId, Long fileId) {
+        return restoreFromRecycleBin(toWorkspaceUser(userId), fileId);
+    }
+
+    @Transactional
+    public FileMetadataResponse restoreFromRecycleBin(WorkspaceUserContext user, Long fileId) {
         return distributedLockGateway.executeWithLock(
                 "files:recycle-restore:" + fileId,
                 Duration.ofSeconds(120),
                 () -> {
                     WorkspaceLifecycleResult result = workspaceLifecycleApi.restore(
-                            user.getId(),
+                            user.userId(),
                             fileId,
                             additionalBytes -> fileUploadRulesService.ensureWithinStorageQuota(user, additionalBytes)
                     );
@@ -642,7 +591,6 @@ public class FileService implements WorkspaceBootstrapApi, WorkspaceArchiveApi {
         );
     }
 
-    @Scheduled(fixedDelay = 60 * 60 * 1000L)
     @Transactional
     public void pruneExpiredRecycleBinItems() {
         List<StoredFile> expiredItems = storedFileRepository.findByDeletedAtBefore(LocalDateTime.now().minusDays(RECYCLE_BIN_RETENTION_DAYS));
@@ -650,17 +598,25 @@ public class FileService implements WorkspaceBootstrapApi, WorkspaceArchiveApi {
             return;
         }
 
-        List<FileBlob> blobsToDelete = contentBlobLifecycleService.collectBlobsToDelete(
-                expiredItems.stream().filter(item -> !item.isDirectory()).toList()
+        List<ContentBlobReference> blobsToDelete = contentBlobLifecycleApi.collectBlobReferencesToDelete(
+                expiredItems.stream()
+                        .map(StoredFile::getBlobId)
+                        .filter(Objects::nonNull)
+                        .toList()
         );
         storedFileRepository.deleteAll(expiredItems);
-        contentBlobLifecycleService.deleteBlobs(blobsToDelete);
+        contentBlobLifecycleApi.deleteBlobReferences(blobsToDelete);
     }
 
     @Transactional
-    public FileMetadataResponse rename(User user, Long fileId, String nextFilename) {
+    public FileMetadataResponse rename(Long userId, Long fileId, String nextFilename) {
+        return rename(toWorkspaceUser(userId), fileId, nextFilename);
+    }
+
+    @Transactional
+    public FileMetadataResponse rename(WorkspaceUserContext user, Long fileId, String nextFilename) {
         String sanitizedFilename = normalizeLeafName(nextFilename);
-        WorkspaceMutationResult result = workspaceMutationApi.rename(user.getId(), fileId, sanitizedFilename);
+        WorkspaceMutationResult result = workspaceMutationApi.rename(user.userId(), fileId, sanitizedFilename);
         if (!result.affectedPaths().isEmpty()) {
             touchDirectoryListings(user, result.affectedPaths().toArray(String[]::new));
         }
@@ -671,9 +627,14 @@ public class FileService implements WorkspaceBootstrapApi, WorkspaceArchiveApi {
     }
 
     @Transactional
-    public FileMetadataResponse move(User user, Long fileId, String nextPath) {
+    public FileMetadataResponse move(Long userId, Long fileId, String nextPath) {
+        return move(toWorkspaceUser(userId), fileId, nextPath);
+    }
+
+    @Transactional
+    public FileMetadataResponse move(WorkspaceUserContext user, Long fileId, String nextPath) {
         String normalizedTargetPath = normalizeDirectoryPath(nextPath);
-        WorkspaceMutationResult result = workspaceMutationApi.move(user.getId(), fileId, normalizedTargetPath);
+        WorkspaceMutationResult result = workspaceMutationApi.move(user.userId(), fileId, normalizedTargetPath);
         if (!result.affectedPaths().isEmpty()) {
             touchDirectoryListings(user, result.affectedPaths().toArray(String[]::new));
         }
@@ -684,10 +645,15 @@ public class FileService implements WorkspaceBootstrapApi, WorkspaceArchiveApi {
     }
 
     @Transactional
-    public FileMetadataResponse copy(User user, Long fileId, String nextPath) {
+    public FileMetadataResponse copy(Long userId, Long fileId, String nextPath) {
+        return copy(toWorkspaceUser(userId), fileId, nextPath);
+    }
+
+    @Transactional
+    public FileMetadataResponse copy(WorkspaceUserContext user, Long fileId, String nextPath) {
         String normalizedTargetPath = normalizeDirectoryPath(nextPath);
         WorkspaceLifecycleResult result = workspaceLifecycleApi.copy(
-                user.getId(),
+                user.userId(),
                 fileId,
                 normalizedTargetPath,
                 additionalBytes -> fileUploadRulesService.ensureWithinStorageQuota(user, additionalBytes)
@@ -698,7 +664,11 @@ public class FileService implements WorkspaceBootstrapApi, WorkspaceArchiveApi {
         return result.file();
     }
 
-    public WorkspaceDownloadResult download(User user, Long fileId) {
+    public WorkspaceDownloadResult download(Long userId, Long fileId) {
+        return download(toWorkspaceUser(userId), fileId);
+    }
+
+    public WorkspaceDownloadResult download(WorkspaceUserContext user, Long fileId) {
         StoredFile storedFile = getOwnedActiveFile(user, fileId, "下载");
         if (storedFile.isDirectory()) {
             return downloadDirectory(user, storedFile);
@@ -712,7 +682,7 @@ public class FileService implements WorkspaceBootstrapApi, WorkspaceArchiveApi {
         if (fileContentStorage.supportsDirectDownload()) {
             recordWorkspaceDownloadTraffic(storedFile.getSize());
             return WorkspaceDownloadResult.redirect(fileContentStorage.createBlobDownloadUrl(
-                    contentBlobLifecycleService.getRequiredBlob(storedFile).getObjectKey(),
+                    getRequiredBlob(storedFile).objectKey(),
                     storedFile.getFilename()
             ));
         }
@@ -721,11 +691,15 @@ public class FileService implements WorkspaceBootstrapApi, WorkspaceArchiveApi {
         return WorkspaceDownloadResult.inline(
                 storedFile.getFilename(),
                 storedFile.getContentType() == null ? MediaType.APPLICATION_OCTET_STREAM_VALUE : storedFile.getContentType(),
-                fileContentStorage.readBlob(contentBlobLifecycleService.getRequiredBlob(storedFile).getObjectKey())
+                fileContentStorage.readBlob(getRequiredBlob(storedFile).objectKey())
         );
     }
 
-    public DownloadUrlResponse getDownloadUrl(User user, Long fileId) {
+    public DownloadUrlResponse getDownloadUrl(Long userId, Long fileId) {
+        return getDownloadUrl(toWorkspaceUser(userId), fileId);
+    }
+
+    public DownloadUrlResponse getDownloadUrl(WorkspaceUserContext user, Long fileId) {
         StoredFile storedFile = getOwnedActiveFile(user, fileId, "下载");
         if (storedFile.isDirectory()) {
             throw new BusinessException(ErrorCode.UNKNOWN, "目录不支持下载");
@@ -737,7 +711,7 @@ public class FileService implements WorkspaceBootstrapApi, WorkspaceArchiveApi {
 
         if (fileContentStorage.supportsDirectDownload()) {
             return new DownloadUrlResponse(fileContentStorage.createBlobDownloadUrl(
-                    contentBlobLifecycleService.getRequiredBlob(storedFile).getObjectKey(),
+                    getRequiredBlob(storedFile).objectKey(),
                     storedFile.getFilename()
             ));
         }
@@ -746,20 +720,20 @@ public class FileService implements WorkspaceBootstrapApi, WorkspaceArchiveApi {
     }
 
     @Transactional
-    public FileMetadataResponse importExternalFile(User recipient,
-                                                   String path,
-                                                   String filename,
-                                                   String contentType,
-                                                   long size,
-                                                   byte[] content) {
+    private FileMetadataResponse importExternalFileInternal(WorkspaceUserContext recipient,
+                                                            String path,
+                                                            String filename,
+                                                            String contentType,
+                                                            long size,
+                                                            byte[] content) {
         String normalizedPath = normalizeDirectoryPath(path);
         String normalizedFilename = normalizeLeafName(filename);
         fileUploadRulesService.validateUpload(recipient, normalizedPath, normalizedFilename, size);
         ensureDirectoryHierarchy(recipient, normalizedPath);
         String objectKey = createBlobObjectKey();
-        return contentBlobLifecycleService.executeAfterBlobStored(objectKey, () -> {
+        return contentBlobLifecycleApi.executeAfterBlobStored(objectKey, () -> {
             fileContentStorage.storeBlob(objectKey, contentType, content);
-            FileBlob blob = contentBlobLifecycleService.createAndSaveBlob(objectKey, contentType, size);
+            ContentBlobReference blob = contentBlobRegistrationApi.registerStoredBlob(objectKey, contentType, size);
 
             return saveFileMetadata(
                     recipient,
@@ -773,14 +747,14 @@ public class FileService implements WorkspaceBootstrapApi, WorkspaceArchiveApi {
     }
 
     @Transactional
-    public void importExternalFilesAtomically(User recipient,
+    public void importExternalFilesAtomically(WorkspaceUserContext recipient,
                                               List<String> directories,
                                               List<ExternalFileImport> files) {
         importExternalFilesAtomically(recipient, directories, files, null);
     }
 
     @Transactional
-    public void importExternalFilesAtomically(User recipient,
+    public void importExternalFilesAtomically(WorkspaceUserContext recipient,
                                               List<String> directories,
                                               List<ExternalFileImport> files,
                                               ExternalImportProgressListener progressListener) {
@@ -807,12 +781,12 @@ public class FileService implements WorkspaceBootstrapApi, WorkspaceArchiveApi {
                         processedDirectoryCount, totalDirectoryCount);
             }
         } catch (RuntimeException ex) {
-            contentBlobLifecycleService.cleanupWrittenBlobs(writtenBlobObjectKeys, ex);
+            contentBlobLifecycleApi.cleanupWrittenBlobs(writtenBlobObjectKeys, ex);
             throw ex;
         }
     }
 
-    private WorkspaceDownloadResult downloadDirectory(User user, StoredFile directory) {
+    private WorkspaceDownloadResult downloadDirectory(WorkspaceUserContext user, StoredFile directory) {
         String archiveName = directory.getFilename() + ".zip";
         byte[] archiveBytes = buildArchiveBytes(directory);
         recordWorkspaceDownloadTraffic((long) archiveBytes.length);
@@ -849,7 +823,9 @@ public class FileService implements WorkspaceBootstrapApi, WorkspaceArchiveApi {
     }
 
     public ZipCompatibleArchive readZipCompatibleArchive(StoredFile source) {
-        byte[] archiveBytes = fileContentStorage.readBlob(contentBlobLifecycleService.getRequiredBlob(source).getObjectKey());
+        byte[] archiveBytes = fileContentStorage.readBlob(
+                getRequiredBlob(source).objectKey()
+        );
         try (ZipInputStream zipInputStream = new ZipInputStream(
                 new ByteArrayInputStream(archiveBytes),
                 StandardCharsets.UTF_8)) {
@@ -900,11 +876,11 @@ public class FileService implements WorkspaceBootstrapApi, WorkspaceArchiveApi {
     }
 
     private String buildPublicPackageDownloadUrl(StoredFile storedFile) {
-        FileBlob blob = contentBlobLifecycleService.getRequiredBlob(storedFile);
+        ContentBlobReference blob = getRequiredBlob(storedFile);
         String base = packageDownloadBaseUrl.endsWith("/")
                 ? packageDownloadBaseUrl.substring(0, packageDownloadBaseUrl.length() - 1)
                 : packageDownloadBaseUrl;
-        String path = "/" + trimLeadingSlash(blob.getObjectKey());
+        String path = "/" + trimLeadingSlash(blob.objectKey());
         if (base.endsWith("/_dl")) {
             path = "/_dl" + path;
         }
@@ -912,7 +888,7 @@ public class FileService implements WorkspaceBootstrapApi, WorkspaceArchiveApi {
         String signature = buildSecureLinkSignature(path, expires);
         return base
                 + "/"
-                + trimLeadingSlash(blob.getObjectKey())
+                + trimLeadingSlash(blob.objectKey())
                 + "?md5="
                 + encodeQueryParam(signature)
                 + "&expires="
@@ -994,26 +970,26 @@ public class FileService implements WorkspaceBootstrapApi, WorkspaceArchiveApi {
         return URLEncoder.encode(value, StandardCharsets.UTF_8).replace("+", "%20");
     }
 
-    private FileMetadataResponse saveFileMetadata(User user,
+    private FileMetadataResponse saveFileMetadata(WorkspaceUserContext user,
                                                   String normalizedPath,
                                                   String filename,
                                                   String contentType,
                                                   long size,
-                                                  FileBlob blob) {
+                                                  ContentBlobReference blob) {
         RegisteredContentFile savedFile = contentRegistrationApi.registerBlob(
                 new ContentRegistrationCommand(
-                        user.getId(),
+                        user.userId(),
                         normalizedPath,
                         filename,
                         contentType,
                         size,
-                        new ContentBlobReference(blob.getId(), blob.getObjectKey(), blob.getContentType(), blob.getSize())
+                        blob
                 )
         );
         return finalizeUploadedFile(user, normalizedPath, savedFile);
     }
 
-    private FileMetadataResponse finalizeUploadedFile(User user,
+    private FileMetadataResponse finalizeUploadedFile(WorkspaceUserContext user,
                                                       String normalizedPath,
                                                       RegisteredContentFile savedFile) {
         touchDirectoryListings(user, normalizedPath);
@@ -1022,11 +998,11 @@ public class FileService implements WorkspaceBootstrapApi, WorkspaceArchiveApi {
         return toResponse(savedFile);
     }
 
-    private void publishMediaMetadataTrigger(User user, RegisteredContentFile storedFile) {
+    private void publishMediaMetadataTrigger(WorkspaceUserContext user, RegisteredContentFile storedFile) {
         if (backgroundTaskLifecycleApi == null) {
             return;
         }
-        backgroundTaskLifecycleApi.createQueuedAutoMediaMetadataTask(user.getId(), storedFile.id(), null);
+        backgroundTaskLifecycleApi.createQueuedAutoMediaMetadataTask(user.userId(), storedFile.id(), null);
     }
 
     private RecycleBinItemResponse toRecycleBinResponse(StoredFile storedFile) {
@@ -1048,16 +1024,31 @@ public class FileService implements WorkspaceBootstrapApi, WorkspaceArchiveApi {
         );
     }
 
-    private StoredFile getOwnedFile(User user, Long fileId, String action) {
+    private FileDetailResponse toDetailResponse(StoredFile file, boolean shared) {
+        return new FileDetailResponse(
+                file.getId(),
+                file.getFilename(),
+                file.getPath(),
+                file.getSize(),
+                file.getContentType(),
+                file.isDirectory(),
+                file.isFavorite(),
+                shared,
+                file.getCreatedAt(),
+                file.getUpdatedAt()
+        );
+    }
+
+    private StoredFile getOwnedFile(WorkspaceUserContext user, Long fileId, String action) {
         StoredFile storedFile = storedFileRepository.findDetailedById(fileId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.FILE_NOT_FOUND, "文件不存在"));
-        if (!storedFile.getUser().getId().equals(user.getId())) {
+        if (!user.userId().equals(storedFile.getUserId())) {
             throw new BusinessException(ErrorCode.PERMISSION_DENIED, "没有权限" + action + "该文件");
         }
         return storedFile;
     }
 
-    private StoredFile getOwnedActiveFile(User user, Long fileId, String action) {
+    private StoredFile getOwnedActiveFile(WorkspaceUserContext user, Long fileId, String action) {
         StoredFile storedFile = getOwnedFile(user, fileId, action);
         if (storedFile.getDeletedAt() != null) {
             throw new BusinessException(ErrorCode.FILE_NOT_FOUND, "文件不存在");
@@ -1065,105 +1056,19 @@ public class FileService implements WorkspaceBootstrapApi, WorkspaceArchiveApi {
         return storedFile;
     }
 
-    private void validateUpload(User user, String normalizedPath, String filename, long size) {
-        if (fileUploadRulesService != null) {
-            fileUploadRulesService.validateUpload(user, normalizedPath, filename, size);
-            return;
-        }
-        long effectiveMaxUploadSize = Math.min(maxFileSize, user.getMaxUploadSizeBytes());
-        long policyMaxSizeBytes = 0L;
-        StoragePolicyCapabilities capabilities = null;
-        if (storagePolicyQuery != null) {
-            var defaultPolicySnapshot = storagePolicyQuery.readDefaultPolicySnapshot();
-            policyMaxSizeBytes = defaultPolicySnapshot.policyMaxSizeBytes();
-            capabilities = defaultPolicySnapshot.capabilities();
-        }
-        if (policyMaxSizeBytes > 0) {
-            effectiveMaxUploadSize = Math.min(effectiveMaxUploadSize, policyMaxSizeBytes);
-        }
-        if (capabilities != null && capabilities.maxObjectSize() > 0) {
-            effectiveMaxUploadSize = Math.min(effectiveMaxUploadSize, capabilities.maxObjectSize());
-        }
-        if (size > effectiveMaxUploadSize) {
-            throw new BusinessException(ErrorCode.UNKNOWN, "文件大小超出限制");
-        }
-        workspaceNodeRulesService.ensureNodeNameAvailable(user.getId(), normalizedPath, filename, "同目录下文件已存在");
-        ensureWithinStorageQuota(user, size);
+    private void validateUpload(WorkspaceUserContext user, String normalizedPath, String filename, long size) {
+        fileUploadRulesService.validateUpload(user, normalizedPath, filename, size);
     }
 
-    private List<String> normalizeExternalImportDirectories(List<String> directories) {
-        if (directories == null || directories.isEmpty()) {
-            return List.of();
-        }
-        return directories.stream()
-                .map(this::normalizeDirectoryPath)
-                .distinct()
-                .sorted(Comparator.comparingInt(String::length).thenComparing(String::compareTo))
-                .toList();
+    private void ensureWithinStorageQuota(WorkspaceUserContext user, long additionalBytes) {
+        fileUploadRulesService.ensureWithinStorageQuota(user, additionalBytes);
     }
 
-    private List<ExternalFileImport> normalizeExternalImportFiles(List<ExternalFileImport> files) {
-        if (files == null || files.isEmpty()) {
-            return List.of();
-        }
-        return files.stream()
-                .map(file -> new ExternalFileImport(
-                        normalizeDirectoryPath(file.path()),
-                        normalizeLeafName(file.filename()),
-                        StringUtils.hasText(file.contentType()) ? file.contentType().trim() : "application/octet-stream",
-                        file.content() == null ? new byte[0] : file.content()
-                ))
-                .toList();
+    private void ensureDirectoryHierarchy(WorkspaceUserContext user, String normalizedPath) {
+        workspaceNodeRulesService.ensureDirectoryHierarchy(user.userId(), normalizedPath);
     }
 
-    private void validateExternalImportBatch(User recipient,
-                                             List<String> directories,
-                                             List<ExternalFileImport> files) {
-        fileUploadRulesService.ensureWithinStorageQuota(recipient, files.stream().mapToLong(ExternalFileImport::size).sum());
-
-        Set<String> plannedTargets = new LinkedHashSet<>();
-        for (String directory : directories) {
-            if ("/".equals(directory)) {
-                continue;
-            }
-            if (!plannedTargets.add(directory)) {
-                continue;
-            }
-            String parentPath = extractParentPath(directory);
-            String directoryName = extractLeafName(directory);
-            workspaceNodeRulesService.ensureNodeNameAvailable(recipient.getId(), parentPath, directoryName, "解压目标已存在");
-        }
-
-        for (ExternalFileImport file : files) {
-            String logicalPath = buildTargetLogicalPath(file.path(), file.filename());
-            if (plannedTargets.contains(logicalPath) || !plannedTargets.add(logicalPath)) {
-                throw new BusinessException(ErrorCode.UNKNOWN, "解压目标已存在");
-            }
-            workspaceNodeRulesService.ensureNodeNameAvailable(recipient.getId(), file.path(), file.filename(), "同目录下文件已存在");
-        }
-    }
-
-    private void ensureWithinStorageQuota(User user, long additionalBytes) {
-        if (fileUploadRulesService != null) {
-            fileUploadRulesService.ensureWithinStorageQuota(user, additionalBytes);
-            return;
-        }
-        if (additionalBytes <= 0) {
-            return;
-        }
-
-        long usedBytes = storedFileRepository.sumFileSizeByUserId(user.getId());
-        long quotaBytes = user.getStorageQuotaBytes();
-        if (usedBytes > Long.MAX_VALUE - additionalBytes || usedBytes + additionalBytes > quotaBytes) {
-            throw new BusinessException(ErrorCode.UNKNOWN, "存储空间不足");
-        }
-    }
-
-    private void ensureDirectoryHierarchy(User user, String normalizedPath) {
-        workspaceNodeRulesService.ensureDirectoryHierarchy(user, normalizedPath);
-    }
-
-    private void storeExternalImportFile(User recipient,
+    private void storeExternalImportFile(WorkspaceUserContext recipient,
                                          ExternalFileImport file,
                                          List<String> writtenBlobObjectKeys) {
         fileUploadRulesService.validateUpload(recipient, file.path(), file.filename(), file.size());
@@ -1171,7 +1076,7 @@ public class FileService implements WorkspaceBootstrapApi, WorkspaceArchiveApi {
         String objectKey = createBlobObjectKey();
         writtenBlobObjectKeys.add(objectKey);
         fileContentStorage.storeBlob(objectKey, file.contentType(), file.content());
-        FileBlob blob = contentBlobLifecycleService.createAndSaveBlob(objectKey, file.contentType(), file.size());
+        ContentBlobReference blob = contentBlobRegistrationApi.registerStoredBlob(objectKey, file.contentType(), file.size());
         saveFileMetadata(
                 recipient,
                 file.path(),
@@ -1239,19 +1144,24 @@ public class FileService implements WorkspaceBootstrapApi, WorkspaceArchiveApi {
                 : path + "/" + filename;
     }
 
-    private User toWorkspaceUser(WorkspaceUserContext user) {
-        User workspaceUser = toWorkspaceUser(user.userId());
-        workspaceUser.setStorageQuotaBytes(user.storageQuotaBytes() == null ? 0L : user.storageQuotaBytes());
-        workspaceUser.setMaxUploadSizeBytes(user.maxUploadSizeBytes() == null ? maxFileSize : user.maxUploadSizeBytes());
-        return workspaceUser;
+    private WorkspaceUserContext normalizeWorkspaceUser(WorkspaceUserContext user) {
+        return new WorkspaceUserContext(
+                user.userId(),
+                user.storageQuotaBytes() == null ? 0L : user.storageQuotaBytes(),
+                user.maxUploadSizeBytes() == null ? maxFileSize : user.maxUploadSizeBytes()
+        );
     }
 
-    private User toWorkspaceUser(Long userId) {
-        User workspaceUser = new User();
-        workspaceUser.setId(userId);
-        workspaceUser.setStorageQuotaBytes(Long.MAX_VALUE);
-        workspaceUser.setMaxUploadSizeBytes(maxFileSize);
-        return workspaceUser;
+    private WorkspaceUserContext toWorkspaceUser(IdentityAuthenticatedUser user) {
+        return new WorkspaceUserContext(
+                user.id(),
+                user.storageQuotaBytes(),
+                user.maxUploadSizeBytes()
+        );
+    }
+
+    private WorkspaceUserContext toWorkspaceUser(Long userId) {
+        return new WorkspaceUserContext(userId, Long.MAX_VALUE, maxFileSize);
     }
 
     private String buildTargetLogicalPath(String normalizedTargetPath, String filename) {
@@ -1263,7 +1173,7 @@ public class FileService implements WorkspaceBootstrapApi, WorkspaceArchiveApi {
                                               StoredFile directory,
                                               ArchiveBuildProgressState progressState) throws IOException {
         String logicalPath = buildLogicalPath(directory);
-        List<StoredFile> descendants = storedFileRepository.findByUserIdAndPathEqualsOrDescendant(directory.getUser().getId(), logicalPath)
+        List<StoredFile> descendants = storedFileRepository.findByUserIdAndPathEqualsOrDescendant(directory.getUserId(), logicalPath)
                 .stream()
                 .sorted(Comparator.comparing(StoredFile::getPath).thenComparing(StoredFile::getFilename))
                 .toList();
@@ -1286,7 +1196,7 @@ public class FileService implements WorkspaceBootstrapApi, WorkspaceArchiveApi {
                                        ArchiveBuildProgressState progressState) throws IOException {
         ensureParentDirectoryEntries(zipOutputStream, createdEntries, entryName, progressState);
         writeFileEntry(zipOutputStream, createdEntries, entryName, progressState,
-                fileContentStorage.readBlob(contentBlobLifecycleService.getRequiredBlob(file).getObjectKey()));
+                fileContentStorage.readBlob(getRequiredBlob(file).objectKey()));
     }
 
     private String buildZipEntryName(String rootDirectoryName, String rootLogicalPath, StoredFile storedFile) {
@@ -1370,7 +1280,7 @@ public class FileService implements WorkspaceBootstrapApi, WorkspaceArchiveApi {
             return new ArchiveSourceSummary(1, 0);
         }
         String logicalPath = buildLogicalPath(source);
-        List<StoredFile> descendants = storedFileRepository.findByUserIdAndPathEqualsOrDescendant(source.getUser().getId(), logicalPath);
+        List<StoredFile> descendants = storedFileRepository.findByUserIdAndPathEqualsOrDescendant(source.getUserId(), logicalPath);
         int directoryCount = 1 + (int) descendants.stream().filter(StoredFile::isDirectory).count();
         int fileCount = (int) descendants.stream().filter(file -> !file.isDirectory()).count();
         return new ArchiveSourceSummary(fileCount, directoryCount);
@@ -1459,12 +1369,12 @@ public class FileService implements WorkspaceBootstrapApi, WorkspaceArchiveApi {
         }
     }
 
-    private void recordFileEvent(User user,
+    private void recordFileEvent(WorkspaceUserContext user,
                                  FileEventType eventType,
                                  StoredFile storedFile,
                                  String fromPath,
                                  String toPath) {
-        if (fileEventApi == null || user == null || user.getId() == null || storedFile == null || storedFile.getId() == null) {
+        if (fileEventApi == null || user == null || user.userId() == null || storedFile == null || storedFile.getId() == null) {
             return;
         }
 
@@ -1483,7 +1393,7 @@ public class FileService implements WorkspaceBootstrapApi, WorkspaceArchiveApi {
             payload.put("toPath", toPath);
         }
         fileEventApi.record(new FileEventRecordCommand(
-                user.getId(),
+                user.userId(),
                 eventType,
                 storedFile.getId(),
                 fromPath,
@@ -1493,12 +1403,12 @@ public class FileService implements WorkspaceBootstrapApi, WorkspaceArchiveApi {
         ));
     }
 
-    private void recordFileEvent(User user,
+    private void recordFileEvent(WorkspaceUserContext user,
                                  FileEventType eventType,
                                  FileMetadataResponse storedFile,
                                  String fromPath,
                                  String toPath) {
-        if (fileEventApi == null || user == null || user.getId() == null || storedFile == null || storedFile.id() == null) {
+        if (fileEventApi == null || user == null || user.userId() == null || storedFile == null || storedFile.id() == null) {
             return;
         }
 
@@ -1517,7 +1427,7 @@ public class FileService implements WorkspaceBootstrapApi, WorkspaceArchiveApi {
             payload.put("toPath", toPath);
         }
         fileEventApi.record(new FileEventRecordCommand(
-                user.getId(),
+                user.userId(),
                 eventType,
                 storedFile.id(),
                 fromPath,
@@ -1527,12 +1437,12 @@ public class FileService implements WorkspaceBootstrapApi, WorkspaceArchiveApi {
         ));
     }
 
-    private void recordFileEvent(User user,
+    private void recordFileEvent(WorkspaceUserContext user,
                                  FileEventType eventType,
                                  RegisteredContentFile storedFile,
                                  String fromPath,
                                  String toPath) {
-        if (fileEventApi == null || user == null || user.getId() == null || storedFile == null || storedFile.id() == null) {
+        if (fileEventApi == null || user == null || user.userId() == null || storedFile == null || storedFile.id() == null) {
             return;
         }
 
@@ -1551,7 +1461,7 @@ public class FileService implements WorkspaceBootstrapApi, WorkspaceArchiveApi {
             payload.put("toPath", toPath);
         }
         fileEventApi.record(new FileEventRecordCommand(
-                user.getId(),
+                user.userId(),
                 eventType,
                 storedFile.id(),
                 fromPath,
@@ -1561,8 +1471,8 @@ public class FileService implements WorkspaceBootstrapApi, WorkspaceArchiveApi {
         ));
     }
 
-    private void touchDirectoryListings(User user, String... paths) {
-        if (user == null || user.getId() == null || paths == null || paths.length == 0) {
+    private void touchDirectoryListings(WorkspaceUserContext user, String... paths) {
+        if (user == null || user.userId() == null || paths == null || paths.length == 0) {
             return;
         }
 
@@ -1576,7 +1486,7 @@ public class FileService implements WorkspaceBootstrapApi, WorkspaceArchiveApi {
             return;
         }
 
-        fileListDirectoryCacheService.touchDirectories(user.getId(), affectedPaths);
+        fileListDirectoryCacheService.touchDirectories(user.userId(), affectedPaths);
     }
 
     private String normalizeLeafName(String filename) {
@@ -1595,12 +1505,12 @@ public class FileService implements WorkspaceBootstrapApi, WorkspaceArchiveApi {
         return cleaned;
     }
 
-    private FileMetadataResponse importReferencedBlob(User recipient,
+    private FileMetadataResponse importReferencedBlob(WorkspaceUserContext recipient,
                                                       String path,
                                                       String filename,
                                                       String contentType,
                                                       long size,
-                                                      FileBlob blob) {
+                                                      ContentBlobReference blob) {
         String normalizedPath = normalizeDirectoryPath(path);
         String normalizedFilename = normalizeLeafName(filename);
         fileUploadRulesService.validateUpload(recipient, normalizedPath, normalizedFilename, size);
@@ -1615,11 +1525,8 @@ public class FileService implements WorkspaceBootstrapApi, WorkspaceArchiveApi {
         );
     }
 
-    private FileBlob getRequiredBlob(StoredFile storedFile) {
-        if (storedFile.isDirectory() || storedFile.getBlob() == null) {
-            throw new BusinessException(ErrorCode.FILE_NOT_FOUND, "文件内容不存在");
-        }
-        return storedFile.getBlob();
+    private ContentBlobReference getRequiredBlob(StoredFile storedFile) {
+        return contentBlobLifecycleApi.requireBlobReference(storedFile.getBlobId(), storedFile.isDirectory());
     }
 
     public static record ZipCompatibleArchive(List<ZipCompatibleArchiveEntry> entries, String commonRootDirectoryName) {

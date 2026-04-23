@@ -1,6 +1,6 @@
 package com.yoyuzh.identity.access.internal.application;
 
-import com.yoyuzh.ops.admin.internal.application.AdminRuntimeSettingsService;
+import com.yoyuzh.ops.admin.api.AdminRuntimeSettingsApi;
 import com.yoyuzh.identity.access.internal.infra.UserRepository;
 import com.yoyuzh.identity.access.internal.domain.UserRole;
 import com.yoyuzh.shared.kernel.BusinessException;
@@ -18,7 +18,7 @@ import java.util.Set;
 public class RuntimeAdminAccessContinuityGuard implements AdminAccessContinuityGuard {
 
     private final UserRepository userRepository;
-    private final AdminRuntimeSettingsService adminRuntimeSettingsService;
+    private final AdminRuntimeSettingsApi adminRuntimeSettingsApi;
     private final ManagementRolePolicy managementRolePolicy = new ManagementRolePolicy();
 
     @Override
@@ -48,7 +48,7 @@ public class RuntimeAdminAccessContinuityGuard implements AdminAccessContinuityG
 
     private Set<UserRole> resolveAdminCapableRoles() {
         Set<String> normalizedRoleNames = managementRolePolicy.normalizeConfiguredRoles(
-                adminRuntimeSettingsService.snapshot().registrationManagementRoles());
+                adminRuntimeSettingsApi.registrationManagementRoles());
         EnumSet<UserRole> roles = EnumSet.noneOf(UserRole.class);
         for (String normalizedRoleName : normalizedRoleNames) {
             try {

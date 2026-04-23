@@ -446,7 +446,7 @@
 
 控制器：
 
-- `backend/src/main/java/com/yoyuzh/transfer/TransferController.java`
+- `backend/src/main/java/com/yoyuzh/transfer/internal/web/TransferController.java`
 
 ### 7.1 会话创建与查询
 

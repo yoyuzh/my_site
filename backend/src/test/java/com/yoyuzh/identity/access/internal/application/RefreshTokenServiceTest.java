@@ -33,23 +33,23 @@ class RefreshTokenServiceTest {
     @Test
     void shouldDelegateRefreshTokenIssuance() {
         User user = createUser(1L, "alice");
-        when(identityRefreshTokenManager.issue(user, IdentityClientType.MOBILE)).thenReturn("refresh-token");
+        when(identityRefreshTokenManager.issue(user.getId(), IdentityClientType.MOBILE)).thenReturn("refresh-token");
 
         String issued = refreshTokenService.issueRefreshToken(user, IdentityClientType.MOBILE);
 
         assertThat(issued).isEqualTo("refresh-token");
-        verify(identityRefreshTokenManager).issue(user, IdentityClientType.MOBILE);
+        verify(identityRefreshTokenManager).issue(user.getId(), IdentityClientType.MOBILE);
     }
 
     @Test
     void shouldDelegateRefreshTokenRotation() {
         User user = createUser(2L, "bob");
         when(identityRefreshTokenManager.rotate("old-refresh"))
-                .thenReturn(new RotatedIdentityRefreshToken(user, "new-refresh", IdentityClientType.DESKTOP));
+                .thenReturn(new RotatedIdentityRefreshToken(user.getId(), "new-refresh", IdentityClientType.DESKTOP));
 
         RefreshTokenService.RotatedRefreshToken rotated = refreshTokenService.rotateRefreshToken("old-refresh");
 
-        assertThat(rotated.user()).isSameAs(user);
+        assertThat(rotated.userId()).isEqualTo(user.getId());
         assertThat(rotated.refreshToken()).isEqualTo("new-refresh");
         assertThat(rotated.clientType()).isEqualTo(IdentityClientType.DESKTOP);
         verify(identityRefreshTokenManager).rotate("old-refresh");

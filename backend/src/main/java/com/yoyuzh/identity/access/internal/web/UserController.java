@@ -33,6 +33,18 @@ public class UserController {
         return ApiResponse.success(authService.getProfile(userDetails.getUsername()));
     }
 
+    @Operation(summary = "获取当前用户容量")
+    @GetMapping("/capacity")
+    public ApiResponse<?> capacity(@AuthenticationPrincipal UserDetails userDetails) {
+        return ApiResponse.success(authService.getCapacity(userDetails.getUsername()));
+    }
+
+    @Operation(summary = "获取当前用户设置")
+    @GetMapping("/settings")
+    public ApiResponse<?> settings(@AuthenticationPrincipal UserDetails userDetails) {
+        return ApiResponse.success(authService.getSettings(userDetails.getUsername()));
+    }
+
     @Operation(summary = "更新用户资料")
     @PutMapping("/profile")
     public ApiResponse<?> updateProfile(@AuthenticationPrincipal UserDetails userDetails,

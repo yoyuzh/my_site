@@ -2,7 +2,7 @@ package com.yoyuzh.files.upload.internal.web;
 
 import com.yoyuzh.boot.web.v2.ApiV2Response;
 import com.yoyuzh.boot.security.CustomUserDetailsService;
-import com.yoyuzh.identity.access.internal.domain.User;
+import com.yoyuzh.identity.access.api.IdentityAuthenticatedUser;
 import com.yoyuzh.files.upload.UploadSession;
 import com.yoyuzh.files.upload.UploadSessionRuntimeState;
 import com.yoyuzh.files.upload.UploadSessionCreateCommand;
@@ -36,7 +36,7 @@ public class UploadSessionV2Controller {
     @PostMapping
     public ApiV2Response<UploadSessionV2Response> createSession(@AuthenticationPrincipal UserDetails userDetails,
                                                                 @Valid @RequestBody CreateUploadSessionV2Request request) {
-        User user = userDetailsService.loadDomainUser(userDetails.getUsername());
+        IdentityAuthenticatedUser user = userDetailsService.loadAuthenticatedUser(userDetails.getUsername());
         UploadSession session = uploadSessionService.createSession(user, new UploadSessionCreateCommand(
                 request.path(),
                 request.filename(),
@@ -49,14 +49,14 @@ public class UploadSessionV2Controller {
     @GetMapping("/{sessionId}")
     public ApiV2Response<UploadSessionV2Response> getSession(@AuthenticationPrincipal UserDetails userDetails,
                                                              @PathVariable String sessionId) {
-        User user = userDetailsService.loadDomainUser(userDetails.getUsername());
+        Long user = userDetailsService.loadUserId(userDetails.getUsername());
         return ApiV2Response.success(toResponse(uploadSessionService.getOwnedSession(user, sessionId)));
     }
 
     @GetMapping("/{sessionId}/prepare")
     public ApiV2Response<PreparedUploadV2Response> prepareUpload(@AuthenticationPrincipal UserDetails userDetails,
                                                                  @PathVariable String sessionId) {
-        User user = userDetailsService.loadDomainUser(userDetails.getUsername());
+        Long user = userDetailsService.loadUserId(userDetails.getUsername());
         PreparedUpload preparedUpload = uploadSessionService.prepareOwnedUpload(user, sessionId);
         return ApiV2Response.success(new PreparedUploadV2Response(
                 preparedUpload.direct(),
@@ -70,14 +70,14 @@ public class UploadSessionV2Controller {
     @DeleteMapping("/{sessionId}")
     public ApiV2Response<UploadSessionV2Response> cancelSession(@AuthenticationPrincipal UserDetails userDetails,
                                                                 @PathVariable String sessionId) {
-        User user = userDetailsService.loadDomainUser(userDetails.getUsername());
+        Long user = userDetailsService.loadUserId(userDetails.getUsername());
         return ApiV2Response.success(toResponse(uploadSessionService.cancelOwnedSession(user, sessionId)));
     }
 
     @PostMapping("/{sessionId}/complete")
     public ApiV2Response<UploadSessionV2Response> completeSession(@AuthenticationPrincipal UserDetails userDetails,
                                                                   @PathVariable String sessionId) {
-        User user = userDetailsService.loadDomainUser(userDetails.getUsername());
+        Long user = userDetailsService.loadUserId(userDetails.getUsername());
         return ApiV2Response.success(toResponse(uploadSessionService.completeOwnedSession(user, sessionId)));
     }
 
@@ -86,7 +86,7 @@ public class UploadSessionV2Controller {
                                                              @PathVariable String sessionId,
                                                              @PathVariable int partIndex,
                                                              @Valid @RequestBody MarkUploadSessionPartV2Request request) {
-        User user = userDetailsService.loadDomainUser(userDetails.getUsername());
+        Long user = userDetailsService.loadUserId(userDetails.getUsername());
         UploadSession session = uploadSessionService.recordUploadedPart(
                 user,
                 sessionId,
@@ -100,7 +100,7 @@ public class UploadSessionV2Controller {
     public ApiV2Response<UploadSessionV2Response> uploadContent(@AuthenticationPrincipal UserDetails userDetails,
                                                                 @PathVariable String sessionId,
                                                                 @RequestPart("file") MultipartFile file) {
-        User user = userDetailsService.loadDomainUser(userDetails.getUsername());
+        Long user = userDetailsService.loadUserId(userDetails.getUsername());
         return ApiV2Response.success(toResponse(uploadSessionService.uploadOwnedContent(user, sessionId, file)));
     }
 
@@ -108,7 +108,7 @@ public class UploadSessionV2Controller {
     public ApiV2Response<PreparedUploadV2Response> preparePartUpload(@AuthenticationPrincipal UserDetails userDetails,
                                                                      @PathVariable String sessionId,
                                                                      @PathVariable int partIndex) {
-        User user = userDetailsService.loadDomainUser(userDetails.getUsername());
+        Long user = userDetailsService.loadUserId(userDetails.getUsername());
         PreparedUpload preparedUpload = uploadSessionService.prepareOwnedPartUpload(user, sessionId, partIndex);
         return ApiV2Response.success(new PreparedUploadV2Response(
                 preparedUpload.direct(),

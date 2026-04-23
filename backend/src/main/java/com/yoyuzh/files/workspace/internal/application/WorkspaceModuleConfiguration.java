@@ -1,5 +1,6 @@
 package com.yoyuzh.files.workspace.internal.application;
 
+import com.yoyuzh.files.content.api.ContentBlobQueryApi;
 import com.yoyuzh.files.content.api.ContentDuplicationApi;
 import com.yoyuzh.files.storage.FileContentStorage;
 import com.yoyuzh.files.workspace.api.WorkspaceDirectoryApi;
@@ -7,9 +8,9 @@ import com.yoyuzh.files.workspace.api.WorkspaceDownloadOptions;
 import com.yoyuzh.files.workspace.api.WorkspaceLifecycleApi;
 import com.yoyuzh.files.workspace.api.WorkspaceMutationApi;
 import com.yoyuzh.files.workspace.internal.infra.StoredFileRepository;
+import com.yoyuzh.platform.storage.api.StorageRuntimeProperties;
 import com.yoyuzh.platform.storage.api.StoragePolicyQuery;
 import com.yoyuzh.platform.storage.api.UploadConstraintPolicy;
-import com.yoyuzh.platform.storage.internal.infra.FileStorageProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
@@ -37,11 +38,13 @@ public class WorkspaceModuleConfiguration {
     @Bean
     WorkspaceLifecycleApi workspaceLifecycleApi(StoredFileRepository storedFileRepository,
                                                 ContentDuplicationApi contentDuplicationApi,
+                                                ContentBlobQueryApi contentBlobQueryApi,
                                                 RuntimeWorkspacePathPolicy workspacePathPolicy,
                                                 WorkspaceNodeRulesService workspaceNodeRulesService) {
         return new RuntimeWorkspaceLifecycleApi(
                 storedFileRepository,
                 contentDuplicationApi,
+                contentBlobQueryApi,
                 workspacePathPolicy,
                 workspaceNodeRulesService
         );
@@ -52,13 +55,13 @@ public class WorkspaceModuleConfiguration {
                                                   StoragePolicyQuery storagePolicyQuery,
                                                   UploadConstraintPolicy uploadConstraintPolicy,
                                                   WorkspaceNodeRulesService workspaceNodeRulesService,
-                                                  FileStorageProperties fileStorageProperties) {
+                                                  StorageRuntimeProperties storageRuntimeProperties) {
         return new FileUploadRulesService(
                 storedFileRepository,
                 storagePolicyQuery,
                 uploadConstraintPolicy,
                 workspaceNodeRulesService,
-                fileStorageProperties.getMaxFileSize()
+                storageRuntimeProperties.getMaxFileSize()
         );
     }
 
@@ -69,11 +72,11 @@ public class WorkspaceModuleConfiguration {
     }
 
     @Bean
-    WorkspaceDownloadOptions workspaceDownloadOptions(FileStorageProperties fileStorageProperties) {
+    WorkspaceDownloadOptions workspaceDownloadOptions(StorageRuntimeProperties storageRuntimeProperties) {
         return new WorkspaceDownloadOptions(
-                fileStorageProperties.getS3().getPackageDownloadBaseUrl(),
-                fileStorageProperties.getS3().getPackageDownloadSecret(),
-                Math.max(1, fileStorageProperties.getS3().getPackageDownloadTtlSeconds())
+                storageRuntimeProperties.getS3().getPackageDownloadBaseUrl(),
+                storageRuntimeProperties.getS3().getPackageDownloadSecret(),
+                Math.max(1, storageRuntimeProperties.getS3().getPackageDownloadTtlSeconds())
         );
     }
 }

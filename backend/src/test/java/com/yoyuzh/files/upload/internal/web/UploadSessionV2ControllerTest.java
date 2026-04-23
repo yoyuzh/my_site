@@ -1,7 +1,8 @@
 package com.yoyuzh.files.upload.internal.web;
 
 import com.yoyuzh.boot.security.CustomUserDetailsService;
-import com.yoyuzh.identity.access.internal.domain.User;
+import com.yoyuzh.identity.access.api.IdentityAuthenticatedUser;
+import com.yoyuzh.identity.access.api.IdentityRoleName;
 import com.yoyuzh.files.upload.UploadSession;
 import com.yoyuzh.files.upload.UploadSessionUploadMode;
 import com.yoyuzh.files.upload.UploadSessionService;
@@ -54,10 +55,10 @@ class UploadSessionV2ControllerTest {
 
     @Test
     void shouldCreateUploadSessionWithV2Envelope() throws Exception {
-        User user = createUser(7L);
-        UploadSession session = createSession(user);
-        when(userDetailsService.loadDomainUser("alice")).thenReturn(user);
-        when(uploadSessionService.createSession(eq(user), any())).thenReturn(session);
+        UploadSession session = createSession(7L);
+        IdentityAuthenticatedUser authenticatedUser = createAuthenticatedUser(7L);
+        when(userDetailsService.loadAuthenticatedUser("alice")).thenReturn(authenticatedUser);
+        when(uploadSessionService.createSession(eq(authenticatedUser), any())).thenReturn(session);
 
         mockMvc.perform(post("/api/v2/files/upload-sessions")
                         .with(user(userDetails()))
@@ -87,10 +88,9 @@ class UploadSessionV2ControllerTest {
 
     @Test
     void shouldReturnOwnedUploadSessionWithV2Envelope() throws Exception {
-        User user = createUser(7L);
-        UploadSession session = createSession(user);
-        when(userDetailsService.loadDomainUser("alice")).thenReturn(user);
-        when(uploadSessionService.getOwnedSession(user, "session-1")).thenReturn(session);
+        UploadSession session = createSession(7L);
+        when(userDetailsService.loadUserId("alice")).thenReturn(7L);
+        when(uploadSessionService.getOwnedSession(7L, "session-1")).thenReturn(session);
 
         mockMvc.perform(get("/api/v2/files/upload-sessions/session-1")
                         .with(user(userDetails())))
@@ -108,10 +108,9 @@ class UploadSessionV2ControllerTest {
 
     @Test
     void shouldExposeRuntimeStateWhenRedisUploadStateExists() throws Exception {
-        User user = createUser(7L);
-        UploadSession session = createSession(user);
-        when(userDetailsService.loadDomainUser("alice")).thenReturn(user);
-        when(uploadSessionService.getOwnedSession(user, "session-1")).thenReturn(session);
+        UploadSession session = createSession(7L);
+        when(userDetailsService.loadUserId("alice")).thenReturn(7L);
+        when(uploadSessionService.getOwnedSession(7L, "session-1")).thenReturn(session);
         when(uploadSessionService.getRuntimeState("session-1")).thenReturn(Optional.of(
                 new com.yoyuzh.files.upload.UploadSessionRuntimeState(
                         "uploading",
@@ -134,12 +133,11 @@ class UploadSessionV2ControllerTest {
 
     @Test
     void shouldReturnDirectSingleStrategyInSessionResponse() throws Exception {
-        User user = createUser(7L);
-        UploadSession session = createSession(user);
+        UploadSession session = createSession(7L);
         session.setMultipartUploadId(null);
         session.setChunkCount(1);
-        when(userDetailsService.loadDomainUser("alice")).thenReturn(user);
-        when(uploadSessionService.getOwnedSession(user, "session-1")).thenReturn(session);
+        when(userDetailsService.loadUserId("alice")).thenReturn(7L);
+        when(uploadSessionService.getOwnedSession(7L, "session-1")).thenReturn(session);
         when(uploadSessionService.resolveUploadMode(session)).thenReturn(UploadSessionUploadMode.DIRECT_SINGLE);
 
         mockMvc.perform(get("/api/v2/files/upload-sessions/session-1")
@@ -152,9 +150,8 @@ class UploadSessionV2ControllerTest {
 
     @Test
     void shouldPrepareSingleUploadWithV2Envelope() throws Exception {
-        User user = createUser(7L);
-        when(userDetailsService.loadDomainUser("alice")).thenReturn(user);
-        when(uploadSessionService.prepareOwnedUpload(user, "session-1"))
+        when(userDetailsService.loadUserId("alice")).thenReturn(7L);
+        when(uploadSessionService.prepareOwnedUpload(7L, "session-1"))
                 .thenReturn(new com.yoyuzh.files.storage.PreparedUpload(
                         true,
                         "https://upload.example.com/session-1",
@@ -175,13 +172,12 @@ class UploadSessionV2ControllerTest {
 
     @Test
     void shouldUploadProxyContentWithV2Envelope() throws Exception {
-        User user = createUser(7L);
-        UploadSession session = createSession(user);
+        UploadSession session = createSession(7L);
         session.setStatus(UploadSessionStatus.UPLOADING);
         session.setMultipartUploadId(null);
         session.setChunkCount(1);
-        when(userDetailsService.loadDomainUser("alice")).thenReturn(user);
-        when(uploadSessionService.uploadOwnedContent(eq(user), eq("session-1"), any())).thenReturn(session);
+        when(userDetailsService.loadUserId("alice")).thenReturn(7L);
+        when(uploadSessionService.uploadOwnedContent(eq(7L), eq("session-1"), any())).thenReturn(session);
 
         mockMvc.perform(multipart("/api/v2/files/upload-sessions/session-1/content")
                         .file("file", "payload".getBytes())
@@ -198,11 +194,10 @@ class UploadSessionV2ControllerTest {
 
     @Test
     void shouldCompleteUploadSessionWithV2Envelope() throws Exception {
-        User user = createUser(7L);
-        UploadSession session = createSession(user);
+        UploadSession session = createSession(7L);
         session.setStatus(UploadSessionStatus.COMPLETED);
-        when(userDetailsService.loadDomainUser("alice")).thenReturn(user);
-        when(uploadSessionService.completeOwnedSession(user, "session-1")).thenReturn(session);
+        when(userDetailsService.loadUserId("alice")).thenReturn(7L);
+        when(uploadSessionService.completeOwnedSession(7L, "session-1")).thenReturn(session);
 
         mockMvc.perform(post("/api/v2/files/upload-sessions/session-1/complete")
                         .with(user(userDetails())))
@@ -214,11 +209,10 @@ class UploadSessionV2ControllerTest {
 
     @Test
     void shouldRecordUploadSessionPartWithV2Envelope() throws Exception {
-        User user = createUser(7L);
-        UploadSession session = createSession(user);
+        UploadSession session = createSession(7L);
         session.setStatus(UploadSessionStatus.UPLOADING);
-        when(userDetailsService.loadDomainUser("alice")).thenReturn(user);
-        when(uploadSessionService.recordUploadedPart(eq(user), eq("session-1"), eq(1), any())).thenReturn(session);
+        when(userDetailsService.loadUserId("alice")).thenReturn(7L);
+        when(uploadSessionService.recordUploadedPart(eq(7L), eq("session-1"), eq(1), any())).thenReturn(session);
 
         mockMvc.perform(put("/api/v2/files/upload-sessions/session-1/parts/1")
                         .with(user(userDetails()))
@@ -237,9 +231,8 @@ class UploadSessionV2ControllerTest {
 
     @Test
     void shouldPrepareMultipartPartUploadWithV2Envelope() throws Exception {
-        User user = createUser(7L);
-        when(userDetailsService.loadDomainUser("alice")).thenReturn(user);
-        when(uploadSessionService.prepareOwnedPartUpload(user, "session-1", 1))
+        when(userDetailsService.loadUserId("alice")).thenReturn(7L);
+        when(uploadSessionService.prepareOwnedPartUpload(7L, "session-1", 1))
                 .thenReturn(new com.yoyuzh.files.storage.PreparedUpload(
                         true,
                         "https://upload.example.com/session-1/part-2",
@@ -285,19 +278,26 @@ class UploadSessionV2ControllerTest {
         };
     }
 
-    private User createUser(Long id) {
-        User user = new User();
-        user.setId(id);
-        user.setUsername("alice");
-        user.setEmail("alice@example.com");
-        return user;
+    private IdentityAuthenticatedUser createAuthenticatedUser(Long id) {
+        return new IdentityAuthenticatedUser(
+                id,
+                "alice",
+                "encoded",
+                IdentityRoleName.USER,
+                false,
+                "session-1",
+                "session-1",
+                null,
+                1024L * 1024 * 1024,
+                100L * 1024 * 1024
+        );
     }
 
-    private UploadSession createSession(User user) {
+    private UploadSession createSession(Long userId) {
         UploadSession session = new UploadSession();
         session.setId(100L);
         session.setSessionId("session-1");
-        session.setUser(user);
+        session.setUserId(userId);
         session.setTargetPath("/docs");
         session.setFilename("movie.mp4");
         session.setContentType("video/mp4");

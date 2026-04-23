@@ -13,6 +13,7 @@ import com.yoyuzh.files.search.api.FileEventType;
 import com.yoyuzh.files.search.internal.domain.FileEvent;
 import com.yoyuzh.files.storage.FileContentStorage;
 import com.yoyuzh.files.workspace.api.FileMetadataResponse;
+import com.yoyuzh.files.workspace.api.WorkspaceUserContext;
 import com.yoyuzh.platform.storage.internal.application.StoragePolicyService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -83,7 +84,7 @@ class FileEventPersistenceIntegrationTest {
 
         StoredFile file = new StoredFile();
         file.setId(10L);
-        file.setUser(user);
+        file.setUserId(user.getId());
         file.setFilename("notes.txt");
         file.setPath("/docs");
         file.setContentType("text/plain");
@@ -95,7 +96,7 @@ class FileEventPersistenceIntegrationTest {
         when(storedFileRepository.existsByUserIdAndPathAndFilename(7L, "/docs", "paper.txt")).thenReturn(false);
         when(storedFileRepository.save(any(StoredFile.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
-        FileMetadataResponse response = fileService.rename(user, 10L, "paper.txt");
+        FileMetadataResponse response = fileService.rename(new WorkspaceUserContext(user.getId(), null, null), 10L, "paper.txt");
 
         assertThat(response.filename()).isEqualTo("paper.txt");
         assertThat(fileEventRepository.count()).isEqualTo(1L);

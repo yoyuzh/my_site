@@ -1,16 +1,10 @@
 package com.yoyuzh.files.sharing.internal.domain;
-
-import com.yoyuzh.identity.access.internal.domain.User;
-import com.yoyuzh.files.workspace.internal.domain.StoredFile;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
-import jakarta.persistence.FetchType;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Index;
-import jakarta.persistence.JoinColumn;
-import jakarta.persistence.ManyToOne;
 import jakarta.persistence.PrePersist;
 import jakarta.persistence.PreUpdate;
 import jakarta.persistence.Table;
@@ -28,13 +22,11 @@ public class FileShareLink {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @ManyToOne(fetch = FetchType.LAZY, optional = false)
-    @JoinColumn(name = "owner_id", nullable = false)
-    private User owner;
+    @Column(name = "owner_id", nullable = false)
+    private Long ownerId;
 
-    @ManyToOne(fetch = FetchType.LAZY, optional = false)
-    @JoinColumn(name = "file_id", nullable = false)
-    private StoredFile file;
+    @Column(name = "file_id", nullable = false)
+    private Long fileId;
 
     @Column(nullable = false, length = 96, unique = true)
     private String token;
@@ -84,9 +76,6 @@ public class FileShareLink {
         if (allowDownload == null) {
             allowDownload = true;
         }
-        if ((shareName == null || shareName.isBlank()) && file != null) {
-            shareName = file.getFilename();
-        }
     }
 
     public Long getId() {
@@ -97,20 +86,20 @@ public class FileShareLink {
         this.id = id;
     }
 
-    public User getOwner() {
-        return owner;
+    public Long getOwnerId() {
+        return ownerId;
     }
 
-    public void setOwner(User owner) {
-        this.owner = owner;
+    public void setOwnerId(Long ownerId) {
+        this.ownerId = ownerId;
     }
 
-    public StoredFile getFile() {
-        return file;
+    public Long getFileId() {
+        return fileId;
     }
 
-    public void setFile(StoredFile file) {
-        this.file = file;
+    public void setFileId(Long fileId) {
+        this.fileId = fileId;
     }
 
     public String getToken() {
@@ -205,6 +194,18 @@ public class FileShareLink {
         return allowDownload == null || allowDownload;
     }
 
+    public void recordVisit() {
+        viewCount = getViewCountOrZero() + 1;
+    }
+
+    public void recordDownload() {
+        downloadCount = getDownloadCountOrZero() + 1;
+    }
+
+    public boolean isDownloadLimitReached() {
+        return maxDownloads != null && getDownloadCountOrZero() >= maxDownloads;
+    }
+
     public long getDownloadCountOrZero() {
         return downloadCount == null ? 0L : downloadCount;
     }
@@ -217,6 +218,6 @@ public class FileShareLink {
         if (shareName != null && !shareName.isBlank()) {
             return shareName;
         }
-        return file == null ? null : file.getFilename();
+        return null;
     }
 }

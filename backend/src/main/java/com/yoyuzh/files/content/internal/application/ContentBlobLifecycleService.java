@@ -1,12 +1,14 @@
 package com.yoyuzh.files.content.internal.application;
 
+import com.yoyuzh.files.content.api.ContentBlobLifecycleApi;
+import com.yoyuzh.files.content.api.ContentBlobReference;
 import com.yoyuzh.files.content.internal.domain.FileBlob;
 import com.yoyuzh.files.content.internal.infra.FileBlobRepository;
+import com.yoyuzh.files.workspace.api.WorkspaceContentBindingApi;
 import com.yoyuzh.shared.kernel.BusinessException;
 import com.yoyuzh.shared.kernel.ErrorCode;
 import com.yoyuzh.files.storage.FileContentStorage;
-import com.yoyuzh.files.workspace.internal.domain.StoredFile;
-import com.yoyuzh.files.workspace.internal.infra.StoredFileRepository;
+import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -14,20 +16,22 @@ import java.util.List;
 import java.util.Map;
 import java.util.function.Supplier;
 
-public final class ContentBlobLifecycleService {
+@Service
+public final class ContentBlobLifecycleService implements ContentBlobLifecycleApi {
 
-    private final StoredFileRepository storedFileRepository;
+    private final WorkspaceContentBindingApi workspaceContentBindingApi;
     private final FileBlobRepository fileBlobRepository;
     private final FileContentStorage fileContentStorage;
 
-    public ContentBlobLifecycleService(StoredFileRepository storedFileRepository,
+    public ContentBlobLifecycleService(WorkspaceContentBindingApi workspaceContentBindingApi,
                                        FileBlobRepository fileBlobRepository,
                                        FileContentStorage fileContentStorage) {
-        this.storedFileRepository = storedFileRepository;
+        this.workspaceContentBindingApi = workspaceContentBindingApi;
         this.fileBlobRepository = fileBlobRepository;
         this.fileContentStorage = fileContentStorage;
     }
 
+    @Override
     public <T> T executeAfterBlobStored(String objectKey, Supplier<T> operation) {
         try {
             return operation.get();
@@ -41,6 +45,7 @@ public final class ContentBlobLifecycleService {
         }
     }
 
+    @Override
     public void cleanupWrittenBlobs(List<String> writtenBlobObjectKeys, RuntimeException ex) {
         for (String objectKey : writtenBlobObjectKeys) {
             try {
@@ -59,29 +64,46 @@ public final class ContentBlobLifecycleService {
         return fileBlobRepository.save(blob);
     }
 
-    public FileBlob getRequiredBlob(StoredFile storedFile) {
-        if (storedFile.isDirectory() || storedFile.getBlob() == null) {
-            throw new BusinessException(ErrorCode.FILE_NOT_FOUND, "文件内容不存在");
-        }
-        return storedFile.getBlob();
+    @Override
+    public ContentBlobReference requireBlobReference(Long blobId, boolean directory) {
+        return toReference(getRequiredBlob(blobId, directory));
     }
 
-    public List<FileBlob> collectBlobsToDelete(List<StoredFile> filesToDelete) {
+    public FileBlob getRequiredBlob(Long blobId, boolean directory) {
+        if (directory || blobId == null) {
+            throw new BusinessException(ErrorCode.FILE_NOT_FOUND, "文件内容不存在");
+        }
+        return fileBlobRepository.findById(blobId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.FILE_NOT_FOUND, "文件内容不存在"));
+    }
+
+    @Override
+    public List<ContentBlobReference> collectBlobReferencesToDelete(List<Long> blobIdsToDelete) {
+        return collectBlobsToDelete(blobIdsToDelete).stream()
+                .map(this::toReference)
+                .toList();
+    }
+
+    public List<FileBlob> collectBlobsToDelete(List<Long> blobIdsToDelete) {
         Map<Long, BlobDeletionCandidate> candidates = new HashMap<>();
-        for (StoredFile file : filesToDelete) {
-            if (file.getBlob() == null || file.getBlob().getId() == null) {
+        for (Long blobId : blobIdsToDelete) {
+            if (blobId == null) {
+                continue;
+            }
+            FileBlob blob = fileBlobRepository.findById(blobId).orElse(null);
+            if (blob == null) {
                 continue;
             }
             BlobDeletionCandidate candidate = candidates.computeIfAbsent(
-                    file.getBlob().getId(),
-                    ignored -> new BlobDeletionCandidate(file.getBlob())
+                    blob.getId(),
+                    ignored -> new BlobDeletionCandidate(blob)
             );
             candidate.referencesToDelete += 1;
         }
 
         List<FileBlob> blobsToDelete = new ArrayList<>();
         for (BlobDeletionCandidate candidate : candidates.values()) {
-            long currentReferences = storedFileRepository.countByBlobId(candidate.blob.getId());
+            long currentReferences = workspaceContentBindingApi.countFilesByBlobId(candidate.blob.getId());
             if (currentReferences == candidate.referencesToDelete) {
                 blobsToDelete.add(candidate.blob);
             }
@@ -89,11 +111,26 @@ public final class ContentBlobLifecycleService {
         return blobsToDelete;
     }
 
+    @Override
+    public void deleteBlobReferences(List<ContentBlobReference> blobsToDelete) {
+        for (ContentBlobReference blobReference : blobsToDelete) {
+            fileBlobRepository.findById(blobReference.blobId())
+                    .ifPresent(blob -> {
+                        fileContentStorage.deleteBlob(blob.getObjectKey());
+                        fileBlobRepository.delete(blob);
+                    });
+        }
+    }
+
     public void deleteBlobs(List<FileBlob> blobsToDelete) {
         for (FileBlob blob : blobsToDelete) {
             fileContentStorage.deleteBlob(blob.getObjectKey());
             fileBlobRepository.delete(blob);
         }
+    }
+
+    private ContentBlobReference toReference(FileBlob blob) {
+        return new ContentBlobReference(blob.getId(), blob.getObjectKey(), blob.getContentType(), blob.getSize());
     }
 
     private static final class BlobDeletionCandidate {

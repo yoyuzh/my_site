@@ -1,9 +1,12 @@
 package com.yoyuzh.platform.storage.internal.infra;
 
+import com.yoyuzh.platform.storage.api.StorageRuntimeProperties;
 import org.springframework.boot.context.properties.ConfigurationProperties;
+import org.springframework.stereotype.Component;
 
+@Component
 @ConfigurationProperties(prefix = "app.storage")
-public class FileStorageProperties {
+public class FileStorageProperties implements StorageRuntimeProperties {
 
     private String provider = "local";
     private final Local local = new Local();
@@ -43,7 +46,7 @@ public class FileStorageProperties {
         local.setRootDir(rootDir);
     }
 
-    public static class Local {
+    public static class Local implements StorageRuntimeProperties.Local {
         private String rootDir = "./storage";
 
         public String getRootDir() {
@@ -55,7 +58,7 @@ public class FileStorageProperties {
         }
     }
 
-    public static class S3 {
+    public static class S3 implements StorageRuntimeProperties.S3 {
         private String apiBaseUrl = "https://api.dogecloud.com";
         private String apiAccessKey;
         private String apiSecretKey;

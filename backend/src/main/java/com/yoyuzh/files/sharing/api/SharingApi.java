@@ -14,6 +14,8 @@ public interface SharingApi {
 
     ShareV2Response getShare(String token);
 
+    ShareStatsResponse getStats(Long ownerUserId, String token);
+
     ShareV2Response verifyPassword(String token, String password);
 
     FileMetadataResponse importSharedFile(Long recipientUserId, String token, ImportShareCommand command);
@@ -21,6 +23,8 @@ public interface SharingApi {
     ResponseEntity<?> downloadSharedFile(String token, String password);
 
     Page<ShareV2Response> listOwnedShares(Long ownerUserId, Pageable pageable);
+
+    ShareV2Response updatePolicy(Long ownerUserId, Long id, Integer maxDownloads);
 
     void deleteOwnedShare(Long ownerUserId, Long id);
 

@@ -60,7 +60,7 @@ class RuntimeContentAdminInspectionApiTest {
         entity.setSize(1024L);
         entity.setContentType("application/pdf");
         entity.setReferenceCount(1);
-        entity.setCreatedBy(creator);
+        entity.setCreatedByUserId(creator == null ? null : creator.getId());
         entity.setCreatedAt(LocalDateTime.now().minusMinutes(2));
 
         FileBlob blob = new FileBlob();

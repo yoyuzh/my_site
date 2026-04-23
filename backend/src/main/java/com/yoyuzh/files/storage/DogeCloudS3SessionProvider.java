@@ -1,6 +1,6 @@
 package com.yoyuzh.files.storage;
 
-import com.yoyuzh.platform.storage.internal.infra.FileStorageProperties;
+import com.yoyuzh.platform.storage.api.StorageRuntimeProperties;
 import software.amazon.awssdk.auth.credentials.AwsSessionCredentials;
 import software.amazon.awssdk.auth.credentials.StaticCredentialsProvider;
 import software.amazon.awssdk.regions.Region;
@@ -25,7 +25,7 @@ final class DogeCloudS3SessionProvider implements S3SessionProvider {
 
     private CachedSession cachedSession;
 
-    DogeCloudS3SessionProvider(FileStorageProperties.S3 properties, DogeCloudTmpTokenClient tmpTokenClient) {
+    DogeCloudS3SessionProvider(StorageRuntimeProperties.S3 properties, DogeCloudTmpTokenClient tmpTokenClient) {
         this(
                 properties,
                 tmpTokenClient::fetchSession,
@@ -35,7 +35,7 @@ final class DogeCloudS3SessionProvider implements S3SessionProvider {
     }
 
     DogeCloudS3SessionProvider(
-            FileStorageProperties.S3 properties,
+            StorageRuntimeProperties.S3 properties,
             Supplier<DogeCloudTemporaryS3Session> sessionSupplier,
             Clock clock,
             Function<DogeCloudTemporaryS3Session, S3FileRuntimeSession> runtimeFactory
@@ -72,7 +72,7 @@ final class DogeCloudS3SessionProvider implements S3SessionProvider {
         cachedSession = null;
     }
 
-    private static S3FileRuntimeSession createRuntimeSession(FileStorageProperties.S3 properties, DogeCloudTemporaryS3Session session) {
+    private static S3FileRuntimeSession createRuntimeSession(StorageRuntimeProperties.S3 properties, DogeCloudTemporaryS3Session session) {
         StaticCredentialsProvider credentialsProvider = StaticCredentialsProvider.create(AwsSessionCredentials.create(
                 session.accessKeyId(),
                 session.secretAccessKey(),
@@ -97,7 +97,7 @@ final class DogeCloudS3SessionProvider implements S3SessionProvider {
         );
     }
 
-    private static String resolveRegion(FileStorageProperties.S3 properties) {
+    private static String resolveRegion(StorageRuntimeProperties.S3 properties) {
         return properties.getRegion() == null || properties.getRegion().isBlank()
                 ? "automatic"
                 : properties.getRegion();

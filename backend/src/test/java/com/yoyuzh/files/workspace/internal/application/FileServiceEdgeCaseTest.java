@@ -31,6 +31,7 @@ import java.util.Optional;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -55,7 +56,7 @@ class FileServiceEdgeCaseTest {
     void setUp() {
         FileStorageProperties properties = new FileStorageProperties();
         properties.setMaxFileSize(500L * 1024 * 1024);
-        fileService = new FileService(
+        fileService = FileServiceTestSupport.create(
                 storedFileRepository,
                 fileBlobRepository,
                 fileContentStorage,
@@ -63,6 +64,10 @@ class FileServiceEdgeCaseTest {
                 new WorkspaceDownloadOptions(null, null, 300L),
                 properties.getMaxFileSize()
         );
+        lenient().when(fileBlobRepository.findById(any(Long.class))).thenAnswer(invocation -> {
+            Long blobId = invocation.getArgument(0);
+            return Optional.of(createBlob(blobId, "blobs/blob-" + blobId, 5L, "text/plain"));
+        });
     }
 
     // --- normalizeDirectoryPath edge cases ---
@@ -71,7 +76,7 @@ class FileServiceEdgeCaseTest {
     void shouldRejectPathContainingDotDot() {
         User user = createUser(1L);
 
-        assertThatThrownBy(() -> fileService.mkdir(user, "/docs/../secret"))
+        assertThatThrownBy(() -> fileService.mkdir(FileServiceTestSupport.workspaceUser(user), "/docs/../secret"))
                 .isInstanceOf(BusinessException.class)
                 .hasMessageContaining("路径不合法");
     }
@@ -87,7 +92,7 @@ class FileServiceEdgeCaseTest {
         });
 
         // backslash should be treated as path separator and normalized
-        FileMetadataResponse response = fileService.mkdir(user, "\\docs");
+        FileMetadataResponse response = fileService.mkdir(FileServiceTestSupport.workspaceUser(user), "\\docs");
 
         assertThat(response.path()).isEqualTo("/");
         assertThat(response.filename()).isEqualTo("docs");
@@ -103,7 +108,7 @@ class FileServiceEdgeCaseTest {
             return f;
         });
 
-        FileMetadataResponse response = fileService.mkdir(user, "/docs/");
+        FileMetadataResponse response = fileService.mkdir(FileServiceTestSupport.workspaceUser(user), "/docs/");
 
         assertThat(response.path()).isEqualTo("/");
         assertThat(response.filename()).isEqualTo("docs");
@@ -119,7 +124,7 @@ class FileServiceEdgeCaseTest {
             return f;
         });
 
-        FileMetadataResponse response = fileService.mkdir(user, "//docs");
+        FileMetadataResponse response = fileService.mkdir(FileServiceTestSupport.workspaceUser(user), "//docs");
 
         assertThat(response.path()).isEqualTo("/");
         assertThat(response.filename()).isEqualTo("docs");
@@ -131,7 +136,7 @@ class FileServiceEdgeCaseTest {
     void shouldRejectCreatingRootDirectory() {
         User user = createUser(1L);
 
-        assertThatThrownBy(() -> fileService.mkdir(user, "/"))
+        assertThatThrownBy(() -> fileService.mkdir(FileServiceTestSupport.workspaceUser(user), "/"))
                 .isInstanceOf(BusinessException.class)
                 .hasMessageContaining("根目录无需创建");
     }
@@ -141,7 +146,7 @@ class FileServiceEdgeCaseTest {
         User user = createUser(1L);
         when(storedFileRepository.existsByUserIdAndPathAndFilename(1L, "/", "docs")).thenReturn(true);
 
-        assertThatThrownBy(() -> fileService.mkdir(user, "/docs"))
+        assertThatThrownBy(() -> fileService.mkdir(FileServiceTestSupport.workspaceUser(user), "/docs"))
                 .isInstanceOf(BusinessException.class)
                 .hasMessageContaining("目录已存在");
     }
@@ -157,7 +162,7 @@ class FileServiceEdgeCaseTest {
         when(fileContentStorage.createBlobDownloadUrl("blobs/blob-10", "notes.txt"))
                 .thenReturn("https://cdn.example.com/notes.txt");
 
-        WorkspaceDownloadResult response = fileService.download(user, 10L);
+        WorkspaceDownloadResult response = fileService.download(FileServiceTestSupport.workspaceUser(user), 10L);
 
         assertThat(response.redirect()).isTrue();
         assertThat(response.redirectUrl()).isEqualTo("https://cdn.example.com/notes.txt");
@@ -172,7 +177,7 @@ class FileServiceEdgeCaseTest {
         StoredFile directory = createDirectory(10L, user, "/", "docs");
         when(storedFileRepository.findDetailedById(10L)).thenReturn(Optional.of(directory));
 
-        assertThatThrownBy(() -> fileService.getDownloadUrl(user, 10L))
+        assertThatThrownBy(() -> fileService.getDownloadUrl(FileServiceTestSupport.workspaceUser(user), 10L))
                 .isInstanceOf(BusinessException.class)
                 .hasMessageContaining("目录不支持下载");
     }
@@ -184,7 +189,7 @@ class FileServiceEdgeCaseTest {
         User user = createUser(1L);
         long oversizedFile = 500L * 1024 * 1024 + 1;
 
-        assertThatThrownBy(() -> fileService.initiateUpload(user,
+        assertThatThrownBy(() -> fileService.initiateUpload(FileServiceTestSupport.workspaceUser(user),
                 new InitiateUploadRequest("/docs", "big.zip", "application/zip", oversizedFile)))
                 .isInstanceOf(BusinessException.class)
                 .hasMessageContaining("文件大小超出限制");
@@ -195,7 +200,7 @@ class FileServiceEdgeCaseTest {
         User user = createUser(1L);
         user.setMaxUploadSizeBytes(1024L);
 
-        assertThatThrownBy(() -> fileService.initiateUpload(user,
+        assertThatThrownBy(() -> fileService.initiateUpload(FileServiceTestSupport.workspaceUser(user),
                 new InitiateUploadRequest("/docs", "large.bin", "application/octet-stream", 1025L)))
                 .isInstanceOf(BusinessException.class)
                 .hasMessageContaining("文件大小超出限制");
@@ -207,7 +212,7 @@ class FileServiceEdgeCaseTest {
         user.setStorageQuotaBytes(1024L);
         when(storedFileRepository.sumFileSizeByUserId(1L)).thenReturn(900L);
 
-        assertThatThrownBy(() -> fileService.initiateUpload(user,
+        assertThatThrownBy(() -> fileService.initiateUpload(FileServiceTestSupport.workspaceUser(user),
                 new InitiateUploadRequest("/docs", "quota.bin", "application/octet-stream", 200L)))
                 .isInstanceOf(BusinessException.class)
                 .hasMessageContaining("存储空间不足");
@@ -221,7 +226,7 @@ class FileServiceEdgeCaseTest {
         StoredFile file = createFile(10L, user, "/docs", "notes.txt");
         when(storedFileRepository.findDetailedById(10L)).thenReturn(Optional.of(file));
 
-        FileMetadataResponse response = fileService.rename(user, 10L, "notes.txt");
+        FileMetadataResponse response = fileService.rename(FileServiceTestSupport.workspaceUser(user), 10L, "notes.txt");
 
         assertThat(response.filename()).isEqualTo("notes.txt");
         verify(storedFileRepository, org.mockito.Mockito.never()).save(any());
@@ -242,13 +247,13 @@ class FileServiceEdgeCaseTest {
     private StoredFile createFile(Long id, User user, String path, String filename) {
         StoredFile file = new StoredFile();
         file.setId(id);
-        file.setUser(user);
+        file.setUserId(user.getId());
         file.setFilename(filename);
         file.setPath(path);
         file.setSize(5L);
         file.setDirectory(false);
         file.setContentType("text/plain");
-        file.setBlob(createBlob(id, "blobs/blob-" + id, 5L, "text/plain"));
+        file.setBlobId(createBlob(id, "blobs/blob-" + id, 5L, "text/plain") == null ? null : createBlob(id, "blobs/blob-" + id, 5L, "text/plain").getId());
         file.setCreatedAt(LocalDateTime.now());
         return file;
     }
@@ -258,7 +263,7 @@ class FileServiceEdgeCaseTest {
         dir.setDirectory(true);
         dir.setContentType("directory");
         dir.setSize(0L);
-        dir.setBlob(null);
+        dir.setBlobId(null);
         return dir;
     }
 

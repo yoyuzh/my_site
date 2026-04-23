@@ -6,7 +6,7 @@ import static org.mockito.Mockito.when;
 
 import com.yoyuzh.identity.access.internal.domain.User;
 import com.yoyuzh.shared.kernel.BusinessException;
-import com.yoyuzh.files.workspace.internal.infra.StoredFileRepository;
+import com.yoyuzh.files.workspace.api.WorkspaceFileQueryApi;
 import com.yoyuzh.platform.storage.internal.domain.StoragePolicy;
 import com.yoyuzh.platform.storage.api.StoragePolicyCapabilities;
 import com.yoyuzh.platform.storage.api.StoragePolicyType;
@@ -26,7 +26,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 class RuntimeUploadTargetPolicyTest {
 
     @Mock
-    private StoredFileRepository storedFileRepository;
+    private WorkspaceFileQueryApi workspaceFileQueryApi;
     @Mock
     private WorkspacePathPolicy workspacePathPolicy;
     @Mock
@@ -37,7 +37,7 @@ class RuntimeUploadTargetPolicyTest {
     @BeforeEach
     void setUp() {
         uploadTargetPolicy = new RuntimeUploadTargetPolicy(
-                storedFileRepository,
+                workspaceFileQueryApi,
                 workspacePathPolicy,
                 storagePolicyQuery,
                 new RuntimeUploadConstraintPolicy(),
@@ -57,7 +57,7 @@ class RuntimeUploadTargetPolicyTest {
         when(workspacePathPolicy.normalizeDirectoryPath("/docs")).thenReturn("/docs");
         when(workspacePathPolicy.normalizeLeafName("movie.mp4")).thenReturn("movie.mp4");
         when(storagePolicyQuery.readDefaultPolicySnapshot()).thenReturn(snapshot);
-        when(storedFileRepository.sumFileSizeByUserId(7L)).thenReturn(10L);
+        when(workspaceFileQueryApi.sumFileSizeByUserId(7L)).thenReturn(10L);
 
         ValidatedUploadTarget target = uploadTargetPolicy.validateUpload(
                 user.getId(),
@@ -85,7 +85,7 @@ class RuntimeUploadTargetPolicyTest {
                 policy.getMaxSizeBytes(),
                 new StoragePolicyCapabilities(true, false, true, true, false, true, true, false, 500L)
         ));
-        when(storedFileRepository.sumFileSizeByUserId(7L)).thenReturn(90L);
+        when(workspaceFileQueryApi.sumFileSizeByUserId(7L)).thenReturn(90L);
 
         assertThatThrownBy(() -> uploadTargetPolicy.validateUpload(
                 user.getId(),

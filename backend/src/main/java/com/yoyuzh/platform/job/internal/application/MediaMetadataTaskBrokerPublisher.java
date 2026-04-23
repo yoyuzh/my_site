@@ -1,6 +1,6 @@
 package com.yoyuzh.platform.job.internal.application;
 
-import com.yoyuzh.files.workspace.internal.domain.StoredFile;
+import com.yoyuzh.files.workspace.api.WorkspaceFileSnapshot;
 import com.yoyuzh.infra.broker.LightweightBrokerGateway;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.support.TransactionSynchronization;
@@ -19,15 +19,15 @@ public class MediaMetadataTaskBrokerPublisher {
         this.lightweightBrokerGateway = lightweightBrokerGateway;
     }
 
-    public void publishAfterCommit(StoredFile storedFile) {
-        if (!shouldPublish(storedFile)) {
+    public void publishAfterCommit(WorkspaceFileSnapshot file) {
+        if (!shouldPublish(file)) {
             return;
         }
 
         Runnable publishTask = () -> lightweightBrokerGateway.publish(TOPIC, Map.of(
-                "userId", storedFile.getUser().getId(),
-                "fileId", storedFile.getId(),
-                "correlationId", buildCorrelationId(storedFile)
+                "userId", file.userId(),
+                "fileId", file.id(),
+                "correlationId", buildCorrelationId(file)
         ));
 
         if (TransactionSynchronizationManager.isActualTransactionActive()) {
@@ -43,16 +43,15 @@ public class MediaMetadataTaskBrokerPublisher {
         publishTask.run();
     }
 
-    private boolean shouldPublish(StoredFile storedFile) {
-        return storedFile != null
-                && storedFile.getId() != null
-                && storedFile.getUser() != null
-                && storedFile.getUser().getId() != null
-                && !storedFile.isDirectory()
-                && MediaTaskSupport.isMediaLike(storedFile.getFilename(), storedFile.getContentType());
+    private boolean shouldPublish(WorkspaceFileSnapshot file) {
+        return file != null
+                && file.id() != null
+                && file.userId() != null
+                && !file.directory()
+                && MediaTaskSupport.isMediaLike(file.filename(), file.contentType());
     }
 
-    private String buildCorrelationId(StoredFile storedFile) {
-        return "media-meta:auto:file:" + storedFile.getId();
+    private String buildCorrelationId(WorkspaceFileSnapshot file) {
+        return "media-meta:auto:file:" + file.id();
     }
 }

@@ -1,60 +1,69 @@
 package com.yoyuzh.files.search;
 
-import com.yoyuzh.identity.access.internal.domain.User;
-import com.yoyuzh.files.workspace.internal.domain.StoredFile;
-import com.yoyuzh.files.workspace.internal.infra.StoredFileRepository;
-import com.yoyuzh.shared.kernel.BusinessException;
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
+
+import com.yoyuzh.files.search.api.FileSearchApi;
+import com.yoyuzh.files.search.api.SearchFilesQuery;
+import com.yoyuzh.files.workspace.api.FileMetadataResponse;
+import com.yoyuzh.shared.kernel.PageResponse;
+import java.time.LocalDateTime;
+import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.data.domain.PageImpl;
-import org.springframework.data.domain.PageRequest;
-
-import java.time.LocalDateTime;
-import java.util.List;
-
-import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
-import static org.mockito.Mockito.eq;
-import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
 class FileSearchServiceTest {
 
     @Mock
-    private StoredFileRepository storedFileRepository;
+    private FileSearchApi fileSearchApi;
 
     private FileSearchService fileSearchService;
 
     @BeforeEach
     void setUp() {
-        fileSearchService = new FileSearchService(storedFileRepository);
+        fileSearchService = new FileSearchService(fileSearchApi);
     }
 
     @Test
-    void shouldSearchOwnedActiveFiles() {
-        User user = createUser(7L);
-        StoredFile file = createFile(10L, user, "/docs", "notes.txt", false);
+    void shouldDelegateSearchThroughApiContract() {
         LocalDateTime createdGte = LocalDateTime.of(2026, 4, 8, 8, 0);
         LocalDateTime createdLte = LocalDateTime.of(2026, 4, 8, 12, 0);
         LocalDateTime updatedGte = LocalDateTime.of(2026, 4, 8, 9, 0);
         LocalDateTime updatedLte = LocalDateTime.of(2026, 4, 8, 18, 0);
-        when(storedFileRepository.searchUserFiles(
-                eq(7L),
-                eq("note"),
-                eq(false),
-                eq(1L),
-                eq(100L),
-                eq(createdGte),
-                eq(createdLte),
-                eq(updatedGte),
-                eq(updatedLte),
-                eq(PageRequest.of(0, 20))
-        )).thenReturn(new PageImpl<>(List.of(file), PageRequest.of(0, 20), 1));
+        PageResponse<FileMetadataResponse> expected = new PageResponse<>(
+                List.of(new FileMetadataResponse(
+                        10L,
+                        "notes.txt",
+                        "/docs",
+                        5L,
+                        "text/plain",
+                        false,
+                        LocalDateTime.of(2026, 4, 8, 10, 0)
+                )),
+                1,
+                0,
+                20
+        );
+        when(fileSearchApi.search(7L, new SearchFilesQuery(
+                " note ",
+                false,
+                1L,
+                100L,
+                createdGte,
+                createdLte,
+                updatedGte,
+                updatedLte,
+                0,
+                20
+        ))).thenReturn(expected);
 
-        var response = fileSearchService.search(user, new FileSearchQuery(
+        var response = fileSearchService.search(7L, new FileSearchQuery(
                 " note ",
                 false,
                 1L,
@@ -67,83 +76,11 @@ class FileSearchServiceTest {
                 20
         ));
 
-        assertThat(response.total()).isEqualTo(1);
-        assertThat(response.items()).hasSize(1);
-        assertThat(response.items().get(0).filename()).isEqualTo("notes.txt");
-        assertThat(response.items().get(0).path()).isEqualTo("/docs");
-    }
-
-    @Test
-    void shouldReturnDirectoryLogicalPathForDirectoryResults() {
-        User user = createUser(7L);
-        StoredFile directory = createFile(11L, user, "/docs", "archive", true);
-        when(storedFileRepository.searchUserFiles(
-                eq(7L),
-                eq(null),
-                eq(true),
-                eq(null),
-                eq(null),
-                eq(null),
-                eq(null),
-                eq(null),
-                eq(null),
-                eq(PageRequest.of(0, 20))
-        )).thenReturn(new PageImpl<>(List.of(directory), PageRequest.of(0, 20), 1));
-
-        var response = fileSearchService.search(user, new FileSearchQuery(
-                null,
-                true,
-                null,
-                null,
-                null,
-                null,
-                null,
-                null,
-                0,
-                20
-        ));
-
-        assertThat(response.items().get(0).path()).isEqualTo("/docs/archive");
-    }
-
-    @Test
-    void shouldRejectInvalidSearchRange() {
-        User user = createUser(7L);
-
-        assertThatThrownBy(() -> fileSearchService.search(user, new FileSearchQuery(
-                null,
-                null,
-                100L,
-                1L,
-                null,
-                null,
-                null,
-                null,
-                0,
-                20
-        ))).isInstanceOf(BusinessException.class)
-                .hasMessageContaining("文件大小范围不合法");
-    }
-
-    private User createUser(Long id) {
-        User user = new User();
-        user.setId(id);
-        user.setUsername("user-" + id);
-        user.setEmail("user-" + id + "@example.com");
-        return user;
-    }
-
-    private StoredFile createFile(Long id, User user, String path, String filename, boolean directory) {
-        StoredFile file = new StoredFile();
-        file.setId(id);
-        file.setUser(user);
-        file.setFilename(filename);
-        file.setPath(path);
-        file.setContentType(directory ? "directory" : "text/plain");
-        file.setSize(directory ? 0L : 5L);
-        file.setDirectory(directory);
-        file.setCreatedAt(LocalDateTime.of(2026, 4, 8, 10, 0));
-        file.setUpdatedAt(LocalDateTime.of(2026, 4, 8, 11, 0));
-        return file;
+        assertThat(response).isSameAs(expected);
+        ArgumentCaptor<SearchFilesQuery> queryCaptor = ArgumentCaptor.forClass(SearchFilesQuery.class);
+        verify(fileSearchApi).search(org.mockito.ArgumentMatchers.eq(7L), queryCaptor.capture());
+        assertThat(queryCaptor.getValue().name()).isEqualTo(" note ");
+        assertThat(queryCaptor.getValue().sizeGte()).isEqualTo(1L);
+        assertThat(queryCaptor.getValue().updatedLte()).isEqualTo(updatedLte);
     }
 }

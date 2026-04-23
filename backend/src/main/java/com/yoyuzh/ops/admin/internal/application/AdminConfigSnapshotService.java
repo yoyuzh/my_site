@@ -5,10 +5,10 @@ import com.yoyuzh.identity.access.api.IdentityAdminSummaryApi;
 import com.yoyuzh.identity.access.api.IdentityRoleName;
 import com.yoyuzh.infra.cache.AppRedisProperties;
 import com.yoyuzh.ops.admin.api.AdminSettingsResponse;
-import com.yoyuzh.platform.storage.internal.infra.FileStorageProperties;
 import com.yoyuzh.files.workspace.api.WorkspaceAdminGovernanceApi;
 import com.yoyuzh.platform.storage.api.StoragePolicyAdminApi;
 import com.yoyuzh.platform.storage.api.StoragePolicyAdminView;
+import com.yoyuzh.platform.storage.api.StorageRuntimeProperties;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
@@ -20,7 +20,7 @@ public class AdminConfigSnapshotService {
     private final IdentityAdminSummaryApi identityAdminSummaryApi;
     private final AdminMetricsService adminMetricsService;
     private final AppRedisProperties redisProperties;
-    private final FileStorageProperties fileStorageProperties;
+    private final StorageRuntimeProperties storageRuntimeProperties;
     private final AdminRuntimeSettingsService adminRuntimeSettingsService;
     private final StoragePolicyAdminApi storagePolicyAdminApi;
     private final WorkspaceAdminGovernanceApi workspaceAdminGovernanceApi;
@@ -77,7 +77,7 @@ public class AdminConfigSnapshotService {
         boolean directUpload = defaultPolicy.capabilities().directUpload();
         return new AdminFilesystemResponse(
                 new AdminFilesystemResponse.OverviewSection(
-                        normalizeStorageProvider(fileStorageProperties.getProvider()),
+                        normalizeStorageProvider(storageRuntimeProperties.getProvider()),
                         workspaceAdminGovernanceApi.countFilesAsAdmin(),
                         contentAdminInspectionApi.countBlobsAsAdmin(),
                         contentAdminInspectionApi.countEntitiesAsAdmin()
@@ -107,7 +107,7 @@ public class AdminConfigSnapshotService {
     }
 
     private long resolveEffectiveMaxFileSize(StoragePolicyAdminView policy) {
-        long effectiveMaxFileSize = fileStorageProperties.getMaxFileSize();
+        long effectiveMaxFileSize = storageRuntimeProperties.getMaxFileSize();
         if (policy.maxSizeBytes() > 0) {
             effectiveMaxFileSize = Math.min(effectiveMaxFileSize, policy.maxSizeBytes());
         }

@@ -1,19 +1,13 @@
 package com.yoyuzh.files.content.internal.domain;
 
-import com.yoyuzh.files.workspace.internal.domain.StoredFile;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
-import jakarta.persistence.FetchType;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Index;
-import jakarta.persistence.JoinColumn;
-import jakarta.persistence.ManyToOne;
 import jakarta.persistence.PrePersist;
 import jakarta.persistence.Table;
-import org.hibernate.annotations.OnDelete;
-import org.hibernate.annotations.OnDeleteAction;
 
 import java.time.LocalDateTime;
 
@@ -29,13 +23,11 @@ public class StoredFileEntity {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @ManyToOne(fetch = FetchType.LAZY, optional = false)
-    @JoinColumn(name = "stored_file_id", nullable = false)
-    @OnDelete(action = OnDeleteAction.CASCADE)
-    private StoredFile storedFile;
+    @Column(name = "stored_file_id", nullable = false)
+    private Long storedFileId;
 
-    @ManyToOne(fetch = FetchType.LAZY, optional = false)
-    @JoinColumn(name = "file_entity_id", nullable = false)
+    @jakarta.persistence.ManyToOne(fetch = jakarta.persistence.FetchType.LAZY, optional = false)
+    @jakarta.persistence.JoinColumn(name = "file_entity_id", nullable = false)
     private FileEntity fileEntity;
 
     @Column(name = "entity_role", nullable = false, length = 32)
@@ -59,12 +51,12 @@ public class StoredFileEntity {
         this.id = id;
     }
 
-    public StoredFile getStoredFile() {
-        return storedFile;
+    public Long getStoredFileId() {
+        return storedFileId;
     }
 
-    public void setStoredFile(StoredFile storedFile) {
-        this.storedFile = storedFile;
+    public void setStoredFileId(Long storedFileId) {
+        this.storedFileId = storedFileId;
     }
 
     public FileEntity getFileEntity() {

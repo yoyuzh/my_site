@@ -57,7 +57,7 @@ class ExternalImportRulesServiceTest {
         when(storedFileRepository.sumFileSizeByUserId(7L)).thenReturn(0L);
 
         assertThatThrownBy(() -> service.validateBatch(
-                user,
+                FileServiceTestSupport.workspaceUser(user),
                 List.of("/docs/a"),
                 List.of(new FileService.ExternalFileImport("/docs", "a", "text/plain", new byte[]{1}))
         )).isInstanceOf(BusinessException.class);
@@ -72,7 +72,7 @@ class ExternalImportRulesServiceTest {
         when(storedFileRepository.existsByUserIdAndPathAndFilename(7L, "/docs", "a.txt")).thenReturn(false);
 
         assertThatCode(() -> service.validateBatch(
-                user,
+                FileServiceTestSupport.workspaceUser(user),
                 List.of("/docs"),
                 List.of(new FileService.ExternalFileImport("/docs", "a.txt", "text/plain", new byte[]{1, 2, 3}))
         )).doesNotThrowAnyException();

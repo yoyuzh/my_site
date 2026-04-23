@@ -6,8 +6,8 @@ import com.yoyuzh.platform.job.api.BackgroundTaskFailureCategory;
 import com.yoyuzh.platform.job.api.BackgroundTaskStatus;
 import com.yoyuzh.platform.job.api.BackgroundTaskType;
 
-import com.yoyuzh.identity.access.internal.domain.User;
-import com.yoyuzh.identity.access.internal.infra.UserRepository;
+import com.yoyuzh.identity.access.api.IdentityUserDirectoryApi;
+import com.yoyuzh.identity.access.api.IdentityUserSnapshot;
 import com.yoyuzh.files.workspace.api.FileMetadataResponse;
 import com.yoyuzh.files.workspace.api.WorkspaceArchiveApi;
 import com.yoyuzh.files.workspace.api.WorkspaceArchiveSummary;
@@ -24,16 +24,16 @@ import java.util.Map;
 @Transactional
 public class ArchiveBackgroundTaskHandler implements BackgroundTaskHandler {
 
-    private final UserRepository userRepository;
+    private final IdentityUserDirectoryApi identityUserDirectoryApi;
     private final WorkspaceArchiveApi workspaceArchiveApi;
     private final WorkspaceBootstrapApi workspaceBootstrapApi;
     private final BackgroundTaskStateManager stateManager;
 
-    public ArchiveBackgroundTaskHandler(UserRepository userRepository,
+    public ArchiveBackgroundTaskHandler(IdentityUserDirectoryApi identityUserDirectoryApi,
                                         WorkspaceArchiveApi workspaceArchiveApi,
                                         WorkspaceBootstrapApi workspaceBootstrapApi,
                                         BackgroundTaskStateManager stateManager) {
-        this.userRepository = userRepository;
+        this.identityUserDirectoryApi = identityUserDirectoryApi;
         this.workspaceArchiveApi = workspaceArchiveApi;
         this.workspaceBootstrapApi = workspaceBootstrapApi;
         this.stateManager = stateManager;
@@ -67,7 +67,7 @@ public class ArchiveBackgroundTaskHandler implements BackgroundTaskHandler {
             throw new IllegalStateException("archive task missing output target");
         }
 
-        User user = userRepository.findById(task.getUserId())
+        IdentityUserSnapshot user = identityUserDirectoryApi.findSnapshotById(task.getUserId())
                 .orElseThrow(() -> new IllegalStateException("archive task user not found"));
 
         WorkspaceArchiveSummary summary = workspaceArchiveApi.summarizeArchiveSource(task.getUserId(), fileId);
@@ -133,11 +133,11 @@ public class ArchiveBackgroundTaskHandler implements BackgroundTaskHandler {
         return Math.min(100, (int) Math.floor((processed * 100.0d) / total));
     }
 
-    private WorkspaceUserContext workspaceUser(User user) {
+    private WorkspaceUserContext workspaceUser(IdentityUserSnapshot user) {
         return new WorkspaceUserContext(
-                user.getId(),
-                user.getStorageQuotaBytes(),
-                user.getMaxUploadSizeBytes()
+                user.id(),
+                user.storageQuotaBytes(),
+                user.maxUploadSizeBytes()
         );
     }
 

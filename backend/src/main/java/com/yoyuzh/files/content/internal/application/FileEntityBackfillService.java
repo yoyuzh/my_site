@@ -1,10 +1,12 @@
 package com.yoyuzh.files.content.internal.application;
 
 import com.yoyuzh.files.content.api.ContentAssetApi;
+import com.yoyuzh.files.content.internal.infra.FileBlobRepository;
 import com.yoyuzh.files.content.internal.infra.FileEntityRepository;
 import com.yoyuzh.files.content.internal.infra.StoredFileEntityRepository;
+import com.yoyuzh.files.workspace.api.WorkspaceContentBindingApi;
 import com.yoyuzh.platform.storage.api.StoragePolicyQuery;
-import com.yoyuzh.files.workspace.internal.infra.StoredFileRepository;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.CommandLineRunner;
 import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Component;
@@ -16,12 +18,28 @@ public class FileEntityBackfillService implements CommandLineRunner {
 
     private final ContentAssetApi contentAssetApi;
 
-    public FileEntityBackfillService(StoredFileRepository storedFileRepository,
+    public FileEntityBackfillService(WorkspaceContentBindingApi workspaceContentBindingApi,
+                                     FileEntityRepository fileEntityRepository,
+                                     StoredFileEntityRepository storedFileEntityRepository,
+                                     StoragePolicyQuery storagePolicyQuery) {
+        this(
+                workspaceContentBindingApi,
+                null,
+                fileEntityRepository,
+                storedFileEntityRepository,
+                storagePolicyQuery
+        );
+    }
+
+    @Autowired
+    public FileEntityBackfillService(WorkspaceContentBindingApi workspaceContentBindingApi,
+                                     FileBlobRepository fileBlobRepository,
                                      FileEntityRepository fileEntityRepository,
                                      StoredFileEntityRepository storedFileEntityRepository,
                                      StoragePolicyQuery storagePolicyQuery) {
         this.contentAssetApi = new RuntimeContentAssetApi(
-                storedFileRepository,
+                workspaceContentBindingApi,
+                fileBlobRepository,
                 fileEntityRepository,
                 storedFileEntityRepository,
                 storagePolicyQuery

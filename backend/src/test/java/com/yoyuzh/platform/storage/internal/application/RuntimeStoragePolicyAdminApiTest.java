@@ -6,9 +6,8 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-import com.yoyuzh.files.content.internal.infra.FileEntityRepository;
-import com.yoyuzh.files.content.internal.domain.FileEntityType;
-import com.yoyuzh.files.content.internal.infra.StoredFileEntityRepository;
+import com.yoyuzh.files.content.api.ContentStoragePolicyMigrationApi;
+import com.yoyuzh.files.content.api.ContentStoragePolicyMigrationInspection;
 import com.yoyuzh.platform.storage.api.StoragePolicyBlobAccessApi;
 import com.yoyuzh.platform.storage.internal.domain.StoragePolicy;
 import com.yoyuzh.platform.storage.internal.infra.StoragePolicyRepository;
@@ -37,9 +36,7 @@ class RuntimeStoragePolicyAdminApiTest {
     @Mock
     private StoragePolicyService storagePolicyService;
     @Mock
-    private FileEntityRepository fileEntityRepository;
-    @Mock
-    private StoredFileEntityRepository storedFileEntityRepository;
+    private ContentStoragePolicyMigrationApi contentStoragePolicyMigrationApi;
     @Mock
     private StoragePolicyBlobAccessApi storagePolicyBlobAccessApi;
 
@@ -50,8 +47,7 @@ class RuntimeStoragePolicyAdminApiTest {
         runtimeStoragePolicyAdminApi = new RuntimeStoragePolicyAdminApi(
                 storagePolicyRepository,
                 storagePolicyService,
-                fileEntityRepository,
-                storedFileEntityRepository,
+                contentStoragePolicyMigrationApi,
                 storagePolicyBlobAccessApi
         );
     }
@@ -146,9 +142,8 @@ class RuntimeStoragePolicyAdminApiTest {
         targetPolicy.setEnabled(true);
         when(storagePolicyRepository.findById(3L)).thenReturn(Optional.of(sourcePolicy));
         when(storagePolicyRepository.findById(4L)).thenReturn(Optional.of(targetPolicy));
-        when(fileEntityRepository.countByStoragePolicyIdAndEntityType(3L, FileEntityType.VERSION)).thenReturn(5L);
-        when(storedFileEntityRepository.countDistinctStoredFilesByStoragePolicyIdAndEntityType(3L, FileEntityType.VERSION))
-                .thenReturn(8L);
+        when(contentStoragePolicyMigrationApi.inspectVersionItemsByStoragePolicyId(3L))
+                .thenReturn(new ContentStoragePolicyMigrationInspection(5L, 8L, "VERSION"));
 
         StoragePolicyMigrationCandidate candidate =
                 runtimeStoragePolicyAdminApi.buildStoragePolicyMigrationCandidate(3L, 4L);

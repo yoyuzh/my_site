@@ -64,7 +64,7 @@ public class AdminStoragePolicyController {
     public ApiResponse<BackgroundTaskResponse> createStoragePolicyMigrationTask(
             @AuthenticationPrincipal UserDetails userDetails,
             @Valid @RequestBody AdminStoragePolicyMigrationCreateRequest request) {
-        Long userId = userDetailsService.loadDomainUser(userDetails.getUsername()).getId();
+        Long userId = userDetailsService.loadUserId(userDetails.getUsername());
         return ApiResponse.success(toTaskResponse(adminStorageGovernanceService.createStoragePolicyMigrationTask(userId, toInput(request))));
     }
 

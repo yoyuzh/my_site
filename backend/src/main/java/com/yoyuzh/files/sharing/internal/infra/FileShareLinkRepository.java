@@ -4,7 +4,6 @@ import com.yoyuzh.files.sharing.internal.domain.FileShareLink;
 
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
-import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
@@ -15,23 +14,24 @@ import java.util.Optional;
 
 public interface FileShareLinkRepository extends JpaRepository<FileShareLink, Long> {
 
-    @EntityGraph(attributePaths = {"owner", "file", "file.user", "file.blob"})
     Optional<FileShareLink> findByToken(String token);
 
-    @EntityGraph(attributePaths = {"owner", "file", "file.user", "file.blob"})
     Page<FileShareLink> findByOwnerIdOrderByCreatedAtDesc(Long ownerId, Pageable pageable);
 
-    @EntityGraph(attributePaths = {"owner", "file", "file.user", "file.blob"})
     Optional<FileShareLink> findByIdAndOwnerId(Long id, Long ownerId);
 
-    @EntityGraph(attributePaths = {"owner", "file", "file.user", "file.primaryEntity", "file.blob"})
     @Query("""
             select share from FileShareLink share
-            join share.owner owner
-            join share.file file
+            join StoredFile file on file.id = share.fileId
             where (:userQuery is null or :userQuery = ''
-                or lower(owner.username) like lower(concat('%', :userQuery, '%'))
-                or lower(owner.email) like lower(concat('%', :userQuery, '%')))
+                or exists (
+                    select 1 from User owner
+                    where owner.id = share.ownerId
+                      and (
+                          lower(owner.username) like lower(concat('%', :userQuery, '%'))
+                          or lower(owner.email) like lower(concat('%', :userQuery, '%'))
+                      )
+                ))
               and (:fileName is null or :fileName = ''
                 or lower(file.filename) like lower(concat('%', :fileName, '%')))
               and (:token is null or :token = ''
@@ -50,4 +50,10 @@ public interface FileShareLinkRepository extends JpaRepository<FileShareLink, Lo
                                           @Param("expired") Boolean expired,
                                           @Param("now") LocalDateTime now,
                                           Pageable pageable);
+
+    @Query("""
+            select coalesce(sum(share.downloadCount), 0)
+            from FileShareLink share
+            """)
+    long sumDownloadCountAsAdmin();
 }

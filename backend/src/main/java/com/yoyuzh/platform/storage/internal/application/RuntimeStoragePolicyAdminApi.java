@@ -1,8 +1,7 @@
 package com.yoyuzh.platform.storage.internal.application;
 
-import com.yoyuzh.files.content.internal.infra.FileEntityRepository;
-import com.yoyuzh.files.content.internal.domain.FileEntityType;
-import com.yoyuzh.files.content.internal.infra.StoredFileEntityRepository;
+import com.yoyuzh.files.content.api.ContentStoragePolicyMigrationApi;
+import com.yoyuzh.files.content.api.ContentStoragePolicyMigrationInspection;
 import com.yoyuzh.platform.storage.internal.domain.StoragePolicy;
 import com.yoyuzh.platform.storage.internal.infra.StoragePolicyRepository;
 import com.yoyuzh.platform.storage.api.StoragePolicyAdminApi;
@@ -31,8 +30,7 @@ public class RuntimeStoragePolicyAdminApi implements StoragePolicyAdminApi {
 
     private final StoragePolicyRepository storagePolicyRepository;
     private final StoragePolicyService storagePolicyService;
-    private final FileEntityRepository fileEntityRepository;
-    private final StoredFileEntityRepository storedFileEntityRepository;
+    private final ContentStoragePolicyMigrationApi contentStoragePolicyMigrationApi;
     private final StoragePolicyBlobAccessApi storagePolicyBlobAccessApi;
 
     @Override
@@ -93,22 +91,16 @@ public class RuntimeStoragePolicyAdminApi implements StoragePolicyAdminApi {
                 storagePolicyService.readPolicyDescriptor(sourcePolicy.getId()),
                 storagePolicyService.readPolicyDescriptor(targetPolicy.getId())
         );
-        long candidateEntityCount = fileEntityRepository.countByStoragePolicyIdAndEntityType(
-                sourcePolicy.getId(),
-                FileEntityType.VERSION
-        );
-        long candidateStoredFileCount = storedFileEntityRepository.countDistinctStoredFilesByStoragePolicyIdAndEntityType(
-                sourcePolicy.getId(),
-                FileEntityType.VERSION
-        );
+        ContentStoragePolicyMigrationInspection inspection =
+                contentStoragePolicyMigrationApi.inspectVersionItemsByStoragePolicyId(sourcePolicy.getId());
         return new StoragePolicyMigrationCandidate(
                 sourcePolicy.getId(),
                 sourcePolicy.getName(),
                 targetPolicy.getId(),
                 targetPolicy.getName(),
-                candidateEntityCount,
-                candidateStoredFileCount,
-                FileEntityType.VERSION.name()
+                inspection.entityCount(),
+                inspection.storedFileCount(),
+                inspection.entityType()
         );
     }
 

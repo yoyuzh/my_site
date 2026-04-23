@@ -6,7 +6,6 @@ import com.yoyuzh.identity.access.internal.domain.*;
 import com.yoyuzh.identity.access.internal.infra.*;
 import com.yoyuzh.files.workspace.api.WorkspaceBootstrapApi;
 import com.yoyuzh.files.workspace.api.WorkspaceUserContext;
-import com.yoyuzh.files.workspace.internal.infra.StoredFileRepository;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -39,9 +38,6 @@ class DevBootstrapDataInitializerTest {
     @Mock
     private WorkspaceBootstrapApi workspaceBootstrapApi;
 
-    @Mock
-    private StoredFileRepository storedFileRepository;
-
     @InjectMocks
     private DevBootstrapDataInitializer initializer;
 
@@ -53,7 +49,7 @@ class DevBootstrapDataInitializerTest {
         when(passwordEncoder.encode("portal123456")).thenReturn("encoded-demo-password");
         when(passwordEncoder.encode("study123456")).thenReturn("encoded-study-password");
         when(passwordEncoder.encode("design123456")).thenReturn("encoded-design-password");
-        when(storedFileRepository.existsByUserIdAndPathAndFilename(anyLong(), anyString(), anyString())).thenReturn(false);
+        when(workspaceBootstrapApi.existsNode(any(WorkspaceUserContext.class), anyString(), anyString())).thenReturn(false);
         List<User> savedUsers = new ArrayList<>();
         when(userRepository.save(any(User.class))).thenAnswer(invocation -> {
             User user = invocation.getArgument(0);

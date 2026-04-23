@@ -1,7 +1,7 @@
 package com.yoyuzh.transfer.internal.application;
 
-import com.yoyuzh.transfer.OfflineTransferSessionRepository;
 import com.yoyuzh.transfer.api.TransferAdminMetricsApi;
+import com.yoyuzh.transfer.internal.infra.OfflineTransferSessionRepository;
 import java.time.Instant;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;

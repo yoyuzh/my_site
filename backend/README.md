@@ -68,6 +68,35 @@ JWT 启动要求：
 - 至少需要 32 字节强密钥
 - 仓库内的 `application.yml` / `application-dev.yml` 只从环境变量 `APP_JWT_SECRET` 读取，不再内置可直接启动的默认 secret
 
+## 测试
+
+后端测试当前分为三层：
+
+- 单元测试：JUnit 5 + Mockito
+- Web / 控制器测试：MockMvc
+- 集成测试：Spring Boot 上下文测试，部分用例可通过 Testcontainers 使用真实 PostgreSQL
+
+常用命令：
+
+```bash
+mvn test
+```
+
+如需生成 JaCoCo 覆盖率报告：
+
+```bash
+mvn test jacoco:report
+```
+
+报告输出位置：
+
+- `backend/target/site/jacoco/index.html`
+
+说明：
+
+- MockMvc 测试已经作为默认 Web 测试栈使用。
+- Testcontainers 用例在本机可用 Docker 时执行；如果 Docker 不可用，标记为 `disabledWithoutDocker` 的容器测试会自动跳过，不阻塞其他后端测试。
+
 ## 访问地址
 
 - Swagger: `http://localhost:8080/swagger-ui.html`

@@ -1,6 +1,5 @@
 package com.yoyuzh.files.content.internal.application;
 
-import com.yoyuzh.identity.access.internal.domain.User;
 import com.yoyuzh.files.content.api.ContentBlobReference;
 import com.yoyuzh.files.content.api.ContentRegistrationCommand;
 import com.yoyuzh.files.content.api.RegisteredContentFile;
@@ -8,6 +7,7 @@ import com.yoyuzh.files.content.internal.domain.FileBlob;
 import com.yoyuzh.files.content.internal.domain.FileEntity;
 import com.yoyuzh.files.content.internal.infra.FileEntityRepository;
 import com.yoyuzh.files.content.internal.domain.FileEntityType;
+import com.yoyuzh.files.workspace.internal.application.RuntimeWorkspaceContentRegistrationApi;
 import com.yoyuzh.files.workspace.internal.domain.StoredFile;
 import com.yoyuzh.files.content.internal.infra.StoredFileEntityRepository;
 import com.yoyuzh.files.workspace.internal.infra.StoredFileRepository;
@@ -17,7 +17,6 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
-import java.time.LocalDateTime;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -37,19 +36,12 @@ class RuntimeContentRegistrationApiTest {
 
     @Mock
     private StoredFileEntityRepository storedFileEntityRepository;
-
-    @Mock
-    private StoragePolicyQuery storagePolicyQuery;
-
     @Test
     void shouldRegisterBlobAndPrimaryEntity() {
-        RuntimeContentRegistrationApi api = new RuntimeContentRegistrationApi(
+        RuntimeWorkspaceContentRegistrationApi api = new RuntimeWorkspaceContentRegistrationApi(
                 storedFileRepository,
-                fileEntityRepository,
-                storedFileEntityRepository,
-                storagePolicyQuery
+                new RuntimeContentAssetApi(null, null, fileEntityRepository, storedFileEntityRepository, null)
         );
-        User user = createUser(7L);
         FileBlob blob = createBlob("blobs/blob-1");
         when(fileEntityRepository.findByObjectKeyAndEntityType("blobs/blob-1", FileEntityType.VERSION))
                 .thenReturn(Optional.empty());
@@ -63,10 +55,8 @@ class RuntimeContentRegistrationApiTest {
             storedFile.setId(10L);
             return storedFile;
         });
-        when(storagePolicyQuery.readDefaultPolicyId()).thenReturn(42L);
-
         RegisteredContentFile response = api.registerBlob(new ContentRegistrationCommand(
-                user.getId(),
+                7L,
                 "/docs",
                 "notes.txt",
                 "text/plain",
@@ -82,13 +72,10 @@ class RuntimeContentRegistrationApiTest {
 
     @Test
     void shouldReuseExistingPrimaryEntityWhenBlobAlreadyKnown() {
-        RuntimeContentRegistrationApi api = new RuntimeContentRegistrationApi(
+        RuntimeWorkspaceContentRegistrationApi api = new RuntimeWorkspaceContentRegistrationApi(
                 storedFileRepository,
-                fileEntityRepository,
-                storedFileEntityRepository,
-                storagePolicyQuery
+                new RuntimeContentAssetApi(null, null, fileEntityRepository, storedFileEntityRepository, null)
         );
-        User user = createUser(7L);
         FileBlob blob = createBlob("blobs/blob-2");
         FileEntity existingEntity = new FileEntity();
         existingEntity.setId(30L);
@@ -101,7 +88,7 @@ class RuntimeContentRegistrationApiTest {
         when(storedFileRepository.save(any(StoredFile.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
         api.registerBlob(new ContentRegistrationCommand(
-                user.getId(),
+                7L,
                 "/docs",
                 "report.pdf",
                 "application/pdf",
@@ -115,13 +102,10 @@ class RuntimeContentRegistrationApiTest {
 
     @Test
     void shouldDuplicateBlobBackedFileThroughContentSeam() {
-        RuntimeContentRegistrationApi api = new RuntimeContentRegistrationApi(
+        RuntimeWorkspaceContentRegistrationApi api = new RuntimeWorkspaceContentRegistrationApi(
                 storedFileRepository,
-                fileEntityRepository,
-                storedFileEntityRepository,
-                storagePolicyQuery
+                new RuntimeContentAssetApi(null, null, fileEntityRepository, storedFileEntityRepository, null)
         );
-        User user = createUser(7L);
         FileBlob blob = createBlob("blobs/blob-copy");
         when(fileEntityRepository.findByObjectKeyAndEntityType("blobs/blob-copy", FileEntityType.VERSION))
                 .thenReturn(Optional.empty());
@@ -135,10 +119,8 @@ class RuntimeContentRegistrationApiTest {
             storedFile.setId(11L);
             return storedFile;
         });
-        when(storagePolicyQuery.readDefaultPolicyId()).thenReturn(42L);
-
         RegisteredContentFile response = api.duplicateBlobBackedFile(new ContentRegistrationCommand(
-                user.getId(),
+                7L,
                 "/downloads",
                 "notes-copy.txt",
                 "text/plain",
@@ -149,14 +131,6 @@ class RuntimeContentRegistrationApiTest {
         assertThat(response.id()).isEqualTo(11L);
         assertThat(response.path()).isEqualTo("/downloads");
         verify(storedFileEntityRepository).save(any());
-    }
-
-    private User createUser(Long id) {
-        User user = new User();
-        user.setId(id);
-        user.setUsername("user-" + id);
-        user.setCreatedAt(LocalDateTime.now());
-        return user;
     }
 
     private FileBlob createBlob(String objectKey) {

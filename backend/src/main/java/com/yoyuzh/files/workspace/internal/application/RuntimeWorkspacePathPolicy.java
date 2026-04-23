@@ -1,6 +1,5 @@
 package com.yoyuzh.files.workspace.internal.application;
 
-import com.yoyuzh.identity.access.internal.domain.User;
 import com.yoyuzh.shared.kernel.BusinessException;
 import com.yoyuzh.shared.kernel.ErrorCode;
 import com.yoyuzh.files.workspace.internal.domain.StoredFile;
@@ -119,7 +118,7 @@ public final class RuntimeWorkspacePathPolicy implements WorkspacePathPolicy {
             fileContentStorage.ensureDirectory(userId, logicalPath);
 
             StoredFile storedFile = new StoredFile();
-            storedFile.setUser(userReference(userId));
+            storedFile.setUserId(userId);
             storedFile.setFilename(segment);
             storedFile.setPath(currentPath);
             storedFile.setContentType("directory");
@@ -129,12 +128,6 @@ public final class RuntimeWorkspacePathPolicy implements WorkspacePathPolicy {
 
             currentPath = logicalPath;
         }
-    }
-
-    private User userReference(Long userId) {
-        User user = new User();
-        user.setId(userId);
-        return user;
     }
 
     @Override

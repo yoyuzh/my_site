@@ -1,10 +1,11 @@
 package com.yoyuzh.ops.admin.internal.application;
 
 import com.yoyuzh.infra.cache.AppRedisProperties;
+import com.yoyuzh.ops.admin.api.AdminRuntimeSettingsApi;
 import com.yoyuzh.ops.admin.api.AdminSettingsUpdateRequest;
 import com.yoyuzh.ops.admin.internal.infra.AdminRuntimeSettingsState;
 import com.yoyuzh.ops.admin.internal.infra.AdminRuntimeSettingsStateRepository;
-import com.yoyuzh.platform.storage.internal.infra.FileStorageProperties;
+import com.yoyuzh.platform.storage.api.StorageRuntimeProperties;
 import com.yoyuzh.boot.security.JwtProperties;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.core.env.Environment;
@@ -20,7 +21,7 @@ import java.util.Locale;
 import java.util.Set;
 
 @Service
-public class AdminRuntimeSettingsService {
+public class AdminRuntimeSettingsService implements AdminRuntimeSettingsApi {
 
     private static final Long STATE_ID = 1L;
     private static final List<String> DEFAULT_MANAGEMENT_ROLES = List.of("MODERATOR", "ADMIN");
@@ -32,7 +33,7 @@ public class AdminRuntimeSettingsService {
 
     public AdminRuntimeSettingsService(AdminRuntimeSettingsStateRepository adminRuntimeSettingsStateRepository,
                                        AppRedisProperties redisProperties,
-                                       FileStorageProperties fileStorageProperties,
+                                       StorageRuntimeProperties storageRuntimeProperties,
                                        JwtProperties jwtProperties,
                                        Environment environment) {
         this.adminRuntimeSettingsStateRepository = adminRuntimeSettingsStateRepository;
@@ -52,7 +53,7 @@ public class AdminRuntimeSettingsService {
                 environment.getProperty("app.redis.broker.media-meta.fixed-delay-ms", Long.class, 3000L),
                 environment.getProperty("app.redis.broker.media-meta.initial-delay-ms", Long.class, 15000L),
                 false,
-                normalizeStorageProvider(fileStorageProperties.getProvider()),
+                normalizeStorageProvider(storageRuntimeProperties.getProvider()),
                 redisEnabled
         );
     }
@@ -91,8 +92,15 @@ public class AdminRuntimeSettingsService {
     }
 
     @Transactional(readOnly = true)
+    @Override
     public boolean isInviteCodeRequired() {
         return snapshot().registrationInviteCodeRequired();
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<String> registrationManagementRoles() {
+        return snapshot().registrationManagementRoles();
     }
 
     @Transactional

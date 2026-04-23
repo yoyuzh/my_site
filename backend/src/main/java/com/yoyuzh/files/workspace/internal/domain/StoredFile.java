@@ -1,17 +1,11 @@
 package com.yoyuzh.files.workspace.internal.domain;
 
-import com.yoyuzh.files.content.internal.domain.FileBlob;
-import com.yoyuzh.files.content.internal.domain.FileEntity;
-import com.yoyuzh.identity.access.internal.domain.User;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
-import jakarta.persistence.FetchType;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Index;
-import jakarta.persistence.JoinColumn;
-import jakarta.persistence.ManyToOne;
 import jakarta.persistence.PrePersist;
 import jakarta.persistence.PreUpdate;
 import jakarta.persistence.Table;
@@ -31,9 +25,8 @@ public class StoredFile {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @ManyToOne(fetch = FetchType.LAZY, optional = false)
-    @JoinColumn(name = "user_id", nullable = false)
-    private User user;
+    @Column(name = "user_id", nullable = false)
+    private Long userId;
 
     @Column(nullable = false, length = 255)
     private String filename;
@@ -41,13 +34,11 @@ public class StoredFile {
     @Column(nullable = false, length = 512)
     private String path;
 
-    @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "blob_id")
-    private FileBlob blob;
+    @Column(name = "blob_id")
+    private Long blobId;
 
-    @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "primary_entity_id")
-    private FileEntity primaryEntity;
+    @Column(name = "primary_entity_id")
+    private Long primaryEntityId;
 
     @Column(name = "storage_name", length = 255)
     private String legacyStorageName;
@@ -79,6 +70,9 @@ public class StoredFile {
     @Column(name = "is_recycle_root", nullable = false)
     private boolean recycleRoot;
 
+    @Column(nullable = false)
+    private boolean favorite;
+
     @PrePersist
     public void prePersist() {
         if (createdAt == null) {
@@ -102,12 +96,12 @@ public class StoredFile {
         this.id = id;
     }
 
-    public User getUser() {
-        return user;
+    public Long getUserId() {
+        return userId;
     }
 
-    public void setUser(User user) {
-        this.user = user;
+    public void setUserId(Long userId) {
+        this.userId = userId;
     }
 
     public String getFilename() {
@@ -126,20 +120,20 @@ public class StoredFile {
         this.path = path;
     }
 
-    public FileBlob getBlob() {
-        return blob;
+    public Long getBlobId() {
+        return blobId;
     }
 
-    public void setBlob(FileBlob blob) {
-        this.blob = blob;
+    public void setBlobId(Long blobId) {
+        this.blobId = blobId;
     }
 
-    public FileEntity getPrimaryEntity() {
-        return primaryEntity;
+    public Long getPrimaryEntityId() {
+        return primaryEntityId;
     }
 
-    public void setPrimaryEntity(FileEntity primaryEntity) {
-        this.primaryEntity = primaryEntity;
+    public void setPrimaryEntityId(Long primaryEntityId) {
+        this.primaryEntityId = primaryEntityId;
     }
 
     public String getLegacyStorageName() {
@@ -220,5 +214,13 @@ public class StoredFile {
 
     public void setRecycleRoot(boolean recycleRoot) {
         this.recycleRoot = recycleRoot;
+    }
+
+    public boolean isFavorite() {
+        return favorite;
+    }
+
+    public void setFavorite(boolean favorite) {
+        this.favorite = favorite;
     }
 }

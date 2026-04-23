@@ -29,6 +29,7 @@ import static org.springframework.security.test.web.servlet.request.SecurityMock
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
@@ -112,13 +113,13 @@ class ShareV2ControllerIntegrationTest {
         blob = fileBlobRepository.save(blob);
 
         StoredFile file = new StoredFile();
-        file.setUser(owner);
+        file.setUserId(owner.getId());
         file.setFilename("notes.txt");
         file.setPath("/docs");
         file.setContentType("text/plain");
         file.setSize(5L);
         file.setDirectory(false);
-        file.setBlob(blob);
+        file.setBlobId(blob == null ? null : blob.getId());
         sharedFileId = storedFileRepository.save(file).getId();
 
         Path blobPath = STORAGE_ROOT.resolve("blobs").resolve("share-v2-notes");
@@ -311,6 +312,95 @@ class ShareV2ControllerIntegrationTest {
         mockMvc.perform(get("/api/v2/shares/{token}", token).with(anonymous()))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.downloadCount").value(1));
+    }
+
+    @Test
+    void shouldReadOwnedShareStatsAndUpdateDownloadLimit() throws Exception {
+        String createResponse = mockMvc.perform(post("/api/v2/shares")
+                        .with(user("alice"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "fileId": %d,
+                                  "maxDownloads": 5,
+                                  "allowDownload": true
+                                }
+                                """.formatted(sharedFileId)))
+                .andExpect(status().isOk())
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+        String token = JsonPath.read(createResponse, "$.data.token");
+        Long shareId = ((Number) JsonPath.read(createResponse, "$.data.id")).longValue();
+
+        mockMvc.perform(get("/api/v2/shares/{token}", token).with(anonymous()))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(get("/api/v2/shares/{token}", token)
+                        .with(anonymous())
+                        .param("download", "1"))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(get("/api/v2/shares/{token}/stats", token)
+                        .with(user("alice")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.token").value(token))
+                .andExpect(jsonPath("$.data.visits").value(1))
+                .andExpect(jsonPath("$.data.downloads").value(1))
+                .andExpect(jsonPath("$.data.maxDownloads").value(5))
+                .andExpect(jsonPath("$.data.downloadLimitReached").value(false));
+
+        mockMvc.perform(patch("/api/v2/shares/{id}/policy", shareId)
+                        .with(user("alice"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "maxDownloads": 1
+                                }
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.id").value(shareId))
+                .andExpect(jsonPath("$.data.maxDownloads").value(1))
+                .andExpect(jsonPath("$.data.downloadCount").value(1));
+
+        mockMvc.perform(get("/api/v2/shares/{token}/stats", token)
+                        .with(user("alice")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.downloadLimitReached").value(true));
+    }
+
+    @Test
+    void shouldRejectReadingOrUpdatingOtherUsersShareStats() throws Exception {
+        String createResponse = mockMvc.perform(post("/api/v2/shares")
+                        .with(user("alice"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "fileId": %d
+                                }
+                                """.formatted(sharedFileId)))
+                .andExpect(status().isOk())
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+        String token = JsonPath.read(createResponse, "$.data.token");
+        Long shareId = ((Number) JsonPath.read(createResponse, "$.data.id")).longValue();
+
+        mockMvc.perform(get("/api/v2/shares/{token}/stats", token)
+                        .with(user("bob")))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.code").value(2404));
+
+        mockMvc.perform(patch("/api/v2/shares/{id}/policy", shareId)
+                        .with(user("bob"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "maxDownloads": 3
+                                }
+                                """))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.code").value(2404));
     }
 
     @Test

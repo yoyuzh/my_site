@@ -1,7 +1,7 @@
 package com.yoyuzh.boot.security;
 
 import com.yoyuzh.identity.access.api.IdentityClientType;
-import com.yoyuzh.identity.access.internal.domain.User;
+import com.yoyuzh.identity.access.api.IdentityAuthenticatedUser;
 import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.security.Keys;
@@ -105,12 +105,12 @@ public class JwtTokenProvider {
         return activeSessionId.equals(tokenSessionId);
     }
 
-    public boolean hasMatchingSession(String token, User user) {
+    public boolean hasMatchingSession(String token, IdentityAuthenticatedUser user) {
         String expectedSessionId = switch (getClientType(token)) {
-            case MOBILE -> user.getMobileActiveSessionId();
-            case DESKTOP -> StringUtils.hasText(user.getDesktopActiveSessionId())
-                    ? user.getDesktopActiveSessionId()
-                    : user.getActiveSessionId();
+            case MOBILE -> user.mobileActiveSessionId();
+            case DESKTOP -> StringUtils.hasText(user.desktopActiveSessionId())
+                    ? user.desktopActiveSessionId()
+                    : user.activeSessionId();
         };
 
         return hasMatchingSession(token, expectedSessionId);

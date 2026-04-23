@@ -61,7 +61,7 @@ class FileUploadRulesServiceTest {
         ));
         when(uploadConstraintPolicy.resolveEffectiveMaxUploadSize(2_000L, 1_500L, 1_200L, 900L)).thenReturn(900L);
 
-        assertThatThrownBy(() -> service.validateUpload(user, "/docs", "a.txt", 901L))
+        assertThatThrownBy(() -> service.validateUpload(FileServiceTestSupport.workspaceUser(user), "/docs", "a.txt", 901L))
                 .isInstanceOf(BusinessException.class);
     }
 
@@ -77,7 +77,7 @@ class FileUploadRulesServiceTest {
         User user = createUser(7L, 1_000L, 2_000L);
         when(storedFileRepository.sumFileSizeByUserId(7L)).thenReturn(990L);
 
-        assertThatThrownBy(() -> service.ensureWithinStorageQuota(user, 20L))
+        assertThatThrownBy(() -> service.ensureWithinStorageQuota(FileServiceTestSupport.workspaceUser(user), 20L))
                 .isInstanceOf(BusinessException.class);
     }
 
@@ -93,7 +93,7 @@ class FileUploadRulesServiceTest {
         User user = createUser(7L, 10_000L, 2_000L);
         when(storedFileRepository.sumFileSizeByUserId(7L)).thenReturn(500L);
 
-        assertThatCode(() -> service.validateUpload(user, "/docs", "a.txt", 200L))
+        assertThatCode(() -> service.validateUpload(FileServiceTestSupport.workspaceUser(user), "/docs", "a.txt", 200L))
                 .doesNotThrowAnyException();
 
         verify(storedFileRepository).existsByUserIdAndPathAndFilename(7L, "/docs", "a.txt");

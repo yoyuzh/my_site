@@ -44,7 +44,7 @@ class FileServiceMkdirStorageNameTest {
     void setUp() {
         FileStorageProperties properties = new FileStorageProperties();
         properties.setMaxFileSize(500L * 1024 * 1024);
-        fileService = new FileService(
+        fileService = FileServiceTestSupport.create(
                 storedFileRepository,
                 fileBlobRepository,
                 fileContentStorage,
@@ -64,7 +64,7 @@ class FileServiceMkdirStorageNameTest {
             return storedFile;
         });
 
-        fileService.mkdir(user, "/docs");
+        fileService.mkdir(FileServiceTestSupport.workspaceUser(user), "/docs");
 
         ArgumentCaptor<StoredFile> storedFileCaptor = ArgumentCaptor.forClass(StoredFile.class);
         verify(storedFileRepository).save(storedFileCaptor.capture());

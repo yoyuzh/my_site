@@ -1,21 +1,15 @@
 package com.yoyuzh.files.search;
 
-import com.yoyuzh.files.workspace.internal.domain.StoredFile;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
-import jakarta.persistence.FetchType;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Index;
-import jakarta.persistence.JoinColumn;
-import jakarta.persistence.ManyToOne;
 import jakarta.persistence.PrePersist;
 import jakarta.persistence.PreUpdate;
 import jakarta.persistence.Table;
 import jakarta.persistence.UniqueConstraint;
-import org.hibernate.annotations.OnDelete;
-import org.hibernate.annotations.OnDeleteAction;
 
 import java.time.LocalDateTime;
 
@@ -36,10 +30,8 @@ public class FileMetadata {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @ManyToOne(fetch = FetchType.LAZY, optional = false)
-    @JoinColumn(name = "file_id", nullable = false)
-    @OnDelete(action = OnDeleteAction.CASCADE)
-    private StoredFile file;
+    @Column(name = "file_id", nullable = false)
+    private Long fileId;
 
     @Column(nullable = false, length = 128)
     private String name;
@@ -80,12 +72,12 @@ public class FileMetadata {
         this.id = id;
     }
 
-    public StoredFile getFile() {
-        return file;
+    public Long getFileId() {
+        return fileId;
     }
 
-    public void setFile(StoredFile file) {
-        this.file = file;
+    public void setFileId(Long fileId) {
+        this.fileId = fileId;
     }
 
     public String getName() {

@@ -10,6 +10,8 @@ import static org.mockito.Mockito.when;
 
 import com.yoyuzh.identity.access.internal.domain.User;
 import com.yoyuzh.identity.access.internal.domain.UserRole;
+import com.yoyuzh.identity.access.api.IdentityUserDirectoryApi;
+import com.yoyuzh.identity.access.api.IdentityUserProfileSummary;
 import com.yoyuzh.files.workspace.internal.application.FileService;
 import com.yoyuzh.files.workspace.internal.domain.StoredFile;
 import com.yoyuzh.files.workspace.internal.infra.StoredFileRepository;
@@ -36,12 +38,14 @@ class RuntimeWorkspaceAdminGovernanceApiTest {
     private StoredFileRepository storedFileRepository;
     @Mock
     private FileService fileService;
+    @Mock
+    private IdentityUserDirectoryApi identityUserDirectoryApi;
 
     private RuntimeWorkspaceAdminGovernanceApi runtimeWorkspaceAdminGovernanceApi;
 
     @BeforeEach
     void setUp() {
-        runtimeWorkspaceAdminGovernanceApi = new RuntimeWorkspaceAdminGovernanceApi(storedFileRepository, fileService);
+        runtimeWorkspaceAdminGovernanceApi = new RuntimeWorkspaceAdminGovernanceApi(storedFileRepository, fileService, identityUserDirectoryApi);
     }
 
     @Test
@@ -57,7 +61,7 @@ class RuntimeWorkspaceAdminGovernanceApiTest {
         assertThat(result.get().ownerUserId()).isEqualTo(1L);
         assertThat(result.get().path()).isEqualTo("/docs");
         assertThat(result.get().filename()).isEqualTo("report.pdf");
-        verify(fileService).delete(owner, 10L);
+        verify(fileService).delete(1L, 10L);
     }
 
     @Test
@@ -66,6 +70,8 @@ class RuntimeWorkspaceAdminGovernanceApiTest {
         StoredFile storedFile = createFile(10L, owner, "/docs", "report.pdf");
         when(storedFileRepository.searchAdminFiles(anyString(), anyString(), any()))
                 .thenReturn(new PageImpl<>(List.of(storedFile)));
+        when(identityUserDirectoryApi.findProfileById(1L))
+                .thenReturn(Optional.of(new IdentityUserProfileSummary(1L, "alice", "alice@example.com")));
 
         PageResponse<WorkspaceAdminFileView> result = runtimeWorkspaceAdminGovernanceApi.listFilesAsAdmin(
                 new WorkspaceAdminFileQuery(0, 10, "report", "alice")
@@ -148,7 +154,7 @@ class RuntimeWorkspaceAdminGovernanceApiTest {
     private StoredFile createFile(Long id, User owner, String path, String filename) {
         StoredFile file = new StoredFile();
         file.setId(id);
-        file.setUser(owner);
+        file.setUserId(owner.getId());
         file.setPath(path);
         file.setFilename(filename);
         file.setSize(1024L);

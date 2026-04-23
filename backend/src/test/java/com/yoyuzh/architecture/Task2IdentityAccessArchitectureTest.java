@@ -53,6 +53,21 @@ class Task2IdentityAccessArchitectureTest {
     }
 
     @Test
+    void identityAccessApiMustNotExposeInternalPersistenceTypes() {
+        ArchRule rule = noClasses()
+                .that()
+                .resideInAnyPackage("com.yoyuzh.identity.access.api..")
+                .should()
+                .dependOnClassesThat()
+                .resideInAnyPackage(
+                        "com.yoyuzh.identity.access.internal.domain..",
+                        "com.yoyuzh.identity.access.internal.infra.."
+                );
+
+        rule.check(classes);
+    }
+
+    @Test
     void identityAccessDomainAndInfraMustOwnMovedAuthPersistenceTypes() {
         assertThat(classes.get("com.yoyuzh.identity.access.internal.domain.RefreshToken")).isNotNull();
         assertThat(classes.get("com.yoyuzh.identity.access.internal.infra.RefreshTokenRepository")).isNotNull();

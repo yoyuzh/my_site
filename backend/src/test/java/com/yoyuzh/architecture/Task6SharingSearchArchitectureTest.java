@@ -64,7 +64,7 @@ class Task6SharingSearchArchitectureTest {
 
         ArchRule legacyTransferControllerDtoRule = classes()
                 .that()
-                .haveFullyQualifiedName("com.yoyuzh.transfer.TransferController")
+                .haveFullyQualifiedName("com.yoyuzh.transfer.internal.web.TransferController")
                 .should()
                 .dependOnClassesThat()
                 .haveFullyQualifiedName("com.yoyuzh.files.sharing.api.ImportSharedFileRequest");

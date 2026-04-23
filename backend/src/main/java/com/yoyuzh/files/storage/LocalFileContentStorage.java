@@ -2,7 +2,7 @@ package com.yoyuzh.files.storage;
 
 import com.yoyuzh.shared.kernel.BusinessException;
 import com.yoyuzh.shared.kernel.ErrorCode;
-import com.yoyuzh.platform.storage.internal.infra.FileStorageProperties;
+import com.yoyuzh.platform.storage.api.StorageRuntimeProperties;
 import org.springframework.util.StringUtils;
 import org.springframework.web.multipart.MultipartFile;
 
@@ -16,7 +16,7 @@ public class LocalFileContentStorage implements FileContentStorage {
 
     private final Path rootPath;
 
-    public LocalFileContentStorage(FileStorageProperties properties) {
+    public LocalFileContentStorage(StorageRuntimeProperties properties) {
         this.rootPath = Path.of(properties.getLocal().getRootDir()).toAbsolutePath().normalize();
         try {
             Files.createDirectories(rootPath);

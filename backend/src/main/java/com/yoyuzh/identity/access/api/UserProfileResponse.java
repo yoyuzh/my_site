@@ -1,8 +1,5 @@
 package com.yoyuzh.identity.access.api;
 
-import com.yoyuzh.identity.access.internal.domain.UserRole;
-import com.yoyuzh.identity.access.internal.domain.User;
-
 import java.time.LocalDateTime;
 
 public record UserProfileResponse(
@@ -14,11 +11,14 @@ public record UserProfileResponse(
         String bio,
         String preferredLanguage,
         String avatarUrl,
-        UserRole role,
+        IdentityRoleName role,
         LocalDateTime createdAt,
         long storageQuotaBytes,
         long maxUploadSizeBytes
 ) {
+    private static final long DEFAULT_STORAGE_QUOTA_BYTES = 50L * 1024 * 1024 * 1024;
+    private static final long DEFAULT_MAX_UPLOAD_SIZE_BYTES = 500L * 1024 * 1024;
+
     public UserProfileResponse(Long id, String username, String email, LocalDateTime createdAt) {
         this(
                 id,
@@ -29,10 +29,10 @@ public record UserProfileResponse(
                 null,
                 "zh-CN",
                 null,
-                UserRole.USER,
+                IdentityRoleName.USER,
                 createdAt,
-                User.DEFAULT_STORAGE_QUOTA_BYTES,
-                User.DEFAULT_MAX_UPLOAD_SIZE_BYTES
+                DEFAULT_STORAGE_QUOTA_BYTES,
+                DEFAULT_MAX_UPLOAD_SIZE_BYTES
         );
     }
 }

@@ -3,7 +3,7 @@ package com.yoyuzh.files.storage;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.yoyuzh.shared.kernel.BusinessException;
 import com.yoyuzh.shared.kernel.ErrorCode;
-import com.yoyuzh.platform.storage.internal.infra.FileStorageProperties;
+import com.yoyuzh.platform.storage.api.StorageRuntimeProperties;
 import org.springframework.util.StringUtils;
 import org.springframework.web.multipart.MultipartFile;
 import software.amazon.awssdk.core.ResponseBytes;
@@ -42,10 +42,10 @@ public class S3FileContentStorage implements FileContentStorage, AutoCloseable {
 
     private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
 
-    private final FileStorageProperties.S3 properties;
+    private final StorageRuntimeProperties.S3 properties;
     private final S3SessionProvider sessionProvider;
 
-    public S3FileContentStorage(FileStorageProperties storageProperties) {
+    public S3FileContentStorage(StorageRuntimeProperties storageProperties) {
         this(
                 storageProperties,
                 new DogeCloudS3SessionProvider(
@@ -55,14 +55,14 @@ public class S3FileContentStorage implements FileContentStorage, AutoCloseable {
         );
     }
 
-    S3FileContentStorage(FileStorageProperties storageProperties,
+    S3FileContentStorage(StorageRuntimeProperties storageProperties,
                          String bucket,
                          software.amazon.awssdk.services.s3.S3Client s3Client,
                          software.amazon.awssdk.services.s3.presigner.S3Presigner s3Presigner) {
         this(storageProperties, () -> new S3FileRuntimeSession(bucket, s3Client, s3Presigner));
     }
 
-    S3FileContentStorage(FileStorageProperties storageProperties, S3SessionProvider sessionProvider) {
+    S3FileContentStorage(StorageRuntimeProperties storageProperties, S3SessionProvider sessionProvider) {
         this.properties = storageProperties.getS3();
         this.sessionProvider = sessionProvider;
     }
@@ -492,7 +492,11 @@ public class S3FileContentStorage implements FileContentStorage, AutoCloseable {
     }
 
     private String normalizeObjectKey(String objectKey) {
-        String cleaned = StringUtils.cleanPath(objectKey == null ? "" : objectKey).replace("\\", "/");
+        String raw = objectKey == null ? "" : objectKey;
+        if (raw.contains("..")) {
+            throw new BusinessException(ErrorCode.UNKNOWN, "Invalid storage object key");
+        }
+        String cleaned = StringUtils.cleanPath(raw).replace("\\", "/");
         if (!StringUtils.hasText(cleaned) || cleaned.startsWith("/") || cleaned.contains("..")) {
             throw new BusinessException(ErrorCode.UNKNOWN, "Invalid storage object key");
         }
@@ -500,7 +504,11 @@ public class S3FileContentStorage implements FileContentStorage, AutoCloseable {
     }
 
     private String normalizeRelativePath(String path) {
-        String cleaned = StringUtils.cleanPath(path == null ? "" : path).replace("\\", "/");
+        String raw = path == null ? "" : path;
+        if (raw.contains("..")) {
+            throw new BusinessException(ErrorCode.UNKNOWN, "Invalid storage path");
+        }
+        String cleaned = StringUtils.cleanPath(raw).replace("\\", "/");
         if (!StringUtils.hasText(cleaned) || "/".equals(cleaned)) {
             return "";
         }
@@ -514,7 +522,11 @@ public class S3FileContentStorage implements FileContentStorage, AutoCloseable {
     }
 
     private String normalizeName(String name) {
-        String cleaned = StringUtils.cleanPath(name == null ? "" : name).replace("\\", "/");
+        String raw = name == null ? "" : name;
+        if (raw.contains("..")) {
+            throw new BusinessException(ErrorCode.UNKNOWN, "Invalid storage filename");
+        }
+        String cleaned = StringUtils.cleanPath(raw).replace("\\", "/");
         if (!StringUtils.hasText(cleaned) || cleaned.startsWith("/") || cleaned.contains("..")) {
             throw new BusinessException(ErrorCode.UNKNOWN, "Invalid storage filename");
         }

@@ -7,25 +7,31 @@ import com.yoyuzh.platform.job.api.BackgroundTaskStatus;
 import com.yoyuzh.platform.job.api.BackgroundTaskType;
 
 import com.yoyuzh.platform.job.api.AsyncJobRetryPolicy;
-import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
 @Component
-@RequiredArgsConstructor
 public class BackgroundTaskRetryPolicy {
 
     private final AsyncJobRetryPolicy asyncJobRetryPolicy;
+
+    public BackgroundTaskRetryPolicy(AsyncJobRetryPolicy asyncJobRetryPolicy) {
+        this.asyncJobRetryPolicy = asyncJobRetryPolicy;
+    }
 
     public BackgroundTaskRetryPolicy() {
         this.asyncJobRetryPolicy = new AsyncJobRetryPolicy() {
             @Override
             public int resolveMaxAttempts(BackgroundTaskType type) {
-                return switch (type) {
-                    case ARCHIVE -> 4;
-                    case EXTRACT -> 3;
-                    case MEDIA_META -> 2;
-                    default -> 1;
-                };
+                if (type == BackgroundTaskType.ARCHIVE) {
+                    return 4;
+                }
+                if (type == BackgroundTaskType.EXTRACT) {
+                    return 3;
+                }
+                if (type == BackgroundTaskType.MEDIA_META) {
+                    return 2;
+                }
+                return 1;
             }
 
             @Override
@@ -40,12 +46,14 @@ public class BackgroundTaskRetryPolicy {
                                                  BackgroundTaskFailureCategory failureCategory,
                                                  Integer attemptCount) {
                 int safeAttemptCount = attemptCount == null ? 1 : Math.max(1, attemptCount);
-                long baseDelaySeconds = switch (type) {
-                    case ARCHIVE -> 30L;
-                    case EXTRACT -> 45L;
-                    case MEDIA_META -> 15L;
-                    default -> 30L;
-                };
+                long baseDelaySeconds;
+                if (type == BackgroundTaskType.EXTRACT) {
+                    baseDelaySeconds = 45L;
+                } else if (type == BackgroundTaskType.MEDIA_META) {
+                    baseDelaySeconds = 15L;
+                } else {
+                    baseDelaySeconds = 30L;
+                }
                 if (failureCategory == BackgroundTaskFailureCategory.RATE_LIMITED) {
                     baseDelaySeconds *= 4L;
                 } else if (failureCategory == BackgroundTaskFailureCategory.UNKNOWN) {

@@ -33,6 +33,8 @@ public interface BackgroundTaskLifecycleApi {
                                                 Map<String, Object> privateState,
                                                 String correlationId);
 
+    BackgroundTaskView createSearchIndexRebuildTask(Long requestedByUserId);
+
     Optional<BackgroundTaskView> createQueuedAutoMediaMetadataTask(Long userId,
                                                                    Long fileId,
                                                                    String correlationId);

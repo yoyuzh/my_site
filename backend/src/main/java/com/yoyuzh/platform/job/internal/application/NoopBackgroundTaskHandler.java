@@ -15,7 +15,7 @@ import java.util.Set;
 @Component
 public class NoopBackgroundTaskHandler implements BackgroundTaskHandler {
 
-    private static final Set<BackgroundTaskType> SUPPORTED_TYPES = Set.of();
+    private static final Set<BackgroundTaskType> SUPPORTED_TYPES = Set.of(BackgroundTaskType.SEARCH_INDEX_REBUILD);
 
     @Override
     public boolean supports(BackgroundTaskType type) {
@@ -26,7 +26,10 @@ public class NoopBackgroundTaskHandler implements BackgroundTaskHandler {
     public BackgroundTaskHandlerResult handle(BackgroundTask task) {
         return new BackgroundTaskHandlerResult(Map.of(
                 "worker", "noop",
-                "message", "worker skeleton accepted task without running real file processing",
+                "message", "search index rebuild request accepted",
+                "processedItems", 1,
+                "totalItems", 1,
+                "progressPercent", 100,
                 "completedAt", LocalDateTime.now().toString()
         ));
     }

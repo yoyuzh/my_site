@@ -1,6 +1,5 @@
 package com.yoyuzh.files.workspace.internal.application;
 
-import com.yoyuzh.identity.access.internal.domain.User;
 import com.yoyuzh.files.storage.FileContentStorage;
 import com.yoyuzh.files.workspace.api.WorkspacePathPolicy;
 import com.yoyuzh.files.workspace.internal.domain.StoredFile;
@@ -56,8 +55,8 @@ public final class WorkspaceNodeRulesService {
         workspacePathPolicy.ensureNodeNameAvailable(userId, path, filename, errorMessage);
     }
 
-    public void ensureDirectoryHierarchy(User user, String normalizedPath) {
-        workspacePathPolicy.ensureDirectoryHierarchy(user.getId(), normalizedPath);
+    public void ensureDirectoryHierarchy(Long userId, String normalizedPath) {
+        workspacePathPolicy.ensureDirectoryHierarchy(userId, normalizedPath);
     }
 
     public void ensureExistingDirectoryPath(Long userId, String normalizedPath) {

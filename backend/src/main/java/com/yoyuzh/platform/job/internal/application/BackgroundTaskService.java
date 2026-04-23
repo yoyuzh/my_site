@@ -6,11 +6,11 @@ import com.yoyuzh.platform.job.internal.domain.BackgroundTask;
 
 import com.yoyuzh.platform.job.api.BackgroundTaskFailureCategory;
 import com.yoyuzh.platform.job.api.BackgroundTaskStatus;
+import com.yoyuzh.platform.job.api.TaskProgressResponse;
 import com.yoyuzh.platform.job.api.BackgroundTaskType;
 
-import com.yoyuzh.identity.access.internal.domain.User;
-import com.yoyuzh.files.workspace.internal.domain.StoredFile;
-import com.yoyuzh.files.workspace.internal.infra.StoredFileRepository;
+import com.yoyuzh.files.workspace.api.WorkspaceFileQueryApi;
+import com.yoyuzh.files.workspace.api.WorkspaceFileSnapshot;
 import com.yoyuzh.infra.lock.DistributedLockGateway;
 import com.yoyuzh.shared.kernel.BusinessException;
 import com.yoyuzh.shared.kernel.ErrorCode;
@@ -64,20 +64,20 @@ public class BackgroundTaskService {
     private static final Duration CORRELATION_LOCK_TTL = Duration.ofSeconds(5);
 
     private final BackgroundTaskRepository backgroundTaskRepository;
-    private final StoredFileRepository storedFileRepository;
+    private final WorkspaceFileQueryApi workspaceFileQueryApi;
     private final DistributedLockGateway distributedLockGateway;
     private final BackgroundTaskRetryPolicy retryPolicy;
     private final BackgroundTaskStateManager stateManager;
 
     @Autowired
     public BackgroundTaskService(BackgroundTaskRepository backgroundTaskRepository,
-                                 StoredFileRepository storedFileRepository,
+                                 WorkspaceFileQueryApi workspaceFileQueryApi,
                                  com.fasterxml.jackson.databind.ObjectMapper objectMapper,
                                  DistributedLockGateway distributedLockGateway,
                                  BackgroundTaskRetryPolicy retryPolicy,
                                  BackgroundTaskStateManager stateManager) {
         this.backgroundTaskRepository = backgroundTaskRepository;
-        this.storedFileRepository = storedFileRepository;
+        this.workspaceFileQueryApi = workspaceFileQueryApi;
         this.distributedLockGateway = distributedLockGateway == null
                 ? DistributedLockGateway.noOp()
                 : distributedLockGateway;
@@ -86,12 +86,12 @@ public class BackgroundTaskService {
     }
 
     BackgroundTaskService(BackgroundTaskRepository backgroundTaskRepository,
-                          StoredFileRepository storedFileRepository,
+                          WorkspaceFileQueryApi workspaceFileQueryApi,
                           com.fasterxml.jackson.databind.ObjectMapper objectMapper,
                           DistributedLockGateway distributedLockGateway) {
         this(
                 backgroundTaskRepository,
-                storedFileRepository,
+                workspaceFileQueryApi,
                 objectMapper,
                 distributedLockGateway,
                 new BackgroundTaskRetryPolicy(),
@@ -99,22 +99,12 @@ public class BackgroundTaskService {
         );
     }
 
-    @Transactional
-    public BackgroundTask createQueuedFileTask(User user,
-                                               BackgroundTaskType type,
-                                               Long fileId,
-                                               String requestedPath,
-                                               String correlationId) {
-        return createQueuedFileTask(user.getId(), type, fileId, requestedPath, correlationId);
-    }
-
-    @Transactional
     public BackgroundTask createQueuedFileTask(Long userId,
                                                BackgroundTaskType type,
                                                Long fileId,
                                                String requestedPath,
                                                String correlationId) {
-        StoredFile file = storedFileRepository.findByIdAndUserIdAndDeletedAtIsNull(fileId, userId)
+        WorkspaceFileSnapshot file = workspaceFileQueryApi.findOwnedActiveFile(userId, fileId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.FILE_NOT_FOUND, "file not found"));
         String logicalPath = buildLogicalPath(file);
         if (!logicalPath.equals(normalizeLogicalPath(requestedPath))) {
@@ -139,9 +129,9 @@ public class BackgroundTaskService {
                             return Optional.empty();
                         }
 
-                        return storedFileRepository.findByIdAndUserIdAndDeletedAtIsNull(fileId, userId)
-                                .filter(file -> !file.isDirectory())
-                                .filter(file -> MediaTaskSupport.isMediaLike(file.getFilename(), file.getContentType()))
+                        return workspaceFileQueryApi.findOwnedActiveFile(userId, fileId)
+                                .filter(file -> !file.directory())
+                                .filter(file -> MediaTaskSupport.isMediaLike(file.filename(), file.contentType()))
                                 .map(file -> createQueuedFileTaskInternal(
                                         userId,
                                         BackgroundTaskType.MEDIA_META,
@@ -156,16 +146,6 @@ public class BackgroundTaskService {
         }
     }
 
-    @Transactional
-    public BackgroundTask createQueuedTask(User user,
-                                           BackgroundTaskType type,
-                                           Map<String, Object> publicState,
-                                           Map<String, Object> privateState,
-                                           String correlationId) {
-        return createQueuedTaskByUserId(user.getId(), type, publicState, privateState, correlationId);
-    }
-
-    @Transactional
     public BackgroundTask createQueuedTaskByUserId(Long userId,
                                                    BackgroundTaskType type,
                                                    Map<String, Object> publicState,
@@ -203,16 +183,8 @@ public class BackgroundTaskService {
                 : backgroundTaskRepository.save(task);
     }
 
-    public Page<BackgroundTask> listOwnedTasks(User user, Pageable pageable) {
-        return listOwnedTasks(user.getId(), pageable);
-    }
-
     public Page<BackgroundTask> listOwnedTasks(Long userId, Pageable pageable) {
         return backgroundTaskRepository.findByUserIdOrderByCreatedAtDesc(userId, pageable);
-    }
-
-    public BackgroundTask getOwnedTask(User user, Long id) {
-        return getOwnedTask(user.getId(), id);
     }
 
     public BackgroundTask getOwnedTask(Long userId, Long id) {
@@ -220,12 +192,52 @@ public class BackgroundTaskService {
                 .orElseThrow(() -> new BusinessException(ErrorCode.FILE_NOT_FOUND, "task not found"));
     }
 
-    @Transactional
-    public BackgroundTask cancelOwnedTask(User user, Long id) {
-        return cancelOwnedTask(user.getId(), id);
+    public TaskProgressResponse getOwnedTaskProgress(Long userId, Long id) {
+        BackgroundTask task = getOwnedTask(userId, id);
+        Map<String, Object> state = stateManager.parseJsonObject(task.getPublicStateJson(), "Failed to parse background task state");
+        long processedItems = sumProgressItems(
+                stateManager.readLong(state.get("processedItems")),
+                stateManager.readLong(state.get("processedFileCount")),
+                stateManager.readLong(state.get("processedDirectoryCount"))
+        );
+        long totalItems = sumProgressItems(
+                stateManager.readLong(state.get("totalItems")),
+                stateManager.readLong(state.get("totalFileCount")),
+                stateManager.readLong(state.get("totalDirectoryCount"))
+        );
+        Long explicitPercent = stateManager.readLong(state.get("progressPercent"));
+        int progressPercent = explicitPercent == null
+                ? deriveProgressPercent(processedItems, totalItems)
+                : (int) Math.max(0L, Math.min(100L, explicitPercent));
+        String message = firstNonBlank(
+                stateManager.readText(state.get("message")),
+                task.getErrorMessage(),
+                task.getStatus().name()
+        );
+        return new TaskProgressResponse(task.getId(), task.getStatus().name(), progressPercent, processedItems, totalItems, message);
     }
 
     @Transactional
+    public BackgroundTask createSearchIndexRebuildTask(Long requestedByUserId) {
+        Map<String, Object> publicState = new LinkedHashMap<>();
+        publicState.put("message", "search index rebuild queued");
+        publicState.put("processedItems", 0);
+        publicState.put("totalItems", 1);
+        publicState.put("progressPercent", 0);
+
+        Map<String, Object> privateState = new LinkedHashMap<>(publicState);
+        privateState.put("taskType", BackgroundTaskType.SEARCH_INDEX_REBUILD.name());
+        privateState.put("requestedByUserId", requestedByUserId);
+
+        return createQueuedTask(
+                requestedByUserId,
+                BackgroundTaskType.SEARCH_INDEX_REBUILD,
+                publicState,
+                privateState,
+                "search-index-rebuild:" + UUID.randomUUID().toString().replace("-", "")
+        );
+    }
+
     public BackgroundTask cancelOwnedTask(Long userId, Long id) {
         BackgroundTask task = getOwnedTask(userId, id);
         if (task.isTerminal()) {
@@ -249,12 +261,6 @@ public class BackgroundTaskService {
         return task;
     }
 
-    @Transactional
-    public BackgroundTask retryOwnedTask(User user, Long id) {
-        return retryOwnedTask(user.getId(), id);
-    }
-
-    @Transactional
     public BackgroundTask retryOwnedTask(Long userId, Long id) {
         BackgroundTask task = getOwnedTask(userId, id);
         if (task.getStatus() != BackgroundTaskStatus.FAILED) {
@@ -272,8 +278,8 @@ public class BackgroundTaskService {
     }
 
     @Transactional
-    public BackgroundTask markRunning(User user, Long id) {
-        BackgroundTask task = getOwnedTask(user, id);
+    public BackgroundTask markRunning(Long userId, Long id) {
+        BackgroundTask task = getOwnedTask(userId, id);
         if (task.isTerminal()) {
             return task;
         }
@@ -291,8 +297,8 @@ public class BackgroundTaskService {
     }
 
     @Transactional
-    public BackgroundTask markCompleted(User user, Long id) {
-        BackgroundTask task = getOwnedTask(user, id);
+    public BackgroundTask markCompleted(Long userId, Long id) {
+        BackgroundTask task = getOwnedTask(userId, id);
         if (task.isTerminal()) {
             return task;
         }
@@ -310,8 +316,8 @@ public class BackgroundTaskService {
     }
 
     @Transactional
-    public BackgroundTask markFailed(User user, Long id, String errorMessage) {
-        BackgroundTask task = getOwnedTask(user, id);
+    public BackgroundTask markFailed(Long userId, Long id, String errorMessage) {
+        BackgroundTask task = getOwnedTask(userId, id);
         if (task.isTerminal()) {
             return task;
         }
@@ -345,39 +351,39 @@ public class BackgroundTaskService {
         return "background-task-correlation:" + correlationId;
     }
 
-    private void validateTaskTarget(BackgroundTaskType type, StoredFile file) {
+    private void validateTaskTarget(BackgroundTaskType type, WorkspaceFileSnapshot file) {
         if (type == BackgroundTaskType.ARCHIVE) {
             return;
         }
-        if (file.isDirectory()) {
+        if (file.directory()) {
             throw new BusinessException(ErrorCode.UNKNOWN, "task target type is not supported");
         }
         if (type == BackgroundTaskType.EXTRACT && !isZipCompatibleArchive(file)) {
             throw new BusinessException(ErrorCode.UNKNOWN, "extract task only supports zip-compatible archives");
         }
         if (type == BackgroundTaskType.MEDIA_META
-                && !MediaTaskSupport.isMediaLike(file.getFilename(), file.getContentType())) {
+                && !MediaTaskSupport.isMediaLike(file.filename(), file.contentType())) {
             throw new BusinessException(ErrorCode.UNKNOWN, "media metadata task only supports media files");
         }
     }
 
-    private Map<String, Object> fileState(StoredFile file, String logicalPath) {
+    private Map<String, Object> fileState(WorkspaceFileSnapshot file, String logicalPath) {
         Map<String, Object> state = new LinkedHashMap<>();
-        state.put("fileId", file.getId());
+        state.put("fileId", file.id());
         state.put("path", logicalPath);
-        state.put("filename", file.getFilename());
-        state.put("directory", file.isDirectory());
-        state.put("contentType", file.getContentType());
-        state.put("size", file.getSize());
+        state.put("filename", file.filename());
+        state.put("directory", file.directory());
+        state.put("contentType", file.contentType());
+        state.put("size", file.size());
         return state;
     }
 
-    private boolean isZipCompatibleArchive(StoredFile file) {
-        String contentType = normalizeContentType(file.getContentType());
+    private boolean isZipCompatibleArchive(WorkspaceFileSnapshot file) {
+        String contentType = normalizeContentType(file.contentType());
         if (contentType.contains("zip") || contentType.contains("java-archive")) {
             return true;
         }
-        return hasExtension(file.getFilename(), ZIP_COMPATIBLE_EXTENSIONS);
+        return hasExtension(file.filename(), ZIP_COMPATIBLE_EXTENSIONS);
     }
 
     private String deriveExtractOutputDirectoryName(String filename) {
@@ -415,14 +421,14 @@ public class BackgroundTaskService {
 
     private BackgroundTask createQueuedFileTaskInternal(Long userId,
                                                         BackgroundTaskType type,
-                                                        StoredFile file,
+                                                        WorkspaceFileSnapshot file,
                                                         String correlationId) {
         return createQueuedFileTaskInternal(userId, type, file, correlationId, false);
     }
 
     private BackgroundTask createQueuedFileTaskInternal(Long userId,
                                                         BackgroundTaskType type,
-                                                        StoredFile file,
+                                                        WorkspaceFileSnapshot file,
                                                         String correlationId,
                                                         boolean flushOnSave) {
         String logicalPath = buildLogicalPath(file);
@@ -432,15 +438,15 @@ public class BackgroundTaskService {
         Map<String, Object> privateState = new LinkedHashMap<>(publicState);
         privateState.put("taskType", type.name());
         if (type == BackgroundTaskType.ARCHIVE) {
-            String outputPath = file.getPath();
-            String outputFilename = file.getFilename() + ".zip";
+            String outputPath = file.path();
+            String outputFilename = file.filename() + ".zip";
             publicState.put("outputPath", outputPath);
             publicState.put("outputFilename", outputFilename);
             privateState.put("outputPath", outputPath);
             privateState.put("outputFilename", outputFilename);
         } else if (type == BackgroundTaskType.EXTRACT) {
-            String outputPath = file.getPath();
-            String outputDirectoryName = deriveExtractOutputDirectoryName(file.getFilename());
+            String outputPath = file.path();
+            String outputDirectoryName = deriveExtractOutputDirectoryName(file.filename());
             publicState.put("outputPath", outputPath);
             publicState.put("outputDirectoryName", outputDirectoryName);
             privateState.put("outputPath", outputPath);
@@ -449,12 +455,12 @@ public class BackgroundTaskService {
         return createQueuedTask(userId, type, publicState, privateState, correlationId, flushOnSave);
     }
 
-    private String buildLogicalPath(StoredFile file) {
-        String parent = normalizeLogicalPath(file.getPath());
+    private String buildLogicalPath(WorkspaceFileSnapshot file) {
+        String parent = normalizeLogicalPath(file.path());
         if ("/".equals(parent)) {
-            return "/" + file.getFilename();
+            return "/" + file.filename();
         }
-        return parent + "/" + file.getFilename();
+        return parent + "/" + file.filename();
     }
 
     private String normalizeLogicalPath(String path) {
@@ -478,5 +484,29 @@ public class BackgroundTaskService {
         task.setLeaseOwner(null);
         task.setLeaseExpiresAt(null);
         task.setHeartbeatAt(null);
+    }
+
+    private long sumProgressItems(Long aggregate, Long fileCount, Long directoryCount) {
+        if (aggregate != null) {
+            return Math.max(0L, aggregate);
+        }
+        return Math.max(0L, fileCount == null ? 0L : fileCount)
+                + Math.max(0L, directoryCount == null ? 0L : directoryCount);
+    }
+
+    private int deriveProgressPercent(long processedItems, long totalItems) {
+        if (totalItems <= 0L) {
+            return 0;
+        }
+        return (int) Math.min(100L, Math.max(0L, processedItems) * 100L / totalItems);
+    }
+
+    private String firstNonBlank(String... values) {
+        for (String value : values) {
+            if (StringUtils.hasText(value)) {
+                return value.trim();
+            }
+        }
+        return "";
     }
 }

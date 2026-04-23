@@ -1,7 +1,7 @@
 package com.yoyuzh.boot.security;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.yoyuzh.ops.admin.internal.web.ApiRequestMetricsFilter;
+import com.yoyuzh.identity.access.api.AdminAccessPolicy;
 import com.yoyuzh.shared.kernel.ApiResponse;
 import com.yoyuzh.shared.kernel.ErrorCode;
 import java.util.List;
@@ -38,6 +38,7 @@ public class SecurityConfig {
     private final CustomUserDetailsService userDetailsService;
     private final ObjectMapper objectMapper;
     private final CorsProperties corsProperties;
+    private final AdminAccessPolicy adminAccessPolicy;
 
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
@@ -46,11 +47,13 @@ public class SecurityConfig {
                 .cors(Customizer.withDefaults())
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
+                        .requestMatchers("/", "/error", "/h2-console/**")
+                        .permitAll()
                         .requestMatchers("/api/auth/**", "/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html")
                         .permitAll()
                         .requestMatchers("/api/app/android/latest", "/api/app/android/download", "/api/app/android/download/*")
                         .permitAll()
-                        .requestMatchers(HttpMethod.GET, "/api/v2/site/ping")
+                        .requestMatchers(HttpMethod.GET, "/api/v2/site/ping", "/api/v2/site/config")
                         .permitAll()
                         .requestMatchers("/api/v2/tasks/**")
                         .authenticated()
@@ -73,24 +76,28 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.GET, "/api/files/share-links/*")
                         .permitAll()
                         .requestMatchers("/api/admin/**")
-                        .authenticated()
+                        .access((authentication, context) -> new org.springframework.security.authorization.AuthorizationDecision(
+                                adminAccessPolicy.hasAdminAccess(authentication.get())
+                        ))
                         .requestMatchers("/api/files/**", "/api/user/**")
                         .authenticated()
                         .anyRequest()
-                        .permitAll())
+                        .denyAll())
                 .authenticationProvider(authenticationProvider())
                 .exceptionHandling(ex -> ex
                         .authenticationEntryPoint((request, response, e) -> {
                             response.setStatus(401);
                             response.setContentType(MediaType.APPLICATION_JSON_VALUE);
+                            response.setCharacterEncoding("UTF-8");
                             objectMapper.writeValue(response.getWriter(),
                                     ApiResponse.error(ErrorCode.NOT_LOGGED_IN, "用户未登录"));
                         })
                         .accessDeniedHandler((request, response, e) -> {
                             response.setStatus(403);
                             response.setContentType(MediaType.APPLICATION_JSON_VALUE);
+                            response.setCharacterEncoding("UTF-8");
                             objectMapper.writeValue(response.getWriter(),
-                                    ApiResponse.error(ErrorCode.PERMISSION_DENIED, "权限不足"));
+                                    ApiResponse.error(ErrorCode.PERMISSION_DENIED, "没有权限访问该资源"));
                         }))
                 .addFilterBefore(apiRequestMetricsFilter, UsernamePasswordAuthenticationFilter.class)
                 .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);

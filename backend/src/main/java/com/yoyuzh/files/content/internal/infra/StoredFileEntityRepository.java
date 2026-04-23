@@ -24,7 +24,7 @@ public interface StoredFileEntityRepository extends JpaRepository<StoredFileEnti
     }
 
     @Query("""
-            select count(distinct relation.storedFile.id)
+            select count(distinct relation.storedFileId)
             from StoredFileEntity relation
             where relation.fileEntity.storagePolicyId = :storagePolicyId
               and relation.fileEntity.entityType = :entityType
@@ -35,40 +35,41 @@ public interface StoredFileEntityRepository extends JpaRepository<StoredFileEnti
     long countByFileEntityId(Long fileEntityId);
 
     @Query("""
-            select count(distinct relation.storedFile.user.id)
-            from StoredFileEntity relation
+            select count(distinct storedFile.userId)
+            from StoredFileEntity relation, StoredFile storedFile
             where relation.fileEntity.id = :fileEntityId
+              and storedFile.id = relation.storedFileId
             """)
     long countDistinctOwnersByFileEntityId(@Param("fileEntityId") Long fileEntityId);
 
     @Query("""
             select min(owner.username)
-            from StoredFileEntity relation
-            join relation.storedFile storedFile
-            join storedFile.user owner
+            from StoredFileEntity relation, StoredFile storedFile, User owner
             where relation.fileEntity.id = :fileEntityId
+              and storedFile.id = relation.storedFileId
+              and owner.id = storedFile.userId
             """)
     String findSampleOwnerUsernameByFileEntityId(@Param("fileEntityId") Long fileEntityId);
 
     @Query("""
             select min(owner.email)
-            from StoredFileEntity relation
-            join relation.storedFile storedFile
-            join storedFile.user owner
+            from StoredFileEntity relation, StoredFile storedFile, User owner
             where relation.fileEntity.id = :fileEntityId
+              and storedFile.id = relation.storedFileId
+              and owner.id = storedFile.userId
             """)
     String findSampleOwnerEmailByFileEntityId(@Param("fileEntityId") Long fileEntityId);
 
     @Query("""
             select relation.fileEntity.id as fileEntityId,
-                   count(distinct relation.storedFile.id) as linkedStoredFileCount,
+                   count(distinct relation.storedFileId) as linkedStoredFileCount,
                    count(distinct owner.id) as linkedOwnerCount,
                    min(owner.username) as sampleOwnerUsername,
                    min(owner.email) as sampleOwnerEmail
-            from StoredFileEntity relation
-            join relation.storedFile storedFile
-            join storedFile.user owner
+            from StoredFileEntity relation, StoredFile storedFile, User owner
             where relation.fileEntity.id in :fileEntityIds
+              and storedFile.id = relation.storedFileId
+              and owner.id = storedFile.userId
             group by relation.fileEntity.id
             """)
     List<FileEntityLinkStatsProjection> findAdminLinkStatsByFileEntityIds(@Param("fileEntityIds") Collection<Long> fileEntityIds);

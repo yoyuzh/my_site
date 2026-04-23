@@ -1,7 +1,9 @@
 package com.yoyuzh.app.android.internal.infra;
 
 import org.springframework.boot.context.properties.ConfigurationProperties;
+import org.springframework.stereotype.Component;
 
+@Component
 @ConfigurationProperties(prefix = "app.android")
 public class AndroidReleaseProperties {
 

@@ -36,8 +36,14 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.Spy;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
+import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.security.crypto.password.PasswordEncoder;
 
+import java.nio.charset.StandardCharsets;
 import java.time.LocalDateTime;
 import java.util.Optional;
 
@@ -50,6 +56,7 @@ import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.never;
 
 @ExtendWith(MockitoExtension.class)
 class AuthServiceTest {
@@ -90,6 +97,9 @@ class AuthServiceTest {
     @Mock
     private IdentityCredentialIssuer identityCredentialIssuer;
 
+    @Mock
+    private IdentityStorageUsageQuery identityStorageUsageQuery;
+
     @Spy
     private AuthSessionPolicy authSessionPolicy = new AuthSessionPolicy(new RandomIdentitySessionPolicy());
 
@@ -113,10 +123,18 @@ class AuthServiceTest {
             user.setCreatedAt(LocalDateTime.now());
             return user;
         });
-        when(identityCredentialIssuer.issueFresh(any(User.class), eq(IdentityClientType.DESKTOP)))
+        when(identityCredentialIssuer.issueFresh(anyLong(), eq(IdentityClientType.DESKTOP)))
                 .thenAnswer(invocation -> {
-                    User issuedUser = invocation.getArgument(0);
-                    return new IssuedAuthCredentials(issuedUser, "access-token", "refresh-token");
+                    Long issuedUserId = invocation.getArgument(0);
+                    User issuedUser = new User();
+                    issuedUser.setId(issuedUserId);
+                    issuedUser.setUsername("alice");
+                    issuedUser.setDisplayName("alice");
+                    issuedUser.setEmail("alice@example.com");
+                    issuedUser.setPhoneNumber("13800138000");
+                    issuedUser.setPreferredLanguage("zh-CN");
+                    issuedUser.setCreatedAt(LocalDateTime.now());
+                    return new IssuedAuthCredentials(snapshot(issuedUser), "access-token", "refresh-token");
                 });
 
         AuthResponse response = authService.register(request);
@@ -199,8 +217,8 @@ class AuthServiceTest {
         user.setPasswordHash("encoded-password");
         user.setCreatedAt(LocalDateTime.now());
         when(userRepository.findByUsername("alice")).thenReturn(Optional.of(user));
-        when(identityCredentialIssuer.issueFresh(user, IdentityClientType.DESKTOP))
-                .thenReturn(new IssuedAuthCredentials(user, "access-token", "refresh-token"));
+        when(identityCredentialIssuer.issueFresh(user.getId(), IdentityClientType.DESKTOP))
+                .thenReturn(new IssuedAuthCredentials(snapshot(user), "access-token", "refresh-token"));
 
         AuthResponse response = authService.login(request);
 
@@ -218,9 +236,11 @@ class AuthServiceTest {
         user.setId(1L);
         user.setUsername("alice");
         user.setEmail("alice@example.com");
+        user.setDisplayName("alice");
+        user.setPreferredLanguage("zh-CN");
         user.setCreatedAt(LocalDateTime.now());
         when(identityCredentialIssuer.refresh("old-refresh", IdentityClientType.DESKTOP))
-                .thenReturn(new IssuedAuthCredentials(user, "new-access", "new-refresh"));
+                .thenReturn(new IssuedAuthCredentials(snapshot(user), "new-access", "new-refresh"));
 
         AuthResponse response = authService.refresh("old-refresh");
 
@@ -267,16 +287,24 @@ class AuthServiceTest {
             user.setCreatedAt(LocalDateTime.now());
             return user;
         });
-        when(identityCredentialIssuer.issueFresh(any(User.class), eq(IdentityClientType.DESKTOP)))
+        when(identityCredentialIssuer.issueFresh(anyLong(), eq(IdentityClientType.DESKTOP)))
                 .thenAnswer(invocation -> {
-                    User issuedUser = invocation.getArgument(0);
-                    return new IssuedAuthCredentials(issuedUser, "access-token", "refresh-token");
+                    Long issuedUserId = invocation.getArgument(0);
+                    User issuedUser = new User();
+                    issuedUser.setId(issuedUserId);
+                    issuedUser.setUsername("demo");
+                    issuedUser.setDisplayName("demo");
+                    issuedUser.setEmail("demo@dev.local");
+                    issuedUser.setRole(UserRole.USER);
+                    issuedUser.setPreferredLanguage("zh-CN");
+                    issuedUser.setCreatedAt(LocalDateTime.now());
+                    return new IssuedAuthCredentials(snapshot(issuedUser), "access-token", "refresh-token");
                 });
 
         AuthResponse response = authService.devLogin("demo");
 
         assertThat(response.user().username()).isEqualTo("demo");
-        assertThat(response.user().role()).isEqualTo(UserRole.USER);
+        assertThat(response.user().role()).isEqualTo(IdentityRoleName.USER);
         assertThat(response.accessToken()).isEqualTo("access-token");
         assertThat(response.refreshToken()).isEqualTo("refresh-token");
         verify(workspaceBootstrapApi).ensureDefaultDirectories(any(WorkspaceUserContext.class));
@@ -296,12 +324,12 @@ class AuthServiceTest {
 
         when(userRepository.findByUsername("admin")).thenReturn(Optional.of(existing));
         when(userRepository.save(existing)).thenReturn(existing);
-        when(identityCredentialIssuer.issueFresh(existing, IdentityClientType.DESKTOP))
-                .thenReturn(new IssuedAuthCredentials(existing, "admin-access-token", "admin-refresh-token"));
+        when(identityCredentialIssuer.issueFresh(existing.getId(), IdentityClientType.DESKTOP))
+                .thenAnswer(invocation -> new IssuedAuthCredentials(snapshot(existing), "admin-access-token", "admin-refresh-token"));
 
         AuthResponse response = authService.devLogin("admin");
 
-        assertThat(response.user().role()).isEqualTo(UserRole.ADMIN);
+        assertThat(response.user().role()).isEqualTo(IdentityRoleName.ADMIN);
         assertThat(existing.getRole()).isEqualTo(UserRole.ADMIN);
         verify(workspaceBootstrapApi).ensureDefaultDirectories(argThat(context -> context.userId().equals(existing.getId())));
     }
@@ -320,12 +348,12 @@ class AuthServiceTest {
 
         when(userRepository.findByUsername("operator")).thenReturn(Optional.of(existing));
         when(userRepository.save(existing)).thenReturn(existing);
-        when(identityCredentialIssuer.issueFresh(existing, IdentityClientType.DESKTOP))
-                .thenReturn(new IssuedAuthCredentials(existing, "operator-access-token", "operator-refresh-token"));
+        when(identityCredentialIssuer.issueFresh(existing.getId(), IdentityClientType.DESKTOP))
+                .thenAnswer(invocation -> new IssuedAuthCredentials(snapshot(existing), "operator-access-token", "operator-refresh-token"));
 
         AuthResponse response = authService.devLogin("operator");
 
-        assertThat(response.user().role()).isEqualTo(UserRole.MODERATOR);
+        assertThat(response.user().role()).isEqualTo(IdentityRoleName.MODERATOR);
         assertThat(existing.getRole()).isEqualTo(UserRole.MODERATOR);
         verify(workspaceBootstrapApi).ensureDefaultDirectories(argThat(context -> context.userId().equals(existing.getId())));
     }
@@ -379,18 +407,18 @@ class AuthServiceTest {
         UpdateUserPasswordRequest request = new UpdateUserPasswordRequest("OldPass1!", "NewPass1!A");
 
         when(userRepository.findByUsername("alice")).thenReturn(Optional.of(user));
-        when(passwordChangePolicy.changePassword(eq(user), argThat(attempt ->
+        when(passwordChangePolicy.changePassword(eq(user.getId()), argThat(attempt ->
                 attempt.currentPassword().equals("OldPass1!")
                         && attempt.newPassword().equals("NewPass1!A")
                         && attempt.clientType() == IdentityClientType.DESKTOP)))
-                .thenReturn(new IssuedAuthCredentials(user, "new-access", "new-refresh"));
+                .thenReturn(new IssuedAuthCredentials(snapshot(user), "new-access", "new-refresh"));
 
         AuthResponse response = authService.changePassword("alice", request);
 
         assertThat(response.accessToken()).isEqualTo("new-access");
         assertThat(response.refreshToken()).isEqualTo("new-refresh");
         verify(passwordChangePolicy).changePassword(
-                eq(user),
+                eq(user.getId()),
                 eq(new PasswordChangeAttempt("OldPass1!", "NewPass1!A", IdentityClientType.DESKTOP)));
     }
 
@@ -403,7 +431,7 @@ class AuthServiceTest {
 
         when(userRepository.findByUsername("alice")).thenReturn(Optional.of(user));
         when(passwordChangePolicy.changePassword(
-                eq(user),
+                eq(user.getId()),
                 eq(new PasswordChangeAttempt("WrongPass1!", "NewPass1!A", IdentityClientType.DESKTOP))))
                 .thenThrow(new BusinessException(com.yoyuzh.shared.kernel.ErrorCode.UNKNOWN, "当前密码错误"));
 
@@ -459,5 +487,166 @@ class AuthServiceTest {
         verify(fileContentStorage).completeUpload(1L, "/.avatar", "new-avatar.webp", "image/webp", 4096L);
         verify(fileContentStorage).deleteFile(1L, "/.avatar", "old-avatar.png");
         assertThat(response.avatarUrl()).isEqualTo("https://cdn.example.com/avatar.webp");
+    }
+
+    @Test
+    void shouldInitiateProxyAvatarUploadWhenStorageDoesNotReturnDirectUpload() {
+        User user = new User();
+        user.setId(1L);
+        user.setUsername("alice");
+        when(userRepository.findByUsername("alice")).thenReturn(Optional.of(user));
+        when(fileContentStorage.prepareUpload(eq(1L), eq("/.avatar"), anyString(), eq("image/webp"), eq(2048L)))
+                .thenAnswer(invocation -> new PreparedUpload(false, null, null, java.util.Map.of(), invocation.getArgument(2)));
+
+        InitiateUploadResponse response = authService.initiateAvatarUpload(
+                "alice",
+                new UpdateUserAvatarRequest("face", "image/webp", 2048L, "  ")
+        );
+
+        assertThat(response.direct()).isFalse();
+        assertThat(response.method()).isEqualTo("POST");
+        assertThat(response.headers()).isEmpty();
+        assertThat(response.storageName()).startsWith("avatar-").endsWith(".webp");
+        assertThat(response.uploadUrl()).startsWith("/api/user/avatar/upload?storageName=avatar-");
+        assertThat(response.uploadUrl()).endsWith(".webp");
+    }
+
+    @Test
+    void shouldUploadAvatarWithSanitizedStorageName() {
+        User user = new User();
+        user.setId(1L);
+        user.setUsername("alice");
+        when(userRepository.findByUsername("alice")).thenReturn(Optional.of(user));
+        MockMultipartFile file = new MockMultipartFile(
+                "file",
+                "face.gif",
+                "image/gif",
+                "gif".getBytes(StandardCharsets.UTF_8)
+        );
+
+        authService.uploadAvatar("alice", "nested\\avatar.gif", file);
+
+        verify(fileContentStorage).upload(1L, "/.avatar", "avatar.gif", file);
+    }
+
+    @Test
+    void shouldCompleteAvatarUploadWithoutDeletingWhenStorageNameIsUnchanged() {
+        User user = new User();
+        user.setId(1L);
+        user.setUsername("alice");
+        user.setDisplayName("Alice");
+        user.setEmail("alice@example.com");
+        user.setPreferredLanguage("zh-CN");
+        user.setRole(UserRole.USER);
+        user.setAvatarStorageName("avatar.png");
+        user.setAvatarContentType("image/png");
+        user.setCreatedAt(LocalDateTime.now());
+        when(userRepository.findByUsername("alice")).thenReturn(Optional.of(user));
+        when(userRepository.save(user)).thenReturn(user);
+
+        var response = authService.completeAvatarUpload(
+                "alice",
+                new UpdateUserAvatarRequest("avatar.png", "image/png", 1024L, "avatar.png")
+        );
+
+        verify(fileContentStorage).completeUpload(1L, "/.avatar", "avatar.png", "image/png", 1024L);
+        verify(fileContentStorage, never()).deleteFile(anyLong(), anyString(), anyString());
+        assertThat(response.avatarUrl()).startsWith("/user/avatar/content?v=");
+    }
+
+    @Test
+    void shouldReadAvatarContentInlineWhenStorageCannotRedirect() {
+        User user = new User();
+        user.setId(1L);
+        user.setUsername("alice");
+        user.setAvatarStorageName("avatar-storage");
+        when(userRepository.findByUsername("alice")).thenReturn(Optional.of(user));
+        when(fileContentStorage.supportsDirectDownload()).thenReturn(false);
+        when(fileContentStorage.readFile(1L, "/.avatar", "avatar-storage"))
+                .thenReturn("avatar".getBytes(StandardCharsets.UTF_8));
+
+        ResponseEntity<?> response = authService.getAvatarContent("alice");
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(response.getHeaders().getContentType()).isEqualTo(MediaType.APPLICATION_OCTET_STREAM);
+        assertThat(response.getHeaders().getFirst(HttpHeaders.CONTENT_DISPOSITION))
+                .isEqualTo("inline; filename*=UTF-8''avatar.png");
+        assertThat(response.getBody()).isEqualTo("avatar".getBytes(StandardCharsets.UTF_8));
+    }
+
+    @Test
+    void shouldRedirectAvatarContentWhenStorageSupportsDirectDownload() {
+        User user = new User();
+        user.setId(1L);
+        user.setUsername("alice");
+        user.setAvatarStorageName("avatar-storage");
+        user.setAvatarContentType("image/jpeg");
+        when(userRepository.findByUsername("alice")).thenReturn(Optional.of(user));
+        when(fileContentStorage.supportsDirectDownload()).thenReturn(true);
+        when(fileContentStorage.createDownloadUrl(1L, "/.avatar", "avatar-storage", "avatar.jpg"))
+                .thenReturn("https://cdn.example.com/avatar.jpg");
+
+        ResponseEntity<?> response = authService.getAvatarContent("alice");
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.FOUND);
+        assertThat(response.getHeaders().getLocation()).hasToString("https://cdn.example.com/avatar.jpg");
+        assertThat(response.getBody()).isNull();
+    }
+
+    @Test
+    void shouldRejectAvatarContentWhenUserHasNoAvatar() {
+        User user = new User();
+        user.setId(1L);
+        user.setUsername("alice");
+        when(userRepository.findByUsername("alice")).thenReturn(Optional.of(user));
+
+        assertThatThrownBy(() -> authService.getAvatarContent("alice"))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("头像不存在");
+    }
+
+    @Test
+    void shouldRejectInvalidAvatarUploadInputs() {
+        User user = new User();
+        user.setId(1L);
+        user.setUsername("alice");
+        when(userRepository.findByUsername("alice")).thenReturn(Optional.of(user));
+
+        assertThatThrownBy(() -> authService.initiateAvatarUpload(
+                "alice",
+                new UpdateUserAvatarRequest("", "image/png", 1024L, null)
+        )).isInstanceOf(BusinessException.class)
+                .hasMessageContaining("头像文件名不能为空");
+
+        assertThatThrownBy(() -> authService.initiateAvatarUpload(
+                "alice",
+                new UpdateUserAvatarRequest("face.txt", "text/plain", 1024L, null)
+        )).isInstanceOf(BusinessException.class)
+                .hasMessageContaining("头像仅支持图片文件");
+
+        assertThatThrownBy(() -> authService.initiateAvatarUpload(
+                "alice",
+                new UpdateUserAvatarRequest("face.png", "image/png", 0L, null)
+        )).isInstanceOf(BusinessException.class)
+                .hasMessageContaining("头像大小不能超过 5MB");
+    }
+
+    private static IdentityUserSnapshot snapshot(User user) {
+        return new IdentityUserSnapshot(
+                user.getId(),
+                user.getUsername(),
+                user.getDisplayName(),
+                user.getEmail(),
+                user.getPhoneNumber(),
+                user.getBio(),
+                user.getPreferredLanguage(),
+                user.getAvatarStorageName(),
+                user.getAvatarContentType(),
+                user.getAvatarUpdatedAt(),
+                user.getRole() == null ? IdentityRoleName.USER : IdentityRoleName.valueOf(user.getRole().name()),
+                user.getCreatedAt(),
+                user.getStorageQuotaBytes(),
+                user.getMaxUploadSizeBytes()
+        );
     }
 }

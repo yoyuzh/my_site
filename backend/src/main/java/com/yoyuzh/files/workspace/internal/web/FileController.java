@@ -15,7 +15,10 @@ import com.yoyuzh.files.sharing.api.SharingApi;
 import com.yoyuzh.files.upload.CompleteUploadRequest;
 import com.yoyuzh.files.upload.InitiateUploadRequest;
 import com.yoyuzh.files.upload.InitiateUploadResponse;
+import com.yoyuzh.files.workspace.api.BatchFileOperationRequest;
 import com.yoyuzh.files.workspace.api.DownloadUrlResponse;
+import com.yoyuzh.files.workspace.api.FavoriteFileResponse;
+import com.yoyuzh.files.workspace.api.FileDetailResponse;
 import com.yoyuzh.files.workspace.api.FileMetadataResponse;
 import com.yoyuzh.files.workspace.api.RecycleBinItemResponse;
 import com.yoyuzh.files.workspace.api.WorkspaceDownloadResult;
@@ -39,6 +42,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestPart;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.util.List;
@@ -57,7 +61,7 @@ public class FileController {
     public ApiResponse<FileMetadataResponse> upload(@AuthenticationPrincipal UserDetails userDetails,
                                                     @RequestParam(defaultValue = "/") String path,
                                                     @RequestPart("file") MultipartFile file) {
-        return ApiResponse.success(fileService.upload(userDetailsService.loadDomainUser(userDetails.getUsername()), path, file));
+        return ApiResponse.success(fileService.upload(userDetailsService.loadAuthenticatedUser(userDetails.getUsername()), path, file));
     }
 
     @Operation(summary = "初始化上传")
@@ -65,7 +69,7 @@ public class FileController {
     public ApiResponse<InitiateUploadResponse> initiateUpload(@AuthenticationPrincipal UserDetails userDetails,
                                                               @Valid @RequestBody InitiateUploadRequest request) {
         return ApiResponse.success(fileService.initiateUpload(
-                userDetailsService.loadDomainUser(userDetails.getUsername()),
+                userDetailsService.loadAuthenticatedUser(userDetails.getUsername()),
                 request
         ));
     }
@@ -75,7 +79,7 @@ public class FileController {
     public ApiResponse<FileMetadataResponse> completeUpload(@AuthenticationPrincipal UserDetails userDetails,
                                                             @Valid @RequestBody CompleteUploadRequest request) {
         return ApiResponse.success(fileService.completeUpload(
-                userDetailsService.loadDomainUser(userDetails.getUsername()),
+                userDetailsService.loadAuthenticatedUser(userDetails.getUsername()),
                 request
         ));
     }
@@ -84,7 +88,7 @@ public class FileController {
     @PostMapping("/mkdir")
     public ApiResponse<FileMetadataResponse> mkdir(@AuthenticationPrincipal UserDetails userDetails,
                                                    @Valid @ModelAttribute MkdirRequest request) {
-        return ApiResponse.success(fileService.mkdir(userDetailsService.loadDomainUser(userDetails.getUsername()), request.path()));
+        return ApiResponse.success(fileService.mkdir(currentUserId(userDetails), request.path()));
     }
 
     @Operation(summary = "分页列出文件")
@@ -93,13 +97,64 @@ public class FileController {
                                                                 @RequestParam(defaultValue = "/") String path,
                                                                 @RequestParam(defaultValue = "0") int page,
                                                                 @RequestParam(defaultValue = "10") int size) {
-        return ApiResponse.success(fileService.list(userDetailsService.loadDomainUser(userDetails.getUsername()), path, page, size));
+        return ApiResponse.success(fileService.list(currentUserId(userDetails), path, page, size));
     }
 
     @Operation(summary = "最近文件")
     @GetMapping("/recent")
     public ApiResponse<List<FileMetadataResponse>> recent(@AuthenticationPrincipal UserDetails userDetails) {
-        return ApiResponse.success(fileService.recent(userDetailsService.loadDomainUser(userDetails.getUsername())));
+        return ApiResponse.success(fileService.recent(currentUserId(userDetails)));
+    }
+
+    @Operation(summary = "文件详情")
+    @GetMapping("/{fileId}/detail")
+    public ApiResponse<FileDetailResponse> detail(@AuthenticationPrincipal UserDetails userDetails,
+                                                  @PathVariable Long fileId) {
+        return ApiResponse.success(fileService.detail(
+                currentUserId(userDetails),
+                fileId
+        ));
+    }
+
+    @Operation(summary = "批量删除文件")
+    @PostMapping("/batch/delete")
+    public ApiResponse<Void> batchDelete(@AuthenticationPrincipal UserDetails userDetails,
+                                         @Valid @RequestBody BatchFileOperationRequest request) {
+        fileService.batchDelete(
+                currentUserId(userDetails),
+                request.fileIds()
+        );
+        return ApiResponse.success();
+    }
+
+    @Operation(summary = "收藏文件列表")
+    @GetMapping("/favorites")
+    public ApiResponse<List<FavoriteFileResponse>> favorites(@AuthenticationPrincipal UserDetails userDetails) {
+        return ApiResponse.success(fileService.listFavorites(
+                currentUserId(userDetails)
+        ));
+    }
+
+    @Operation(summary = "收藏文件")
+    @PutMapping("/{fileId}/favorite")
+    public ApiResponse<FavoriteFileResponse> favorite(@AuthenticationPrincipal UserDetails userDetails,
+                                                      @PathVariable Long fileId) {
+        return ApiResponse.success(fileService.setFavorite(
+                currentUserId(userDetails),
+                fileId,
+                true
+        ));
+    }
+
+    @Operation(summary = "取消收藏文件")
+    @DeleteMapping("/{fileId}/favorite")
+    public ApiResponse<FavoriteFileResponse> unfavorite(@AuthenticationPrincipal UserDetails userDetails,
+                                                        @PathVariable Long fileId) {
+        return ApiResponse.success(fileService.setFavorite(
+                currentUserId(userDetails),
+                fileId,
+                false
+        ));
     }
 
     @Operation(summary = "分页列出回收站")
@@ -108,7 +163,7 @@ public class FileController {
                                                                             @RequestParam(defaultValue = "0") int page,
                                                                             @RequestParam(defaultValue = "10") int size) {
         return ApiResponse.success(fileService.listRecycleBin(
-                userDetailsService.loadDomainUser(userDetails.getUsername()),
+                currentUserId(userDetails),
                 page,
                 size
         ));
@@ -119,7 +174,7 @@ public class FileController {
     public ResponseEntity<?> download(@AuthenticationPrincipal UserDetails userDetails,
                                       @PathVariable Long fileId) {
         WorkspaceDownloadResult result = fileService.download(
-                userDetailsService.loadDomainUser(userDetails.getUsername()),
+                currentUserId(userDetails),
                 fileId
         );
         if (result.redirect()) {
@@ -137,7 +192,7 @@ public class FileController {
     public ApiResponse<DownloadUrlResponse> downloadUrl(@AuthenticationPrincipal UserDetails userDetails,
                                                         @PathVariable Long fileId) {
         return ApiResponse.success(fileService.getDownloadUrl(
-                userDetailsService.loadDomainUser(userDetails.getUsername()),
+                currentUserId(userDetails),
                 fileId
         ));
     }
@@ -148,7 +203,7 @@ public class FileController {
                                                     @PathVariable Long fileId,
                                                     @Valid @RequestBody RenameFileRequest request) {
         return ApiResponse.success(
-                fileService.rename(userDetailsService.loadDomainUser(userDetails.getUsername()), fileId, request.filename()));
+                fileService.rename(currentUserId(userDetails), fileId, request.filename()));
     }
 
     @Operation(summary = "移动文件")
@@ -157,7 +212,7 @@ public class FileController {
                                                   @PathVariable Long fileId,
                                                   @Valid @RequestBody MoveFileRequest request) {
         return ApiResponse.success(
-                fileService.move(userDetailsService.loadDomainUser(userDetails.getUsername()), fileId, request.path()));
+                fileService.move(currentUserId(userDetails), fileId, request.path()));
     }
 
     @Operation(summary = "复制文件")
@@ -166,7 +221,7 @@ public class FileController {
                                                   @PathVariable Long fileId,
                                                   @Valid @RequestBody CopyFileRequest request) {
         return ApiResponse.success(
-                fileService.copy(userDetailsService.loadDomainUser(userDetails.getUsername()), fileId, request.path()));
+                fileService.copy(currentUserId(userDetails), fileId, request.path()));
     }
 
     @Operation(summary = "创建分享链接")
@@ -228,7 +283,7 @@ public class FileController {
     @DeleteMapping("/{fileId}")
     public ApiResponse<Void> delete(@AuthenticationPrincipal UserDetails userDetails,
                                     @PathVariable Long fileId) {
-        fileService.delete(userDetailsService.loadDomainUser(userDetails.getUsername()), fileId);
+        fileService.delete(currentUserId(userDetails), fileId);
         return ApiResponse.success();
     }
 
@@ -237,12 +292,12 @@ public class FileController {
     public ApiResponse<FileMetadataResponse> restoreRecycleBinItem(@AuthenticationPrincipal UserDetails userDetails,
                                                                    @PathVariable Long fileId) {
         return ApiResponse.success(fileService.restoreFromRecycleBin(
-                userDetailsService.loadDomainUser(userDetails.getUsername()),
+                currentUserId(userDetails),
                 fileId
         ));
     }
 
     private Long currentUserId(UserDetails userDetails) {
-        return userDetailsService.loadDomainUser(userDetails.getUsername()).getId();
+        return userDetailsService.loadUserId(userDetails.getUsername());
     }
 }

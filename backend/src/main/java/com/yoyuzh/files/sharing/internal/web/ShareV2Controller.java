@@ -5,6 +5,7 @@ import com.yoyuzh.boot.security.CustomUserDetailsService;
 import com.yoyuzh.shared.kernel.PageResponse;
 import com.yoyuzh.files.sharing.api.CreateShareCommand;
 import com.yoyuzh.files.sharing.api.ImportShareCommand;
+import com.yoyuzh.files.sharing.api.ShareStatsResponse;
 import com.yoyuzh.files.sharing.api.ShareV2Response;
 import com.yoyuzh.files.sharing.api.SharingApi;
 import com.yoyuzh.files.workspace.api.FileMetadataResponse;
@@ -20,6 +21,7 @@ import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -53,6 +55,12 @@ public class ShareV2Controller {
         return ApiV2Response.success(sharingApi.getShare(token));
     }
 
+    @GetMapping("/{token}/stats")
+    public ApiV2Response<ShareStatsResponse> stats(@AuthenticationPrincipal UserDetails userDetails,
+                                                   @PathVariable String token) {
+        return ApiV2Response.success(sharingApi.getStats(currentUserId(userDetails), token));
+    }
+
     @GetMapping(value = "/{token}", params = "download")
     public ResponseEntity<?> downloadShare(@PathVariable String token,
                                            @RequestParam(required = false) String password) {
@@ -80,6 +88,13 @@ public class ShareV2Controller {
         return ApiV2Response.success(new PageResponse<>(result.getContent(), result.getTotalElements(), result.getNumber(), result.getSize()));
     }
 
+    @PatchMapping("/{id}/policy")
+    public ApiV2Response<ShareV2Response> updatePolicy(@AuthenticationPrincipal UserDetails userDetails,
+                                                       @PathVariable Long id,
+                                                       @Valid @RequestBody UpdateSharePolicyV2Request request) {
+        return ApiV2Response.success(sharingApi.updatePolicy(currentUserId(userDetails), id, request.maxDownloads()));
+    }
+
     @DeleteMapping("/{id}")
     public ApiV2Response<Void> deleteShare(@AuthenticationPrincipal UserDetails userDetails,
                                            @PathVariable Long id) {
@@ -88,6 +103,6 @@ public class ShareV2Controller {
     }
 
     private Long currentUserId(UserDetails userDetails) {
-        return userDetailsService.loadDomainUser(userDetails.getUsername()).getId();
+        return userDetailsService.loadUserId(userDetails.getUsername());
     }
 }

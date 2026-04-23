@@ -2,7 +2,7 @@ package com.yoyuzh.files.storage;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.yoyuzh.platform.storage.internal.infra.FileStorageProperties;
+import com.yoyuzh.platform.storage.api.StorageRuntimeProperties;
 import org.springframework.util.StringUtils;
 
 import javax.crypto.Mac;
@@ -22,15 +22,15 @@ final class DogeCloudTmpTokenClient {
 
     private static final String API_PATH = "/auth/tmp_token.json";
 
-    private final FileStorageProperties.S3 properties;
+    private final StorageRuntimeProperties.S3 properties;
     private final ObjectMapper objectMapper;
     private final Transport transport;
 
-    DogeCloudTmpTokenClient(FileStorageProperties.S3 properties, ObjectMapper objectMapper) {
+    DogeCloudTmpTokenClient(StorageRuntimeProperties.S3 properties, ObjectMapper objectMapper) {
         this(properties, objectMapper, new HttpTransport());
     }
 
-    DogeCloudTmpTokenClient(FileStorageProperties.S3 properties, ObjectMapper objectMapper, Transport transport) {
+    DogeCloudTmpTokenClient(StorageRuntimeProperties.S3 properties, ObjectMapper objectMapper, Transport transport) {
         this.properties = properties;
         this.objectMapper = objectMapper;
         this.transport = transport;

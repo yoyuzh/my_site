@@ -14,6 +14,7 @@ public class RuntimeAsyncJobRetryPolicy implements AsyncJobRetryPolicy {
             case ARCHIVE -> 4;
             case EXTRACT -> 3;
             case MEDIA_META -> 2;
+            case SEARCH_INDEX_REBUILD -> 1;
             default -> 1;
         };
     }
@@ -34,6 +35,7 @@ public class RuntimeAsyncJobRetryPolicy implements AsyncJobRetryPolicy {
             case ARCHIVE -> 30L;
             case EXTRACT -> 45L;
             case MEDIA_META -> 15L;
+            case SEARCH_INDEX_REBUILD -> 30L;
             default -> 30L;
         };
         if (failureCategory == BackgroundTaskFailureCategory.RATE_LIMITED) {

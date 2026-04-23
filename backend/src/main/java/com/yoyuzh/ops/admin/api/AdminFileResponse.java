@@ -12,6 +12,8 @@ public record AdminFileResponse(
         LocalDateTime createdAt,
         Long ownerId,
         String ownerUsername,
-        String ownerEmail
+        String ownerEmail,
+        boolean favorite,
+        boolean thumbnailAvailable
 ) {
 }

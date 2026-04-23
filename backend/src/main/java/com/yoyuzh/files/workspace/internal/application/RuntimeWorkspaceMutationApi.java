@@ -115,7 +115,7 @@ public final class RuntimeWorkspaceMutationApi implements WorkspaceMutationApi {
     private StoredFile getOwnedActiveFile(Long userId, Long fileId, String action) {
         StoredFile storedFile = storedFileRepository.findDetailedById(fileId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.FILE_NOT_FOUND, "文件不存在"));
-        if (!storedFile.getUser().getId().equals(userId)) {
+        if (!userId.equals(storedFile.getUserId())) {
             throw new BusinessException(ErrorCode.PERMISSION_DENIED, "没有权限" + action + "该文件");
         }
         if (storedFile.getDeletedAt() != null) {
