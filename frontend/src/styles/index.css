@@ -34,7 +34,11 @@
   }
 
   .surface-shell {
-    @apply rounded-[28px] border border-white/50 bg-white/70 backdrop-blur-xl dark:border-white/10 dark:bg-[#0F1117]/72;
+    @apply rounded-[28px] border border-white/50 bg-white/70 backdrop-blur-xl dark:border-white/10;
+  }
+
+  .dark .surface-shell {
+    background-color: rgb(15 17 23 / 0.72);
   }
 
   .surface-muted {

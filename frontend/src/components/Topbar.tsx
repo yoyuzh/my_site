@@ -12,28 +12,31 @@ const Topbar: React.FC<TopbarProps> = ({ meta }) => {
   const { theme, toggleTheme } = useTheme();
 
   return (
-    <header className="fixed top-0 left-0 right-0 h-[72px] bg-white/80 dark:bg-[#111117]/80 backdrop-blur-md border-b border-[#D9E3F2] dark:border-[#222233] z-50 flex items-center justify-between px-9">
-      <Link to="/" className="min-w-0">
-        <BrandMark
-          size={40}
-          subtitle="Personal Cloud"
-          textClassName="hidden sm:block"
-        />
-      </Link>
+    <header className="fixed inset-x-0 top-0 z-50 border-b border-white/40 bg-white/70 backdrop-blur-xl dark:border-white/10 dark:bg-[#0B0D12]/68">
+      <div className="mx-auto flex h-[68px] max-w-[1600px] items-center justify-between px-4 lg:px-6">
+        <Link to="/" className="min-w-0">
+          <BrandMark
+            size={38}
+            subtitle="Personal Cloud"
+            textClassName="hidden sm:block"
+          />
+        </Link>
 
-      <div className="flex items-center gap-6">
-        {meta && (
-          <span className="text-xs font-semibold text-text-secondary-light dark:text-text-secondary-dark font-funnel">
-            {meta}
-          </span>
-        )}
-        <button 
-          type="button"
-          onClick={toggleTheme}
-          className="p-2 rounded-full hover:bg-black/5 dark:hover:bg-white/5 transition-colors text-text-secondary-light dark:text-text-secondary-dark"
-        >
-          {theme === 'light' ? <Moon size={20} /> : <Sun size={20} />}
-        </button>
+        <div className="flex items-center gap-4">
+          {meta && (
+            <span className="text-xs font-semibold text-text-secondary-light dark:text-text-secondary-dark font-funnel">
+              {meta}
+            </span>
+          )}
+          <button
+            type="button"
+            aria-label="Toggle color theme"
+            onClick={toggleTheme}
+            className="flex h-10 w-10 items-center justify-center rounded-full text-text-secondary-light transition-colors hover:bg-black/5 dark:text-text-secondary-dark dark:hover:bg-white/5"
+          >
+            {theme === 'light' ? <Moon size={20} /> : <Sun size={20} />}
+          </button>
+        </div>
       </div>
     </header>
   );
