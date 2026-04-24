@@ -49,28 +49,42 @@ const Login: React.FC = () => {
   }, []);
 
   return (
-    <div className="min-h-screen flex items-center justify-center pt-[72px] px-6">
+    <div className="min-h-screen px-4 pb-6 pt-[88px] lg:px-6">
       <Topbar meta={siteConfig.siteName} />
       <BackgroundEffects />
-      
-      <main className="w-full max-w-[460px] animate-fade-in-up">
-        <div className="card-container p-11 relative">
-          
+
+      <main className="mx-auto grid min-h-[calc(100vh-112px)] max-w-[1280px] items-center gap-6 lg:grid-cols-[1.15fr_0.85fr]">
+        <section className="surface-shell hidden min-h-[620px] overflow-hidden lg:flex lg:flex-col lg:justify-between lg:p-10">
+          <div>
+            <p className="text-xs font-medium uppercase tracking-[0.24em] text-slate-400">MY SITE CLOUD</p>
+            <h1 className="mt-4 max-w-[10ch] text-5xl font-semibold leading-[1.04] text-slate-950 dark:text-white">
+              更完整的文件空间，而不是只够用的页面。
+            </h1>
+            <p className="mt-5 max-w-xl text-base text-slate-500 dark:text-slate-400">
+              {siteConfig.siteDescription}
+            </p>
+          </div>
+          <div className="grid gap-3 text-sm text-slate-500 dark:text-slate-400">
+            <div className="surface-muted rounded-3xl px-5 py-4">
+              保留你自己的 API 和权限体系，只升级体验层。
+            </div>
+            <div className="surface-muted rounded-3xl px-5 py-4">
+              登录、文件、分享、任务页面统一到一套更成熟的视觉语言。
+            </div>
+          </div>
+        </section>
+
+        <section className="surface-shell login-surface mx-auto w-full max-w-[480px] p-7 sm:p-9">
           <div className="relative z-10">
-            <header className="mb-9">
-              <BrandMark
-                title={siteConfig.siteName}
-                subtitle="Personal Cloud"
-                size={54}
-                className="mb-6"
-              />
-              <h2 className="text-[34px] font-bold text-text-primary-light dark:text-white dark:mt-4 leading-tight">
+            <header className="mb-8">
+              <BrandMark title={siteConfig.siteName} subtitle="Personal Cloud" size={52} className="mb-6" />
+              <h2 className="text-[32px] font-semibold tracking-tight text-slate-950 dark:text-white">
                 {siteConfig.passwordLoginEnabled ? '欢迎回来' : '登录暂未开放'}
               </h2>
-              <p className="text-[15px] text-text-secondary-light dark:text-[#A1A1A1] mt-3 font-geist">
+              <p className="mt-3 text-sm leading-6 text-slate-500 dark:text-slate-400">
                 {siteConfig.passwordLoginEnabled
-                  ? siteConfig.siteDescription
-                  : '当前站点暂未开放密码登录，请联系管理员获取访问方式。'}
+                  ? '继续使用你现有的账号进入文件空间、分享页与快传页面。'
+                  : '当前站点暂未开放密码登录，请联系管理员获取可用的登录方式。'}
               </p>
             </header>
 
@@ -83,12 +97,13 @@ const Login: React.FC = () => {
                 }}
               >
                 <div className="space-y-2">
-                  <label className="text-[13px] font-medium text-[#31455F] dark:text-[#A1A1A1] font-geist ml-1">
+                  <label htmlFor="login-username" className="ml-1 text-[13px] font-medium text-[#31455F] dark:text-[#A1A1A1] font-geist">
                     用户名
                   </label>
-                  <input 
-                    type="text" 
-                    placeholder="请输入用户名" 
+                  <input
+                    id="login-username"
+                    type="text"
+                    placeholder="请输入用户名"
                     className="input-field"
                     value={form.username}
                     onChange={(event) => setForm((current) => ({ ...current, username: event.target.value }))}
@@ -96,12 +111,13 @@ const Login: React.FC = () => {
                 </div>
 
                 <div className="space-y-2">
-                  <label className="text-[13px] font-medium text-[#31455F] dark:text-[#A1A1A1] font-geist ml-1">
+                  <label htmlFor="login-password" className="ml-1 text-[13px] font-medium text-[#31455F] dark:text-[#A1A1A1] font-geist">
                     密码
                   </label>
-                  <input 
-                    type="password" 
-                    placeholder="请输入密码" 
+                  <input
+                    id="login-password"
+                    type="password"
+                    placeholder="请输入密码"
                     className="input-field"
                     value={form.password}
                     onChange={(event) => setForm((current) => ({ ...current, password: event.target.value }))}
@@ -115,7 +131,8 @@ const Login: React.FC = () => {
                 ) : null}
 
                 <button
-                  className="btn-primary w-full mt-4 h-[50px] dark:h-[48px] dark:rounded-[4px] disabled:opacity-70"
+                  type="submit"
+                  className="btn-primary mt-4 h-[50px] w-full disabled:opacity-70 dark:h-[48px] dark:rounded-[4px]"
                   disabled={loginMutation.isPending}
                 >
                   {loginMutation.isPending ? '登录中...' : `登录到 ${siteConfig.siteName}`}
@@ -148,7 +165,7 @@ const Login: React.FC = () => {
               </div>
             </footer>
           </div>
-        </div>
+        </section>
       </main>
     </div>
   );

@@ -52,6 +52,10 @@
   .rail-enter {
     animation: rail-enter 200ms ease-out;
   }
+
+  .login-surface {
+    animation: login-card-enter 280ms cubic-bezier(.22, 1, .36, 1);
+  }
 }
 
 @keyframes page-enter {
@@ -75,5 +79,17 @@
   to {
     opacity: 1;
     transform: translateX(0);
+  }
+}
+
+@keyframes login-card-enter {
+  from {
+    opacity: 0;
+    transform: translateY(14px) scale(.985);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
   }
 }
