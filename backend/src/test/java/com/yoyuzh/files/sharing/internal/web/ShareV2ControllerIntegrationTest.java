@@ -166,9 +166,9 @@ class ShareV2ControllerIntegrationTest {
                                 {
                                   "password": "WrongPass1!"
                                 }
-                                """))
+                """))
                 .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.code").value(2400));
+                .andExpect(jsonPath("$.code").value(2406));
 
         mockMvc.perform(post("/api/v2/shares/{token}/verify-password", token)
                         .with(anonymous())
@@ -273,8 +273,8 @@ class ShareV2ControllerIntegrationTest {
                                   "path": "/download"
                                 }
                                 """))
-                .andExpect(status().isNotFound())
-                .andExpect(jsonPath("$.code").value(2404));
+                .andExpect(status().isGone())
+                .andExpect(jsonPath("$.code").value(2405));
     }
 
     @Test
@@ -422,10 +422,10 @@ class ShareV2ControllerIntegrationTest {
         String passwordToken = JsonPath.read(passwordResponse, "$.data.token");
 
         mockMvc.perform(get("/api/v2/shares/{token}", passwordToken)
-                        .with(anonymous())
-                        .param("download", "1"))
+                .with(anonymous())
+                .param("download", "1"))
                 .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.code").value(2400));
+                .andExpect(jsonPath("$.code").value(2406));
 
         mockMvc.perform(get("/api/v2/shares/{token}", passwordToken)
                         .with(anonymous())
@@ -476,8 +476,8 @@ class ShareV2ControllerIntegrationTest {
         mockMvc.perform(get("/api/v2/shares/{token}", expiredToken)
                         .with(anonymous())
                         .param("download", "1"))
-                .andExpect(status().isNotFound())
-                .andExpect(jsonPath("$.code").value(2404));
+                .andExpect(status().isGone())
+                .andExpect(jsonPath("$.code").value(2405));
     }
 
     @Test

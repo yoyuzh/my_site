@@ -87,10 +87,10 @@ class FileSearchV2ControllerTest {
     @Test
     void shouldRejectUnsupportedTypeFilter() throws Exception {
         mockMvc.perform(get("/api/v2/files/search")
-                        .with(user(userDetails()))
-                        .param("type", "image"))
+                .with(user(userDetails()))
+                .param("type", "image"))
                 .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.code").value(2400))
+                .andExpect(jsonPath("$.code").value(2406))
                 .andExpect(jsonPath("$.msg").value("文件类型筛选只支持 file 或 directory"));
     }
 

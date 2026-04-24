@@ -145,7 +145,7 @@ public class LocalFileContentStorage implements FileContentStorage {
     private Path resolveObjectKey(String objectKey) {
         Path resolved = rootPath.resolve(normalizeObjectKey(objectKey)).normalize();
         if (!resolved.startsWith(rootPath)) {
-            throw new BusinessException(ErrorCode.UNKNOWN, "Invalid storage path");
+            throw new BusinessException(ErrorCode.INVALID_INPUT, "Invalid storage path");
         }
         return resolved;
     }
@@ -153,7 +153,7 @@ public class LocalFileContentStorage implements FileContentStorage {
     private String normalizeObjectKey(String objectKey) {
         String cleaned = StringUtils.cleanPath(objectKey == null ? "" : objectKey).replace("\\", "/");
         if (!StringUtils.hasText(cleaned) || cleaned.startsWith("/") || cleaned.contains("..")) {
-            throw new BusinessException(ErrorCode.UNKNOWN, "Invalid storage object key");
+            throw new BusinessException(ErrorCode.INVALID_INPUT, "Invalid storage object key");
         }
         return cleaned;
     }
@@ -167,7 +167,7 @@ public class LocalFileContentStorage implements FileContentStorage {
             cleaned = cleaned.substring(1);
         }
         if (cleaned.contains("..")) {
-            throw new BusinessException(ErrorCode.UNKNOWN, "Invalid storage path");
+            throw new BusinessException(ErrorCode.INVALID_INPUT, "Invalid storage path");
         }
         return cleaned;
     }
@@ -175,7 +175,7 @@ public class LocalFileContentStorage implements FileContentStorage {
     private String normalizeName(String name) {
         String cleaned = StringUtils.cleanPath(name == null ? "" : name).replace("\\", "/");
         if (!StringUtils.hasText(cleaned) || cleaned.startsWith("/") || cleaned.contains("..")) {
-            throw new BusinessException(ErrorCode.UNKNOWN, "Invalid storage filename");
+            throw new BusinessException(ErrorCode.INVALID_INPUT, "Invalid storage filename");
         }
         return cleaned;
     }

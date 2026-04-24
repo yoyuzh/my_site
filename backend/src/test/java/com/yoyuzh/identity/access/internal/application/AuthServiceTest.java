@@ -30,6 +30,7 @@ import com.yoyuzh.identity.access.api.UpdateUserAvatarRequest;
 import com.yoyuzh.identity.access.api.UpdateUserPasswordRequest;
 import com.yoyuzh.identity.access.api.UpdateUserProfileRequest;
 import com.yoyuzh.identity.access.internal.domain.RandomIdentitySessionPolicy;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
@@ -42,6 +43,7 @@ import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.test.util.ReflectionTestUtils;
 
 import java.nio.charset.StandardCharsets;
 import java.time.LocalDateTime;
@@ -103,8 +105,16 @@ class AuthServiceTest {
     @Spy
     private AuthSessionPolicy authSessionPolicy = new AuthSessionPolicy(new RandomIdentitySessionPolicy());
 
+    private AvatarService avatarService;
+
     @InjectMocks
     private AuthService authService;
+
+    @BeforeEach
+    void setUp() {
+        avatarService = new AvatarService(userRepository, fileContentStorage);
+        ReflectionTestUtils.setField(authService, "avatarService", avatarService);
+    }
 
     @Test
     void shouldRegisterUserWithEncryptedPassword() {
@@ -565,13 +575,12 @@ class AuthServiceTest {
         when(fileContentStorage.readFile(1L, "/.avatar", "avatar-storage"))
                 .thenReturn("avatar".getBytes(StandardCharsets.UTF_8));
 
-        ResponseEntity<?> response = authService.getAvatarContent("alice");
+        AvatarDownloadResult response = authService.getAvatarContent("alice");
 
-        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
-        assertThat(response.getHeaders().getContentType()).isEqualTo(MediaType.APPLICATION_OCTET_STREAM);
-        assertThat(response.getHeaders().getFirst(HttpHeaders.CONTENT_DISPOSITION))
-                .isEqualTo("inline; filename*=UTF-8''avatar.png");
-        assertThat(response.getBody()).isEqualTo("avatar".getBytes(StandardCharsets.UTF_8));
+        assertThat(response.redirect()).isFalse();
+        assertThat(response.contentType()).isEqualTo(MediaType.APPLICATION_OCTET_STREAM_VALUE);
+        assertThat(response.filename()).isEqualTo("avatar.png");
+        assertThat(response.body()).isEqualTo("avatar".getBytes(StandardCharsets.UTF_8));
     }
 
     @Test
@@ -586,11 +595,11 @@ class AuthServiceTest {
         when(fileContentStorage.createDownloadUrl(1L, "/.avatar", "avatar-storage", "avatar.jpg"))
                 .thenReturn("https://cdn.example.com/avatar.jpg");
 
-        ResponseEntity<?> response = authService.getAvatarContent("alice");
+        AvatarDownloadResult response = authService.getAvatarContent("alice");
 
-        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.FOUND);
-        assertThat(response.getHeaders().getLocation()).hasToString("https://cdn.example.com/avatar.jpg");
-        assertThat(response.getBody()).isNull();
+        assertThat(response.redirect()).isTrue();
+        assertThat(response.redirectUrl()).isEqualTo("https://cdn.example.com/avatar.jpg");
+        assertThat(response.body()).isNull();
     }
 
     @Test

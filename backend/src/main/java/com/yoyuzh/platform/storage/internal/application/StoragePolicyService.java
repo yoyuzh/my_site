@@ -108,7 +108,7 @@ public class StoragePolicyService implements CommandLineRunner, StoragePolicyQue
 
     public StoragePolicy getRequiredPolicy(Long policyId) {
         return storagePolicyRepository.findById(policyId)
-                .orElseThrow(() -> new BusinessException(ErrorCode.UNKNOWN, "存储策略不存在"));
+                .orElseThrow(() -> new BusinessException(ErrorCode.FILE_NOT_FOUND, "存储策略不存在"));
     }
 
     private StoragePolicy createDefaultPolicy() {

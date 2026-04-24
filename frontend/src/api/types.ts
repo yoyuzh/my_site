@@ -23,6 +23,13 @@ export interface AdminListParams {
   query?: string;
   userQuery?: string;
   ownerQuery?: string;
+  fileName?: string;
+  token?: string;
+  expired?: boolean;
+  passwordProtected?: boolean;
+  storagePolicyId?: number;
+  objectKey?: string;
+  entityType?: string;
 }
 
 export interface UserCapacity {
@@ -63,6 +70,10 @@ export interface FavoriteFileResponse {
 export interface ThumbnailResponse {
   fileId: number;
   available: boolean;
+  url: string;
+}
+
+export interface DownloadUrlResponse {
   url: string;
 }
 
@@ -141,6 +152,24 @@ export interface TransferSessionResponse {
   files: TransferFileItem[];
 }
 
+export interface LookupTransferSessionResponse {
+  sessionId: string;
+  pickupCode: string;
+  mode: TransferMode;
+  expiresAt: string;
+}
+
+export interface TransferSignalEnvelope {
+  cursor: number;
+  type: string;
+  payload: string;
+}
+
+export interface PollTransferSignalsResponse {
+  items: TransferSignalEnvelope[];
+  nextCursor: number;
+}
+
 export interface AdminSummary {
   totalUsers: number;
   totalFiles: number;
@@ -187,12 +216,27 @@ export interface AdminStoragePolicy {
   bucketName: string | null;
   endpoint: string | null;
   region: string | null;
+  privateBucket: boolean;
   prefix: string | null;
+  credentialMode: string;
   maxSizeBytes: number;
+  capabilities: StoragePolicyCapabilities;
   enabled: boolean;
   defaultPolicy: boolean;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface StoragePolicyCapabilities {
+  directUpload: boolean;
+  multipartUpload: boolean;
+  signedDownloadUrl: boolean;
+  serverProxyDownload: boolean;
+  thumbnailNative: boolean;
+  friendlyDownloadName: boolean;
+  requiresCors: boolean;
+  supportsInternalEndpoint: boolean;
+  maxObjectSize: number;
 }
 
 export interface AdminFile {
@@ -312,26 +356,43 @@ export interface AdminSettings {
   registration: {
     inviteCodeRequired: boolean;
     currentInviteCode: string;
+    managementRoles: string[];
+    writeSupported: boolean;
   };
   userSession: {
     accessExpirationSeconds: number;
     refreshExpirationSeconds: number;
+    tokenBlacklistEnabled: boolean;
+    tokenBlacklistTtlBufferSeconds: number;
+    writeSupported: boolean;
   };
   transfer: {
     offlineTransferStorageLimitBytes: number;
+    writeSupported: boolean;
   };
   mediaProcessing: {
     metadataExtractionEnabled: boolean;
     thumbnailGenerationEnabled: boolean;
     videoPosterEnabled: boolean;
+    writeSupported: boolean;
   };
   queue: {
     backend: string;
     mediaMetadataFixedDelayMs: number;
     mediaMetadataInitialDelayMs: number;
+    writeSupported: boolean;
   };
   server: {
     storageProvider: string;
     redisEnabled: boolean;
+    writeSupported: boolean;
+  };
+  site: {
+    supported: boolean;
+    writeSupported: boolean;
+  };
+  appearance: {
+    supported: boolean;
+    writeSupported: boolean;
   };
 }

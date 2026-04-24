@@ -33,34 +33,31 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         String header = request.getHeader("Authorization");
         if (header != null && header.startsWith("Bearer ")) {
             String token = header.substring(7);
-            if (jwtTokenProvider.validateToken(token)
-                    && SecurityContextHolder.getContext().getAuthentication() == null) {
-                Long userId = jwtTokenProvider.getUserId(token);
-                IdentityClientType clientType = jwtTokenProvider.getClientType(token);
+            ParsedToken parsedToken = jwtTokenProvider.parseToken(token);
+            if (parsedToken != null && SecurityContextHolder.getContext().getAuthentication() == null) {
                 if (authTokenInvalidationService.isAccessTokenRevoked(
-                        userId,
-                        clientType,
-                        jwtTokenProvider.getIssuedAt(token))) {
+                        parsedToken.userId(),
+                        parsedToken.clientType(),
+                        parsedToken.issuedAt())) {
                     filterChain.doFilter(request, response);
                     return;
                 }
-                String username = jwtTokenProvider.getUsername(token);
                 IdentityAuthenticatedUser authenticatedUser;
                 try {
-                    authenticatedUser = userDetailsService.loadAuthenticatedUser(username);
+                    authenticatedUser = userDetailsService.loadAuthenticatedUser(parsedToken.username());
                 } catch (BusinessException ex) {
                     filterChain.doFilter(request, response);
                     return;
                 }
-                if (!jwtTokenProvider.hasMatchingSession(token, authenticatedUser)) {
+                if (!jwtTokenProvider.hasMatchingSession(parsedToken, authenticatedUser)) {
                     filterChain.doFilter(request, response);
                     return;
                 }
-                UserDetails userDetails = userDetailsService.loadUserByUsername(username);
-                if (!userDetails.isEnabled()) {
+                if (authenticatedUser.banned()) {
                     filterChain.doFilter(request, response);
                     return;
                 }
+                UserDetails userDetails = userDetailsService.toUserDetails(authenticatedUser);
                 UsernamePasswordAuthenticationToken authentication = new UsernamePasswordAuthenticationToken(
                         userDetails, null, userDetails.getAuthorities());
                 authentication.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));

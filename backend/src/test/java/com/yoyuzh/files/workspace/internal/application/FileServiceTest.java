@@ -828,7 +828,7 @@ class FileServiceTest {
         assertThat(uri.getHost()).isEqualTo("api.yoyuzh.xyz");
         assertThat(uri.getPath()).isEqualTo("/_dl/blobs/blob-22");
         assertThat(response.url()).contains("expires=1775277300");
-        assertThat(response.url()).contains("md5=1z0AP88pnPz-TpgnYfIT4A");
+        assertThat(response.url()).contains("signature=mvXISeTmLRnQG9HpIJcCmFSFm0g9ez4l9OO8e8NRbuU");
         assertThat(response.url()).contains("response-content-disposition=attachment%3B%20filename%3D%22download.apk%22%3B%20filename*%3DUTF-8%27%27%E5%AE%89%E8%A3%85%E5%8C%85.apk");
         verify(fileContentStorage, never()).createBlobDownloadUrl(any(), any());
     }
@@ -863,7 +863,7 @@ class FileServiceTest {
         assertThat(uri.getHost()).isEqualTo("api.yoyuzh.xyz");
         assertThat(uri.getPath()).isEqualTo("/_dl/blobs/blob-22");
         assertThat(uri.getQuery()).contains("expires=1775277300");
-        assertThat(uri.getQuery()).contains("md5=1z0AP88pnPz-TpgnYfIT4A");
+        assertThat(uri.getQuery()).contains("signature=mvXISeTmLRnQG9HpIJcCmFSFm0g9ez4l9OO8e8NRbuU");
         verify(fileContentStorage, never()).createBlobDownloadUrl(any(), any());
         verify(adminMetricsService).recordDownloadTraffic(5L);
     }

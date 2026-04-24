@@ -1,18 +1,27 @@
 {
   "name": "my_site backend",
-  "image": "mcr.microsoft.com/devcontainers/java:1-17-bullseye",
+  "build": {
+    "dockerfile": "Dockerfile",
+    "context": "."
+  },
   "remoteUser": "vscode",
   "workspaceFolder": "/workspaces/${localWorkspaceFolderBasename}/backend",
   "runArgs": [
-    "--init"
+    "--init",
+    "-p",
+    "8080:8080"
   ],
   "mounts": [
     "source=my-site-backend-maven-cache,target=/home/vscode/.m2,type=volume"
   ],
   "containerEnv": {
     "APP_JWT_SECRET": "devcontainer-local-jwt-secret-please-change-if-needed",
-    "SPRING_PROFILES_ACTIVE": "dev"
+    "SPRING_PROFILES_ACTIVE": "dev",
+    "SPRING_DATASOURCE_URL": "jdbc:h2:file:/tmp/my-site-devcontainer/yoyuzh_portal_dev;MODE=MySQL;AUTO_SERVER=FALSE;DB_CLOSE_DELAY=-1",
+    "SERVER_ADDRESS": "0.0.0.0",
+    "APP_REDIS_ENABLED": "false"
   },
+  "postStartCommand": "bash ../.devcontainer/start-backend.sh",
   "forwardPorts": [
     8080
   ],

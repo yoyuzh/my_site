@@ -53,7 +53,7 @@ public final class FileUploadRulesService {
             }
         }
         if (size > effectiveMaxUploadSize) {
-            throw new BusinessException(ErrorCode.UNKNOWN, "文件大小超出限制");
+            throw new BusinessException(ErrorCode.QUOTA_EXCEEDED, "文件大小超出限制");
         }
         workspaceNodeRulesService.ensureNodeNameAvailable(user.userId(), normalizedPath, filename, "同目录下文件已存在");
         ensureWithinStorageQuota(user, size);
@@ -67,7 +67,7 @@ public final class FileUploadRulesService {
         long usedBytes = storedFileRepository.sumFileSizeByUserId(user.userId());
         long quotaBytes = user.storageQuotaBytes();
         if (usedBytes > Long.MAX_VALUE - additionalBytes || usedBytes + additionalBytes > quotaBytes) {
-            throw new BusinessException(ErrorCode.UNKNOWN, "存储空间不足");
+            throw new BusinessException(ErrorCode.QUOTA_EXCEEDED, "存储空间不足");
         }
     }
 }

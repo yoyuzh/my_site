@@ -95,6 +95,27 @@ class AuthTokenInvalidationServiceTest {
         )).isFalse();
     }
 
+    @Test
+    void shouldIgnoreMalformedRevocationValue() {
+        StringRedisTemplate redisTemplate = mock(StringRedisTemplate.class);
+        @SuppressWarnings("unchecked")
+        ValueOperations<String, String> valueOperations = mock(ValueOperations.class);
+        when(redisTemplate.opsForValue()).thenReturn(valueOperations);
+        when(valueOperations.get("yoyuzh:auth:access-revoked-before:7:DESKTOP")).thenReturn("bad-data");
+
+        AuthTokenInvalidationService service = new AuthTokenInvalidationService(
+                redisTemplate,
+                redisProperties(),
+                jwtProperties()
+        );
+
+        assertThat(service.isAccessTokenRevoked(
+                7L,
+                IdentityClientType.DESKTOP,
+                Instant.ofEpochSecond(1710000000L)
+        )).isFalse();
+    }
+
     private AppRedisProperties redisProperties() {
         AppRedisProperties properties = new AppRedisProperties();
         properties.setTtlBufferSeconds(60);

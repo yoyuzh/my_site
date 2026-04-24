@@ -14,7 +14,7 @@ import com.yoyuzh.files.workspace.api.WorkspaceFileSnapshot;
 import com.yoyuzh.infra.lock.DistributedLockGateway;
 import com.yoyuzh.shared.kernel.BusinessException;
 import com.yoyuzh.shared.kernel.ErrorCode;
-import jakarta.transaction.Transactional;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -22,6 +22,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 
+import java.time.Clock;
 import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.LinkedHashMap;
@@ -68,6 +69,7 @@ public class BackgroundTaskService {
     private final DistributedLockGateway distributedLockGateway;
     private final BackgroundTaskRetryPolicy retryPolicy;
     private final BackgroundTaskStateManager stateManager;
+    private final Clock clock;
 
     @Autowired
     public BackgroundTaskService(BackgroundTaskRepository backgroundTaskRepository,
@@ -76,6 +78,24 @@ public class BackgroundTaskService {
                                  DistributedLockGateway distributedLockGateway,
                                  BackgroundTaskRetryPolicy retryPolicy,
                                  BackgroundTaskStateManager stateManager) {
+        this(
+                backgroundTaskRepository,
+                workspaceFileQueryApi,
+                objectMapper,
+                distributedLockGateway,
+                retryPolicy,
+                stateManager,
+                Clock.systemDefaultZone()
+        );
+    }
+
+    BackgroundTaskService(BackgroundTaskRepository backgroundTaskRepository,
+                          WorkspaceFileQueryApi workspaceFileQueryApi,
+                          com.fasterxml.jackson.databind.ObjectMapper objectMapper,
+                          DistributedLockGateway distributedLockGateway,
+                          BackgroundTaskRetryPolicy retryPolicy,
+                          BackgroundTaskStateManager stateManager,
+                          Clock clock) {
         this.backgroundTaskRepository = backgroundTaskRepository;
         this.workspaceFileQueryApi = workspaceFileQueryApi;
         this.distributedLockGateway = distributedLockGateway == null
@@ -83,6 +103,7 @@ public class BackgroundTaskService {
                 : distributedLockGateway;
         this.retryPolicy = retryPolicy == null ? new BackgroundTaskRetryPolicy() : retryPolicy;
         this.stateManager = stateManager == null ? new BackgroundTaskStateManager(objectMapper) : stateManager;
+        this.clock = clock;
     }
 
     BackgroundTaskService(BackgroundTaskRepository backgroundTaskRepository,
@@ -99,6 +120,7 @@ public class BackgroundTaskService {
         );
     }
 
+    @Transactional
     public BackgroundTask createQueuedFileTask(Long userId,
                                                BackgroundTaskType type,
                                                Long fileId,
@@ -108,7 +130,7 @@ public class BackgroundTaskService {
                 .orElseThrow(() -> new BusinessException(ErrorCode.FILE_NOT_FOUND, "file not found"));
         String logicalPath = buildLogicalPath(file);
         if (!logicalPath.equals(normalizeLogicalPath(requestedPath))) {
-            throw new BusinessException(ErrorCode.UNKNOWN, "task path does not match file path");
+            throw new BusinessException(ErrorCode.INVALID_INPUT, "task path does not match file path");
         }
         return createQueuedFileTaskInternal(userId, type, file, correlationId, false);
     }
@@ -146,6 +168,7 @@ public class BackgroundTaskService {
         }
     }
 
+    @Transactional
     public BackgroundTask createQueuedTaskByUserId(Long userId,
                                                    BackgroundTaskType type,
                                                    Map<String, Object> publicState,
@@ -238,6 +261,7 @@ public class BackgroundTaskService {
         );
     }
 
+    @Transactional
     public BackgroundTask cancelOwnedTask(Long userId, Long id) {
         BackgroundTask task = getOwnedTask(userId, id);
         if (task.isTerminal()) {
@@ -245,15 +269,16 @@ public class BackgroundTaskService {
         }
 
         if (task.getStatus() == BackgroundTaskStatus.QUEUED || task.getStatus() == BackgroundTaskStatus.RUNNING) {
+            LocalDateTime now = now();
             task.setStatus(BackgroundTaskStatus.CANCELLED);
             task.setNextRunAt(null);
             clearLease(task);
             task.setPublicStateJson(stateManager.merge(
                     task.getPublicStateJson(),
-                    stateManager.cancelledStatePatch(task, LocalDateTime.now()),
+                    stateManager.cancelledStatePatch(task, now),
                     stateManager.removableKeys(RETRY_TRANSIENT_STATE_KEYS, RUNNING_TRANSIENT_STATE_KEYS)
             ));
-            task.setFinishedAt(LocalDateTime.now());
+            task.setFinishedAt(now);
             task.setErrorMessage(null);
             return backgroundTaskRepository.save(task);
         }
@@ -261,10 +286,11 @@ public class BackgroundTaskService {
         return task;
     }
 
+    @Transactional
     public BackgroundTask retryOwnedTask(Long userId, Long id) {
         BackgroundTask task = getOwnedTask(userId, id);
         if (task.getStatus() != BackgroundTaskStatus.FAILED) {
-            throw new BusinessException(ErrorCode.UNKNOWN, "only failed tasks can be retried");
+            throw new BusinessException(ErrorCode.INVALID_INPUT, "only failed tasks can be retried");
         }
 
         task.setAttemptCount(0);
@@ -302,15 +328,16 @@ public class BackgroundTaskService {
         if (task.isTerminal()) {
             return task;
         }
+        LocalDateTime now = now();
         task.setStatus(BackgroundTaskStatus.COMPLETED);
         task.setNextRunAt(null);
         clearLease(task);
         task.setPublicStateJson(stateManager.merge(
                 task.getPublicStateJson(),
-                stateManager.completedStatePatch(task, LocalDateTime.now(), null),
+                stateManager.completedStatePatch(task, now, null),
                 stateManager.removableKeys(RETRY_TRANSIENT_STATE_KEYS, RUNNING_TRANSIENT_STATE_KEYS)
-            ));
-        task.setFinishedAt(LocalDateTime.now());
+        ));
+        task.setFinishedAt(now);
         task.setErrorMessage(null);
         return backgroundTaskRepository.save(task);
     }
@@ -321,6 +348,7 @@ public class BackgroundTaskService {
         if (task.isTerminal()) {
             return task;
         }
+        LocalDateTime now = now();
         task.setStatus(BackgroundTaskStatus.FAILED);
         task.setNextRunAt(null);
         clearLease(task);
@@ -331,11 +359,11 @@ public class BackgroundTaskService {
                         task,
                         normalizedErrorMessage,
                         BackgroundTaskFailureCategory.UNKNOWN,
-                        LocalDateTime.now()
+                        now
                 ),
                 stateManager.removableKeys(List.of(STATE_RETRY_SCHEDULED_KEY, STATE_NEXT_RETRY_AT_KEY), RUNNING_TRANSIENT_STATE_KEYS)
         ));
-        task.setFinishedAt(LocalDateTime.now());
+        task.setFinishedAt(now);
         task.setErrorMessage(normalizedErrorMessage);
         return backgroundTaskRepository.save(task);
     }
@@ -356,14 +384,14 @@ public class BackgroundTaskService {
             return;
         }
         if (file.directory()) {
-            throw new BusinessException(ErrorCode.UNKNOWN, "task target type is not supported");
+            throw new BusinessException(ErrorCode.INVALID_INPUT, "task target type is not supported");
         }
         if (type == BackgroundTaskType.EXTRACT && !isZipCompatibleArchive(file)) {
-            throw new BusinessException(ErrorCode.UNKNOWN, "extract task only supports zip-compatible archives");
+            throw new BusinessException(ErrorCode.INVALID_INPUT, "extract task only supports zip-compatible archives");
         }
         if (type == BackgroundTaskType.MEDIA_META
                 && !MediaTaskSupport.isMediaLike(file.filename(), file.contentType())) {
-            throw new BusinessException(ErrorCode.UNKNOWN, "media metadata task only supports media files");
+            throw new BusinessException(ErrorCode.INVALID_INPUT, "media metadata task only supports media files");
         }
     }
 
@@ -508,5 +536,9 @@ public class BackgroundTaskService {
             }
         }
         return "";
+    }
+
+    private LocalDateTime now() {
+        return LocalDateTime.ofInstant(clock.instant(), clock.getZone());
     }
 }

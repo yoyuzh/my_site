@@ -44,7 +44,10 @@ export function getClientId() {
     return existing;
   }
 
-  const generated = `web-${crypto.randomUUID()}`;
+  const generated =
+    typeof crypto.randomUUID === 'function'
+      ? `web-${crypto.randomUUID()}`
+      : `web-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
   window.localStorage.setItem(storageKey, generated);
   return generated;
 }
@@ -97,6 +100,13 @@ function unwrapEnvelope<T>(response: AxiosResponse<ApiEnvelope<T> | T>) {
   }
 
   return payload as T;
+}
+
+function redirectToLoginAfterAuthFailure(config: ApiRequestConfig) {
+  if (config.authRequired === false || window.location.pathname === '/login') {
+    return;
+  }
+  window.location.assign('/login');
 }
 
 async function refreshAccessToken(session: PortalSession) {
@@ -161,6 +171,7 @@ export async function apiRequest<T>(config: RetryableApiRequestConfig): Promise<
 
     if (apiError.status === 401 || apiError.status === 403) {
       clearSession();
+      redirectToLoginAfterAuthFailure(requestConfig);
     }
 
     throw apiError;

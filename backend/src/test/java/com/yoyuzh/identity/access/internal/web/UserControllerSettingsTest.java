@@ -1,10 +1,14 @@
 package com.yoyuzh.identity.access.internal.web;
 
+import com.yoyuzh.identity.access.internal.application.AvatarDownloadResult;
 import com.yoyuzh.identity.access.api.UserCapacityResponse;
 import com.yoyuzh.identity.access.api.UserSettingsResponse;
 import com.yoyuzh.identity.access.internal.application.AuthService;
+import org.hamcrest.Matchers;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
 import org.springframework.core.MethodParameter;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.core.userdetails.User;
@@ -23,7 +27,9 @@ import static org.mockito.Mockito.when;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 
 class UserControllerSettingsTest {
 
@@ -62,6 +68,28 @@ class UserControllerSettingsTest {
                 .andExpect(jsonPath("$.data.preferredLanguage").value("zh-CN"))
                 .andExpect(jsonPath("$.data.preferredTheme").value("system"))
                 .andExpect(jsonPath("$.data.disableViewSync").value(false));
+    }
+
+    @Test
+    void shouldAdaptInlineAvatarDownloadResult() throws Exception {
+        when(authService.getAvatarContent("demo"))
+                .thenReturn(AvatarDownloadResult.inline("avatar.png", MediaType.IMAGE_PNG_VALUE, "avatar".getBytes()));
+
+        mockMvc.perform(get("/api/user/avatar/content").with(user(userDetails())))
+                .andExpect(status().isOk())
+                .andExpect(header().string(HttpHeaders.CONTENT_DISPOSITION, "inline; filename*=UTF-8''avatar.png"))
+                .andExpect(content().contentType(MediaType.IMAGE_PNG))
+                .andExpect(content().bytes("avatar".getBytes()));
+    }
+
+    @Test
+    void shouldAdaptRedirectAvatarDownloadResult() throws Exception {
+        when(authService.getAvatarContent("demo"))
+                .thenReturn(AvatarDownloadResult.redirect("https://cdn.example.com/avatar.png"));
+
+        mockMvc.perform(get("/api/user/avatar/content").with(user(userDetails())))
+                .andExpect(status().isFound())
+                .andExpect(header().string(HttpHeaders.LOCATION, Matchers.equalTo("https://cdn.example.com/avatar.png")));
     }
 
     private UserDetails userDetails() {

@@ -48,4 +48,38 @@ class ApiV2ExceptionHandlerTest {
         assertThat(response.getBody().msg()).isEqualTo("duplicate target");
         assertThat(response.getBody().data()).isNull();
     }
+
+    @Test
+    void shouldMapExpiredSessionBusinessExceptionToDistinctV2Envelope() {
+        ResponseEntity<ApiV2Response<Void>> response = handler.handleBusinessException(
+                new BusinessException(ErrorCode.SESSION_EXPIRED, "share expired")
+        );
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.GONE);
+        assertThat(response.getBody()).isNotNull();
+        assertThat(response.getBody().code()).isEqualTo(ApiV2ErrorCode.SESSION_EXPIRED.getCode());
+        assertThat(response.getBody().msg()).isEqualTo("share expired");
+        assertThat(response.getBody().data()).isNull();
+    }
+
+    @Test
+    void shouldMapSemanticBusinessExceptionsToDistinctV2Envelope() {
+        assertBusinessMapping(ErrorCode.INVALID_INPUT, HttpStatus.BAD_REQUEST, ApiV2ErrorCode.INVALID_INPUT);
+        assertBusinessMapping(ErrorCode.DUPLICATE_NAME, HttpStatus.CONFLICT, ApiV2ErrorCode.DUPLICATE_NAME);
+        assertBusinessMapping(ErrorCode.QUOTA_EXCEEDED, HttpStatus.TOO_MANY_REQUESTS, ApiV2ErrorCode.QUOTA_EXCEEDED);
+    }
+
+    private void assertBusinessMapping(ErrorCode sourceCode,
+                                       HttpStatus expectedStatus,
+                                       ApiV2ErrorCode expectedCode) {
+        ResponseEntity<ApiV2Response<Void>> response = handler.handleBusinessException(
+                new BusinessException(sourceCode, "semantic error")
+        );
+
+        assertThat(response.getStatusCode()).isEqualTo(expectedStatus);
+        assertThat(response.getBody()).isNotNull();
+        assertThat(response.getBody().code()).isEqualTo(expectedCode.getCode());
+        assertThat(response.getBody().msg()).isEqualTo("semantic error");
+        assertThat(response.getBody().data()).isNull();
+    }
 }

@@ -5,6 +5,7 @@ import com.yoyuzh.boot.security.CustomUserDetailsService;
 import com.yoyuzh.shared.kernel.PageResponse;
 import com.yoyuzh.files.sharing.api.CreateShareCommand;
 import com.yoyuzh.files.sharing.api.ImportShareCommand;
+import com.yoyuzh.files.sharing.api.ShareDownloadResult;
 import com.yoyuzh.files.sharing.api.ShareStatsResponse;
 import com.yoyuzh.files.sharing.api.ShareV2Response;
 import com.yoyuzh.files.sharing.api.SharingApi;
@@ -15,6 +16,8 @@ import jakarta.validation.constraints.Min;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.core.userdetails.UserDetails;
@@ -27,6 +30,10 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+
+import java.net.URI;
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
 
 @RestController
 @RequestMapping("/api/v2/shares")
@@ -64,7 +71,7 @@ public class ShareV2Controller {
     @GetMapping(value = "/{token}", params = "download")
     public ResponseEntity<?> downloadShare(@PathVariable String token,
                                            @RequestParam(required = false) String password) {
-        return sharingApi.downloadSharedFile(token, password);
+        return toResponseEntity(sharingApi.downloadSharedFile(token, password));
     }
 
     @PostMapping("/{token}/verify-password")
@@ -104,5 +111,18 @@ public class ShareV2Controller {
 
     private Long currentUserId(UserDetails userDetails) {
         return userDetailsService.loadUserId(userDetails.getUsername());
+    }
+
+    private ResponseEntity<?> toResponseEntity(ShareDownloadResult result) {
+        if (result.redirect()) {
+            return ResponseEntity.status(302).location(URI.create(result.redirectUrl())).build();
+        }
+        return ResponseEntity.ok()
+                .header(
+                        HttpHeaders.CONTENT_DISPOSITION,
+                        "attachment; filename*=UTF-8''" + URLEncoder.encode(result.filename(), StandardCharsets.UTF_8)
+                )
+                .contentType(MediaType.parseMediaType(result.contentType()))
+                .body(result.body());
     }
 }

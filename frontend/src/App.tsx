@@ -13,6 +13,7 @@ import Tasks from './pages/Tasks';
 import Shares from './pages/Shares';
 import RecycleBin from './pages/RecycleBin';
 import TransferSend from './pages/TransferSend';
+import TransferReceive from './pages/TransferReceive';
 
 // Admin Pages
 import AdminHome from './pages/admin/AdminHome';
@@ -80,6 +81,7 @@ function App() {
             
             {/* Public Share Route */}
             <Route path="/share/:id" element={<FileShare />} />
+            <Route path="/transfer/receive" element={<TransferReceive />} />
             
           {/* Dashboard Routes */}
           <Route path="/dashboard">

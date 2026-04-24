@@ -272,6 +272,7 @@ public class S3FileContentStorage implements FileContentStorage, AutoCloseable {
     }
 
     @Override
+    @Deprecated
     public void renameFile(Long userId, String path, String oldStorageName, String newStorageName) {
         S3FileRuntimeSession session = sessionProvider.currentSession();
         String sourceKey = resolveExistingFileObjectKey(session, userId, path, oldStorageName);
@@ -281,6 +282,7 @@ public class S3FileContentStorage implements FileContentStorage, AutoCloseable {
     }
 
     @Override
+    @Deprecated
     public void moveFile(Long userId, String oldPath, String storageName, String newPath) {
         S3FileRuntimeSession session = sessionProvider.currentSession();
         String sourceKey = resolveExistingFileObjectKey(session, userId, oldPath, storageName);
@@ -290,6 +292,7 @@ public class S3FileContentStorage implements FileContentStorage, AutoCloseable {
     }
 
     @Override
+    @Deprecated
     public void copyFile(Long userId, String path, String storageName, String targetPath) {
         S3FileRuntimeSession session = sessionProvider.currentSession();
         String sourceKey = resolveExistingFileObjectKey(session, userId, path, storageName);
@@ -494,11 +497,11 @@ public class S3FileContentStorage implements FileContentStorage, AutoCloseable {
     private String normalizeObjectKey(String objectKey) {
         String raw = objectKey == null ? "" : objectKey;
         if (raw.contains("..")) {
-            throw new BusinessException(ErrorCode.UNKNOWN, "Invalid storage object key");
+            throw new BusinessException(ErrorCode.INVALID_INPUT, "Invalid storage object key");
         }
         String cleaned = StringUtils.cleanPath(raw).replace("\\", "/");
         if (!StringUtils.hasText(cleaned) || cleaned.startsWith("/") || cleaned.contains("..")) {
-            throw new BusinessException(ErrorCode.UNKNOWN, "Invalid storage object key");
+            throw new BusinessException(ErrorCode.INVALID_INPUT, "Invalid storage object key");
         }
         return cleaned;
     }
@@ -506,7 +509,7 @@ public class S3FileContentStorage implements FileContentStorage, AutoCloseable {
     private String normalizeRelativePath(String path) {
         String raw = path == null ? "" : path;
         if (raw.contains("..")) {
-            throw new BusinessException(ErrorCode.UNKNOWN, "Invalid storage path");
+            throw new BusinessException(ErrorCode.INVALID_INPUT, "Invalid storage path");
         }
         String cleaned = StringUtils.cleanPath(raw).replace("\\", "/");
         if (!StringUtils.hasText(cleaned) || "/".equals(cleaned)) {
@@ -516,7 +519,7 @@ public class S3FileContentStorage implements FileContentStorage, AutoCloseable {
             cleaned = cleaned.substring(1);
         }
         if (cleaned.contains("..")) {
-            throw new BusinessException(ErrorCode.UNKNOWN, "Invalid storage path");
+            throw new BusinessException(ErrorCode.INVALID_INPUT, "Invalid storage path");
         }
         return cleaned;
     }
@@ -524,11 +527,11 @@ public class S3FileContentStorage implements FileContentStorage, AutoCloseable {
     private String normalizeName(String name) {
         String raw = name == null ? "" : name;
         if (raw.contains("..")) {
-            throw new BusinessException(ErrorCode.UNKNOWN, "Invalid storage filename");
+            throw new BusinessException(ErrorCode.INVALID_INPUT, "Invalid storage filename");
         }
         String cleaned = StringUtils.cleanPath(raw).replace("\\", "/");
         if (!StringUtils.hasText(cleaned) || cleaned.startsWith("/") || cleaned.contains("..")) {
-            throw new BusinessException(ErrorCode.UNKNOWN, "Invalid storage filename");
+            throw new BusinessException(ErrorCode.INVALID_INPUT, "Invalid storage filename");
         }
         return cleaned;
     }

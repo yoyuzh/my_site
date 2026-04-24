@@ -1,6 +1,7 @@
 package com.yoyuzh.identity.access.internal.application;
 
 import com.yoyuzh.identity.access.internal.domain.User;
+import com.yoyuzh.identity.access.internal.domain.UserRole;
 import com.yoyuzh.identity.access.internal.infra.UserRepository;
 import com.yoyuzh.files.workspace.api.WorkspaceBootstrapApi;
 import com.yoyuzh.files.workspace.api.WorkspaceUserContext;
@@ -18,6 +19,12 @@ import java.util.List;
 @Profile("dev")
 @RequiredArgsConstructor
 public class DevBootstrapDataInitializer implements CommandLineRunner {
+
+    private static final DemoAdminSpec DEV_ADMIN = new DemoAdminSpec(
+            "admin",
+            "Admin123",
+            "admin@example.com"
+    );
 
     private static final List<DemoUserSpec> DEMO_USERS = List.of(
             new DemoUserSpec(
@@ -59,11 +66,55 @@ public class DevBootstrapDataInitializer implements CommandLineRunner {
     @Override
     @Transactional
     public void run(String... args) {
+        User admin = ensureAdminUser(DEV_ADMIN);
+        workspaceBootstrapApi.ensureDefaultDirectories(workspaceUser(admin));
         for (DemoUserSpec spec : DEMO_USERS) {
             User user = ensureUser(spec);
             workspaceBootstrapApi.ensureDefaultDirectories(workspaceUser(user));
             ensureDemoFiles(user, spec.files());
         }
+    }
+
+    private User ensureAdminUser(DemoAdminSpec spec) {
+        return userRepository.findByUsername(spec.username())
+                .map(existing -> updateExistingAdmin(existing, spec))
+                .orElseGet(() -> createAdmin(spec));
+    }
+
+    private User createAdmin(DemoAdminSpec spec) {
+        User created = new User();
+        created.setUsername(spec.username());
+        created.setDisplayName(spec.username());
+        created.setEmail(spec.email());
+        created.setPasswordHash(passwordEncoder.encode(spec.password()));
+        created.setRole(UserRole.ADMIN);
+        created.setPreferredLanguage("zh-CN");
+        return userRepository.save(created);
+    }
+
+    private User updateExistingAdmin(User existing, DemoAdminSpec spec) {
+        boolean changed = false;
+        if (!spec.email().equals(existing.getEmail())) {
+            existing.setEmail(spec.email());
+            changed = true;
+        }
+        if (!passwordEncoder.matches(spec.password(), existing.getPasswordHash())) {
+            existing.setPasswordHash(passwordEncoder.encode(spec.password()));
+            changed = true;
+        }
+        if (existing.getRole() != UserRole.ADMIN) {
+            existing.setRole(UserRole.ADMIN);
+            changed = true;
+        }
+        if (existing.getDisplayName() == null || existing.getDisplayName().isBlank()) {
+            existing.setDisplayName(spec.username());
+            changed = true;
+        }
+        if (existing.getPreferredLanguage() == null || existing.getPreferredLanguage().isBlank()) {
+            existing.setPreferredLanguage("zh-CN");
+            changed = true;
+        }
+        return changed ? userRepository.save(existing) : existing;
     }
 
     private User ensureUser(DemoUserSpec spec) {
@@ -114,6 +165,13 @@ public class DevBootstrapDataInitializer implements CommandLineRunner {
             String password,
             String email,
             List<DemoFileSpec> files
+    ) {
+    }
+
+    private record DemoAdminSpec(
+            String username,
+            String password,
+            String email
     ) {
     }
 

@@ -2,6 +2,8 @@ package com.yoyuzh.boot.security;
 
 import com.yoyuzh.identity.access.api.IdentityClientType;
 import com.yoyuzh.infra.cache.AppRedisProperties;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
@@ -13,6 +15,8 @@ import java.time.Instant;
 @Service
 @ConditionalOnProperty(prefix = "app.redis", name = "enabled", havingValue = "true")
 public class AuthTokenInvalidationService {
+
+    private static final Logger log = LoggerFactory.getLogger(AuthTokenInvalidationService.class);
 
     private final StringRedisTemplate redisTemplate;
     private final AppRedisProperties redisProperties;
@@ -85,11 +89,16 @@ public class AuthTokenInvalidationService {
     }
 
     private long normalizeRevokedBefore(String rawValue) {
-        long parsed = Long.parseLong(rawValue);
-        if (parsed > 9_999_999_999L) {
-            return parsed / 1000L;
+        try {
+            long parsed = Long.parseLong(rawValue.trim());
+            if (parsed > 9_999_999_999L) {
+                return parsed / 1000L;
+            }
+            return parsed;
+        } catch (NumberFormatException ex) {
+            log.warn("Ignoring malformed auth revocation cutoff value: {}", rawValue);
+            return 0L;
         }
-        return parsed;
     }
 
     private String buildAuthKey(String... segments) {

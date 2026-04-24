@@ -60,7 +60,7 @@ class JwtAuthenticationFilterTest {
         filter.doFilterInternal(request, response, filterChain);
 
         verify(filterChain).doFilter(request, response);
-        verify(jwtTokenProvider, never()).validateToken(any());
+        verify(jwtTokenProvider, never()).parseToken(any());
         assertThat(SecurityContextHolder.getContext().getAuthentication()).isNull();
     }
 
@@ -73,7 +73,7 @@ class JwtAuthenticationFilterTest {
         filter.doFilterInternal(request, response, filterChain);
 
         verify(filterChain).doFilter(request, response);
-        verify(jwtTokenProvider, never()).validateToken(any());
+        verify(jwtTokenProvider, never()).parseToken(any());
     }
 
     @Test
@@ -81,7 +81,7 @@ class JwtAuthenticationFilterTest {
         MockHttpServletRequest request = new MockHttpServletRequest();
         request.addHeader("Authorization", "Bearer invalid-token");
         MockHttpServletResponse response = new MockHttpServletResponse();
-        when(jwtTokenProvider.validateToken("invalid-token")).thenReturn(false);
+        when(jwtTokenProvider.parseToken("invalid-token")).thenReturn(null);
 
         filter.doFilterInternal(request, response, filterChain);
 
@@ -95,10 +95,8 @@ class JwtAuthenticationFilterTest {
         request.addHeader("Authorization", "Bearer valid-token");
         MockHttpServletResponse response = new MockHttpServletResponse();
         Instant issuedAt = Instant.now().minusSeconds(30);
-        when(jwtTokenProvider.validateToken("valid-token")).thenReturn(true);
-        when(jwtTokenProvider.getUserId("valid-token")).thenReturn(1L);
-        when(jwtTokenProvider.getClientType("valid-token")).thenReturn(IdentityClientType.DESKTOP);
-        when(jwtTokenProvider.getIssuedAt("valid-token")).thenReturn(issuedAt);
+        ParsedToken parsedToken = new ParsedToken("alice", 1L, "session-1", IdentityClientType.DESKTOP, issuedAt);
+        when(jwtTokenProvider.parseToken("valid-token")).thenReturn(parsedToken);
         when(authTokenInvalidationService.isAccessTokenRevoked(1L, IdentityClientType.DESKTOP, issuedAt)).thenReturn(true);
 
         filter.doFilterInternal(request, response, filterChain);
@@ -113,11 +111,8 @@ class JwtAuthenticationFilterTest {
         MockHttpServletRequest request = new MockHttpServletRequest();
         request.addHeader("Authorization", "Bearer valid-token");
         MockHttpServletResponse response = new MockHttpServletResponse();
-        when(jwtTokenProvider.validateToken("valid-token")).thenReturn(true);
-        when(jwtTokenProvider.getUserId("valid-token")).thenReturn(1L);
-        when(jwtTokenProvider.getClientType("valid-token")).thenReturn(IdentityClientType.DESKTOP);
-        when(jwtTokenProvider.getIssuedAt("valid-token")).thenReturn(Instant.now());
-        when(jwtTokenProvider.getUsername("valid-token")).thenReturn("alice");
+        ParsedToken parsedToken = new ParsedToken("alice", 1L, "session-1", IdentityClientType.DESKTOP, Instant.now());
+        when(jwtTokenProvider.parseToken("valid-token")).thenReturn(parsedToken);
         when(userDetailsService.loadAuthenticatedUser("alice"))
                 .thenThrow(new BusinessException(ErrorCode.NOT_LOGGED_IN, "user not found"));
 
@@ -133,13 +128,10 @@ class JwtAuthenticationFilterTest {
         request.addHeader("Authorization", "Bearer valid-token");
         MockHttpServletResponse response = new MockHttpServletResponse();
         IdentityAuthenticatedUser authenticatedUser = createAuthenticatedUser("alice", "session-1", null);
-        when(jwtTokenProvider.validateToken("valid-token")).thenReturn(true);
-        when(jwtTokenProvider.getUserId("valid-token")).thenReturn(1L);
-        when(jwtTokenProvider.getClientType("valid-token")).thenReturn(IdentityClientType.DESKTOP);
-        when(jwtTokenProvider.getIssuedAt("valid-token")).thenReturn(Instant.now());
-        when(jwtTokenProvider.getUsername("valid-token")).thenReturn("alice");
+        ParsedToken parsedToken = new ParsedToken("alice", 1L, "session-1", IdentityClientType.DESKTOP, Instant.now());
+        when(jwtTokenProvider.parseToken("valid-token")).thenReturn(parsedToken);
         when(userDetailsService.loadAuthenticatedUser("alice")).thenReturn(authenticatedUser);
-        when(jwtTokenProvider.hasMatchingSession("valid-token", authenticatedUser)).thenReturn(false);
+        when(jwtTokenProvider.hasMatchingSession(parsedToken, authenticatedUser)).thenReturn(false);
 
         filter.doFilterInternal(request, response, filterChain);
 
@@ -152,21 +144,11 @@ class JwtAuthenticationFilterTest {
         MockHttpServletRequest request = new MockHttpServletRequest();
         request.addHeader("Authorization", "Bearer valid-token");
         MockHttpServletResponse response = new MockHttpServletResponse();
-        IdentityAuthenticatedUser authenticatedUser = createAuthenticatedUser("alice", "session-1", null);
-        UserDetails disabledUserDetails = org.springframework.security.core.userdetails.User.builder()
-                .username("alice")
-                .password("hashed")
-                .disabled(true)
-                .authorities(List.of(new SimpleGrantedAuthority("ROLE_USER")))
-                .build();
-        when(jwtTokenProvider.validateToken("valid-token")).thenReturn(true);
-        when(jwtTokenProvider.getUserId("valid-token")).thenReturn(1L);
-        when(jwtTokenProvider.getClientType("valid-token")).thenReturn(IdentityClientType.DESKTOP);
-        when(jwtTokenProvider.getIssuedAt("valid-token")).thenReturn(Instant.now());
-        when(jwtTokenProvider.getUsername("valid-token")).thenReturn("alice");
+        IdentityAuthenticatedUser authenticatedUser = createAuthenticatedUser("alice", true, "session-1", null);
+        ParsedToken parsedToken = new ParsedToken("alice", 1L, "session-1", IdentityClientType.DESKTOP, Instant.now());
+        when(jwtTokenProvider.parseToken("valid-token")).thenReturn(parsedToken);
         when(userDetailsService.loadAuthenticatedUser("alice")).thenReturn(authenticatedUser);
-        when(jwtTokenProvider.hasMatchingSession("valid-token", authenticatedUser)).thenReturn(true);
-        when(userDetailsService.loadUserByUsername("alice")).thenReturn(disabledUserDetails);
+        when(jwtTokenProvider.hasMatchingSession(parsedToken, authenticatedUser)).thenReturn(true);
 
         filter.doFilterInternal(request, response, filterChain);
 
@@ -185,14 +167,11 @@ class JwtAuthenticationFilterTest {
                 .password("hashed")
                 .authorities(List.of(new SimpleGrantedAuthority("ROLE_USER")))
                 .build();
-        when(jwtTokenProvider.validateToken("valid-token")).thenReturn(true);
-        when(jwtTokenProvider.getUserId("valid-token")).thenReturn(1L);
-        when(jwtTokenProvider.getClientType("valid-token")).thenReturn(IdentityClientType.DESKTOP);
-        when(jwtTokenProvider.getIssuedAt("valid-token")).thenReturn(Instant.now());
-        when(jwtTokenProvider.getUsername("valid-token")).thenReturn("alice");
+        ParsedToken parsedToken = new ParsedToken("alice", 1L, "session-1", IdentityClientType.DESKTOP, Instant.now());
+        when(jwtTokenProvider.parseToken("valid-token")).thenReturn(parsedToken);
         when(userDetailsService.loadAuthenticatedUser("alice")).thenReturn(authenticatedUser);
-        when(jwtTokenProvider.hasMatchingSession("valid-token", authenticatedUser)).thenReturn(true);
-        when(userDetailsService.loadUserByUsername("alice")).thenReturn(activeUserDetails);
+        when(jwtTokenProvider.hasMatchingSession(parsedToken, authenticatedUser)).thenReturn(true);
+        when(userDetailsService.toUserDetails(authenticatedUser)).thenReturn(activeUserDetails);
 
         filter.doFilterInternal(request, response, filterChain);
 
@@ -200,15 +179,23 @@ class JwtAuthenticationFilterTest {
         assertThat(SecurityContextHolder.getContext().getAuthentication()).isNotNull();
         assertThat(SecurityContextHolder.getContext().getAuthentication().getName()).isEqualTo("alice");
         verify(adminRequestMetricsApi).recordUserOnline(1L, "alice");
+        verify(userDetailsService, never()).loadUserByUsername(any());
     }
 
     private IdentityAuthenticatedUser createAuthenticatedUser(String username, String desktopSessionId, String mobileSessionId) {
+        return createAuthenticatedUser(username, false, desktopSessionId, mobileSessionId);
+    }
+
+    private IdentityAuthenticatedUser createAuthenticatedUser(String username,
+                                                              boolean banned,
+                                                              String desktopSessionId,
+                                                              String mobileSessionId) {
         return new IdentityAuthenticatedUser(
                 1L,
                 username,
                 "hashed",
                 IdentityRoleName.USER,
-                false,
+                banned,
                 desktopSessionId,
                 desktopSessionId,
                 mobileSessionId,

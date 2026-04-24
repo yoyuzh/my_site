@@ -59,6 +59,27 @@ class GlobalExceptionHandlerTest {
     }
 
     @Test
+    void shouldReturn410ForExpiredSessionException() {
+        BusinessException ex = new BusinessException(ErrorCode.SESSION_EXPIRED, "会话已过期");
+        ResponseEntity<ApiResponse<Void>> response = handler.handleBusinessException(ex);
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.GONE);
+    }
+
+    @Test
+    void shouldReturn409ForDuplicateNameException() {
+        BusinessException ex = new BusinessException(ErrorCode.DUPLICATE_NAME, "名称重复");
+        ResponseEntity<ApiResponse<Void>> response = handler.handleBusinessException(ex);
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CONFLICT);
+    }
+
+    @Test
+    void shouldReturn429ForQuotaExceededException() {
+        BusinessException ex = new BusinessException(ErrorCode.QUOTA_EXCEEDED, "超出配额");
+        ResponseEntity<ApiResponse<Void>> response = handler.handleBusinessException(ex);
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.TOO_MANY_REQUESTS);
+    }
+
+    @Test
     void shouldReturn400WithFirstValidationMessageForMethodArgumentNotValidException() throws Exception {
         BeanPropertyBindingResult bindingResult = new BeanPropertyBindingResult(new Object(), "target");
         bindingResult.addError(new FieldError("target", "username", "用户名不能为空"));

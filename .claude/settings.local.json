@@ -3,7 +3,10 @@
     "allow": [
       "Bash(claude mcp:*)",
       "Bash(python:*)",
-      "Bash(gh pr:*)"
+      "Bash(gh pr:*)",
+      "Bash(obsidian read *)",
+      "Bash(obsidian eval *)",
+      "Bash(obsidian append *)"
     ]
   }
 }

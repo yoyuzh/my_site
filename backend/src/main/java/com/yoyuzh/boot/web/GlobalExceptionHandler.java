@@ -28,7 +28,10 @@ public class GlobalExceptionHandler {
             case NOT_LOGGED_IN -> HttpStatus.UNAUTHORIZED;
             case PERMISSION_DENIED -> HttpStatus.FORBIDDEN;
             case FILE_NOT_FOUND -> HttpStatus.NOT_FOUND;
-            default -> HttpStatus.BAD_REQUEST;
+            case SESSION_EXPIRED -> HttpStatus.GONE;
+            case DUPLICATE_NAME -> HttpStatus.CONFLICT;
+            case QUOTA_EXCEEDED -> HttpStatus.TOO_MANY_REQUESTS;
+            case INVALID_INPUT, UNKNOWN -> HttpStatus.BAD_REQUEST;
         };
         return ResponseEntity.status(status).body(ApiResponse.error(ex.getErrorCode(), ex.getMessage()));
     }

@@ -15,7 +15,6 @@ import com.yoyuzh.files.upload.api.UploadCompletionCommand;
 import com.yoyuzh.files.upload.api.UploadTargetPolicy;
 import com.yoyuzh.files.upload.api.ValidatedUploadTarget;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
@@ -174,7 +173,7 @@ public class UploadSessionService {
 
     private UploadSession cancelSession(UploadSession session) {
         if (session.getStatus() == UploadSessionStatus.COMPLETED) {
-            throw new BusinessException(ErrorCode.UNKNOWN, "completed upload session cannot be cancelled");
+            throw new BusinessException(ErrorCode.INVALID_INPUT, "completed upload session cannot be cancelled");
         }
         uploadSessionStateMachine.markCancelled(session, now());
         UploadSession savedSession = uploadSessionRepository.save(session);
@@ -191,7 +190,7 @@ public class UploadSessionService {
     private PreparedUpload prepareUpload(UploadSession session) {
         ensureSessionCanReceiveContent(session, now());
         if (resolveUploadMode(session) != UploadSessionUploadMode.DIRECT_SINGLE) {
-            throw new BusinessException(ErrorCode.UNKNOWN, "upload session does not support direct single upload");
+            throw new BusinessException(ErrorCode.INVALID_INPUT, "upload session does not support direct single upload");
         }
         return fileContentStorage.prepareBlobUpload(
                 session.getTargetPath(),
@@ -212,10 +211,10 @@ public class UploadSessionService {
         ensureSessionCanReceivePart(session, now());
         if (resolveUploadMode(session) != UploadSessionUploadMode.DIRECT_MULTIPART
                 || !StringUtils.hasText(session.getMultipartUploadId())) {
-            throw new BusinessException(ErrorCode.UNKNOWN, "upload session does not support multipart upload");
+            throw new BusinessException(ErrorCode.INVALID_INPUT, "upload session does not support multipart upload");
         }
         if (partIndex < 0 || partIndex >= session.getChunkCount()) {
-            throw new BusinessException(ErrorCode.UNKNOWN, "invalid part index");
+            throw new BusinessException(ErrorCode.INVALID_INPUT, "invalid part index");
         }
         return fileContentStorage.prepareMultipartPartUpload(
                 session.getObjectKey(),
@@ -241,16 +240,16 @@ public class UploadSessionService {
         LocalDateTime now = now();
         ensureSessionCanReceivePart(session, now);
         if (resolveUploadMode(session) != UploadSessionUploadMode.DIRECT_MULTIPART) {
-            throw new BusinessException(ErrorCode.UNKNOWN, "upload session does not support multipart upload");
+            throw new BusinessException(ErrorCode.INVALID_INPUT, "upload session does not support multipart upload");
         }
         if (partIndex < 0 || partIndex >= session.getChunkCount()) {
-            throw new BusinessException(ErrorCode.UNKNOWN, "invalid part index");
+            throw new BusinessException(ErrorCode.INVALID_INPUT, "invalid part index");
         }
         if (!StringUtils.hasText(command.etag())) {
-            throw new BusinessException(ErrorCode.UNKNOWN, "part etag is required");
+            throw new BusinessException(ErrorCode.INVALID_INPUT, "part etag is required");
         }
         if (command.size() < 0) {
-            throw new BusinessException(ErrorCode.UNKNOWN, "invalid part size");
+            throw new BusinessException(ErrorCode.INVALID_INPUT, "invalid part size");
         }
 
         List<UploadedPart> uploadedParts = new ArrayList<>(readUploadedParts(session));
@@ -281,13 +280,13 @@ public class UploadSessionService {
         LocalDateTime now = now();
         ensureSessionCanReceiveContent(session, now);
         if (resolveUploadMode(session) != UploadSessionUploadMode.PROXY) {
-            throw new BusinessException(ErrorCode.UNKNOWN, "upload session does not support proxy upload");
+            throw new BusinessException(ErrorCode.INVALID_INPUT, "upload session does not support proxy upload");
         }
         if (file == null || file.isEmpty()) {
-            throw new BusinessException(ErrorCode.UNKNOWN, "upload content is required");
+            throw new BusinessException(ErrorCode.INVALID_INPUT, "upload content is required");
         }
         if (file.getSize() != session.getSize()) {
-            throw new BusinessException(ErrorCode.UNKNOWN, "upload size does not match session");
+            throw new BusinessException(ErrorCode.INVALID_INPUT, "upload size does not match session");
         }
         fileContentStorage.uploadBlob(session.getObjectKey(), file);
         uploadSessionStateMachine.markUploading(session, now);
@@ -312,14 +311,14 @@ public class UploadSessionService {
             return session;
         }
         if (session.getStatus() == UploadSessionStatus.CANCELLED || session.getStatus() == UploadSessionStatus.FAILED) {
-            throw new BusinessException(ErrorCode.UNKNOWN, "upload session cannot be completed");
+            throw new BusinessException(ErrorCode.INVALID_INPUT, "upload session cannot be completed");
         }
         LocalDateTime now = now();
         if (session.getExpiresAt().isBefore(now)) {
             uploadSessionStateMachine.markExpired(session, now);
             UploadSession expiredSession = uploadSessionRepository.save(session);
             uploadSessionRuntimeStateService.markExpired(expiredSession, expiredSession.getUpdatedAt());
-            throw new BusinessException(ErrorCode.UNKNOWN, "upload session has expired");
+            throw new BusinessException(ErrorCode.SESSION_EXPIRED, "upload session has expired");
         }
 
         uploadSessionStateMachine.markCompleting(session, now);
@@ -360,7 +359,6 @@ public class UploadSessionService {
         }
     }
 
-    @Scheduled(fixedDelay = 60 * 60 * 1000L)
     @Transactional
     public int pruneExpiredSessions() {
         LocalDateTime now = now();
@@ -451,18 +449,18 @@ public class UploadSessionService {
                 .sorted(Comparator.comparingInt(UploadedPart::partIndex))
                 .toList();
         if (uploadedParts.size() != session.getChunkCount()) {
-            throw new BusinessException(ErrorCode.UNKNOWN, "multipart upload is incomplete");
+            throw new BusinessException(ErrorCode.INVALID_INPUT, "multipart upload is incomplete");
         }
         for (int expectedIndex = 0; expectedIndex < session.getChunkCount(); expectedIndex++) {
             UploadedPart part = uploadedParts.get(expectedIndex);
             if (part.partIndex() != expectedIndex) {
-                throw new BusinessException(ErrorCode.UNKNOWN, "multipart upload is incomplete");
+                throw new BusinessException(ErrorCode.INVALID_INPUT, "multipart upload is incomplete");
             }
             if (!StringUtils.hasText(part.etag())) {
-                throw new BusinessException(ErrorCode.UNKNOWN, "missing part etag");
+                throw new BusinessException(ErrorCode.INVALID_INPUT, "missing part etag");
             }
             if (part.size() <= 0 || part.size() > uploadPolicyResolver.resolveChunkSize(session, expectedIndex)) {
-                throw new BusinessException(ErrorCode.UNKNOWN, "invalid part size");
+                throw new BusinessException(ErrorCode.INVALID_INPUT, "invalid part size");
             }
         }
         return uploadedParts.stream()

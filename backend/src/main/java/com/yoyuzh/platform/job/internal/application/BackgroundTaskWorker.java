@@ -100,14 +100,22 @@ public class BackgroundTaskWorker {
     }
 
     private String resolveRunningPhase(BackgroundTaskType type) {
-        return switch (type) {
-            case ARCHIVE -> "archiving";
-            case EXTRACT -> "extracting";
-            case MEDIA_META -> "extracting-metadata";
-            case SEARCH_INDEX_REBUILD -> "rebuilding-search-index";
-            case STORAGE_POLICY_MIGRATION -> "planning-storage-policy-migration";
-            default -> "running";
-        };
+        if (type == BackgroundTaskType.ARCHIVE) {
+            return "archiving";
+        }
+        if (type == BackgroundTaskType.EXTRACT) {
+            return "extracting";
+        }
+        if (type == BackgroundTaskType.MEDIA_META) {
+            return "extracting-metadata";
+        }
+        if (type == BackgroundTaskType.SEARCH_INDEX_REBUILD) {
+            return "rebuilding-search-index";
+        }
+        if (type == BackgroundTaskType.STORAGE_POLICY_MIGRATION) {
+            return "planning-storage-policy-migration";
+        }
+        return "running";
     }
 
     private BackgroundTaskHandler findHandler(BackgroundTask task) {

@@ -155,7 +155,7 @@ public class BackgroundTaskExecutionService {
         task.setStatus(BackgroundTaskStatus.COMPLETED);
         task.setNextRunAt(null);
         clearLease(task);
-        task.setFinishedAt(LocalDateTime.now());
+        task.setFinishedAt(leaseTouch.now());
         task.setErrorMessage(null);
         return backgroundTaskRepository.save(task);
     }

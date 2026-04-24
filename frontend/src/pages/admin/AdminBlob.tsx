@@ -1,19 +1,55 @@
 import React, { useState } from 'react';
 import AdminLayout from '../../components/AdminLayout';
-import { FolderKey, Search, FileText, Filter, Trash2 } from 'lucide-react';
+import { FolderKey, Search, Filter, Trash2 } from 'lucide-react';
 import { useAdminBlobs } from '../../api/queries';
+import { formatBytes, formatDateTime } from '../../lib/format';
+import type { AdminFileBlob } from '../../api/types';
 
 const AdminBlob: React.FC = () => {
   const [showFilters, setShowFilters] = useState(false);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
-  const { data, isLoading, isError } = useAdminBlobs({ page, page_size: pageSize });
+  const [objectKeyDraft, setObjectKeyDraft] = useState('');
+  const [objectKey, setObjectKey] = useState('');
+  const [userDraft, setUserDraft] = useState('');
+  const [userQuery, setUserQuery] = useState('');
+  const [policyDraft, setPolicyDraft] = useState('');
+  const [storagePolicyId, setStoragePolicyId] = useState<number | undefined>(undefined);
+  const { data, isLoading, isError } = useAdminBlobs({
+    page,
+    page_size: pageSize,
+    objectKey,
+    userQuery,
+    storagePolicyId,
+  });
+
+  function applyFilters() {
+    const parsedPolicy = Number(policyDraft);
+    setObjectKey(objectKeyDraft.trim());
+    setUserQuery(userDraft.trim());
+    setStoragePolicyId(policyDraft.trim() && Number.isFinite(parsedPolicy) ? parsedPolicy : undefined);
+    setPage(1);
+  }
+
+  function resetFilters() {
+    setObjectKeyDraft('');
+    setObjectKey('');
+    setUserDraft('');
+    setUserQuery('');
+    setPolicyDraft('');
+    setStoragePolicyId(undefined);
+    setPage(1);
+  }
 
   return (
     <AdminLayout title="文件记录 (Entity)">
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 gap-4">
         <div className="flex items-center gap-2">
-           <button className="bg-red-500/10 text-red-500 hover:bg-red-500/20 px-4 py-2 rounded-lg text-sm h-10 transition-colors font-medium">
+           <button
+             className="bg-red-500/10 text-red-500 hover:bg-red-500/20 px-4 py-2 rounded-lg text-sm h-10 transition-colors font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+             disabled
+             title="后端暂未提供批量删除文件实体接口"
+           >
             批量删除
           </button>
         </div>
@@ -23,8 +59,15 @@ const AdminBlob: React.FC = () => {
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-text-muted-light dark:text-text-muted-dark" size={16} />
             <input 
               type="text" 
-              placeholder="搜索实体哈希..." 
+              placeholder="搜索 object key..."
               className="input-field h-10 w-full text-sm pl-9"
+              value={objectKeyDraft}
+              onChange={(event) => setObjectKeyDraft(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter') {
+                  applyFilters();
+                }
+              }}
             />
           </div>
           <button 
@@ -41,21 +84,41 @@ const AdminBlob: React.FC = () => {
         <div className="card-container p-4 mb-6 animate-fade-in-up flex flex-wrap gap-4 items-end bg-[#F8FBFF] dark:bg-[#111117]/80">
           <div className="flex-1 min-w-[200px]">
             <label className="block text-xs font-semibold text-text-secondary-light dark:text-text-secondary-dark mb-1 ml-1">存储策略</label>
-            <select className="input-field h-10 text-sm appearance-none py-0">
-              <option value="">全部</option>
-              <option value="1">Local</option>
-              <option value="2">OSS</option>
-            </select>
+            <input
+              type="number"
+              min={1}
+              placeholder="输入策略 ID"
+              className="input-field h-10 text-sm py-0"
+              value={policyDraft}
+              onChange={(event) => setPolicyDraft(event.target.value)}
+            />
           </div>
           <div className="flex-1 min-w-[200px]">
              <label className="block text-xs font-semibold text-text-secondary-light dark:text-text-secondary-dark mb-1 ml-1">上传者 ID</label>
-             <input type="text" placeholder="输入用户ID" className="input-field h-10 text-sm py-0" />
+             <input
+               type="text"
+               placeholder="输入用户名或邮箱"
+               className="input-field h-10 text-sm py-0"
+               value={userDraft}
+               onChange={(event) => setUserDraft(event.target.value)}
+               onKeyDown={(event) => {
+                 if (event.key === 'Enter') {
+                   applyFilters();
+                 }
+               }}
+             />
           </div>
           <div className="flex gap-2">
-            <button className="h-10 px-4 text-sm bg-white dark:bg-black border border-[#D9E3F2] dark:border-[#222233] rounded-lg hover:bg-black/5 dark:hover:bg-white/5 transition-colors">
+            <button
+              className="h-10 px-4 text-sm bg-white dark:bg-black border border-[#D9E3F2] dark:border-[#222233] rounded-lg hover:bg-black/5 dark:hover:bg-white/5 transition-colors"
+              onClick={resetFilters}
+            >
               重置
             </button>
-            <button className="h-10 px-4 text-sm bg-brand-light text-white rounded-lg hover:opacity-90 transition-opacity">
+            <button
+              className="h-10 px-4 text-sm bg-brand-light text-white rounded-lg hover:opacity-90 transition-opacity"
+              onClick={applyFilters}
+            >
               应用
             </button>
           </div>
@@ -85,23 +148,37 @@ const AdminBlob: React.FC = () => {
                   </tr>
                 </thead>
                 <tbody>
-                  {(data?.items || []).map((blob: any) => (
-                    <tr key={blob.id} className="border-b border-[#D9E3F2] dark:border-[#222233] hover:bg-[#F8FBFF] dark:hover:bg-[#1A1A24] transition-colors">
+                  {(data?.items || []).map((blob: AdminFileBlob) => (
+                    <tr key={`${blob.entityType}-${blob.entityId}-${blob.blobId}`} className="border-b border-[#D9E3F2] dark:border-[#222233] hover:bg-[#F8FBFF] dark:hover:bg-[#1A1A24] transition-colors">
                       <td className="px-6 py-4 text-sm">
                         <input type="checkbox" className="rounded border-gray-300 text-brand-light focus:ring-brand-light cursor-pointer" />
                       </td>
-                      <td className="px-6 py-4 text-sm text-text-secondary-light dark:text-text-secondary-dark font-funnel">{blob.id}</td>
+                      <td className="px-6 py-4 text-sm text-text-secondary-light dark:text-text-secondary-dark font-funnel">{blob.entityId}</td>
                       <td className="px-6 py-4 text-sm text-text-secondary-light dark:text-text-secondary-dark">
-                         <span className="bg-black/5 dark:bg-white/5 px-2 py-1 rounded font-funnel">{blob.policy?.name || blob.policy || 'Unknown'}</span>
+                         <span className="bg-black/5 dark:bg-white/5 px-2 py-1 rounded font-funnel">
+                           {blob.storagePolicyId == null ? '未绑定策略' : `#${blob.storagePolicyId}`}
+                         </span>
                       </td>
                       <td className="px-6 py-4 text-sm font-medium text-text-primary-light dark:text-white flex items-center gap-3">
                         <FolderKey size={16} className="text-brand-light flex-shrink-0" />
-                        <span className="truncate max-w-xs font-geist">{blob.hash}</span>
+                        <span className="truncate max-w-xs font-geist">{blob.objectKey || '无 object key'}</span>
                       </td>
-                      <td className="px-6 py-4 text-sm text-text-secondary-light dark:text-text-secondary-dark font-funnel">{blob.size}</td>
-                      <td className="px-6 py-4 text-sm font-bold text-brand-light dark:text-brand-dark font-funnel">{blob.refs}</td>
+                      <td className="px-6 py-4 text-sm text-text-secondary-light dark:text-text-secondary-dark font-funnel">
+                        {blob.size == null ? '-' : formatBytes(blob.size)}
+                        <div className="mt-1 text-xs text-text-muted-light dark:text-text-muted-dark">{blob.contentType || blob.entityType}</div>
+                      </td>
+                      <td className="px-6 py-4 text-sm font-bold text-brand-light dark:text-brand-dark font-funnel">
+                        {blob.referenceCount ?? blob.linkedStoredFileCount}
+                        <div className="mt-1 text-xs text-text-muted-light dark:text-text-muted-dark font-normal">
+                          {blob.createdAt ? formatDateTime(blob.createdAt) : '-'}
+                        </div>
+                      </td>
                       <td className="px-6 py-4 text-right flex justify-end gap-2">
-                        <button className="text-red-500 hover:text-red-600 transition-colors p-1" title="删除">
+                        <button
+                          className="text-red-500 hover:text-red-600 transition-colors p-1 disabled:opacity-50 disabled:cursor-not-allowed"
+                          title="后端暂未提供删除文件实体接口"
+                          disabled
+                        >
                           <Trash2 size={16} />
                         </button>
                       </td>

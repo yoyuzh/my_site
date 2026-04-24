@@ -13,7 +13,7 @@ import com.yoyuzh.files.content.api.ContentStoragePolicyMigrationItem;
 import com.yoyuzh.platform.storage.api.StoragePolicyDescriptor;
 import com.yoyuzh.platform.storage.api.StoragePolicyBlobAccessApi;
 import com.yoyuzh.platform.storage.api.StoragePolicyQuery;
-import jakarta.transaction.Transactional;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
@@ -152,7 +152,7 @@ public class StoragePolicyMigrationBackgroundTaskHandler implements BackgroundTa
 
     private void validateTargetCapacity(ContentStoragePolicyMigrationItem entity, StoragePolicyDescriptor targetPolicy) {
         if (targetPolicy.maxSizeBytes() > 0 && entity.size() != null && entity.size() > targetPolicy.maxSizeBytes()) {
-            throw new BusinessException(ErrorCode.UNKNOWN, "目标存储策略容量上限不足以承载待迁移对象");
+            throw new BusinessException(ErrorCode.QUOTA_EXCEEDED, "目标存储策略容量上限不足以承载待迁移对象");
         }
     }
 

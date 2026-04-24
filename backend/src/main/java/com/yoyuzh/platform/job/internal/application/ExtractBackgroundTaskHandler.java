@@ -15,7 +15,7 @@ import com.yoyuzh.files.workspace.api.WorkspaceExternalFileImport;
 import com.yoyuzh.files.workspace.api.WorkspaceUserContext;
 import com.yoyuzh.files.workspace.api.WorkspaceZipArchive;
 import com.yoyuzh.files.workspace.api.WorkspaceZipArchiveEntry;
-import jakarta.transaction.Transactional;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 

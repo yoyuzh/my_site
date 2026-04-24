@@ -75,7 +75,7 @@ public class RuntimeStoragePolicyAdminApi implements StoragePolicyAdminApi {
     public StoragePolicyAdminView updateStoragePolicyStatusAsAdmin(Long policyId, boolean enabled) {
         StoragePolicy policy = getRequiredStoragePolicy(policyId);
         if (policy.isDefaultPolicy() && !enabled) {
-            throw new BusinessException(ErrorCode.UNKNOWN, "默认存储策略不能被禁用");
+            throw new BusinessException(ErrorCode.INVALID_INPUT, "默认存储策略不能被禁用");
         }
         policy.setEnabled(enabled);
         StoragePolicy savedPolicy = storagePolicyRepository.save(policy);
@@ -106,12 +106,12 @@ public class RuntimeStoragePolicyAdminApi implements StoragePolicyAdminApi {
 
     private StoragePolicy getRequiredStoragePolicy(Long policyId) {
         return storagePolicyRepository.findById(policyId)
-                .orElseThrow(() -> new BusinessException(ErrorCode.UNKNOWN, "storage policy not found"));
+                .orElseThrow(() -> new BusinessException(ErrorCode.FILE_NOT_FOUND, "storage policy not found"));
     }
 
     private void applyStoragePolicyUpsert(StoragePolicy policy, StoragePolicyAdminUpsertCommand command) {
         if (policy.isDefaultPolicy() && !command.enabled()) {
-            throw new BusinessException(ErrorCode.UNKNOWN, "默认存储策略不能被禁用");
+            throw new BusinessException(ErrorCode.INVALID_INPUT, "默认存储策略不能被禁用");
         }
         validateStoragePolicyCommand(command);
         policy.setName(command.name().trim());
@@ -130,26 +130,26 @@ public class RuntimeStoragePolicyAdminApi implements StoragePolicyAdminApi {
     private void validateStoragePolicyCommand(StoragePolicyAdminUpsertCommand command) {
         if (command.type() == StoragePolicyType.LOCAL) {
             if (command.credentialMode() != StoragePolicyCredentialMode.NONE) {
-                throw new BusinessException(ErrorCode.UNKNOWN, "本地存储策略的凭证模式必须为 NONE");
+                throw new BusinessException(ErrorCode.INVALID_INPUT, "本地存储策略的凭证模式必须为 NONE");
             }
             validateLocalStorageRoot(command.prefix());
         }
         if (command.type() == StoragePolicyType.S3_COMPATIBLE
                 && !StringUtils.hasText(command.bucketName())) {
-            throw new BusinessException(ErrorCode.UNKNOWN, "S3 存储策略必须配置 bucketName");
+            throw new BusinessException(ErrorCode.INVALID_INPUT, "S3 存储策略必须配置 bucketName");
         }
     }
 
     private void validateLocalStorageRoot(String prefix) {
         if (!StringUtils.hasText(prefix)) {
-            throw new BusinessException(ErrorCode.UNKNOWN, "本地存储策略必须配置绝对路径根目录");
+            throw new BusinessException(ErrorCode.INVALID_INPUT, "本地存储策略必须配置绝对路径根目录");
         }
         try {
             if (!Path.of(prefix.trim()).isAbsolute()) {
-                throw new BusinessException(ErrorCode.UNKNOWN, "本地存储策略必须配置绝对路径根目录");
+                throw new BusinessException(ErrorCode.INVALID_INPUT, "本地存储策略必须配置绝对路径根目录");
             }
         } catch (InvalidPathException ex) {
-            throw new BusinessException(ErrorCode.UNKNOWN, "本地存储策略根目录不合法");
+            throw new BusinessException(ErrorCode.INVALID_INPUT, "本地存储策略根目录不合法");
         }
     }
 

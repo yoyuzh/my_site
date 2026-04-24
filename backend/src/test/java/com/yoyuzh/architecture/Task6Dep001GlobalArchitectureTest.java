@@ -1,6 +1,7 @@
 package com.yoyuzh.architecture;
 
 import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.classes;
+import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.noClasses;
 
 import com.tngtech.archunit.core.domain.Dependency;
 import com.tngtech.archunit.core.domain.JavaClass;
@@ -44,6 +45,18 @@ class Task6Dep001GlobalArchitectureTest {
                 .that()
                 .resideInAPackage("com.yoyuzh..")
                 .should(notDependOnAnotherModulesInternalPackage());
+
+        rule.check(classes);
+    }
+
+    @Test
+    void productionTransactionalBoundariesMustUseSpringTransactionalAnnotation() {
+        ArchRule rule = noClasses()
+                .that()
+                .resideInAPackage("com.yoyuzh..")
+                .should()
+                .dependOnClassesThat()
+                .haveFullyQualifiedName("jakarta.transaction.Transactional");
 
         rule.check(classes);
     }

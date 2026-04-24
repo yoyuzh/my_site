@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import AdminLayout from '../../components/AdminLayout';
 import { Share2, Search, Link as LinkIcon, Trash2, Filter } from 'lucide-react';
 import { useAdminShares } from '../../api/queries';
+import { deleteAdminShare } from '../../api/mutations';
 import { formatDateTime } from '../../lib/format';
 import type { AdminShare as AdminShareItem } from '../../api/types';
 
@@ -13,13 +14,72 @@ const AdminShare: React.FC = () => {
   const [showFilters, setShowFilters] = useState(false);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
-  const { data, isLoading, isError } = useAdminShares({ page, page_size: pageSize });
+  const [searchDraft, setSearchDraft] = useState('');
+  const [fileName, setFileName] = useState('');
+  const [ownerDraft, setOwnerDraft] = useState('');
+  const [userQuery, setUserQuery] = useState('');
+  const [expiredDraft, setExpiredDraft] = useState('');
+  const [expired, setExpired] = useState<boolean | undefined>(undefined);
+  const [statusMessage, setStatusMessage] = useState<string | null>(null);
+  const { data, isLoading, isError, refetch } = useAdminShares({
+    page,
+    page_size: pageSize,
+    fileName,
+    userQuery,
+    expired,
+  });
+
+  function applyFilters() {
+    setFileName(searchDraft.trim());
+    setUserQuery(ownerDraft.trim());
+    setExpired(expiredDraft === '' ? undefined : expiredDraft === 'true');
+    setPage(1);
+  }
+
+  function resetFilters() {
+    setSearchDraft('');
+    setFileName('');
+    setOwnerDraft('');
+    setUserQuery('');
+    setExpiredDraft('');
+    setExpired(undefined);
+    setPage(1);
+  }
+
+  async function copyShareLink(share: AdminShareItem) {
+    const url = `${window.location.origin}/share/${share.token}`;
+    try {
+      await window.navigator.clipboard.writeText(url);
+      setStatusMessage(`已复制分享链接：${url}`);
+    } catch {
+      window.prompt('复制分享链接', url);
+    }
+  }
+
+  async function handleDelete(share: AdminShareItem) {
+    const label = share.shareName || share.fileName || share.token;
+    if (!window.confirm(`确认取消分享「${label}」？`)) {
+      return;
+    }
+
+    try {
+      await deleteAdminShare(share.id);
+      setStatusMessage(`已取消分享：${label}`);
+      await refetch();
+    } catch (error) {
+      setStatusMessage(error instanceof Error ? error.message : '取消分享失败');
+    }
+  }
 
   return (
     <AdminLayout title="分享管理">
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 gap-4">
         <div className="flex items-center gap-2">
-           <button className="bg-red-500/10 text-red-500 hover:bg-red-500/20 px-4 py-2 rounded-lg text-sm h-10 transition-colors font-medium">
+           <button
+             className="bg-red-500/10 text-red-500 hover:bg-red-500/20 px-4 py-2 rounded-lg text-sm h-10 transition-colors font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+             disabled
+             title="后端暂未提供批量删除分享接口"
+           >
             批量删除
           </button>
         </div>
@@ -29,8 +89,15 @@ const AdminShare: React.FC = () => {
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-text-muted-light dark:text-text-muted-dark" size={16} />
             <input 
               type="text" 
-              placeholder="搜索分享名称或密码..." 
+              placeholder="搜索分享文件名..."
               className="input-field h-10 w-full text-sm pl-9"
+              value={searchDraft}
+              onChange={(event) => setSearchDraft(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter') {
+                  applyFilters();
+                }
+              }}
             />
           </div>
           <button 
@@ -47,24 +114,51 @@ const AdminShare: React.FC = () => {
         <div className="card-container p-4 mb-6 animate-fade-in-up flex flex-wrap gap-4 items-end bg-[#F8FBFF] dark:bg-[#111117]/80">
           <div className="flex-1 min-w-[200px]">
             <label className="block text-xs font-semibold text-text-secondary-light dark:text-text-secondary-dark mb-1 ml-1">创建者</label>
-            <input type="text" placeholder="输入创建者 ID" className="input-field h-10 text-sm py-0" />
+            <input
+              type="text"
+              placeholder="输入创建者用户名或邮箱"
+              className="input-field h-10 text-sm py-0"
+              value={ownerDraft}
+              onChange={(event) => setOwnerDraft(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter') {
+                  applyFilters();
+                }
+              }}
+            />
           </div>
           <div className="flex-1 min-w-[200px]">
             <label className="block text-xs font-semibold text-text-secondary-light dark:text-text-secondary-dark mb-1 ml-1">状态</label>
-            <select className="input-field h-10 text-sm appearance-none py-0">
+            <select
+              className="input-field h-10 text-sm appearance-none py-0"
+              value={expiredDraft}
+              onChange={(event) => setExpiredDraft(event.target.value)}
+            >
               <option value="">全部状态</option>
-              <option value="active">正常</option>
-              <option value="expired">已过期</option>
+              <option value="false">正常</option>
+              <option value="true">已过期</option>
             </select>
           </div>
           <div className="flex gap-2">
-            <button className="h-10 px-4 text-sm bg-white dark:bg-black border border-[#D9E3F2] dark:border-[#222233] rounded-lg hover:bg-black/5 dark:hover:bg-white/5 transition-colors">
+            <button
+              className="h-10 px-4 text-sm bg-white dark:bg-black border border-[#D9E3F2] dark:border-[#222233] rounded-lg hover:bg-black/5 dark:hover:bg-white/5 transition-colors"
+              onClick={resetFilters}
+            >
               重置
             </button>
-            <button className="h-10 px-4 text-sm bg-brand-light text-white rounded-lg hover:opacity-90 transition-opacity">
+            <button
+              className="h-10 px-4 text-sm bg-brand-light text-white rounded-lg hover:opacity-90 transition-opacity"
+              onClick={applyFilters}
+            >
               应用
             </button>
           </div>
+        </div>
+      )}
+
+      {statusMessage && (
+        <div className="mb-4 rounded-lg border border-[#D9E3F2] dark:border-[#222233] bg-white dark:bg-[#111117] px-4 py-3 text-sm text-text-secondary-light dark:text-text-secondary-dark">
+          {statusMessage}
         </div>
       )}
 
@@ -137,10 +231,18 @@ const AdminShare: React.FC = () => {
                       </td>
                       <td className="px-6 py-4 text-sm text-text-secondary-light dark:text-text-secondary-dark font-geist">{share.expiresAt ? formatDateTime(share.expiresAt) : '永久有效'}</td>
                       <td className="px-6 py-4 text-right flex justify-end gap-2">
-                        <button className="text-brand-light hover:text-brand-dark transition-colors p-1" title="查看链接">
+                        <button
+                          className="text-brand-light hover:text-brand-dark transition-colors p-1"
+                          title="复制链接"
+                          onClick={() => void copyShareLink(share)}
+                        >
                           <LinkIcon size={16} />
                         </button>
-                        <button className="text-red-500 hover:text-red-600 transition-colors p-1" title="取消分享">
+                        <button
+                          className="text-red-500 hover:text-red-600 transition-colors p-1"
+                          title="取消分享"
+                          onClick={() => void handleDelete(share)}
+                        >
                           <Trash2 size={16} />
                         </button>
                       </td>

@@ -311,6 +311,7 @@ class BackgroundTaskServiceTest {
         assertThat(result.getPublicStateJson()).contains("\"fileId\":11");
         assertThat(result.getPublicStateJson()).contains("\"worker\":\"noop\"");
         assertThat(result.getPublicStateJson()).contains("\"phase\":\"completed\"");
+        assertThat(result.getPublicStateJson()).contains("\"heartbeatAt\":\"" + result.getFinishedAt() + "\"");
         assertThat(result.getPublicStateJson()).doesNotContain("workerOwner");
         assertThat(result.getPublicStateJson()).doesNotContain("leaseExpiresAt");
     }

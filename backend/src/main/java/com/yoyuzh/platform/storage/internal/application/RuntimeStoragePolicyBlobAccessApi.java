@@ -40,10 +40,10 @@ public class RuntimeStoragePolicyBlobAccessApi implements StoragePolicyBlobAcces
     @Override
     public void validateMigration(StoragePolicyDescriptor sourcePolicy, StoragePolicyDescriptor targetPolicy) {
         if (sourcePolicy.id().equals(targetPolicy.id())) {
-            throw new BusinessException(ErrorCode.UNKNOWN, "源存储策略和目标存储策略不能相同");
+            throw new BusinessException(ErrorCode.INVALID_INPUT, "源存储策略和目标存储策略不能相同");
         }
         if (!targetPolicy.enabled()) {
-            throw new BusinessException(ErrorCode.UNKNOWN, "目标存储策略必须处于启用状态");
+            throw new BusinessException(ErrorCode.INVALID_INPUT, "目标存储策略必须处于启用状态");
         }
         assertSupported(sourcePolicy, "源存储策略");
         assertSupported(targetPolicy, "目标存储策略");
@@ -72,22 +72,22 @@ public class RuntimeStoragePolicyBlobAccessApi implements StoragePolicyBlobAcces
     private void assertSupported(StoragePolicyDescriptor policy, String label) {
         if (policy.type() == StoragePolicyType.LOCAL) {
             if (!StringUtils.hasText(policy.prefix())) {
-                throw new BusinessException(ErrorCode.UNKNOWN, label + "缺少本地根目录配置");
+                throw new BusinessException(ErrorCode.INVALID_INPUT, label + "缺少本地根目录配置");
             }
             return;
         }
         if (policy.type() != StoragePolicyType.S3_COMPATIBLE) {
-            throw new BusinessException(ErrorCode.UNKNOWN, label + "类型不支持迁移");
+            throw new BusinessException(ErrorCode.INVALID_INPUT, label + "类型不支持迁移");
         }
         if (!StringUtils.hasText(policy.bucketName())) {
-            throw new BusinessException(ErrorCode.UNKNOWN, label + "缺少 bucketName 配置");
+            throw new BusinessException(ErrorCode.INVALID_INPUT, label + "缺少 bucketName 配置");
         }
         if (policy.credentialMode() != StoragePolicyCredentialMode.DOGECLOUD_TEMP) {
-            throw new BusinessException(ErrorCode.UNKNOWN, label + "当前仅支持使用多吉云临时凭证的 S3 兼容策略迁移");
+            throw new BusinessException(ErrorCode.INVALID_INPUT, label + "当前仅支持使用多吉云临时凭证的 S3 兼容策略迁移");
         }
         if (!StringUtils.hasText(globalProperties.getS3().getApiAccessKey())
                 || !StringUtils.hasText(globalProperties.getS3().getApiSecretKey())) {
-            throw new BusinessException(ErrorCode.UNKNOWN, "当前运行环境缺少多吉云临时凭证配置，无法执行策略迁移");
+            throw new BusinessException(ErrorCode.INVALID_INPUT, "当前运行环境缺少多吉云临时凭证配置，无法执行策略迁移");
         }
     }
 

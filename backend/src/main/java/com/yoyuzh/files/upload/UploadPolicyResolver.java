@@ -49,7 +49,7 @@ public class UploadPolicyResolver {
 
     public long resolveChunkSize(UploadSession session, int partIndex) {
         if (partIndex < 0 || partIndex >= session.getChunkCount()) {
-            throw new BusinessException(ErrorCode.UNKNOWN, "鍒嗙墖搴忓彿涓嶅悎娉?");
+            throw new BusinessException(ErrorCode.INVALID_INPUT, "鍒嗙墖搴忓彿涓嶅悎娉?");
         }
         if (partIndex < session.getChunkCount() - 1) {
             return session.getChunkSize();

@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import AdminLayout from '../../components/AdminLayout';
 import { FileKey, Search, Trash2, Filter, Import } from 'lucide-react';
 import { useAdminFiles } from '../../api/queries';
+import { deleteAdminFile } from '../../api/mutations';
 import { formatBytes, formatDateTime } from '../../lib/format';
 import type { AdminFile as AdminFileItem } from '../../api/types';
 
@@ -19,16 +20,62 @@ const AdminFile: React.FC = () => {
   const [showFilters, setShowFilters] = useState(false);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
-  const { data, isLoading, isError } = useAdminFiles({ page, page_size: pageSize });
+  const [searchDraft, setSearchDraft] = useState('');
+  const [query, setQuery] = useState('');
+  const [ownerDraft, setOwnerDraft] = useState('');
+  const [ownerQuery, setOwnerQuery] = useState('');
+  const [statusMessage, setStatusMessage] = useState<string | null>(null);
+  const { data, isLoading, isError, refetch } = useAdminFiles({
+    page,
+    page_size: pageSize,
+    query,
+    ownerQuery,
+  });
+
+  function applyFilters() {
+    setQuery(searchDraft.trim());
+    setOwnerQuery(ownerDraft.trim());
+    setPage(1);
+  }
+
+  function resetFilters() {
+    setSearchDraft('');
+    setQuery('');
+    setOwnerDraft('');
+    setOwnerQuery('');
+    setPage(1);
+  }
+
+  async function handleDelete(file: AdminFileItem) {
+    if (!window.confirm(`确认删除「${file.filename}」？此操作会删除用户文件记录。`)) {
+      return;
+    }
+
+    try {
+      await deleteAdminFile(file.id);
+      setStatusMessage(`已删除文件：${file.filename}`);
+      await refetch();
+    } catch (error) {
+      setStatusMessage(error instanceof Error ? error.message : '删除文件失败');
+    }
+  }
 
   return (
     <AdminLayout title="物理文件">
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 gap-4">
         <div className="flex items-center gap-2">
-          <button className="bg-white dark:bg-transparent border border-[#BFD2F7] dark:border-[#222233] text-brand-light dark:text-white font-semibold py-2 px-4 rounded-lg transition-all duration-300 hover:bg-brand-light/5 text-sm h-10 flex items-center gap-2">
+          <button
+            className="bg-white dark:bg-transparent border border-[#BFD2F7] dark:border-[#222233] text-brand-light dark:text-white font-semibold py-2 px-4 rounded-lg transition-all duration-300 hover:bg-brand-light/5 text-sm h-10 flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+            disabled
+            title="后端暂未提供导入外部目录接口"
+          >
             <Import size={16} /> 导入外部目录
           </button>
-          <button className="bg-red-500/10 text-red-500 hover:bg-red-500/20 px-4 py-2 rounded-lg text-sm h-10 transition-colors font-medium">
+          <button
+            className="bg-red-500/10 text-red-500 hover:bg-red-500/20 px-4 py-2 rounded-lg text-sm h-10 transition-colors font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+            disabled
+            title="后端暂未提供批量删除文件接口"
+          >
             批量删除
           </button>
         </div>
@@ -40,6 +87,13 @@ const AdminFile: React.FC = () => {
               type="text" 
               placeholder="搜索文件名..." 
               className="input-field h-10 w-full text-sm pl-9"
+              value={searchDraft}
+              onChange={(event) => setSearchDraft(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter') {
+                  applyFilters();
+                }
+              }}
             />
           </div>
           <button 
@@ -56,40 +110,69 @@ const AdminFile: React.FC = () => {
         <div className="card-container p-4 mb-6 animate-fade-in-up flex flex-wrap gap-4 items-end bg-[#F8FBFF] dark:bg-[#111117]/80">
           <div className="flex-1 min-w-[150px]">
             <label className="block text-xs font-semibold text-text-secondary-light dark:text-text-secondary-dark mb-1 ml-1">存储策略</label>
-            <select className="input-field h-10 text-sm appearance-none py-0">
+            <select
+              className="input-field h-10 text-sm appearance-none py-0 disabled:opacity-60"
+              disabled
+              title="当前文件列表接口暂未提供存储策略筛选"
+            >
               <option value="">全部策略</option>
-              <option value="1">默认本地存储</option>
-              <option value="2">阿里云 OSS</option>
             </select>
           </div>
           <div className="flex-1 min-w-[150px]">
             <label className="block text-xs font-semibold text-text-secondary-light dark:text-text-secondary-dark mb-1 ml-1">所属用户</label>
-            <input type="text" placeholder="输入用户ID" className="input-field h-10 text-sm py-0" />
+            <input
+              type="text"
+              placeholder="输入用户名或邮箱"
+              className="input-field h-10 text-sm py-0"
+              value={ownerDraft}
+              onChange={(event) => setOwnerDraft(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter') {
+                  applyFilters();
+                }
+              }}
+            />
           </div>
           <div className="flex-1 min-w-[150px]">
             <label className="block text-xs font-semibold text-text-secondary-light dark:text-text-secondary-dark mb-1 ml-1">包含直链</label>
-            <select className="input-field h-10 text-sm appearance-none py-0">
+            <select
+              className="input-field h-10 text-sm appearance-none py-0 disabled:opacity-60"
+              disabled
+              title="当前文件列表接口暂未提供直链筛选"
+            >
               <option value="">全部</option>
-              <option value="true">是</option>
-              <option value="false">否</option>
             </select>
           </div>
           <div className="flex-1 min-w-[150px]">
             <label className="block text-xs font-semibold text-text-secondary-light dark:text-text-secondary-dark mb-1 ml-1">已分享</label>
-            <select className="input-field h-10 text-sm appearance-none py-0">
+            <select
+              className="input-field h-10 text-sm appearance-none py-0 disabled:opacity-60"
+              disabled
+              title="当前文件列表接口暂未提供分享状态筛选"
+            >
               <option value="">全部</option>
-              <option value="true">是</option>
-              <option value="false">否</option>
             </select>
           </div>
           <div className="flex gap-2">
-            <button className="h-10 px-4 text-sm bg-white dark:bg-black border border-[#D9E3F2] dark:border-[#222233] rounded-lg hover:bg-black/5 dark:hover:bg-white/5 transition-colors">
+            <button
+              className="h-10 px-4 text-sm bg-white dark:bg-black border border-[#D9E3F2] dark:border-[#222233] rounded-lg hover:bg-black/5 dark:hover:bg-white/5 transition-colors"
+              onClick={resetFilters}
+            >
               重置
             </button>
-            <button className="h-10 px-4 text-sm bg-brand-light text-white rounded-lg hover:opacity-90 transition-opacity">
+            <button
+              className="h-10 px-4 text-sm bg-brand-light text-white rounded-lg hover:opacity-90 transition-opacity"
+              onClick={applyFilters}
+            >
               应用
             </button>
           </div>
+        </div>
+      )}
+
+      {statusMessage && (
+        <div className="mb-4 rounded-lg border border-[#D9E3F2] dark:border-[#222233] bg-white dark:bg-[#111117] px-4 py-3 text-sm text-text-secondary-light dark:text-text-secondary-dark">
+          {statusMessage}
         </div>
       )}
 
@@ -162,7 +245,11 @@ const AdminFile: React.FC = () => {
                         {formatDateTime(file.createdAt)}
                       </td>
                       <td className="px-6 py-4 text-right flex justify-end gap-2">
-                        <button className="text-red-500 hover:text-red-600 transition-colors p-1" title="删除">
+                        <button
+                          className="text-red-500 hover:text-red-600 transition-colors p-1"
+                          title="删除"
+                          onClick={() => void handleDelete(file)}
+                        >
                           <Trash2 size={16} />
                         </button>
                       </td>

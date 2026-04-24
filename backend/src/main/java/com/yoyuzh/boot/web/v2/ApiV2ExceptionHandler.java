@@ -10,11 +10,12 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
 
 @Order(Ordered.HIGHEST_PRECEDENCE)
 @RestControllerAdvice(basePackages = {
+        "com.yoyuzh.boot.web",
         "com.yoyuzh.files.upload.internal.web",
         "com.yoyuzh.files.search.internal.web",
+        "com.yoyuzh.files.content.internal.web",
         "com.yoyuzh.files.sharing.internal.web",
-        "com.yoyuzh.platform.job.internal.web",
-        "com.yoyuzh.boot.web"
+        "com.yoyuzh.platform.job.internal.web"
 })
 public class ApiV2ExceptionHandler {
 
@@ -46,7 +47,11 @@ public class ApiV2ExceptionHandler {
             case NOT_LOGGED_IN -> ApiV2ErrorCode.NOT_LOGGED_IN;
             case PERMISSION_DENIED -> ApiV2ErrorCode.PERMISSION_DENIED;
             case FILE_NOT_FOUND -> ApiV2ErrorCode.FILE_NOT_FOUND;
-            case UNKNOWN, INVALID_INPUT, SESSION_EXPIRED, QUOTA_EXCEEDED, DUPLICATE_NAME -> ApiV2ErrorCode.BAD_REQUEST;
+            case SESSION_EXPIRED -> ApiV2ErrorCode.SESSION_EXPIRED;
+            case INVALID_INPUT -> ApiV2ErrorCode.INVALID_INPUT;
+            case QUOTA_EXCEEDED -> ApiV2ErrorCode.QUOTA_EXCEEDED;
+            case DUPLICATE_NAME -> ApiV2ErrorCode.DUPLICATE_NAME;
+            case UNKNOWN -> ApiV2ErrorCode.BAD_REQUEST;
         };
     }
 }

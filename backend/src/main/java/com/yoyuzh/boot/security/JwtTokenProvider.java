@@ -63,11 +63,25 @@ public class JwtTokenProvider {
     }
 
     public boolean validateToken(String token) {
+        return parseToken(token) != null;
+    }
+
+    public ParsedToken parseToken(String token) {
         try {
-            Jwts.parser().verifyWith(secretKey).build().parseSignedClaims(token);
-            return true;
+            Claims claims = parseClaims(token);
+            Object uid = claims.get("uid");
+            Object sessionId = claims.get("sid");
+            Object clientType = claims.get("client");
+            Date issuedAt = claims.getIssuedAt();
+            return new ParsedToken(
+                    claims.getSubject(),
+                    uid == null ? null : Long.parseLong(uid.toString()),
+                    sessionId == null ? null : sessionId.toString(),
+                    IdentityClientType.fromHeader(clientType == null ? null : clientType.toString()),
+                    issuedAt == null ? null : issuedAt.toInstant()
+            );
         } catch (Exception ex) {
-            return false;
+            return null;
         }
     }
 
@@ -96,7 +110,14 @@ public class JwtTokenProvider {
     }
 
     public boolean hasMatchingSession(String token, String activeSessionId) {
-        String tokenSessionId = getSessionId(token);
+        return hasMatchingSession(parseToken(token), activeSessionId);
+    }
+
+    public boolean hasMatchingSession(ParsedToken parsedToken, String activeSessionId) {
+        if (parsedToken == null) {
+            return false;
+        }
+        String tokenSessionId = parsedToken.sessionId();
 
         if (!StringUtils.hasText(activeSessionId)) {
             return !StringUtils.hasText(tokenSessionId);
@@ -106,14 +127,21 @@ public class JwtTokenProvider {
     }
 
     public boolean hasMatchingSession(String token, IdentityAuthenticatedUser user) {
-        String expectedSessionId = switch (getClientType(token)) {
+        return hasMatchingSession(parseToken(token), user);
+    }
+
+    public boolean hasMatchingSession(ParsedToken parsedToken, IdentityAuthenticatedUser user) {
+        if (parsedToken == null || user == null) {
+            return false;
+        }
+        String expectedSessionId = switch (parsedToken.clientType()) {
             case MOBILE -> user.mobileActiveSessionId();
             case DESKTOP -> StringUtils.hasText(user.desktopActiveSessionId())
                     ? user.desktopActiveSessionId()
                     : user.activeSessionId();
         };
 
-        return hasMatchingSession(token, expectedSessionId);
+        return hasMatchingSession(parsedToken, expectedSessionId);
     }
 
     private Claims parseClaims(String token) {

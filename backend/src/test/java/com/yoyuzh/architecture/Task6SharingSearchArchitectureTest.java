@@ -98,6 +98,18 @@ class Task6SharingSearchArchitectureTest {
     }
 
     @Test
+    void sharingAndSearchApiContractsMustNotDependOnHttpTypes() {
+        ArchRule rule = noClasses()
+                .that()
+                .resideInAnyPackage("com.yoyuzh.files.sharing.api..", "com.yoyuzh.files.search.api..")
+                .should()
+                .dependOnClassesThat()
+                .resideInAnyPackage("org.springframework.http..");
+
+        rule.check(classes);
+    }
+
+    @Test
     void fileServiceMustUseSearchApiForFileEvents() {
         ArchRule apiRule = classes()
                 .that()

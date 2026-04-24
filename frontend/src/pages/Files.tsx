@@ -1,30 +1,174 @@
-import React, { useEffect, useMemo, useState } from 'react';
-import DashboardLayout from '../components/DashboardLayout';
-import { FolderPlus, MoreVertical, Share2, Star, Trash2, UploadCloud, X } from 'lucide-react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { Box, Button, Divider, Menu, MenuItem, Paper, Stack, Typography } from '@mui/material';
+import {
+  CreateNewFolder,
+  DeleteOutline,
+  Download,
+  InfoOutlined,
+  OpenInFull,
+  Share,
+  Star,
+  StarBorder,
+  UploadFile,
+  Visibility,
+} from '@mui/icons-material';
+import { ThemeProvider as MuiThemeProvider, createTheme } from '@mui/material/styles';
 import { useMutation } from '@tanstack/react-query';
+import DashboardLayout from '../components/DashboardLayout';
+import FileDetailsRail from '../components/files/FileDetailsRail';
+import { FilesExplorerSurface } from '../components/files/FilesExplorerSurface';
+import { FilesPreviewDialog } from '../components/files/FilesPreviewDialog';
+import { FilesTopBar } from '../components/files/FilesTopBar';
 import { useFavoriteFiles, useFiles } from '../api/queries';
-import { formatBytes, formatDateTime } from '../lib/format';
-import { batchDeleteFiles, createDirectory, createLegacyShareLink, getFileDetail, setFileFavorite } from '../lib/files';
-import type { FileDetail } from '../api/types';
-import FileThumbnail from '../components/media/FileThumbnail';
+import type { FileDetail, FileItem } from '../api/types';
+import {
+  batchDeleteFiles,
+  createDirectory,
+  createLegacyShareLink,
+  downloadFileBlob,
+  getFileDetail,
+  getFileDownloadUrl,
+  setFileFavorite,
+  uploadFile,
+} from '../lib/files';
+import { useTheme as useAppTheme } from '../hooks/useTheme';
+
+type ViewMode = 'grid' | 'list';
+
+type ContextMenuState = {
+  mouseX: number;
+  mouseY: number;
+  file?: FileItem;
+};
+
+type SelectedFileMap = Record<string, FileItem>;
+
+const FILES_PAGE_SIZE = 30;
+const VIEW_MODE_STORAGE_KEY = 'cloudreve-files-view-mode';
+
+function joinDirectoryPath(parentPath: string, filename: string) {
+  return parentPath === '/' ? `/${filename}` : `${parentPath}/${filename}`;
+}
+
+function getLogicalPath(file: Pick<FileItem, 'directory' | 'filename' | 'path'>) {
+  if (!file.path) {
+    return joinDirectoryPath('/', file.filename);
+  }
+  if (file.path === file.filename || file.path.endsWith(`/${file.filename}`)) {
+    return file.path;
+  }
+  return joinDirectoryPath(file.path, file.filename);
+}
+
+function getSelectionKey(file: Pick<FileItem, 'id'>) {
+  return String(file.id);
+}
+
+function isExternalUrl(url: string) {
+  return /^https?:\/\//i.test(url) || url.startsWith('//');
+}
+
+function triggerBlobDownload(blob: Blob, filename: string) {
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+}
+
+function triggerUrlDownload(url: string, filename: string) {
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = filename;
+  link.target = '_blank';
+  link.rel = 'noopener noreferrer';
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+}
 
 const Files: React.FC = () => {
+  const { theme } = useAppTheme();
+  const muiTheme = useMemo(
+    () =>
+      createTheme({
+        palette: {
+          mode: theme,
+          primary: {
+            main: '#4F7CFF',
+          },
+          background: {
+            default: theme === 'dark' ? '#0F1117' : '#F6F8FC',
+            paper: theme === 'dark' ? '#171923' : '#FFFFFF',
+          },
+        },
+        shape: {
+          borderRadius: 8,
+        },
+        typography: {
+          fontFamily: 'Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
+        },
+      }),
+    [theme],
+  );
+
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const lastSelectedIndexRef = useRef(0);
   const [search, setSearch] = useState('');
+  const [currentPath, setCurrentPath] = useState('/');
   const [page, setPage] = useState(1);
-  const [directoryName, setDirectoryName] = useState('');
-  const [selectedIds, setSelectedIds] = useState<number[]>([]);
+  const [viewMode, setViewMode] = useState<ViewMode>(() => {
+    const stored = window.localStorage.getItem(VIEW_MODE_STORAGE_KEY);
+    return stored === 'list' || stored === 'grid' ? stored : 'grid';
+  });
+  const [uploadStatus, setUploadStatus] = useState<string | null>(null);
+  const [selectedById, setSelectedById] = useState<SelectedFileMap>({});
+  const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
+  const [previewFile, setPreviewFile] = useState<FileItem | null>(null);
   const [detailFileId, setDetailFileId] = useState<number | null>(null);
   const [detail, setDetail] = useState<FileDetail | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
   const [detailError, setDetailError] = useState<string | null>(null);
-  const { data, isLoading, isError, refetch } = useFiles('/', page, 20, search);
+
+  const { data, isLoading, isError, refetch } = useFiles(currentPath, page, FILES_PAGE_SIZE, search);
   const { data: favoriteFiles, refetch: refetchFavorites } = useFavoriteFiles();
+
+  const rows = useMemo(() => data?.items ?? [], [data]);
+  const favoriteIds = useMemo(
+    () => new Set((favoriteFiles ?? []).filter((item) => item.favorite).map((item) => item.fileId)),
+    [favoriteFiles],
+  );
+  const selectedFiles = useMemo(() => Object.values(selectedById), [selectedById]);
+  const selectedCount = selectedFiles.length;
+  const selectedFolderCount = useMemo(() => selectedFiles.filter((file) => file.directory).length, [selectedFiles]);
+  const selectedFileCount = selectedCount - selectedFolderCount;
+  const allSelected = rows.length > 0 && rows.every((file) => selectedById[getSelectionKey(file)]);
 
   const createDirectoryMutation = useMutation({
     mutationFn: createDirectory,
     onSuccess: () => {
-      setDirectoryName('');
       void refetch();
+    },
+  });
+
+  const uploadMutation = useMutation({
+    mutationFn: async (files: File[]) => {
+      const uploaded = [];
+      for (const file of files) {
+        setUploadStatus(`正在上传：${file.name}`);
+        uploaded.push(await uploadFile(currentPath, file));
+      }
+      return uploaded;
+    },
+    onSuccess: (result) => {
+      setUploadStatus(`已上传 ${result.length} 个文件`);
+      void refetch();
+    },
+    onError: (error) => {
+      setUploadStatus(error instanceof Error ? error.message : '上传失败');
     },
   });
 
@@ -35,12 +179,14 @@ const Files: React.FC = () => {
     },
   });
 
-  const batchDeleteMutation = useMutation({
+  const deleteMutation = useMutation({
     mutationFn: batchDeleteFiles,
     onSuccess: () => {
-      setSelectedIds([]);
+      setSelectedById({});
+      setContextMenu(null);
       setDetailFileId(null);
       setDetail(null);
+      setDetailError(null);
       void refetch();
       void refetchFavorites();
     },
@@ -50,25 +196,55 @@ const Files: React.FC = () => {
     mutationFn: ({ fileId, favorite }: { fileId: number; favorite: boolean }) => setFileFavorite(fileId, favorite),
     onSuccess: (_, variables) => {
       if (detailFileId === variables.fileId && detail) {
-        setDetail({
-          ...detail,
-          favorite: variables.favorite,
-        });
+        setDetail({ ...detail, favorite: variables.favorite });
       }
       void refetchFavorites();
     },
   });
 
-  const rows = useMemo(() => data?.items ?? [], [data]);
-  const favoriteIds = useMemo(
-    () => new Set((favoriteFiles ?? []).filter((item) => item.favorite).map((item) => item.fileId)),
-    [favoriteFiles],
-  );
-  const allSelected = rows.length > 0 && rows.every((file) => selectedIds.includes(file.id));
+  const downloadMutation = useMutation({
+    mutationFn: async (file: FileItem) => {
+      const result = await getFileDownloadUrl(file.id);
+      if (isExternalUrl(result.url)) {
+        return { file, url: result.url, blob: null };
+      }
+      return { file, url: null, blob: await downloadFileBlob(file.id) };
+    },
+    onSuccess: ({ file, url, blob }) => {
+      if (url) {
+        triggerUrlDownload(url, file.filename);
+        return;
+      }
+      if (blob) {
+        triggerBlobDownload(blob, file.filename);
+      }
+    },
+  });
 
   useEffect(() => {
-    setSelectedIds((current) => current.filter((id) => rows.some((file) => file.id === id)));
+    window.localStorage.setItem(VIEW_MODE_STORAGE_KEY, viewMode);
+  }, [viewMode]);
+
+  useEffect(() => {
+    setSelectedById((current) => {
+      const next: SelectedFileMap = {};
+      rows.forEach((file) => {
+        const key = getSelectionKey(file);
+        if (current[key]) {
+          next[key] = file;
+        }
+      });
+      return next;
+    });
   }, [rows]);
+
+  useEffect(() => {
+    setSelectedById({});
+    setContextMenu(null);
+    setDetailFileId(null);
+    setDetail(null);
+    setDetailError(null);
+  }, [currentPath, search]);
 
   useEffect(() => {
     if (detailFileId == null) {
@@ -82,7 +258,10 @@ const Files: React.FC = () => {
     void getFileDetail(detailFileId)
       .then((result) => {
         if (!disposed) {
-          setDetail(result);
+          setDetail({
+            ...result,
+            path: getLogicalPath(result),
+          });
         }
       })
       .catch((error: unknown) => {
@@ -102,231 +281,384 @@ const Files: React.FC = () => {
     };
   }, [detailFileId]);
 
-  const toggleSelected = (fileId: number) => {
-    setSelectedIds((current) =>
-      current.includes(fileId) ? current.filter((id) => id !== fileId) : [...current, fileId],
-    );
-  };
+  function handlePathChange(path: string) {
+    setCurrentPath(path);
+    setPage(1);
+  }
+
+  function openDirectory(file: FileItem) {
+    if (!file.directory) {
+      return;
+    }
+    handlePathChange(getLogicalPath(file));
+  }
+
+  function openFile(file: FileItem) {
+    setContextMenu(null);
+    if (file.directory) {
+      openDirectory(file);
+      return;
+    }
+    if (file.contentType?.startsWith('image/')) {
+      setDetailFileId(file.id);
+    } else {
+      setPreviewFile(file);
+    }
+  }
+
+  function selectFile(file: FileItem, index: number, event?: React.MouseEvent<HTMLElement>) {
+    const ctrlOrMeta = Boolean(event?.ctrlKey || event?.metaKey);
+    const shift = Boolean(event?.shiftKey);
+
+    setDetailFileId(file.id);
+
+    if (shift && !ctrlOrMeta && selectedCount > 0) {
+      const begin = Math.min(lastSelectedIndexRef.current, index);
+      const end = Math.max(lastSelectedIndexRef.current, index);
+      const next: SelectedFileMap = {};
+      rows.slice(begin, end + 1).forEach((item) => {
+        next[getSelectionKey(item)] = item;
+      });
+      setSelectedById(next);
+      return;
+    }
+
+    lastSelectedIndexRef.current = index;
+
+    if (ctrlOrMeta) {
+      setSelectedById((current) => {
+        const next = { ...current };
+        const key = getSelectionKey(file);
+        if (next[key]) {
+          delete next[key];
+          // If we deselected the item that was in detail rail, close it or switch to another
+          if (detailFileId === file.id) {
+            const remainingKeys = Object.keys(next);
+            setDetailFileId(remainingKeys.length > 0 ? next[remainingKeys[0]].id : null);
+          }
+        } else {
+          next[key] = file;
+        }
+        return next;
+      });
+      return;
+    }
+
+    setSelectedById({ [getSelectionKey(file)]: file });
+  }
+
+  function openFileContextMenu(file: FileItem, index: number, event: React.MouseEvent<HTMLElement>) {
+    event.preventDefault();
+    event.stopPropagation();
+    setDetailFileId(file.id);
+    if (!selectedById[getSelectionKey(file)]) {
+      lastSelectedIndexRef.current = index;
+      setSelectedById({ [getSelectionKey(file)]: file });
+    }
+    setContextMenu({ mouseX: event.clientX + 2, mouseY: event.clientY - 6, file });
+  }
+
+  function openEmptyContextMenu(event: React.MouseEvent<HTMLElement>) {
+    event.preventDefault();
+    setContextMenu({ mouseX: event.clientX + 2, mouseY: event.clientY - 6 });
+  }
+
+  function openDetail(file: FileItem) {
+    setDetailFileId(file.id);
+    setContextMenu(null);
+  }
+
+  function toggleFavorite(file: FileItem) {
+    favoriteMutation.mutate({
+      fileId: file.id,
+      favorite: !favoriteIds.has(file.id),
+    });
+    setContextMenu(null);
+  }
+
+  function shareFile(file: FileItem) {
+    shareMutation.mutate(file.id);
+    setContextMenu(null);
+  }
+
+  function deleteFiles(files: FileItem[]) {
+    if (files.length === 0) {
+      return;
+    }
+    setContextMenu(null);
+    if (window.confirm(`确认删除 ${files.length} 个项目？`)) {
+      deleteMutation.mutate(files.map((file) => file.id));
+    }
+  }
+
+  function downloadFile(file: FileItem) {
+    if (file.directory) {
+      return;
+    }
+    setContextMenu(null);
+    downloadMutation.mutate(file);
+  }
+
+  function createFolder() {
+    const nextName = window.prompt('请输入新文件夹名称', '新建文件夹');
+    if (nextName && nextName.trim()) {
+      createDirectoryMutation.mutate(joinDirectoryPath(currentPath, nextName.trim()));
+    }
+    setContextMenu(null);
+  }
+
+  function handleSelectAll() {
+    if (allSelected) {
+      setSelectedById({});
+      return;
+    }
+    const next: SelectedFileMap = {};
+    rows.forEach((file) => {
+      next[getSelectionKey(file)] = file;
+    });
+    setSelectedById(next);
+  }
+
+  const activeMenuFile = contextMenu?.file;
 
   return (
     <DashboardLayout title="文件 Files">
-      <div className="flex justify-between items-center mb-6">
-        <div className="flex gap-2">
-          <button className="btn-primary flex items-center gap-2 px-4 py-2 text-sm h-10">
-            <UploadCloud size={16} /> 上传文件
-          </button>
-          <button
-            className="bg-white dark:bg-transparent border border-[#BFD2F7] dark:border-[#222233] text-brand-light dark:text-white font-semibold py-2 px-4 rounded-lg transition-all duration-300 hover:bg-brand-light/5 text-sm h-10 flex items-center gap-2"
-            onClick={() => {
-              const nextName = window.prompt('请输入新文件夹名称', directoryName || '新建文件夹');
-              if (nextName && nextName.trim()) {
-                createDirectoryMutation.mutate(`/${nextName.trim()}`);
-              }
-            }}
-          >
-            <FolderPlus size={16} /> 新建文件夹
-          </button>
-          <button
-            className="bg-white dark:bg-transparent border border-[#BFD2F7] dark:border-[#222233] text-brand-light dark:text-white font-semibold py-2 px-4 rounded-lg transition-all duration-300 hover:bg-brand-light/5 text-sm h-10 flex items-center gap-2 disabled:opacity-50"
-            disabled={selectedIds.length === 0 || batchDeleteMutation.isPending}
-            onClick={() => batchDeleteMutation.mutate(selectedIds)}
-          >
-            <Trash2 size={16} /> 删除所选 {selectedIds.length > 0 ? `(${selectedIds.length})` : ''}
-          </button>
-        </div>
-        <div className="flex items-center gap-2">
-          <input 
-            type="text" 
-            placeholder="搜索文件..." 
-            className="input-field h-10 w-64 text-sm"
-            value={search}
-            onChange={(event) => {
-              setSearch(event.target.value);
+      <MuiThemeProvider theme={muiTheme}>
+        <input
+          ref={fileInputRef}
+          type="file"
+          multiple
+          className="hidden"
+          onChange={(event) => {
+            const files = Array.from(event.target.files ?? []);
+            if (files.length > 0) {
+              uploadMutation.mutate(files);
+            }
+            event.target.value = '';
+          }}
+        />
+
+        <Stack spacing={2}>
+          <FilesTopBar
+            currentPath={currentPath}
+            onPathChange={handlePathChange}
+            search={search}
+            onSearchChange={(value) => {
+              setSearch(value);
               setPage(1);
             }}
+            onRefresh={() => void refetch()}
+            onUploadClick={() => fileInputRef.current?.click()}
+            onCreateFolderClick={createFolder}
+            viewMode={viewMode}
+            onViewModeChange={setViewMode}
+            page={page}
+            totalPages={data?.pagination.total_pages ?? 1}
+            totalItems={data?.pagination.total_items ?? 0}
+            // Selection props
+            selectedCount={selectedCount}
+            selectedFiles={selectedFiles}
+            onClearSelection={() => setSelectedById({})}
+            onOpen={openFile}
+            onDetail={openDetail}
+            onDownload={downloadFile}
+            onShare={shareFile}
+            onDelete={deleteFiles}
           />
-        </div>
-      </div>
 
-      <div className="card-container">
-        {isLoading ? (
-          <div className="p-10 text-center text-text-muted-light">加载中...</div>
-        ) : isError ? (
-          <div className="p-10 text-center text-red-500">文件列表加载失败</div>
-        ) : (
-          <>
-            <div className="overflow-x-auto">
-              <table className="w-full text-left border-collapse">
-                <thead>
-                  <tr className="border-b border-[#D9E3F2] dark:border-[#222233]">
-                    <th className="px-4 py-4 text-sm font-semibold text-text-secondary-light dark:text-text-secondary-dark w-12">
-                      <input
-                        type="checkbox"
-                        className="rounded border-gray-300 cursor-pointer"
-                        checked={allSelected}
-                        onChange={() => setSelectedIds(allSelected ? [] : rows.map((file) => file.id))}
-                      />
-                    </th>
-                    <th className="px-6 py-4 text-sm font-semibold text-text-secondary-light dark:text-text-secondary-dark">名称</th>
-                    <th className="px-6 py-4 text-sm font-semibold text-text-secondary-light dark:text-text-secondary-dark">大小</th>
-                    <th className="px-6 py-4 text-sm font-semibold text-text-secondary-light dark:text-text-secondary-dark">创建时间</th>
-                    <th className="px-6 py-4 text-sm font-semibold text-text-secondary-light dark:text-text-secondary-dark text-right">操作</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {rows.map((file) => (
-                    <tr key={file.id} className="border-b border-[#D9E3F2] dark:border-[#222233] hover:bg-[#F8FBFF] dark:hover:bg-[#1A1A24] transition-colors">
-                      <td className="px-4 py-4">
-                        <input
-                          type="checkbox"
-                          className="rounded border-gray-300 cursor-pointer"
-                          checked={selectedIds.includes(file.id)}
-                          onChange={() => toggleSelected(file.id)}
-                        />
-                      </td>
-                      <td className="px-6 py-4 text-sm font-medium text-text-primary-light dark:text-white">
-                        <div className="flex items-center gap-3">
-                          <FileThumbnail file={file} />
-                          <div className="min-w-0">
-                            <p className="truncate">{file.filename}</p>
-                            <p className="truncate text-xs text-text-muted-light dark:text-text-muted-dark">{file.path}</p>
-                          </div>
-                        </div>
-                      </td>
-                      <td className="px-6 py-4 text-sm text-text-secondary-light dark:text-text-secondary-dark font-funnel">
-                        {file.directory ? '-' : formatBytes(file.size)}
-                      </td>
-                      <td className="px-6 py-4 text-sm text-text-secondary-light dark:text-text-secondary-dark font-funnel">
-                        {formatDateTime(file.createdAt)}
-                      </td>
-                      <td className="px-6 py-4">
-                        <div className="flex justify-end gap-2">
-                          <button
-                            className={`w-9 h-9 flex items-center justify-center rounded-lg transition-colors ${
-                              favoriteIds.has(file.id)
-                                ? 'text-amber-500 bg-amber-500/10'
-                                : 'text-text-muted-light hover:text-amber-500 hover:bg-amber-500/10'
-                            }`}
-                            onClick={() =>
-                              favoriteMutation.mutate({
-                                fileId: file.id,
-                                favorite: !favoriteIds.has(file.id),
-                              })
-                            }
-                            title={favoriteIds.has(file.id) ? '取消收藏' : '收藏'}
-                          >
-                            <Star size={18} fill={favoriteIds.has(file.id) ? 'currentColor' : 'none'} />
-                          </button>
-                          {!file.directory ? (
-                            <button
-                              className="w-9 h-9 flex items-center justify-center rounded-lg text-brand-light hover:text-brand-dark transition-colors"
-                              onClick={() => shareMutation.mutate(file.id)}
-                              title="创建分享链接"
-                            >
-                              <Share2 size={18} />
-                            </button>
-                          ) : null}
-                          <button
-                            className="w-9 h-9 flex items-center justify-center rounded-lg text-text-muted-light hover:text-brand-light transition-colors"
-                            title="查看详情"
-                            onClick={() => setDetailFileId(file.id)}
-                          >
-                            <MoreVertical size={18} />
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+          <Box
+            sx={{
+              display: 'flex',
+              alignItems: 'start',
+              gap: detailFileId != null ? 2 : 0,
+              transition: 'gap 300ms cubic-bezier(0.4, 0, 0.2, 1)',
+              animation: 'filesWorkspaceEnter 240ms ease-out',
+              '@keyframes filesWorkspaceEnter': {
+                from: { opacity: 0, transform: 'translateY(6px)' },
+                to: { opacity: 1, transform: 'translateY(0)' },
+              },
+            }}
+          >
+            <Stack spacing={2} sx={{ flex: 1, minWidth: 0 }}>
+              <FilesExplorerSurface
+                isLoading={isLoading}
+                isError={isError}
+                rows={rows}
+                viewMode={viewMode}
+                selectedById={selectedById}
+                favoriteIds={favoriteIds}
+                allSelected={allSelected}
+                selectedCount={selectedCount}
+                onSelectFile={selectFile}
+                onSelectAll={handleSelectAll}
+                onOpenFile={openFile}
+                onContextMenu={openFileContextMenu}
+                onEmptyContextMenu={openEmptyContextMenu}
+                getLogicalPath={getLogicalPath}
+                getSelectionKey={getSelectionKey}
+              />
 
-            <div className="p-4 border-t border-[#D9E3F2] dark:border-[#222233] flex items-center justify-between text-sm text-text-secondary-light dark:text-text-secondary-dark">
-              <span>共 {data?.pagination.total_items ?? 0} 条记录</span>
-              <div className="flex gap-2">
-                <button
-                  className="px-3 py-1 border border-[#D9E3F2] dark:border-[#222233] rounded disabled:opacity-50"
-                  disabled={page <= 1}
-                  onClick={() => setPage((current) => current - 1)}
-                >
-                  上一页
-                </button>
-                <button className="px-3 py-1 border border-brand-light rounded bg-brand-light text-white">
-                  {page}
-                </button>
-                <button
-                  className="px-3 py-1 border border-[#D9E3F2] dark:border-[#222233] rounded disabled:opacity-50"
-                  disabled={page >= (data?.pagination.total_pages ?? 1)}
-                  onClick={() => setPage((current) => current + 1)}
-                >
-                  下一页
-                </button>
-              </div>
-            </div>
-          </>
-        )}
-      </div>
+              <Paper elevation={0} sx={{ p: 1.5, border: '1px solid', borderColor: 'divider' }}>
+                <Stack direction="row" alignItems="center" justifyContent="space-between">
+                  <Stack spacing={0.25}>
+                    <Typography variant="body2" color="text.secondary">
+                      共 {data?.pagination.total_items ?? 0} 条记录
+                    </Typography>
+                    <Typography variant="caption" color="text.disabled">
+                      当前路径 {currentPath}，每页 {FILES_PAGE_SIZE} 项
+                    </Typography>
+                  </Stack>
+                  <Stack direction="row" spacing={1}>
+                    <Button size="small" variant="outlined" disabled={page <= 1} onClick={() => setPage((value) => value - 1)}>
+                      上一页
+                    </Button>
+                    <Button size="small" variant="contained" disableElevation>
+                      {page}
+                    </Button>
+                    <Button
+                      size="small"
+                      variant="outlined"
+                      disabled={page >= (data?.pagination.total_pages ?? 1)}
+                      onClick={() => setPage((value) => value + 1)}
+                    >
+                      下一页
+                    </Button>
+                  </Stack>
+                </Stack>
+              </Paper>
+            </Stack>
 
-      {detailFileId != null ? (
-        <aside className="mt-6 card-container p-6">
-          <div className="flex items-start justify-between gap-4">
-            <div>
-              <p className="text-sm text-text-muted-light dark:text-text-muted-dark">文件详情</p>
-              <h3 className="mt-1 text-xl font-bold text-text-primary-light dark:text-white">
-                {detail?.filename ?? '正在加载'}
-              </h3>
-            </div>
-            <button
-              className="w-9 h-9 flex items-center justify-center rounded-lg text-text-muted-light hover:text-brand-light hover:bg-black/5 dark:hover:bg-white/5 transition-colors"
-              onClick={() => {
-                setDetailFileId(null);
-                setDetail(null);
-                setDetailError(null);
+            <Box
+              sx={{
+                width: {
+                  xs: detailFileId != null ? '100%' : 0,
+                  md: detailFileId != null ? '320px' : 0,
+                  xl: detailFileId != null ? '340px' : 0,
+                },
+                flexShrink: 0,
+                transition: 'width 300ms cubic-bezier(0.4, 0, 0.2, 1)',
+                overflow: 'hidden',
+                position: { xs: 'fixed', md: 'sticky' },
+                top: { xs: 'auto', md: 24 },
+                bottom: { xs: 0, md: 'auto' },
+                right: { xs: 0, md: 'auto' },
+                zIndex: { xs: 1200, md: 'auto' },
+                bgcolor: 'background.default',
+                visibility: detailFileId != null ? 'visible' : 'hidden',
               }}
-              title="关闭详情"
             >
-              <X size={18} />
-            </button>
-          </div>
+              <FileDetailsRail
+                detail={detail}
+                loading={detailLoading}
+                error={detailError}
+                onClose={() => {
+                  setDetailFileId(null);
+                  setDetail(null);
+                  setDetailError(null);
+                }}
+              />
+            </Box>
+          </Box>
+        </Stack>
 
-          {detailLoading ? (
-            <p className="mt-4 text-sm text-text-muted-light dark:text-text-muted-dark">正在加载文件详情...</p>
-          ) : detailError ? (
-            <p className="mt-4 text-sm text-red-500">{detailError}</p>
-          ) : detail ? (
-            <div className="mt-5 grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
-              <div className="rounded-xl border border-[#D9E3F2] dark:border-[#222233] p-4">
-                <p className="text-text-muted-light dark:text-text-muted-dark">路径</p>
-                <p className="mt-1 font-medium text-text-primary-light dark:text-white break-all">{detail.path}</p>
-              </div>
-              <div className="rounded-xl border border-[#D9E3F2] dark:border-[#222233] p-4">
-                <p className="text-text-muted-light dark:text-text-muted-dark">大小</p>
-                <p className="mt-1 font-medium text-text-primary-light dark:text-white">
-                  {detail.directory ? '-' : formatBytes(detail.size)}
-                </p>
-              </div>
-              <div className="rounded-xl border border-[#D9E3F2] dark:border-[#222233] p-4">
-                <p className="text-text-muted-light dark:text-text-muted-dark">创建时间</p>
-                <p className="mt-1 font-medium text-text-primary-light dark:text-white">{formatDateTime(detail.createdAt)}</p>
-              </div>
-              <div className="rounded-xl border border-[#D9E3F2] dark:border-[#222233] p-4">
-                <p className="text-text-muted-light dark:text-text-muted-dark">更新时间</p>
-                <p className="mt-1 font-medium text-text-primary-light dark:text-white">{formatDateTime(detail.updatedAt)}</p>
-              </div>
-              <div className="rounded-xl border border-[#D9E3F2] dark:border-[#222233] p-4">
-                <p className="text-text-muted-light dark:text-text-muted-dark">内容类型</p>
-                <p className="mt-1 font-medium text-text-primary-light dark:text-white break-all">{detail.contentType || '-'}</p>
-              </div>
-              <div className="rounded-xl border border-[#D9E3F2] dark:border-[#222233] p-4">
-                <p className="text-text-muted-light dark:text-text-muted-dark">状态</p>
-                <p className="mt-1 font-medium text-text-primary-light dark:text-white">
-                  {detail.favorite ? '已收藏' : '未收藏'} / {detail.shared ? '已共享' : '未共享'}
-                </p>
-              </div>
-            </div>
-          ) : null}
-        </aside>
-      ) : null}
+        <Menu
+          open={contextMenu != null}
+          onClose={() => setContextMenu(null)}
+          anchorReference="anchorPosition"
+          anchorPosition={contextMenu ? { top: contextMenu.mouseY, left: contextMenu.mouseX } : undefined}
+        >
+          {activeMenuFile ? (
+            <Box>
+              <Box sx={{ px: 2, pt: 1.25, pb: 0.75, maxWidth: 320 }}>
+                <Typography variant="body2" fontWeight={700} noWrap title={activeMenuFile.filename}>
+                  {activeMenuFile.filename}
+                </Typography>
+                <Typography variant="caption" color="text.secondary" noWrap title={getLogicalPath(activeMenuFile)}>
+                  {activeMenuFile.directory ? '文件夹' : '文件'} · {getLogicalPath(activeMenuFile)}
+                </Typography>
+              </Box>
+              <Divider sx={{ my: 0.5 }} />
+              <MenuItem onClick={() => openFile(activeMenuFile)}>
+                <OpenInFull fontSize="small" sx={{ mr: 1.5 }} />
+                打开
+              </MenuItem>
+              {!activeMenuFile.directory ? (
+                <MenuItem
+                  onClick={() => {
+                    setContextMenu(null);
+                    setPreviewFile(activeMenuFile);
+                  }}
+                >
+                  <Visibility fontSize="small" sx={{ mr: 1.5 }} />
+                  预览
+                </MenuItem>
+              ) : null}
+              {!activeMenuFile.directory ? (
+                <MenuItem onClick={() => downloadFile(activeMenuFile)}>
+                  <Download fontSize="small" sx={{ mr: 1.5 }} />
+                  下载
+                </MenuItem>
+              ) : null}
+              <Divider sx={{ my: 0.5 }} />
+              {!activeMenuFile.directory ? (
+                <MenuItem onClick={() => shareFile(activeMenuFile)}>
+                  <Share fontSize="small" sx={{ mr: 1.5 }} />
+                  分享
+                </MenuItem>
+              ) : null}
+              <MenuItem onClick={() => toggleFavorite(activeMenuFile)}>
+                {favoriteIds.has(activeMenuFile.id) ? (
+                  <Star fontSize="small" sx={{ mr: 1.5 }} />
+                ) : (
+                  <StarBorder fontSize="small" sx={{ mr: 1.5 }} />
+                )}
+                {favoriteIds.has(activeMenuFile.id) ? '取消收藏' : '收藏'}
+              </MenuItem>
+              <MenuItem onClick={() => openDetail(activeMenuFile)}>
+                <InfoOutlined fontSize="small" sx={{ mr: 1.5 }} />
+                详情
+              </MenuItem>
+              <Divider sx={{ my: 0.5 }} />
+              <MenuItem
+                sx={{ color: 'error.main' }}
+                onClick={() =>
+                  deleteFiles(selectedById[getSelectionKey(activeMenuFile)] ? selectedFiles : [activeMenuFile])
+                }
+              >
+                <DeleteOutline fontSize="small" sx={{ mr: 1.5 }} color="inherit" />
+                删除
+              </MenuItem>
+            </Box>
+          ) : (
+            <Box>
+              <Box sx={{ px: 2, pt: 1.25, pb: 0.75 }}>
+                <Typography variant="body2" fontWeight={700}>
+                  当前目录
+                </Typography>
+                <Typography variant="caption" color="text.secondary" noWrap title={currentPath}>
+                  {currentPath}
+                </Typography>
+              </Box>
+              <Divider />
+              <MenuItem
+                onClick={() => {
+                  setContextMenu(null);
+                  fileInputRef.current?.click();
+                }}
+              >
+                <UploadFile fontSize="small" sx={{ mr: 1.5 }} />
+                上传文件
+              </MenuItem>
+              <MenuItem onClick={createFolder}>
+                <CreateNewFolder fontSize="small" sx={{ mr: 1.5 }} />
+                新建文件夹
+              </MenuItem>
+            </Box>
+          )}
+        </Menu>
+
+        <FilesPreviewDialog file={previewFile} onClose={() => setPreviewFile(null)} />
+      </MuiThemeProvider>
     </DashboardLayout>
   );
 };

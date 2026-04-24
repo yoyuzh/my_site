@@ -55,6 +55,7 @@ import com.yoyuzh.platform.storage.api.UploadConstraintPolicy;
 import com.yoyuzh.shared.kernel.BusinessException;
 import com.yoyuzh.shared.kernel.ErrorCode;
 import com.yoyuzh.shared.kernel.PageResponse;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
@@ -69,7 +70,6 @@ import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
@@ -89,11 +89,14 @@ import java.util.Locale;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
 import java.util.zip.ZipOutputStream;
+import javax.crypto.Mac;
+import javax.crypto.spec.SecretKeySpec;
 
 @Service
 public class FileService implements WorkspaceBootstrapApi, WorkspaceArchiveApi {
     private static final List<String> DEFAULT_DIRECTORIES = List.of("下载", "文档", "图片");
     private static final long RECYCLE_BIN_RETENTION_DAYS = 10L;
+    private static final String SECURE_LINK_SIGNATURE_ALGORITHM = "HmacSHA256";
 
     private final StoredFileRepository storedFileRepository;
     private final FileContentStorage fileContentStorage;
@@ -117,12 +120,9 @@ public class FileService implements WorkspaceBootstrapApi, WorkspaceArchiveApi {
     private final ContentBlobLifecycleApi contentBlobLifecycleApi;
     private final WorkspaceDownloadMetricsPort workspaceDownloadMetricsPort;
     private final BackgroundTaskLifecycleApi backgroundTaskLifecycleApi;
-    @Autowired(required = false)
-    private FileEventApi fileEventApi;
-    @Autowired(required = false)
-    private FileListDirectoryCacheService fileListDirectoryCacheService = FileListDirectoryCacheService.noOp();
-    @Autowired(required = false)
-    private DistributedLockGateway distributedLockGateway = DistributedLockGateway.noOp();
+    private final FileEventApi fileEventApi;
+    private final FileListDirectoryCacheService fileListDirectoryCacheService;
+    private final DistributedLockGateway distributedLockGateway;
 
     @Autowired
     public FileService(StoredFileRepository storedFileRepository,
@@ -142,7 +142,10 @@ public class FileService implements WorkspaceBootstrapApi, WorkspaceArchiveApi {
                        ContentBlobRegistrationApi contentBlobRegistrationApi,
                        ContentBlobLifecycleApi contentBlobLifecycleApi,
                        WorkspaceDownloadMetricsPort workspaceDownloadMetricsPort,
-                       BackgroundTaskLifecycleApi backgroundTaskLifecycleApi) {
+                       BackgroundTaskLifecycleApi backgroundTaskLifecycleApi,
+                       ObjectProvider<FileEventApi> fileEventApi,
+                       ObjectProvider<FileListDirectoryCacheService> fileListDirectoryCacheService,
+                       ObjectProvider<DistributedLockGateway> distributedLockGateway) {
         this(
                 storedFileRepository,
                 fileContentStorage,
@@ -162,6 +165,9 @@ public class FileService implements WorkspaceBootstrapApi, WorkspaceArchiveApi {
                 contentBlobLifecycleApi,
                 workspaceDownloadMetricsPort,
                 backgroundTaskLifecycleApi,
+                fileEventApi.getIfAvailable(),
+                fileListDirectoryCacheService.getIfAvailable(FileListDirectoryCacheService::noOp),
+                distributedLockGateway.getIfAvailable(DistributedLockGateway::noOp),
                 0L,
                 Clock.systemUTC()
         );
@@ -185,6 +191,56 @@ public class FileService implements WorkspaceBootstrapApi, WorkspaceArchiveApi {
                 ContentBlobLifecycleApi contentBlobLifecycleApi,
                 WorkspaceDownloadMetricsPort workspaceDownloadMetricsPort,
                 BackgroundTaskLifecycleApi backgroundTaskLifecycleApi,
+                long maxFileSize,
+                Clock clock) {
+        this(
+                storedFileRepository,
+                fileContentStorage,
+                storagePolicyQuery,
+                uploadConstraintPolicy,
+                workspaceDownloadOptions,
+                workspaceNodeRulesService,
+                workspaceDirectoryApi,
+                workspaceMutationApi,
+                workspaceLifecycleApi,
+                fileUploadRulesService,
+                externalImportRulesService,
+                contentAssetApi,
+                contentRegistrationApi,
+                contentBlobRegistrationApi,
+                uploadCompletionApi,
+                contentBlobLifecycleApi,
+                workspaceDownloadMetricsPort,
+                backgroundTaskLifecycleApi,
+                null,
+                FileListDirectoryCacheService.noOp(),
+                DistributedLockGateway.noOp(),
+                maxFileSize,
+                clock
+        );
+    }
+
+    FileService(StoredFileRepository storedFileRepository,
+                FileContentStorage fileContentStorage,
+                StoragePolicyQuery storagePolicyQuery,
+                UploadConstraintPolicy uploadConstraintPolicy,
+                WorkspaceDownloadOptions workspaceDownloadOptions,
+                WorkspaceNodeRulesService workspaceNodeRulesService,
+                WorkspaceDirectoryApi workspaceDirectoryApi,
+                WorkspaceMutationApi workspaceMutationApi,
+                WorkspaceLifecycleApi workspaceLifecycleApi,
+                FileUploadRulesService fileUploadRulesService,
+                ExternalImportRulesService externalImportRulesService,
+                ContentAssetApi contentAssetApi,
+                ContentRegistrationApi contentRegistrationApi,
+                ContentBlobRegistrationApi contentBlobRegistrationApi,
+                UploadCompletionApi uploadCompletionApi,
+                ContentBlobLifecycleApi contentBlobLifecycleApi,
+                WorkspaceDownloadMetricsPort workspaceDownloadMetricsPort,
+                BackgroundTaskLifecycleApi backgroundTaskLifecycleApi,
+                FileEventApi fileEventApi,
+                FileListDirectoryCacheService fileListDirectoryCacheService,
+                DistributedLockGateway distributedLockGateway,
                 long maxFileSize,
                 Clock clock) {
         this.storedFileRepository = storedFileRepository;
@@ -215,6 +271,13 @@ public class FileService implements WorkspaceBootstrapApi, WorkspaceArchiveApi {
                 ? WorkspaceDownloadMetricsPort.noOp()
                 : workspaceDownloadMetricsPort;
         this.backgroundTaskLifecycleApi = backgroundTaskLifecycleApi;
+        this.fileEventApi = fileEventApi;
+        this.fileListDirectoryCacheService = fileListDirectoryCacheService == null
+                ? FileListDirectoryCacheService.noOp()
+                : fileListDirectoryCacheService;
+        this.distributedLockGateway = distributedLockGateway == null
+                ? DistributedLockGateway.noOp()
+                : distributedLockGateway;
     }
 
     private static RuntimeWorkspacePathPolicy createWorkspacePathPolicy(StoredFileRepository storedFileRepository,
@@ -889,7 +952,7 @@ public class FileService implements WorkspaceBootstrapApi, WorkspaceArchiveApi {
         return base
                 + "/"
                 + trimLeadingSlash(blob.objectKey())
-                + "?md5="
+                + "?signature="
                 + encodeQueryParam(signature)
                 + "&expires="
                 + expires
@@ -958,8 +1021,9 @@ public class FileService implements WorkspaceBootstrapApi, WorkspaceArchiveApi {
 
     private String buildSecureLinkSignature(String path, long expires) {
         try {
-            MessageDigest digest = MessageDigest.getInstance("MD5");
-            byte[] hash = digest.digest((expires + path + " " + packageDownloadSecret).getBytes(StandardCharsets.UTF_8));
+            Mac mac = Mac.getInstance(SECURE_LINK_SIGNATURE_ALGORITHM);
+            mac.init(new SecretKeySpec(packageDownloadSecret.getBytes(StandardCharsets.UTF_8), SECURE_LINK_SIGNATURE_ALGORITHM));
+            byte[] hash = mac.doFinal((expires + path).getBytes(StandardCharsets.UTF_8));
             return Base64.getUrlEncoder().withoutPadding().encodeToString(hash);
         } catch (Exception ex) {
             throw new IllegalStateException("生成下载签名失败", ex);

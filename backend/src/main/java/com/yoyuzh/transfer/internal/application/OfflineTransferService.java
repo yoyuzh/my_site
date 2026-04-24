@@ -14,7 +14,7 @@ import com.yoyuzh.transfer.internal.domain.OfflineTransferFile;
 import com.yoyuzh.transfer.internal.domain.OfflineTransferSession;
 import com.yoyuzh.transfer.internal.infra.OfflineTransferSessionRepository;
 import com.yoyuzh.transfer.internal.infra.TransferSessionStore;
-import jakarta.transaction.Transactional;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 
@@ -248,14 +248,6 @@ public class OfflineTransferService {
         if (!file.isUploaded()) {
             throw new BusinessException(ErrorCode.FILE_NOT_FOUND, "offline transfer file not found");
         }
-    }
-
-    private String normalizePickupCode(String pickupCode) {
-        String normalized = Objects.requireNonNullElse(pickupCode, "").replaceAll("\\D", "");
-        if (normalized.length() != 6) {
-            throw new BusinessException(ErrorCode.UNKNOWN, "invalid pickup code");
-        }
-        return normalized;
     }
 
     private void validateOfflineReadySession(OfflineTransferSession session, String notFoundMessage) {

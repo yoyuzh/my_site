@@ -205,6 +205,9 @@ export const useAdminBlobs = (params: AdminListParams) =>
           page: toBackendPage(params),
           size: params.page_size,
           userQuery: params.userQuery ?? '',
+          storagePolicyId: params.storagePolicyId,
+          objectKey: params.objectKey ?? '',
+          entityType: params.entityType,
         },
       });
       return normalizePage(result);
@@ -241,6 +244,10 @@ export const useAdminShares = (params: AdminListParams) =>
           page: toBackendPage(params),
           size: params.page_size,
           userQuery: params.userQuery ?? '',
+          fileName: params.fileName ?? '',
+          token: params.token ?? '',
+          passwordProtected: params.passwordProtected,
+          expired: params.expired,
         },
       });
       return normalizePage(result);

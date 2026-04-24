@@ -203,7 +203,7 @@ class FileShareControllerIntegrationTest {
         mockMvc.perform(post("/api/files/{fileId}/share-links", directoryId)
                         .with(user("alice")))
                 .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.code").value(1000));
+                .andExpect(jsonPath("$.code").value(1004));
     }
 
     @Test
@@ -238,7 +238,7 @@ class FileShareControllerIntegrationTest {
                                 }
                                 """))
                 .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.code").value(1000));
+                .andExpect(jsonPath("$.code").value(1004));
     }
 
     @Test

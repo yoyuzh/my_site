@@ -13,7 +13,7 @@ import com.yoyuzh.files.workspace.api.WorkspaceArchiveApi;
 import com.yoyuzh.files.workspace.api.WorkspaceArchiveSummary;
 import com.yoyuzh.files.workspace.api.WorkspaceBootstrapApi;
 import com.yoyuzh.files.workspace.api.WorkspaceUserContext;
-import jakarta.transaction.Transactional;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 

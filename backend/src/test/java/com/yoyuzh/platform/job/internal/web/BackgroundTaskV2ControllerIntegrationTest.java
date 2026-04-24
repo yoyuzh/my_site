@@ -382,7 +382,8 @@ class BackgroundTaskV2ControllerIntegrationTest {
                                   "path": "/docs/backup.7z"
                                 }
                                 """.formatted(unsupportedExtractFileId)))
-                .andExpect(status().isBadRequest());
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value(2406));
     }
 
     @Test
@@ -586,7 +587,8 @@ class BackgroundTaskV2ControllerIntegrationTest {
         Long taskId = ((Number) JsonPath.read(response, "$.data.id")).longValue();
 
         mockMvc.perform(post("/api/v2/tasks/{id}/retry", taskId).with(user("alice")))
-                .andExpect(status().isBadRequest());
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value(2406));
     }
 
     @Test
@@ -685,9 +687,9 @@ class BackgroundTaskV2ControllerIntegrationTest {
                                   "fileId": %d,
                                   "path": "/docs/client-path.zip"
                                 }
-                                """.formatted(extractFileId)))
+                """.formatted(extractFileId)))
                 .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.code").value(2400));
+                .andExpect(jsonPath("$.code").value(2406));
     }
 
     private StoredFile createFile(User user,

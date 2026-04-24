@@ -16,6 +16,7 @@ public interface FileContentStorage {
 
     String createDownloadUrl(Long userId, String path, String storageName, String filename);
 
+    @Deprecated
     default void renameFile(Long userId, String path, String oldStorageName, String newStorageName) {
         throw new UnsupportedOperationException("File content rename is not supported by this storage");
     }
@@ -24,10 +25,12 @@ public interface FileContentStorage {
         throw new UnsupportedOperationException("Directory content rename is not supported by this storage");
     }
 
+    @Deprecated
     default void moveFile(Long userId, String oldPath, String storageName, String newPath) {
         throw new UnsupportedOperationException("File content move is not supported by this storage");
     }
 
+    @Deprecated
     default void copyFile(Long userId, String path, String storageName, String targetPath) {
         throw new UnsupportedOperationException("File content copy is not supported by this storage");
     }

@@ -1,5 +1,6 @@
 package com.yoyuzh.identity.access.internal.web;
 
+import com.yoyuzh.identity.access.internal.application.AvatarDownloadResult;
 import com.yoyuzh.identity.access.internal.application.AuthService;
 import com.yoyuzh.identity.access.api.UpdateUserAvatarRequest;
 import com.yoyuzh.identity.access.api.UpdateUserPasswordRequest;
@@ -8,6 +9,8 @@ import com.yoyuzh.shared.kernel.ApiResponse;
 import io.swagger.v3.oas.annotations.Operation;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.core.userdetails.UserDetails;
@@ -20,6 +23,10 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.bind.annotation.RequestPart;
 import org.springframework.web.multipart.MultipartFile;
+
+import java.net.URI;
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
 @RestController
 @RequestMapping("/api/user")
 @RequiredArgsConstructor
@@ -85,6 +92,16 @@ public class UserController {
     @Operation(summary = "获取当前用户头像")
     @GetMapping("/avatar/content")
     public ResponseEntity<?> avatarContent(@AuthenticationPrincipal UserDetails userDetails) {
-        return authService.getAvatarContent(userDetails.getUsername());
+        AvatarDownloadResult result = authService.getAvatarContent(userDetails.getUsername());
+        if (result.redirect()) {
+            return ResponseEntity.status(302)
+                    .location(URI.create(result.redirectUrl()))
+                    .build();
+        }
+        return ResponseEntity.ok()
+                .header(HttpHeaders.CONTENT_DISPOSITION,
+                        "inline; filename*=UTF-8''" + URLEncoder.encode(result.filename(), StandardCharsets.UTF_8))
+                .contentType(MediaType.parseMediaType(result.contentType()))
+                .body(result.body());
     }
 }

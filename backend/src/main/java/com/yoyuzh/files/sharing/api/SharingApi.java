@@ -4,7 +4,6 @@ import com.yoyuzh.files.workspace.api.FileMetadataResponse;
 import com.yoyuzh.shared.kernel.PageResponse;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
-import org.springframework.http.ResponseEntity;
 
 import java.util.Optional;
 
@@ -20,7 +19,7 @@ public interface SharingApi {
 
     FileMetadataResponse importSharedFile(Long recipientUserId, String token, ImportShareCommand command);
 
-    ResponseEntity<?> downloadSharedFile(String token, String password);
+    ShareDownloadResult downloadSharedFile(String token, String password);
 
     Page<ShareV2Response> listOwnedShares(Long ownerUserId, Pageable pageable);
 

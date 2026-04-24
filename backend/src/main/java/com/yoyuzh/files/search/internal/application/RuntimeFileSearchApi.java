@@ -39,25 +39,25 @@ public class RuntimeFileSearchApi implements FileSearchApi {
 
     private void validateQuery(SearchFilesQuery query) {
         if (query.page() < 0) {
-            throw new BusinessException(ErrorCode.UNKNOWN, "分页页码不能小于 0");
+            throw new BusinessException(ErrorCode.INVALID_INPUT, "分页页码不能小于 0");
         }
         if (query.size() < 1 || query.size() > MAX_PAGE_SIZE) {
-            throw new BusinessException(ErrorCode.UNKNOWN, "分页大小必须在 1 到 100 之间");
+            throw new BusinessException(ErrorCode.INVALID_INPUT, "分页大小必须在 1 到 100 之间");
         }
         if (query.sizeGte() != null && query.sizeGte() < 0) {
-            throw new BusinessException(ErrorCode.UNKNOWN, "文件大小下限不能小于 0");
+            throw new BusinessException(ErrorCode.INVALID_INPUT, "文件大小下限不能小于 0");
         }
         if (query.sizeLte() != null && query.sizeLte() < 0) {
-            throw new BusinessException(ErrorCode.UNKNOWN, "文件大小上限不能小于 0");
+            throw new BusinessException(ErrorCode.INVALID_INPUT, "文件大小上限不能小于 0");
         }
         if (query.sizeGte() != null && query.sizeLte() != null && query.sizeGte() > query.sizeLte()) {
-            throw new BusinessException(ErrorCode.UNKNOWN, "文件大小范围不合法");
+            throw new BusinessException(ErrorCode.INVALID_INPUT, "文件大小范围不合法");
         }
         if (query.createdGte() != null && query.createdLte() != null && query.createdGte().isAfter(query.createdLte())) {
-            throw new BusinessException(ErrorCode.UNKNOWN, "创建时间范围不合法");
+            throw new BusinessException(ErrorCode.INVALID_INPUT, "创建时间范围不合法");
         }
         if (query.updatedGte() != null && query.updatedLte() != null && query.updatedGte().isAfter(query.updatedLte())) {
-            throw new BusinessException(ErrorCode.UNKNOWN, "更新时间范围不合法");
+            throw new BusinessException(ErrorCode.INVALID_INPUT, "更新时间范围不合法");
         }
     }
 

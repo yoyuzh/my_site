@@ -36,7 +36,7 @@ public final class RuntimeWorkspacePathPolicy implements WorkspacePathPolicy {
         }
         normalized = normalized.replaceAll("/{2,}", "/");
         if (normalized.contains("..")) {
-            throw new BusinessException(ErrorCode.UNKNOWN, "路径不合法");
+            throw new BusinessException(ErrorCode.INVALID_INPUT, "路径不合法");
         }
         if (normalized.endsWith("/") && normalized.length() > 1) {
             normalized = normalized.substring(0, normalized.length() - 1);
@@ -66,7 +66,7 @@ public final class RuntimeWorkspacePathPolicy implements WorkspacePathPolicy {
     public String normalizeUploadFilename(String originalFilename) {
         String filename = StringUtils.cleanPath(originalFilename);
         if (!StringUtils.hasText(filename)) {
-            throw new BusinessException(ErrorCode.UNKNOWN, "文件名不能为空");
+            throw new BusinessException(ErrorCode.INVALID_INPUT, "文件名不能为空");
         }
         return normalizeLeafName(filename);
     }
@@ -75,10 +75,10 @@ public final class RuntimeWorkspacePathPolicy implements WorkspacePathPolicy {
     public String normalizeLeafName(String filename) {
         String cleaned = StringUtils.cleanPath(filename == null ? "" : filename).trim();
         if (!StringUtils.hasText(cleaned)) {
-            throw new BusinessException(ErrorCode.UNKNOWN, "文件名不能为空");
+            throw new BusinessException(ErrorCode.INVALID_INPUT, "文件名不能为空");
         }
         if (cleaned.contains("/") || cleaned.contains("\\") || cleaned.contains("..")) {
-            throw new BusinessException(ErrorCode.UNKNOWN, "文件名不合法");
+            throw new BusinessException(ErrorCode.INVALID_INPUT, "文件名不合法");
         }
         return cleaned;
     }
@@ -91,7 +91,7 @@ public final class RuntimeWorkspacePathPolicy implements WorkspacePathPolicy {
     @Override
     public void ensureNodeNameAvailable(Long userId, String path, String filename, String errorMessage) {
         if (existsNodeName(userId, path, filename)) {
-            throw new BusinessException(ErrorCode.UNKNOWN, errorMessage);
+            throw new BusinessException(ErrorCode.DUPLICATE_NAME, errorMessage);
         }
     }
 
@@ -108,7 +108,7 @@ public final class RuntimeWorkspacePathPolicy implements WorkspacePathPolicy {
             Optional<StoredFile> existing = storedFileRepository.findByUserIdAndPathAndFilename(userId, currentPath, segment);
             if (existing.isPresent()) {
                 if (!existing.get().isDirectory()) {
-                    throw new BusinessException(ErrorCode.UNKNOWN, "目标路径不是目录");
+                    throw new BusinessException(ErrorCode.INVALID_INPUT, "目标路径不是目录");
                 }
                 currentPath = "/".equals(currentPath) ? "/" + segment : currentPath + "/" + segment;
                 continue;
@@ -142,7 +142,7 @@ public final class RuntimeWorkspacePathPolicy implements WorkspacePathPolicy {
             StoredFile directory = storedFileRepository.findByUserIdAndPathAndFilename(userId, currentPath, segment)
                     .orElseThrow(() -> new BusinessException(ErrorCode.FILE_NOT_FOUND, "目标目录不存在"));
             if (!directory.isDirectory()) {
-                throw new BusinessException(ErrorCode.UNKNOWN, "目标路径不是目录");
+                throw new BusinessException(ErrorCode.INVALID_INPUT, "目标路径不是目录");
             }
             currentPath = "/".equals(currentPath) ? "/" + segment : currentPath + "/" + segment;
         }
@@ -154,7 +154,7 @@ public final class RuntimeWorkspacePathPolicy implements WorkspacePathPolicy {
         for (StoredFile item : recycleGroupItems) {
             String originalPath = recycleOriginalPathResolver.apply(item);
             if (existsNodeName(userId, originalPath, item.getFilename())) {
-                throw new BusinessException(ErrorCode.UNKNOWN, "原目录已存在同名文件，无法恢复");
+                throw new BusinessException(ErrorCode.DUPLICATE_NAME, "原目录已存在同名文件，无法恢复");
             }
         }
     }

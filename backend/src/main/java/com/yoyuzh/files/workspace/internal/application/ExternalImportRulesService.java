@@ -67,7 +67,7 @@ final class ExternalImportRulesService {
         for (FileService.ExternalFileImport file : files) {
             String logicalPath = workspaceNodeRulesService.buildTargetLogicalPath(file.path(), file.filename());
             if (plannedTargets.contains(logicalPath) || !plannedTargets.add(logicalPath)) {
-                throw new BusinessException(ErrorCode.UNKNOWN, "解压目标已存在");
+                throw new BusinessException(ErrorCode.DUPLICATE_NAME, "解压目标已存在");
             }
             workspaceNodeRulesService.ensureNodeNameAvailable(recipient.userId(), file.path(), file.filename(), "同目录下文件已存在");
         }

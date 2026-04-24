@@ -10,6 +10,7 @@ import com.yoyuzh.files.content.api.ContentRegistrationCommand;
 import com.yoyuzh.files.content.api.RegisteredContentFile;
 import com.yoyuzh.files.sharing.api.CreateShareCommand;
 import com.yoyuzh.files.sharing.api.ImportShareCommand;
+import com.yoyuzh.files.sharing.api.ShareDownloadResult;
 import com.yoyuzh.files.sharing.api.ShareStatsResponse;
 import com.yoyuzh.files.sharing.api.SharingAdminShareQuery;
 import com.yoyuzh.files.sharing.api.SharingAdminShareSnapshot;
@@ -28,23 +29,20 @@ import com.yoyuzh.files.workspace.api.WorkspacePathPolicy;
 import com.yoyuzh.shared.kernel.BusinessException;
 import com.yoyuzh.shared.kernel.ErrorCode;
 import com.yoyuzh.shared.kernel.PageResponse;
-import jakarta.transaction.Transactional;
+import org.springframework.transaction.annotation.Transactional;
+import java.time.Clock;
 import java.time.LocalDateTime;
-import java.net.URI;
-import java.net.URLEncoder;
-import java.nio.charset.StandardCharsets;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
-import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
-import org.springframework.http.ResponseEntity;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
@@ -61,7 +59,9 @@ public class RuntimeSharingApi implements SharingApi {
     private final FileContentStorage fileContentStorage;
     private final PasswordEncoder passwordEncoder;
     private final IdentityUserDirectoryApi identityUserDirectoryApi;
+    private final Clock clock;
 
+    @Autowired
     public RuntimeSharingApi(WorkspaceFileQueryApi workspaceFileQueryApi,
                              FileShareLinkRepository fileShareLinkRepository,
                              WorkspacePathPolicy workspacePathPolicy,
@@ -71,6 +71,30 @@ public class RuntimeSharingApi implements SharingApi {
                              FileContentStorage fileContentStorage,
                              PasswordEncoder passwordEncoder,
                              IdentityUserDirectoryApi identityUserDirectoryApi) {
+        this(
+                workspaceFileQueryApi,
+                fileShareLinkRepository,
+                workspacePathPolicy,
+                uploadTargetPolicy,
+                contentDuplicationApi,
+                contentBlobQueryApi,
+                fileContentStorage,
+                passwordEncoder,
+                identityUserDirectoryApi,
+                Clock.systemDefaultZone()
+        );
+    }
+
+    RuntimeSharingApi(WorkspaceFileQueryApi workspaceFileQueryApi,
+                      FileShareLinkRepository fileShareLinkRepository,
+                      WorkspacePathPolicy workspacePathPolicy,
+                      UploadTargetPolicy uploadTargetPolicy,
+                      ContentDuplicationApi contentDuplicationApi,
+                      ContentBlobQueryApi contentBlobQueryApi,
+                      FileContentStorage fileContentStorage,
+                      PasswordEncoder passwordEncoder,
+                      IdentityUserDirectoryApi identityUserDirectoryApi,
+                      Clock clock) {
         this.workspaceFileQueryApi = workspaceFileQueryApi;
         this.fileShareLinkRepository = fileShareLinkRepository;
         this.workspacePathPolicy = workspacePathPolicy;
@@ -80,6 +104,7 @@ public class RuntimeSharingApi implements SharingApi {
         this.fileContentStorage = fileContentStorage;
         this.passwordEncoder = passwordEncoder;
         this.identityUserDirectoryApi = identityUserDirectoryApi;
+        this.clock = clock;
     }
 
     @Override
@@ -88,7 +113,7 @@ public class RuntimeSharingApi implements SharingApi {
         WorkspaceFileSnapshot file = workspaceFileQueryApi.findOwnedActiveFile(ownerUserId, command.fileId())
                 .orElseThrow(() -> new BusinessException(ErrorCode.FILE_NOT_FOUND, "file not found"));
         if (file.directory()) {
-            throw new BusinessException(ErrorCode.UNKNOWN, "directories are not supported");
+            throw new BusinessException(ErrorCode.INVALID_INPUT, "directories are not supported");
         }
 
         validateSharePolicy(command.expiresAt(), command.maxDownloads());
@@ -138,7 +163,7 @@ public class RuntimeSharingApi implements SharingApi {
         ensureShareNotExpired(shareLink);
         if (shareLink.hasPassword()) {
             if (!StringUtils.hasText(password) || !passwordEncoder.matches(password, shareLink.getPasswordHash())) {
-                throw new BusinessException(ErrorCode.UNKNOWN, "invalid password");
+                throw new BusinessException(ErrorCode.INVALID_INPUT, "invalid password");
             }
         }
         shareLink.recordVisit();
@@ -179,7 +204,7 @@ public class RuntimeSharingApi implements SharingApi {
 
     @Override
     @Transactional
-    public ResponseEntity<?> downloadSharedFile(String token, String password) {
+    public ShareDownloadResult downloadSharedFile(String token, String password) {
         FileShareLink shareLink = getShareLink(token);
         ensureShareNotExpired(shareLink);
         ensureDownloadAllowed(shareLink);
@@ -189,17 +214,14 @@ public class RuntimeSharingApi implements SharingApi {
         shareLink.recordDownload();
         ContentBlobReference blob = requireShareBlob(sourceFile);
         if (fileContentStorage.supportsDirectDownload()) {
-            return ResponseEntity.status(302)
-                    .location(URI.create(fileContentStorage.createBlobDownloadUrl(blob.objectKey(), sourceFile.filename())))
-                    .build();
+            return ShareDownloadResult.redirect(fileContentStorage.createBlobDownloadUrl(blob.objectKey(), sourceFile.filename()));
         }
 
-        return ResponseEntity.ok()
-                .header(HttpHeaders.CONTENT_DISPOSITION,
-                        "attachment; filename*=UTF-8''" + URLEncoder.encode(sourceFile.filename(), StandardCharsets.UTF_8))
-                .contentType(MediaType.parseMediaType(
-                        sourceFile.contentType() == null ? MediaType.APPLICATION_OCTET_STREAM_VALUE : sourceFile.contentType()))
-                .body(fileContentStorage.readBlob(blob.objectKey()));
+        return ShareDownloadResult.inline(
+                sourceFile.filename(),
+                sourceFile.contentType() == null ? MediaType.APPLICATION_OCTET_STREAM_VALUE : sourceFile.contentType(),
+                fileContentStorage.readBlob(blob.objectKey())
+        );
     }
 
     @Override
@@ -257,7 +279,7 @@ public class RuntimeSharingApi implements SharingApi {
                 normalizeQuery(query.token()),
                 query.passwordProtected(),
                 query.expired(),
-                LocalDateTime.now(),
+                now(),
                 PageRequest.of(page, size, Sort.by(Sort.Direction.DESC, "createdAt"))
         );
         Map<Long, IdentityUserProfileSummary> ownerProfiles = loadOwnerProfiles(result.getContent());
@@ -291,8 +313,8 @@ public class RuntimeSharingApi implements SharingApi {
     }
 
     private void ensureShareNotExpired(FileShareLink shareLink) {
-        if (shareLink.getExpiresAt() != null && !LocalDateTime.now().isBefore(shareLink.getExpiresAt())) {
-            throw new BusinessException(ErrorCode.FILE_NOT_FOUND, "share not found");
+        if (shareLink.getExpiresAt() != null && !now().isBefore(shareLink.getExpiresAt())) {
+            throw new BusinessException(ErrorCode.SESSION_EXPIRED, "share expired");
         }
     }
 
@@ -321,16 +343,16 @@ public class RuntimeSharingApi implements SharingApi {
             return;
         }
         if (!StringUtils.hasText(password) || !passwordEncoder.matches(password, shareLink.getPasswordHash())) {
-            throw new BusinessException(ErrorCode.UNKNOWN, "invalid password");
+            throw new BusinessException(ErrorCode.INVALID_INPUT, "invalid password");
         }
     }
 
     private void validateSharePolicy(LocalDateTime expiresAt, Integer maxDownloads) {
-        if (expiresAt != null && !expiresAt.isAfter(LocalDateTime.now())) {
-            throw new BusinessException(ErrorCode.UNKNOWN, "expiresAt must be in the future");
+        if (expiresAt != null && !expiresAt.isAfter(now())) {
+            throw new BusinessException(ErrorCode.INVALID_INPUT, "expiresAt must be in the future");
         }
         if (maxDownloads != null && maxDownloads <= 0) {
-            throw new BusinessException(ErrorCode.UNKNOWN, "maxDownloads must be greater than 0");
+            throw new BusinessException(ErrorCode.INVALID_INPUT, "maxDownloads must be greater than 0");
         }
     }
 
@@ -355,7 +377,7 @@ public class RuntimeSharingApi implements SharingApi {
             throw new BusinessException(ErrorCode.FILE_NOT_FOUND, "file not found");
         }
         if (sourceFile.directory()) {
-            throw new BusinessException(ErrorCode.UNKNOWN, "directories are not supported");
+            throw new BusinessException(ErrorCode.INVALID_INPUT, "directories are not supported");
         }
         return sourceFile;
     }
@@ -394,7 +416,7 @@ public class RuntimeSharingApi implements SharingApi {
     private SharingAdminShareView toAdminShareView(FileShareLink shareLink,
                                                    IdentityUserProfileSummary ownerProfile,
                                                    WorkspaceFileSnapshot file) {
-        boolean expired = shareLink.getExpiresAt() != null && shareLink.getExpiresAt().isBefore(LocalDateTime.now());
+        boolean expired = shareLink.getExpiresAt() != null && shareLink.getExpiresAt().isBefore(now());
         return new SharingAdminShareView(
                 shareLink.getId(),
                 shareLink.getToken(),
@@ -472,5 +494,9 @@ public class RuntimeSharingApi implements SharingApi {
                 storedFile.directory(),
                 storedFile.createdAt()
         );
+    }
+
+    private LocalDateTime now() {
+        return LocalDateTime.ofInstant(clock.instant(), clock.getZone());
     }
 }

@@ -1,5 +1,10 @@
 import { apiRequest } from '../api/client';
-import type { TransferMode, TransferSessionResponse } from '../api/types';
+import type {
+  LookupTransferSessionResponse,
+  PollTransferSignalsResponse,
+  TransferMode,
+  TransferSessionResponse,
+} from '../api/types';
 
 export function createTransferSession(files: File[], mode: TransferMode) {
   return apiRequest<TransferSessionResponse>({
@@ -26,5 +31,41 @@ export function listMyOfflineTransferSessions() {
   return apiRequest<TransferSessionResponse[]>({
     url: '/transfer/sessions/offline/mine',
     method: 'GET',
+  });
+}
+
+export function lookupTransferSession(pickupCode: string) {
+  return apiRequest<LookupTransferSessionResponse | null>({
+    url: '/transfer/sessions/lookup',
+    method: 'GET',
+    params: { pickupCode },
+    authRequired: false,
+  });
+}
+
+export function joinTransferSession(sessionId: string) {
+  return apiRequest<TransferSessionResponse>({
+    url: `/transfer/sessions/${sessionId}/join`,
+    method: 'POST',
+    authRequired: false,
+  });
+}
+
+export function postTransferSignal(sessionId: string, role: 'sender' | 'receiver', type: string, payload: string) {
+  return apiRequest<void>({
+    url: `/transfer/sessions/${sessionId}/signals`,
+    method: 'POST',
+    params: { role },
+    data: { type, payload },
+    authRequired: false,
+  });
+}
+
+export function pollTransferSignals(sessionId: string, role: 'sender' | 'receiver', after: number) {
+  return apiRequest<PollTransferSignalsResponse>({
+    url: `/transfer/sessions/${sessionId}/signals`,
+    method: 'GET',
+    params: { role, after },
+    authRequired: false,
   });
 }

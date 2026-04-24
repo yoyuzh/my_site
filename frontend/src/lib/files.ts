@@ -1,5 +1,7 @@
+import type { AxiosResponse } from 'axios';
 import { apiRequest } from '../api/client';
 import type {
+  DownloadUrlResponse,
   FavoriteFileResponse,
   FileDetail,
   FileItem,
@@ -91,9 +93,37 @@ export async function createDirectory(path: string) {
   });
 }
 
+export async function uploadFile(path: string, file: File) {
+  const params = new URLSearchParams({ path });
+  const formData = new FormData();
+  formData.append('file', file);
+  return apiRequest<FileItem>({
+    url: `/files/upload?${params.toString()}`,
+    method: 'POST',
+    data: formData,
+  });
+}
+
 export async function createLegacyShareLink(fileId: number) {
   return apiRequest<{ token: string }>({
     url: `/files/${fileId}/share-links`,
     method: 'POST',
   });
+}
+
+export async function getFileDownloadUrl(fileId: number) {
+  return apiRequest<DownloadUrlResponse>({
+    url: `/files/download/${fileId}/url`,
+    method: 'GET',
+  });
+}
+
+export async function downloadFileBlob(fileId: number) {
+  const response = await apiRequest<AxiosResponse<Blob>>({
+    url: `/files/download/${fileId}`,
+    method: 'GET',
+    responseType: 'blob',
+    rawResponse: true,
+  });
+  return response.data;
 }

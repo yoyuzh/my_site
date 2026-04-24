@@ -74,14 +74,22 @@ class JwtTokenProviderTest {
                 .getPayload()
                 .getExpiration()
                 .toInstant();
+        ParsedToken parsedToken = provider.parseToken(token);
 
         assertThat(provider.validateToken(token)).isTrue();
+        assertThat(parsedToken).isNotNull();
+        assertThat(parsedToken.username()).isEqualTo("alice");
+        assertThat(parsedToken.userId()).isEqualTo(7L);
+        assertThat(parsedToken.sessionId()).isEqualTo("session-1");
+        assertThat(parsedToken.clientType()).isEqualTo(IdentityClientType.MOBILE);
+        assertThat(parsedToken.issuedAt()).isNotNull();
         assertThat(provider.getUsername(token)).isEqualTo("alice");
         assertThat(provider.getUserId(token)).isEqualTo(7L);
         assertThat(provider.getSessionId(token)).isEqualTo("session-1");
         assertThat(provider.getClientType(token)).isEqualTo(IdentityClientType.MOBILE);
         assertThat(provider.hasMatchingSession(token, "session-1")).isTrue();
         assertThat(provider.hasMatchingSession(token, "session-2")).isFalse();
+        assertThat(provider.hasMatchingSession(parsedToken, "session-1")).isTrue();
         assertThat(expiration).isAfter(Instant.now().plusSeconds(850));
         assertThat(expiration).isBefore(Instant.now().plusSeconds(950));
     }

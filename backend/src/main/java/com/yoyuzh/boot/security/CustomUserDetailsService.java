@@ -20,6 +20,10 @@ public class CustomUserDetailsService implements UserDetailsService {
     public UserDetails loadUserByUsername(String username) throws UsernameNotFoundException {
         IdentityAuthenticatedUser user = identityAuthenticationApi.findByUsername(username)
                 .orElseThrow(() -> new UsernameNotFoundException("用户不存在"));
+        return toUserDetails(user);
+    }
+
+    public UserDetails toUserDetails(IdentityAuthenticatedUser user) {
         return org.springframework.security.core.userdetails.User.withUsername(user.username())
                 .password(user.passwordHash())
                 .authorities("ROLE_" + user.role().name())

@@ -14,18 +14,18 @@ public class UploadSessionStateMachine {
                 || session.getStatus() == UploadSessionStatus.FAILED
                 || session.getStatus() == UploadSessionStatus.COMPLETING
                 || session.getStatus() == UploadSessionStatus.COMPLETED) {
-            throw new BusinessException(ErrorCode.UNKNOWN, "涓婁紶浼氳瘽涓嶈兘缁х画涓婁紶鍒嗙墖");
+            throw new BusinessException(ErrorCode.INVALID_INPUT, "涓婁紶浼氳瘽涓嶈兘缁х画涓婁紶鍒嗙墖");
         }
         if (session.getExpiresAt().isBefore(now)) {
             markExpired(session, now);
-            throw new BusinessException(ErrorCode.UNKNOWN, "涓婁紶浼氳瘽宸茶繃鏈?");
+            throw new BusinessException(ErrorCode.SESSION_EXPIRED, "涓婁紶浼氳瘽宸茶繃鏈?");
         }
     }
 
     public void ensureCanReceiveContent(UploadSession session, LocalDateTime now, boolean multipartUpload) {
         ensureCanReceivePart(session, now);
         if (session.getStatus() == UploadSessionStatus.UPLOADING && multipartUpload) {
-            throw new BusinessException(ErrorCode.UNKNOWN, "multipart 涓婁紶浼氳瘽涓嶈兘璧版暣浣撳唴瀹逛笂浼?");
+            throw new BusinessException(ErrorCode.INVALID_INPUT, "multipart 涓婁紶浼氳瘽涓嶈兘璧版暣浣撳唴瀹逛笂浼?");
         }
     }
 

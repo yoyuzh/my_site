@@ -17,6 +17,7 @@ import com.yoyuzh.files.workspace.api.WorkspacePathPolicy;
 import com.yoyuzh.files.workspace.api.WorkspaceQuotaGuard;
 import org.springframework.util.StringUtils;
 
+import java.time.Clock;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -32,6 +33,7 @@ public final class RuntimeWorkspaceLifecycleApi implements WorkspaceLifecycleApi
     private final ContentBlobQueryApi contentBlobQueryApi;
     private final WorkspacePathPolicy workspacePathPolicy;
     private final WorkspaceNodeRulesService workspaceNodeRulesService;
+    private final Clock clock;
 
     public RuntimeWorkspaceLifecycleApi(StoredFileRepository storedFileRepository,
                                         FileContentStorage fileContentStorage,
@@ -49,11 +51,28 @@ public final class RuntimeWorkspaceLifecycleApi implements WorkspaceLifecycleApi
                                         ContentBlobQueryApi contentBlobQueryApi,
                                         WorkspacePathPolicy workspacePathPolicy,
                                         WorkspaceNodeRulesService workspaceNodeRulesService) {
+        this(
+                storedFileRepository,
+                contentDuplicationApi,
+                contentBlobQueryApi,
+                workspacePathPolicy,
+                workspaceNodeRulesService,
+                Clock.systemDefaultZone()
+        );
+    }
+
+    RuntimeWorkspaceLifecycleApi(StoredFileRepository storedFileRepository,
+                                 ContentDuplicationApi contentDuplicationApi,
+                                 ContentBlobQueryApi contentBlobQueryApi,
+                                 WorkspacePathPolicy workspacePathPolicy,
+                                 WorkspaceNodeRulesService workspaceNodeRulesService,
+                                 Clock clock) {
         this.storedFileRepository = storedFileRepository;
         this.contentDuplicationApi = contentDuplicationApi;
         this.contentBlobQueryApi = contentBlobQueryApi;
         this.workspacePathPolicy = workspacePathPolicy;
         this.workspaceNodeRulesService = workspaceNodeRulesService;
+        this.clock = clock;
     }
 
     public RuntimeWorkspaceLifecycleApi(StoredFileRepository storedFileRepository,
@@ -65,7 +84,8 @@ public final class RuntimeWorkspaceLifecycleApi implements WorkspaceLifecycleApi
                 contentDuplicationApi,
                 contentBlobQueryApi,
                 new RuntimeWorkspacePathPolicy(storedFileRepository, fileContentStorage),
-                new WorkspaceNodeRulesService(storedFileRepository, fileContentStorage)
+                new WorkspaceNodeRulesService(storedFileRepository, fileContentStorage),
+                Clock.systemDefaultZone()
         );
     }
 
@@ -225,7 +245,7 @@ public final class RuntimeWorkspaceLifecycleApi implements WorkspaceLifecycleApi
                 .findFirst()
                 .orElseThrow(() -> new BusinessException(ErrorCode.FILE_NOT_FOUND, "文件不存在"));
         String recycleGroupId = UUID.randomUUID().toString().replace("-", "");
-        LocalDateTime deletedAt = LocalDateTime.now();
+        LocalDateTime deletedAt = now();
         String rootLogicalPath = buildLogicalPath(recycleRoot);
         String recycleRootPath = buildRecycleBinPath(recycleGroupId, recycleRoot.getPath());
         String recycleRootLogicalPath = workspacePathPolicy.buildTargetLogicalPath(recycleRootPath, recycleRoot.getFilename());
@@ -257,6 +277,10 @@ public final class RuntimeWorkspaceLifecycleApi implements WorkspaceLifecycleApi
             return RECYCLE_BIN_PATH_PREFIX + "/" + recycleGroupId;
         }
         return RECYCLE_BIN_PATH_PREFIX + "/" + recycleGroupId + originalPath;
+    }
+
+    private LocalDateTime now() {
+        return LocalDateTime.ofInstant(clock.instant(), clock.getZone());
     }
 
     private String requireRecycleOriginalPath(StoredFile storedFile) {

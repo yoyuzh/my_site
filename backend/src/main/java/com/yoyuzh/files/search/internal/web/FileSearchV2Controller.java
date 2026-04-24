@@ -64,7 +64,7 @@ public class FileSearchV2Controller {
         return switch (type.trim().toLowerCase(Locale.ROOT)) {
             case "file" -> false;
             case "directory", "folder" -> true;
-            default -> throw new ApiV2Exception(ApiV2ErrorCode.BAD_REQUEST, "文件类型筛选只支持 file 或 directory");
+            default -> throw new ApiV2Exception(ApiV2ErrorCode.INVALID_INPUT, "文件类型筛选只支持 file 或 directory");
         };
     }
 
