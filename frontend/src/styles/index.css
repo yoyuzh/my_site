@@ -32,4 +32,44 @@
   .card-container {
     @apply bg-card-light dark:bg-card-dark border border-[#D9E3F2] dark:border-[#222233] rounded-[10px] shadow-card-light dark:shadow-card-dark overflow-hidden transition-all duration-300;
   }
+
+  .surface-shell {
+    @apply rounded-[28px] border border-white/50 bg-white/70 backdrop-blur-xl dark:border-white/10 dark:bg-[#0F1117]/72;
+  }
+
+  .surface-muted {
+    @apply bg-slate-50/85 dark:bg-white/[0.03];
+  }
+
+  .page-enter {
+    animation: page-enter 240ms ease-out;
+  }
+
+  .rail-enter {
+    animation: rail-enter 200ms ease-out;
+  }
+}
+
+@keyframes page-enter {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes rail-enter {
+  from {
+    opacity: 0;
+    transform: translateX(12px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
 }
