@@ -9,6 +9,7 @@ public record FileMetadataResponse(
         long size,
         String contentType,
         boolean directory,
-        LocalDateTime createdAt
+        LocalDateTime createdAt,
+        LocalDateTime updatedAt
 ) {
 }

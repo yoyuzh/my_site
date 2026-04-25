@@ -89,6 +89,7 @@ public class RuntimeTransferImportApi implements TransferImportApi {
                     storedFile.size(),
                     storedFile.contentType(),
                     storedFile.directory(),
+                    storedFile.createdAt(),
                     storedFile.createdAt()
             );
         } catch (RuntimeException ex) {

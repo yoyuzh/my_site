@@ -21,8 +21,10 @@ import com.yoyuzh.files.workspace.api.FavoriteFileResponse;
 import com.yoyuzh.files.workspace.api.FileDetailResponse;
 import com.yoyuzh.files.workspace.api.FileMetadataResponse;
 import com.yoyuzh.files.workspace.api.RecycleBinItemResponse;
+import com.yoyuzh.files.workspace.api.WorkspaceTagResponse;
 import com.yoyuzh.files.workspace.api.WorkspaceDownloadResult;
 import com.yoyuzh.files.workspace.internal.application.FileService;
+import com.yoyuzh.files.workspace.internal.application.WorkspaceTagService;
 import io.swagger.v3.oas.annotations.Operation;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -55,6 +57,7 @@ public class FileController {
     private final FileService fileService;
     private final CustomUserDetailsService userDetailsService;
     private final SharingApi sharingApi;
+    private final WorkspaceTagService workspaceTagService;
 
     @Operation(summary = "上传文件")
     @PostMapping("/upload")
@@ -110,9 +113,90 @@ public class FileController {
     @GetMapping("/{fileId}/detail")
     public ApiResponse<FileDetailResponse> detail(@AuthenticationPrincipal UserDetails userDetails,
                                                   @PathVariable Long fileId) {
-        return ApiResponse.success(fileService.detail(
+        Long userId = currentUserId(userDetails);
+        FileDetailResponse detail = fileService.detail(
+                userId,
+                fileId
+        );
+        return ApiResponse.success(detail.withTags(workspaceTagService.listFileTags(
+                userId,
+                fileId
+        )));
+    }
+
+    @Operation(summary = "列出标签")
+    @GetMapping("/tags")
+    public ApiResponse<List<WorkspaceTagResponse>> listTags(@AuthenticationPrincipal UserDetails userDetails) {
+        return ApiResponse.success(workspaceTagService.listTags(
+                currentUserId(userDetails)
+        ));
+    }
+
+    @Operation(summary = "创建标签")
+    @PostMapping("/tags")
+    public ApiResponse<WorkspaceTagResponse> createTag(@AuthenticationPrincipal UserDetails userDetails,
+                                                       @Valid @RequestBody CreateWorkspaceTagRequest request) {
+        return ApiResponse.success(workspaceTagService.createTag(
+                currentUserId(userDetails),
+                request.name(),
+                request.color()
+        ));
+    }
+
+    @Operation(summary = "更新标签")
+    @PatchMapping("/tags/{tagId}")
+    public ApiResponse<WorkspaceTagResponse> updateTag(@AuthenticationPrincipal UserDetails userDetails,
+                                                       @PathVariable Long tagId,
+                                                       @Valid @RequestBody UpdateWorkspaceTagRequest request) {
+        return ApiResponse.success(workspaceTagService.updateTag(
+                currentUserId(userDetails),
+                tagId,
+                request.name(),
+                request.color()
+        ));
+    }
+
+    @Operation(summary = "删除标签")
+    @DeleteMapping("/tags/{tagId}")
+    public ApiResponse<List<WorkspaceTagResponse>> deleteTag(@AuthenticationPrincipal UserDetails userDetails,
+                                                             @PathVariable Long tagId) {
+        return ApiResponse.success(workspaceTagService.deleteTag(
+                currentUserId(userDetails),
+                tagId
+        ));
+    }
+
+    @Operation(summary = "列出文件标签")
+    @GetMapping("/{fileId}/tags")
+    public ApiResponse<List<WorkspaceTagResponse>> listFileTags(@AuthenticationPrincipal UserDetails userDetails,
+                                                                @PathVariable Long fileId) {
+        return ApiResponse.success(workspaceTagService.listFileTags(
                 currentUserId(userDetails),
                 fileId
+        ));
+    }
+
+    @Operation(summary = "为文件添加标签")
+    @PutMapping("/{fileId}/tags/{tagId}")
+    public ApiResponse<List<WorkspaceTagResponse>> assignTag(@AuthenticationPrincipal UserDetails userDetails,
+                                                             @PathVariable Long fileId,
+                                                             @PathVariable Long tagId) {
+        return ApiResponse.success(workspaceTagService.assignTag(
+                currentUserId(userDetails),
+                fileId,
+                tagId
+        ));
+    }
+
+    @Operation(summary = "移除文件标签")
+    @DeleteMapping("/{fileId}/tags/{tagId}")
+    public ApiResponse<List<WorkspaceTagResponse>> removeTag(@AuthenticationPrincipal UserDetails userDetails,
+                                                             @PathVariable Long fileId,
+                                                             @PathVariable Long tagId) {
+        return ApiResponse.success(workspaceTagService.removeTag(
+                currentUserId(userDetails),
+                fileId,
+                tagId
         ));
     }
 

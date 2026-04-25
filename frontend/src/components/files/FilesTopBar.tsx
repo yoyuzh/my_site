@@ -6,6 +6,8 @@ import {
   Chip,
   IconButton,
   InputAdornment,
+  Menu,
+  MenuItem,
   Paper,
   Stack,
   TextField,
@@ -16,6 +18,9 @@ import {
 } from '@mui/material';
 import {
   ArrowBack,
+  ArrowDownward,
+  ArrowUpward,
+  CalendarToday,
   ChevronRight,
   Clear,
   CreateNewFolder,
@@ -23,14 +28,19 @@ import {
   Download,
   GridView,
   InfoOutlined,
+  Label,
   OpenInFull,
   Refresh,
   Search,
   Share,
+  Sort,
+  SortByAlpha,
+  Update,
   UploadFile,
   ViewList,
 } from '@mui/icons-material';
 import type { FileItem } from '../../api/types';
+import type { SortBy, SortOrder } from '../../pages/Files';
 
 function parentDirectoryPath(path: string) {
   if (path === '/') {
@@ -66,7 +76,6 @@ export interface FilesTopBarProps {
   page: number;
   totalPages: number;
   totalItems: number;
-  // Selection props
   selectedCount: number;
   selectedFiles: FileItem[];
   onClearSelection: () => void;
@@ -75,6 +84,14 @@ export interface FilesTopBarProps {
   onDownload: (file: FileItem) => void;
   onShare: (file: FileItem) => void;
   onDelete: (files: FileItem[]) => void;
+  onUploadFolderClick?: () => void;
+  onCreateFileClick?: () => void;
+  onRename?: (file: FileItem) => void;
+  onMove?: (file: FileItem) => void;
+  onCopy?: (file: FileItem) => void;
+  sortBy: SortBy;
+  sortOrder: SortOrder;
+  onSortChange: (sortBy: SortBy, sortOrder: SortOrder) => void;
 }
 
 export const FilesTopBar: React.FC<FilesTopBarProps> = ({
@@ -98,8 +115,13 @@ export const FilesTopBar: React.FC<FilesTopBarProps> = ({
   onDownload,
   onShare,
   onDelete,
+  sortBy,
+  sortOrder,
+  onSortChange,
 }) => {
   const searchInputRef = useRef<HTMLInputElement | null>(null);
+  const [sortAnchorEl, setSortAnchorEl] = React.useState<null | HTMLElement>(null);
+  const openSortMenu = Boolean(sortAnchorEl);
   const breadcrumbs = pathSegments(currentPath);
   const isSelected = selectedCount > 0;
   const singleFile = selectedCount === 1 ? selectedFiles[0] : null;
@@ -119,7 +141,6 @@ export const FilesTopBar: React.FC<FilesTopBarProps> = ({
 
   return (
     <Paper elevation={0} sx={{ border: '1px solid', borderColor: 'divider', overflow: 'hidden', borderRadius: 1 }}>
-      {/* 第一层：工具栏和路径区 */}
       <Box sx={{ px: 1.5, py: 1, borderBottom: '1px solid', borderColor: 'divider', bgcolor: 'background.paper' }}>
         <Stack direction="row" spacing={1.5} alignItems="center">
           {isSelected ? (
@@ -218,30 +239,29 @@ export const FilesTopBar: React.FC<FilesTopBarProps> = ({
 
               <Box sx={{ width: '1px', height: 20, bgcolor: 'divider', flexShrink: 0 }} />
 
-              {/* 路径导航 */}
-              <Stack 
-                direction="row" 
-                alignItems="center" 
-                sx={{ 
-                  flexGrow: 1, 
-                  overflow: 'hidden', 
-                  bgcolor: 'action.hover', 
-                  borderRadius: 0.5, 
-                  px: 1, 
+              <Stack
+                direction="row"
+                alignItems="center"
+                sx={{
+                  flexGrow: 1,
+                  overflow: 'hidden',
+                  bgcolor: 'action.hover',
+                  borderRadius: 0.5,
+                  px: 1,
                   height: 32,
                   border: '1px solid',
-                  borderColor: 'divider'
+                  borderColor: 'divider',
                 }}
               >
                 <Button
                   size="small"
                   variant="text"
-                  sx={{ 
-                    minWidth: 'auto', 
-                    px: 0.5, 
+                  sx={{
+                    minWidth: 'auto',
+                    px: 0.5,
                     color: currentPath === '/' ? 'primary.main' : 'text.secondary',
                     fontWeight: currentPath === '/' ? 600 : 400,
-                    textTransform: 'none'
+                    textTransform: 'none',
                   }}
                   onClick={() => onPathChange('/')}
                 >
@@ -255,13 +275,13 @@ export const FilesTopBar: React.FC<FilesTopBarProps> = ({
                       <Button
                         size="small"
                         variant="text"
-                        sx={{ 
-                          minWidth: 'auto', 
-                          px: 0.5, 
+                        sx={{
+                          minWidth: 'auto',
+                          px: 0.5,
                           color: targetPath === currentPath ? 'primary.main' : 'text.secondary',
                           fontWeight: targetPath === currentPath ? 600 : 400,
                           textTransform: 'none',
-                          whiteSpace: 'nowrap'
+                          whiteSpace: 'nowrap',
                         }}
                         onClick={() => onPathChange(targetPath)}
                       >
@@ -272,7 +292,6 @@ export const FilesTopBar: React.FC<FilesTopBarProps> = ({
                 })}
               </Stack>
 
-              {/* 搜索框 */}
               <TextField
                 inputRef={searchInputRef}
                 value={search}
@@ -280,9 +299,9 @@ export const FilesTopBar: React.FC<FilesTopBarProps> = ({
                 placeholder="搜索... (按 /)"
                 size="small"
                 variant="outlined"
-                sx={{ 
+                sx={{
                   width: { xs: 120, sm: 180, md: 240 },
-                  '& .MuiOutlinedInput-root': { height: 32, fontSize: '0.875rem' }
+                  '& .MuiOutlinedInput-root': { height: 32, fontSize: '0.875rem' },
                 }}
                 InputProps={{
                   startAdornment: (
@@ -294,20 +313,20 @@ export const FilesTopBar: React.FC<FilesTopBarProps> = ({
               />
 
               <Stack direction="row" spacing={1} sx={{ flexShrink: 0 }}>
-                <Button 
-                  variant="contained" 
-                  size="small" 
-                  startIcon={<UploadFile />} 
-                  onClick={onUploadClick} 
+                <Button
+                  variant="contained"
+                  size="small"
+                  startIcon={<UploadFile />}
+                  onClick={onUploadClick}
                   disableElevation
                   sx={{ height: 32 }}
                 >
                   上传
                 </Button>
-                <Button 
-                  variant="outlined" 
-                  size="small" 
-                  startIcon={<CreateNewFolder />} 
+                <Button
+                  variant="outlined"
+                  size="small"
+                  startIcon={<CreateNewFolder />}
                   onClick={onCreateFolderClick}
                   sx={{ height: 32 }}
                 >
@@ -319,18 +338,111 @@ export const FilesTopBar: React.FC<FilesTopBarProps> = ({
         </Stack>
       </Box>
 
-      {/* 第二层：状态栏 */}
       <Box sx={{ px: 1.5, py: 0.5, bgcolor: 'action.hover', display: 'flex', alignItems: 'center', justifyContent: 'space-between', minHeight: 32 }}>
         <Stack direction="row" spacing={2} alignItems="center">
           <Typography variant="caption" color="text.secondary" sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
             <Box component="span" sx={{ fontWeight: 600, color: 'text.primary' }}>{totalItems}</Box> 个项目
           </Typography>
-          
+
           <Box sx={{ width: '1px', height: 12, bgcolor: 'divider' }} />
-          
+
           <Typography variant="caption" color="text.secondary">
             第 <Box component="span" sx={{ color: 'text.primary' }}>{page}</Box> / {Math.max(totalPages, 1)} 页
           </Typography>
+
+          <Box sx={{ width: '1px', height: 12, bgcolor: 'divider' }} />
+
+          <Stack direction="row" spacing={0.5} alignItems="center">
+            <Button
+              size="small"
+              variant="text"
+              startIcon={<Sort sx={{ fontSize: 16 }} />}
+              onClick={(e) => setSortAnchorEl(e.currentTarget)}
+              sx={{
+                height: 24,
+                fontSize: '0.75rem',
+                textTransform: 'none',
+                color: 'text.secondary',
+                px: 1,
+                '&:hover': { bgcolor: 'background.paper' },
+              }}
+            >
+              {sortBy === 'name' && '名称'}
+              {sortBy === 'tags' && '标签'}
+              {sortBy === 'createdAt' && '创建时间'}
+              {sortBy === 'updatedAt' && '修改时间'}
+            </Button>
+
+            <Tooltip title={sortOrder === 'asc' ? '升序' : '降序'}>
+              <IconButton
+                size="small"
+                onClick={() => onSortChange(sortBy, sortOrder === 'asc' ? 'desc' : 'asc')}
+                sx={{ width: 24, height: 24, bgcolor: 'background.paper', border: '1px solid', borderColor: 'divider' }}
+              >
+                {sortOrder === 'asc' ? <ArrowUpward sx={{ fontSize: 14 }} /> : <ArrowDownward sx={{ fontSize: 14 }} />}
+              </IconButton>
+            </Tooltip>
+
+            <Menu
+              anchorEl={sortAnchorEl}
+              open={openSortMenu}
+              onClose={() => setSortAnchorEl(null)}
+              PaperProps={{
+                sx: {
+                  mt: 0.5,
+                  minWidth: 160,
+                  boxShadow: '0 4px 20px rgba(0,0,0,0.1)',
+                  border: '1px solid',
+                  borderColor: 'divider',
+                },
+              }}
+            >
+              <MenuItem
+                selected={sortBy === 'name'}
+                onClick={() => {
+                  onSortChange('name', sortOrder);
+                  setSortAnchorEl(null);
+                }}
+                sx={{ fontSize: '0.875rem' }}
+              >
+                <SortByAlpha fontSize="small" sx={{ mr: 1, opacity: 0.7 }} />
+                名称
+              </MenuItem>
+              <MenuItem
+                selected={sortBy === 'tags'}
+                onClick={() => {
+                  onSortChange('tags', sortOrder);
+                  setSortAnchorEl(null);
+                }}
+                sx={{ fontSize: '0.875rem' }}
+              >
+                <Label fontSize="small" sx={{ mr: 1, opacity: 0.7 }} />
+                标签
+              </MenuItem>
+              <MenuItem
+                selected={sortBy === 'createdAt'}
+                onClick={() => {
+                  onSortChange('createdAt', sortOrder);
+                  setSortAnchorEl(null);
+                }}
+                sx={{ fontSize: '0.875rem' }}
+              >
+                <CalendarToday fontSize="small" sx={{ mr: 1, opacity: 0.7 }} />
+                创建时间
+              </MenuItem>
+              <MenuItem
+                selected={sortBy === 'updatedAt'}
+                onClick={() => {
+                  onSortChange('updatedAt', sortOrder);
+                  setSortAnchorEl(null);
+                }}
+                sx={{ fontSize: '0.875rem' }}
+              >
+                <Update fontSize="small" sx={{ mr: 1, opacity: 0.7 }} />
+                修改时间
+              </MenuItem>
+            </Menu>
+          </Stack>
 
           {search && (
             <>

@@ -70,6 +70,35 @@ export function readTaskProgressSnapshot(publicStateJson: string | null | undefi
   }
 }
 
+export function getTaskTypeLabel(type: string): string {
+  const typeMap: Record<string, string> = {
+    ARCHIVE: '打包归档',
+    EXTRACT: '解压任务',
+    SEARCH_INDEX_REBUILD: '重建搜索索引',
+    STORAGE_POLICY_MIGRATION: '存储策略迁移',
+    THUMBNAIL: '缩略图生成',
+    MEDIA_META: '媒体元数据解析',
+    REMOTE_DOWNLOAD: '离线下载',
+    HLS_TRANSCODE: '视频转码',
+    CLEANUP: '清理任务',
+  };
+  return typeMap[type] || type;
+}
+
+export function getTaskStatusLabel(status: string): string {
+  const statusMap: Record<string, string> = {
+    QUEUED: '排队中',
+    PENDING: '排队中',
+    RUNNING: '处理中',
+    COMPLETED: '已完成',
+    FAILED: '已失败',
+    CANCELLED: '已取消',
+    RETRYING: '重试中',
+    WAITING: '等待中',
+  };
+  return statusMap[status] || status;
+}
+
 function readCount(value: unknown) {
   if (typeof value === 'number' && Number.isFinite(value)) {
     return value;

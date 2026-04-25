@@ -79,6 +79,7 @@ class RedisFileListDirectoryCacheServiceTest {
                 12L,
                 "text/plain",
                 false,
+                LocalDateTime.of(2026, 4, 10, 18, 30),
                 LocalDateTime.of(2026, 4, 10, 18, 30)
         ));
     }

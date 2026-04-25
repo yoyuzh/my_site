@@ -4,6 +4,7 @@ import com.yoyuzh.boot.security.CustomUserDetailsService;
 import com.yoyuzh.files.sharing.api.SharingApi;
 import com.yoyuzh.files.workspace.api.FileDetailResponse;
 import com.yoyuzh.files.workspace.api.FavoriteFileResponse;
+import com.yoyuzh.files.workspace.internal.application.WorkspaceTagService;
 import com.yoyuzh.files.workspace.internal.application.FileService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -38,15 +39,18 @@ class FileProductCapabilityControllerTest {
 
     private FileService fileService;
     private CustomUserDetailsService userDetailsService;
+    private WorkspaceTagService workspaceTagService;
     private MockMvc mockMvc;
 
     @BeforeEach
     void setUp() {
         fileService = mock(FileService.class);
         userDetailsService = mock(CustomUserDetailsService.class);
+        workspaceTagService = mock(WorkspaceTagService.class);
         SharingApi sharingApi = mock(SharingApi.class);
         when(userDetailsService.loadUserId("alice")).thenReturn(7L);
-        mockMvc = MockMvcBuilders.standaloneSetup(new FileController(fileService, userDetailsService, sharingApi))
+        when(workspaceTagService.listFileTags(eq(7L), eq(1L))).thenReturn(List.of());
+        mockMvc = MockMvcBuilders.standaloneSetup(new FileController(fileService, userDetailsService, sharingApi, workspaceTagService))
                 .setCustomArgumentResolvers(authenticationPrincipalResolver())
                 .build();
     }
@@ -63,7 +67,8 @@ class FileProductCapabilityControllerTest {
                 false,
                 false,
                 LocalDateTime.of(2026, 4, 21, 10, 0),
-                LocalDateTime.of(2026, 4, 21, 11, 0)
+                LocalDateTime.of(2026, 4, 21, 11, 0),
+                List.of()
         ));
 
         mockMvc.perform(get("/api/files/{fileId}/detail", 1L).with(user(userDetails())))

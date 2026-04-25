@@ -450,6 +450,7 @@ public class RuntimeSharingApi implements SharingApi {
                 file.size(),
                 file.contentType(),
                 file.directory(),
+                file.createdAt(),
                 file.createdAt()
         );
     }
@@ -492,6 +493,7 @@ public class RuntimeSharingApi implements SharingApi {
                 storedFile.size(),
                 storedFile.contentType(),
                 storedFile.directory(),
+                storedFile.createdAt(),
                 storedFile.createdAt()
         );
     }

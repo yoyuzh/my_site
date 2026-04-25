@@ -58,6 +58,7 @@ class FileSearchV2ControllerTest {
                         5L,
                         "text/plain",
                         false,
+                        LocalDateTime.of(2026, 4, 8, 10, 0),
                         LocalDateTime.of(2026, 4, 8, 10, 0)
                 )),
                 1,

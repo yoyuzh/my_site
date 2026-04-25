@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import DashboardLayout from '../components/DashboardLayout';
 import { useTasks } from '../api/queries';
 import { formatDateTime } from '../lib/format';
-import { getTaskProgress, readTaskProgressSnapshot } from '../lib/tasks';
+import { getTaskProgress, getTaskStatusLabel, getTaskTypeLabel, readTaskProgressSnapshot } from '../lib/tasks';
 import type { BackgroundTask, TaskProgress } from '../api/types';
 
 const Tasks: React.FC = () => {
@@ -17,6 +17,12 @@ const Tasks: React.FC = () => {
     [data, selectedTaskId],
   );
   const selectedTaskSnapshot = selectedTask ? readTaskProgressSnapshot(selectedTask.publicStateJson) : null;
+  const resolvedTaskStatus = progress?.status || selectedTask?.status || '';
+  const resolvedProgressPercent = progress?.progressPercent ?? selectedTaskSnapshot?.progressPercent ?? 0;
+  const resolvedProcessedItems = progress?.processedItems ?? selectedTaskSnapshot?.processedItems ?? 0;
+  const resolvedTotalItems = progress?.totalItems ?? selectedTaskSnapshot?.totalItems ?? 0;
+  const completedWithoutItemCounts =
+    resolvedTaskStatus === 'COMPLETED' && resolvedTotalItems === 0;
 
   useEffect(() => {
     if (!data?.items.length) {
@@ -80,9 +86,11 @@ const Tasks: React.FC = () => {
               onClick={() => setSelectedTaskId(task.id)}
             >
               <div>
-                <h3 className="font-bold text-text-primary-light dark:text-white">{task.type}</h3>
+                <h3 className="font-bold text-text-primary-light dark:text-white">
+                  {getTaskTypeLabel(task.type)}
+                </h3>
                 <p className="text-sm text-text-secondary-light dark:text-text-secondary-dark">
-                  状态 {task.status} · 创建于 {formatDateTime(task.createdAt)}
+                  状态 {getTaskStatusLabel(task.status)} · 创建于 {formatDateTime(task.createdAt)}
                 </p>
               </div>
               <div className="text-sm text-text-muted-light dark:text-text-muted-dark lg:text-right">
@@ -105,24 +113,35 @@ const Tasks: React.FC = () => {
               <div className="flex items-start justify-between gap-4">
                 <div>
                   <h3 className="text-lg font-bold text-text-primary-light dark:text-white">
-                    任务详情 #{selectedTask.id}
+                    {getTaskTypeLabel(selectedTask.type)}
                   </h3>
                   <p className="mt-1 text-sm text-text-secondary-light dark:text-text-secondary-dark">
-                    {selectedTask.type} · 当前状态 {progress?.status || selectedTask.status}
+                    任务 #{selectedTask.id} · 当前状态 {getTaskStatusLabel(resolvedTaskStatus)}
                   </p>
                 </div>
                 <div className="text-right text-sm text-text-secondary-light dark:text-text-secondary-dark">
-                  <p>{progressLoading ? '进度加载中...' : `进度 ${progress?.progressPercent ?? selectedTaskSnapshot?.progressPercent ?? 0}%`}</p>
                   <p>
-                    已处理 {progress?.processedItems ?? selectedTaskSnapshot?.processedItems ?? 0} /{' '}
-                    {progress?.totalItems ?? selectedTaskSnapshot?.totalItems ?? 0}
+                    {progressLoading
+                      ? '进度加载中...'
+                      : completedWithoutItemCounts
+                        ? '已完成'
+                        : `进度 ${resolvedTaskStatus === 'COMPLETED' ? 100 : resolvedProgressPercent}%`}
+                  </p>
+                  <p>
+                    {completedWithoutItemCounts ? (
+                      '任务已处理完成'
+                    ) : (
+                      <>
+                        已处理 {resolvedProcessedItems} / {resolvedTotalItems}
+                      </>
+                    )}
                   </p>
                 </div>
               </div>
               <div className="mt-4 h-2 w-full rounded-full bg-[#E8EEF8] dark:bg-[#1D2330]">
                 <div
                   className="h-2 rounded-full bg-brand-light transition-all dark:bg-brand-dark"
-                  style={{ width: `${progress?.progressPercent ?? selectedTaskSnapshot?.progressPercent ?? 0}%` }}
+                  style={{ width: `${completedWithoutItemCounts ? 100 : resolvedTaskStatus === 'COMPLETED' ? 100 : resolvedProgressPercent}%` }}
                 />
               </div>
               <p className="mt-4 text-sm text-text-secondary-light dark:text-text-secondary-dark">

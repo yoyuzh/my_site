@@ -71,7 +71,8 @@ public final class RuntimeWorkspaceDirectoryApi implements WorkspaceDirectoryApi
                 storedFile.getSize(),
                 storedFile.getContentType(),
                 storedFile.isDirectory(),
-                storedFile.getCreatedAt()
+                storedFile.getCreatedAt(),
+                storedFile.getUpdatedAt() != null ? storedFile.getUpdatedAt() : storedFile.getCreatedAt()
         );
     }
 }

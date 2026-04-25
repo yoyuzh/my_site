@@ -24,6 +24,7 @@
 - 默认转发 `8080`
 - 默认注入一个本地开发用 `APP_JWT_SECRET`
 - 默认启用 `SPRING_PROFILES_ACTIVE=dev`
+- 默认把 dev 环境的 H2 文件数据库挂到持久化 Docker volume `my-site-backend-h2-data`
 
 进入容器后，仍按仓库已有命令运行：
 
@@ -32,6 +33,8 @@ mvn spring-boot:run -Dspring-boot.run.profiles=dev
 ```
 
 如果你需要读取仓库根目录的 `.env`，它仍然和 `backend/` 一起挂载在同一个 workspace 下，可通过 `../.env` 访问。
+
+当前 dev container 会把 `SPRING_DATASOURCE_URL` 覆盖到 `/var/lib/my-site-h2/yoyuzh_portal_dev`。只要不删除对应的 Docker volume，重建后端容器后开发数据会保留。
 
 ## 启动
 

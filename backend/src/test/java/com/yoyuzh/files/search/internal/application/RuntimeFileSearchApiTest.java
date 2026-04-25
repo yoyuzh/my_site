@@ -50,6 +50,7 @@ class RuntimeFileSearchApiTest {
                         128L,
                         "application/pdf",
                         false,
+                        createdGte,
                         createdGte
                 )),
                 1,

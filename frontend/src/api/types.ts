@@ -54,12 +54,19 @@ export interface FileItem {
   contentType: string;
   directory: boolean;
   createdAt: string;
+  updatedAt: string | null;
+}
+
+export interface FileTag {
+  id: number;
+  name: string;
+  color: string;
 }
 
 export interface FileDetail extends FileItem {
   favorite: boolean;
   shared: boolean;
-  updatedAt: string | null;
+  tags: FileTag[];
 }
 
 export interface FavoriteFileResponse {

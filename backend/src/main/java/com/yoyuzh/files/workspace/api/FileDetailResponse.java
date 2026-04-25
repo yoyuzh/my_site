@@ -1,6 +1,7 @@
 package com.yoyuzh.files.workspace.api;
 
 import java.time.LocalDateTime;
+import java.util.List;
 
 public record FileDetailResponse(
         Long id,
@@ -12,6 +13,22 @@ public record FileDetailResponse(
         boolean favorite,
         boolean shared,
         LocalDateTime createdAt,
-        LocalDateTime updatedAt
+        LocalDateTime updatedAt,
+        List<WorkspaceTagResponse> tags
 ) {
+    public FileDetailResponse withTags(List<WorkspaceTagResponse> updatedTags) {
+        return new FileDetailResponse(
+                id,
+                filename,
+                path,
+                size,
+                contentType,
+                directory,
+                favorite,
+                shared,
+                createdAt,
+                updatedAt,
+                updatedTags
+        );
+    }
 }

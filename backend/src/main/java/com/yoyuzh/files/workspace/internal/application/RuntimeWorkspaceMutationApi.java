@@ -138,7 +138,8 @@ public final class RuntimeWorkspaceMutationApi implements WorkspaceMutationApi {
                 storedFile.getSize(),
                 storedFile.getContentType(),
                 storedFile.isDirectory(),
-                storedFile.getCreatedAt()
+                storedFile.getCreatedAt(),
+                storedFile.getUpdatedAt() != null ? storedFile.getUpdatedAt() : storedFile.getCreatedAt()
         );
     }
 
@@ -153,7 +154,8 @@ public final class RuntimeWorkspaceMutationApi implements WorkspaceMutationApi {
                 storedFile.getSize(),
                 storedFile.getContentType(),
                 true,
-                storedFile.getCreatedAt()
+                storedFile.getCreatedAt(),
+                storedFile.getUpdatedAt() != null ? storedFile.getUpdatedAt() : storedFile.getCreatedAt()
         );
     }
 }

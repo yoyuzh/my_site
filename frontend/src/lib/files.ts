@@ -5,6 +5,7 @@ import type {
   FavoriteFileResponse,
   FileDetail,
   FileItem,
+  FileTag,
   QueryPage,
   RecycleBinItem,
   ThumbnailResponse,
@@ -85,6 +86,30 @@ export async function getThumbnail(fileId: number) {
   });
 }
 
+export async function renameFile(fileId: number, filename: string) {
+  return apiRequest<FileItem>({
+    url: `/files/${fileId}/rename`,
+    method: 'PATCH',
+    data: { filename },
+  });
+}
+
+export async function moveFile(fileId: number, path: string) {
+  return apiRequest<FileItem>({
+    url: `/files/${fileId}/move`,
+    method: 'PATCH',
+    data: { path },
+  });
+}
+
+export async function copyFile(fileId: number, path: string) {
+  return apiRequest<FileItem>({
+    url: `/files/${fileId}/copy`,
+    method: 'POST',
+    data: { path },
+  });
+}
+
 export async function createDirectory(path: string) {
   const params = new URLSearchParams({ path });
   return apiRequest<FileItem>({
@@ -126,4 +151,55 @@ export async function downloadFileBlob(fileId: number) {
     rawResponse: true,
   });
   return response.data;
+}
+
+export async function listTags() {
+  return apiRequest<FileTag[]>({
+    url: '/files/tags',
+    method: 'GET',
+  });
+}
+
+export async function createTag(name: string, color: string) {
+  return apiRequest<FileTag>({
+    url: '/files/tags',
+    method: 'POST',
+    data: { name, color },
+  });
+}
+
+export async function updateTag(tagId: number, name: string, color: string) {
+  return apiRequest<FileTag>({
+    url: `/files/tags/${tagId}`,
+    method: 'PATCH',
+    data: { name, color },
+  });
+}
+
+export async function deleteTag(tagId: number) {
+  return apiRequest<void>({
+    url: `/files/tags/${tagId}`,
+    method: 'DELETE',
+  });
+}
+
+export async function listFileTags(fileId: number) {
+  return apiRequest<FileTag[]>({
+    url: `/files/${fileId}/tags`,
+    method: 'GET',
+  });
+}
+
+export async function addFileTag(fileId: number, tagId: number) {
+  return apiRequest<void>({
+    url: `/files/${fileId}/tags/${tagId}`,
+    method: 'PUT',
+  });
+}
+
+export async function removeFileTag(fileId: number, tagId: number) {
+  return apiRequest<void>({
+    url: `/files/${fileId}/tags/${tagId}`,
+    method: 'DELETE',
+  });
 }

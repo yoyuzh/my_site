@@ -351,6 +351,7 @@ public final class RuntimeWorkspaceLifecycleApi implements WorkspaceLifecycleApi
                 storedFile.size(),
                 storedFile.contentType(),
                 storedFile.directory(),
+                storedFile.createdAt(),
                 storedFile.createdAt()
         );
     }
@@ -364,7 +365,8 @@ public final class RuntimeWorkspaceLifecycleApi implements WorkspaceLifecycleApi
                 storedFile.getSize(),
                 storedFile.getContentType(),
                 storedFile.isDirectory(),
-                storedFile.getCreatedAt()
+                storedFile.getCreatedAt(),
+                storedFile.getUpdatedAt() != null ? storedFile.getUpdatedAt() : storedFile.getCreatedAt()
         );
     }
 

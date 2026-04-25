@@ -100,9 +100,9 @@ public class RedisFileListDirectoryCacheService implements FileListDirectoryCach
         }
         Object cachedValue = wrapper.get();
         if (cachedValue instanceof CachedFileListPage cachedFileListPage) {
-            return cachedFileListPage;
+            return cachedFileListPage.normalizeForCurrentDto();
         }
-        return objectMapper.convertValue(cachedValue, CachedFileListPage.class);
+        return objectMapper.convertValue(cachedValue, CachedFileListPage.class).normalizeForCurrentDto();
     }
 
     private long readDirectoryVersion(Long userId, String path) {
@@ -158,6 +158,29 @@ public class RedisFileListDirectoryCacheService implements FileListDirectoryCach
     private record CachedFileListPage(List<FileMetadataResponse> items, long total, int page, int size) {
         private static CachedFileListPage from(PageResponse<FileMetadataResponse> response) {
             return new CachedFileListPage(response.items(), response.total(), response.page(), response.size());
+        }
+
+        private CachedFileListPage normalizeForCurrentDto() {
+            List<FileMetadataResponse> normalizedItems = items == null
+                    ? List.of()
+                    : items.stream()
+                    .map(item -> {
+                        if (item == null || item.updatedAt() != null) {
+                            return item;
+                        }
+                        return new FileMetadataResponse(
+                                item.id(),
+                                item.filename(),
+                                item.path(),
+                                item.size(),
+                                item.contentType(),
+                                item.directory(),
+                                item.createdAt(),
+                                item.createdAt()
+                        );
+                    })
+                    .toList();
+            return new CachedFileListPage(normalizedItems, total, page, size);
         }
 
         private PageResponse<FileMetadataResponse> toPageResponse() {

@@ -1099,7 +1099,8 @@ public class FileService implements WorkspaceBootstrapApi, WorkspaceArchiveApi {
                 file.isFavorite(),
                 shared,
                 file.getCreatedAt(),
-                file.getUpdatedAt()
+                file.getUpdatedAt(),
+                List.of()
         );
     }
 
@@ -1171,7 +1172,8 @@ public class FileService implements WorkspaceBootstrapApi, WorkspaceArchiveApi {
                 storedFile.getSize(),
                 storedFile.getContentType(),
                 storedFile.isDirectory(),
-                storedFile.getCreatedAt());
+                storedFile.getCreatedAt(),
+                storedFile.getUpdatedAt() != null ? storedFile.getUpdatedAt() : storedFile.getCreatedAt());
     }
 
     private FileMetadataResponse toResponse(RegisteredContentFile storedFile) {
@@ -1182,6 +1184,7 @@ public class FileService implements WorkspaceBootstrapApi, WorkspaceArchiveApi {
                 storedFile.size(),
                 storedFile.contentType(),
                 storedFile.directory(),
+                storedFile.createdAt(),
                 storedFile.createdAt()
         );
     }

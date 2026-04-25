@@ -18,27 +18,27 @@ const WorkspaceSidebar: React.FC<{ onNavigate?: () => void }> = ({ onNavigate })
     <aside className="surface-shell flex h-full w-[272px] flex-col p-4">
       <nav className="flex flex-1 flex-col">
         <div className="space-y-1">
-        {items.map((item) => {
-          const Icon = item.icon;
-          const active =
-            location.pathname === item.path || location.pathname.startsWith(`${item.path}/`);
+          {items.map((item) => {
+            const Icon = item.icon;
+            const active =
+              location.pathname === item.path || location.pathname.startsWith(`${item.path}/`);
 
-          return (
-            <Link
-              key={item.path}
-              to={item.path}
-              onClick={onNavigate}
-              className={
-                active
-                  ? 'flex items-center gap-3 rounded-2xl bg-slate-900 px-4 py-3 text-white dark:bg-white dark:text-slate-950'
-                  : 'flex items-center gap-3 rounded-2xl px-4 py-3 text-slate-600 transition hover:bg-slate-100 hover:text-slate-950 dark:text-slate-300 dark:hover:bg-white/5 dark:hover:text-white'
-              }
-            >
-              <Icon size={18} />
-              <span className="text-sm font-medium">{item.name}</span>
-            </Link>
-          );
-        })}
+            return (
+              <Link
+                key={item.path}
+                to={item.path}
+                onClick={onNavigate}
+                className={
+                  active
+                    ? 'flex items-center gap-3 rounded-2xl bg-slate-900 px-4 py-3 text-white dark:bg-white dark:text-slate-950'
+                    : 'flex items-center gap-3 rounded-2xl px-4 py-3 text-slate-600 transition hover:bg-slate-100 hover:text-slate-950 dark:text-slate-300 dark:hover:bg-white/5 dark:hover:text-white'
+                }
+              >
+                <Icon size={18} />
+                <span className="text-sm font-medium">{item.name}</span>
+              </Link>
+            );
+          })}
         </div>
 
         <div className="mt-auto border-t border-slate-200/70 pt-4 dark:border-white/10">
