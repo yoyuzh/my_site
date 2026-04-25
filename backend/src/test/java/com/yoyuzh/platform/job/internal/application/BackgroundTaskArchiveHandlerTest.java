@@ -75,7 +75,8 @@ class BackgroundTaskArchiveHandlerTest {
                 "application/zip",
                 false,
                 null,
-                null
+                null,
+                false
         );
 
         when(identityUserDirectoryApi.findSnapshotById(7L)).thenReturn(Optional.of(createUser(7L)));
@@ -127,7 +128,8 @@ class BackgroundTaskArchiveHandlerTest {
                 "application/zip",
                 false,
                 null,
-                null
+                null,
+                false
         );
 
         when(identityUserDirectoryApi.findSnapshotById(7L)).thenReturn(Optional.of(createUser(7L)));

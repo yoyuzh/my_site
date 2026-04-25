@@ -30,6 +30,7 @@ import {
 } from '@mui/icons-material';
 import { ThemeProvider as MuiThemeProvider, createTheme } from '@mui/material/styles';
 import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useSearchParams } from 'react-router-dom';
 import DashboardLayout from '../components/DashboardLayout';
 import FileDetailsRail from '../components/files/FileDetailsRail';
 import { FilesExplorerSurface } from '../components/files/FilesExplorerSurface';
@@ -56,6 +57,13 @@ import {
   uploadFile,
 } from '../lib/files';
 import { useTheme as useAppTheme } from '../hooks/useTheme';
+import {
+  emitWorkspaceFolderTreeRefresh,
+  FILES_PATH_SEARCH_PARAM,
+  getWorkspaceFolderParentPath,
+  getWorkspaceFolderPathFromSearchParams,
+  normalizeWorkspaceFolderPath,
+} from '../lib/workspace-folder-tree';
 
 type ViewMode = 'grid' | 'list';
 
@@ -79,16 +87,6 @@ function joinDirectoryPath(parentPath: string, filename: string) {
   return parentPath === '/' ? `/${filename}` : `${parentPath}/${filename}`;
 }
 
-function normalizeDirectoryPath(path: string) {
-  const trimmed = path.trim();
-  if (!trimmed || trimmed === '/') {
-    return '/';
-  }
-
-  const normalized = trimmed.startsWith('/') ? trimmed : `/${trimmed}`;
-  return normalized.replace(/\/{2,}/g, '/').replace(/\/+$/, '') || '/';
-}
-
 function getLogicalPath(file: Pick<FileItem, 'directory' | 'filename' | 'path'>) {
   if (!file.path) {
     return joinDirectoryPath('/', file.filename);
@@ -101,6 +99,24 @@ function getLogicalPath(file: Pick<FileItem, 'directory' | 'filename' | 'path'>)
 
 function getSelectionKey(file: Pick<FileItem, 'id'>) {
   return String(file.id);
+}
+
+function replaceLogicalPathPrefix(currentPath: string, sourcePath: string, targetPath: string) {
+  const normalizedCurrentPath = normalizeWorkspaceFolderPath(currentPath);
+  const normalizedSourcePath = normalizeWorkspaceFolderPath(sourcePath);
+  const normalizedTargetPath = normalizeWorkspaceFolderPath(targetPath);
+
+  if (normalizedCurrentPath === normalizedSourcePath) {
+    return normalizedTargetPath;
+  }
+
+  if (!normalizedCurrentPath.startsWith(`${normalizedSourcePath}/`)) {
+    return normalizedCurrentPath;
+  }
+
+  return normalizeWorkspaceFolderPath(
+    `${normalizedTargetPath}${normalizedCurrentPath.slice(normalizedSourcePath.length)}`,
+  );
 }
 
 function isExternalUrl(url: string) {
@@ -130,8 +146,10 @@ function triggerUrlDownload(url: string, filename: string) {
 }
 
 const Files: React.FC = () => {
+  const [searchParams, setSearchParams] = useSearchParams();
   const queryClient = useQueryClient();
   const { theme } = useAppTheme();
+  const requestedPath = getWorkspaceFolderPathFromSearchParams(searchParams);
   const muiTheme = useMemo(
     () => {
       const isDark = theme === 'dark';
@@ -207,7 +225,7 @@ const Files: React.FC = () => {
   const folderInputRef = useRef<HTMLInputElement | null>(null);
   const lastSelectedIndexRef = useRef(0);
   const [search, setSearch] = useState('');
-  const [currentPath, setCurrentPath] = useState('/');
+  const [currentPath, setCurrentPath] = useState(requestedPath);
   const [page, setPage] = useState(1);
   const [allRows, setAllRows] = useState<FileItem[]>([]);
   const [sortBy, setSortBy] = useState<SortBy>(() => {
@@ -339,22 +357,53 @@ const Files: React.FC = () => {
   const createDirectoryMutation = useMutation({
     mutationFn: createDirectory,
     onSuccess: () => {
+      emitWorkspaceFolderTreeRefresh([currentPath]);
       setPage(1);
       void refetch();
     },
   });
 
   const renameMutation = useMutation({
-    mutationFn: ({ fileId, filename }: { fileId: number; filename: string }) => renameFile(fileId, filename),
-    onSuccess: () => {
+    mutationFn: ({ fileId, filename }: { fileId: number; filename: string; file: FileItem }) => renameFile(fileId, filename),
+    onSuccess: (result, variables) => {
+      const previousPath = getLogicalPath(variables.file);
+      const nextPath = getLogicalPath(result);
+      emitWorkspaceFolderTreeRefresh([
+        getWorkspaceFolderParentPath(previousPath),
+        getWorkspaceFolderParentPath(nextPath),
+      ]);
+
+      if (variables.file.directory) {
+        const nextCurrentPath = replaceLogicalPathPrefix(currentPath, previousPath, nextPath);
+        if (nextCurrentPath !== currentPath) {
+          handlePathChange(nextCurrentPath, { replaceUrl: true });
+          return;
+        }
+      }
+
       setPage(1);
       void refetch();
     },
   });
 
   const moveMutation = useMutation({
-    mutationFn: ({ fileId, path }: { fileId: number; path: string }) => moveFile(fileId, path),
-    onSuccess: () => {
+    mutationFn: ({ fileId, path }: { fileId: number; path: string; file: FileItem }) => moveFile(fileId, path),
+    onSuccess: (result, variables) => {
+      const previousPath = getLogicalPath(variables.file);
+      const nextPath = getLogicalPath(result);
+      emitWorkspaceFolderTreeRefresh([
+        getWorkspaceFolderParentPath(previousPath),
+        getWorkspaceFolderParentPath(nextPath),
+      ]);
+
+      if (variables.file.directory) {
+        const nextCurrentPath = replaceLogicalPathPrefix(currentPath, previousPath, nextPath);
+        if (nextCurrentPath !== currentPath) {
+          handlePathChange(nextCurrentPath, { replaceUrl: true });
+          return;
+        }
+      }
+
       setPage(1);
       void refetch();
     },
@@ -362,7 +411,8 @@ const Files: React.FC = () => {
 
   const copyMutation = useMutation({
     mutationFn: ({ fileId, path }: { fileId: number; path: string }) => copyFile(fileId, path),
-    onSuccess: () => {
+    onSuccess: (result) => {
+      emitWorkspaceFolderTreeRefresh([getWorkspaceFolderParentPath(getLogicalPath(result))]);
       setPage(1);
       void refetch();
     },
@@ -397,7 +447,16 @@ const Files: React.FC = () => {
 
   const deleteMutation = useMutation({
     mutationFn: batchDeleteFiles,
-    onSuccess: () => {
+    onSuccess: (_, fileIds) => {
+      emitWorkspaceFolderTreeRefresh(
+        Array.from(
+          new Set(
+            selectedFiles
+              .filter((file) => fileIds.includes(file.id))
+              .map((file) => normalizeWorkspaceFolderPath(file.path)),
+          ),
+        ),
+      );
       setSelectedById({});
       setContextMenu(null);
       setDetailFileId(null);
@@ -530,8 +589,20 @@ const Files: React.FC = () => {
     };
   }, [detailFileId]);
 
-  function handlePathChange(path: string) {
-    const normalizedPath = normalizeDirectoryPath(path);
+  function updatePathSearchParam(path: string, replace = false) {
+    const normalizedPath = normalizeWorkspaceFolderPath(path);
+    const nextSearchParams = new URLSearchParams(searchParams);
+
+    if (normalizedPath === '/') {
+      nextSearchParams.delete(FILES_PATH_SEARCH_PARAM);
+    } else {
+      nextSearchParams.set(FILES_PATH_SEARCH_PARAM, normalizedPath);
+    }
+
+    setSearchParams(nextSearchParams, { replace });
+  }
+
+  function resetBrowsingState() {
     setSelectedById({});
     setContextMenu(null);
     setPreviewFile(null);
@@ -541,21 +612,30 @@ const Files: React.FC = () => {
     lastSelectedIndexRef.current = 0;
     setAllRows([]);
     setPage(1);
-    setCurrentPath(normalizedPath);
+  }
+
+  function handlePathChange(path: string, options?: { updateUrl?: boolean; replaceUrl?: boolean }) {
+    const normalizedPath = normalizeWorkspaceFolderPath(path);
+    if (normalizedPath !== currentPath) {
+      resetBrowsingState();
+      setCurrentPath(normalizedPath);
+    }
+
+    if (options?.updateUrl !== false) {
+      updatePathSearchParam(normalizedPath, options?.replaceUrl);
+    }
   }
 
   function handleSearchChange(nextSearch: string) {
-    setSelectedById({});
-    setContextMenu(null);
-    setPreviewFile(null);
-    setDetailFileId(null);
-    setDetail(null);
-    setDetailError(null);
-    lastSelectedIndexRef.current = 0;
-    setAllRows([]);
-    setPage(1);
+    resetBrowsingState();
     setSearch(nextSearch);
   }
+
+  useEffect(() => {
+    if (requestedPath !== currentPath) {
+      handlePathChange(requestedPath, { updateUrl: false, replaceUrl: true });
+    }
+  }, [requestedPath]);
 
   function openDirectory(file: FileItem) {
     if (!file.directory) {
@@ -663,7 +743,7 @@ const Files: React.FC = () => {
   function renameFileAction(file: FileItem) {
     const nextName = window.prompt('请输入新名称', file.filename);
     if (nextName && nextName.trim() && nextName !== file.filename) {
-      renameMutation.mutate({ fileId: file.id, filename: nextName.trim() });
+      renameMutation.mutate({ fileId: file.id, filename: nextName.trim(), file });
     }
     closeContextMenus();
   }
@@ -671,7 +751,7 @@ const Files: React.FC = () => {
   function moveFileAction(file: FileItem) {
     const nextPath = window.prompt('请输入目标路径', currentPath);
     if (nextPath && nextPath.trim()) {
-      moveMutation.mutate({ fileId: file.id, path: nextPath.trim() });
+      moveMutation.mutate({ fileId: file.id, path: nextPath.trim(), file });
     }
     closeContextMenus();
   }

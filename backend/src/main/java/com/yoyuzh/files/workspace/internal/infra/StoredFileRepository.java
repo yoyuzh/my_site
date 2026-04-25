@@ -68,6 +68,17 @@ public interface StoredFileRepository extends JpaRepository<StoredFile, Long> {
                                                                           @Param("path") String path,
                                                                           Pageable pageable);
 
+    @Query(value = """
+            select distinct f.path
+            from portal_file f
+            where f.user_id = :userId
+              and f.is_directory = true
+              and f.deleted_at is null
+              and f.path in (:paths)
+            """, nativeQuery = true)
+    List<String> findDirectoryPathsWithChildDirectories(@Param("userId") Long userId,
+                                                        @Param("paths") Collection<String> paths);
+
     @Query("""
             select f from StoredFile f
             where f.userId = :userId

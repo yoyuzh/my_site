@@ -1,13 +1,12 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { BrowserRouter as Router, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { ThemeProvider } from './hooks/useTheme';
-import { canAccessAdmin, getDefaultSignedInRoute, getSession } from './lib/session';
+import { canAccessAdmin, getSession } from './lib/session';
 import Login from './pages/Login';
 import Register from './pages/Register';
 import FileShare from './pages/FileShare';
 
 // Dashboard Pages
-import Overview from './pages/Overview';
 import Files from './pages/Files';
 import Tasks from './pages/Tasks';
 import Shares from './pages/Shares';
@@ -58,7 +57,7 @@ function RequireAdmin({ children }: { children: JSX.Element }) {
   }
 
   if (!canAccessAdmin(session.user.role)) {
-    return <Navigate to="/dashboard/overview" replace />;
+    return <Navigate to="/dashboard/files" replace />;
   }
 
   return children;
@@ -66,7 +65,8 @@ function RequireAdmin({ children }: { children: JSX.Element }) {
 
 function HomeRedirect() {
   const session = getSession();
-  return <Navigate to={session ? getDefaultSignedInRoute(session.user.role) : '/login'} replace />;
+  if (!session) return <Navigate to="/login" replace />;
+  return <Navigate to={canAccessAdmin(session.user.role) ? '/admin/home' : '/dashboard/files'} replace />;
 }
 
 function App() {
@@ -85,8 +85,7 @@ function App() {
             
           {/* Dashboard Routes */}
           <Route path="/dashboard">
-            <Route index element={<Navigate to="overview" replace />} />
-            <Route path="overview" element={<RequireAuth><Overview /></RequireAuth>} />
+            <Route index element={<Navigate to="files" replace />} />
             <Route path="files" element={<RequireAuth><Files /></RequireAuth>} />
             <Route path="tasks" element={<RequireAuth><Tasks /></RequireAuth>} />
             <Route path="shares" element={<RequireAuth><Shares /></RequireAuth>} />

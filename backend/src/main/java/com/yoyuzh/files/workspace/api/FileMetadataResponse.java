@@ -10,6 +10,7 @@ public record FileMetadataResponse(
         String contentType,
         boolean directory,
         LocalDateTime createdAt,
-        LocalDateTime updatedAt
+        LocalDateTime updatedAt,
+        boolean hasChildDirectory
 ) {
 }

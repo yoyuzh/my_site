@@ -55,6 +55,7 @@ export interface FileItem {
   directory: boolean;
   createdAt: string;
   updatedAt: string | null;
+  hasChildDirectory: boolean;
 }
 
 export interface FileTag {

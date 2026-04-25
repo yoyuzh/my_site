@@ -10,6 +10,7 @@ import com.yoyuzh.files.content.internal.infra.*;
 import com.yoyuzh.ops.admin.internal.application.AdminMetricsService;
 import com.yoyuzh.identity.access.internal.domain.User;
 import com.yoyuzh.shared.kernel.BusinessException;
+import com.yoyuzh.shared.kernel.PageResponse;
 import com.yoyuzh.platform.storage.api.StoragePolicyCapabilities;
 import com.yoyuzh.platform.storage.api.StoragePolicyQuery;
 import com.yoyuzh.platform.storage.api.DefaultStoragePolicySnapshot;
@@ -688,6 +689,39 @@ class FileServiceTest {
         assertThat(result.items()).hasSize(1);
         assertThat(result.items().get(0).filename()).isEqualTo("notes.txt");
         verify(cacheService).getOrLoad(eq(7L), eq("/docs"), eq(0), eq(10), any());
+    }
+
+    @Test
+    void shouldPopulateHasChildDirectoryForRootDirectoriesFromFinalListResponse() {
+        User user = createUser(7L);
+        LocalDateTime timestamp = LocalDateTime.of(2026, 4, 25, 12, 0);
+        FileListDirectoryCacheService cacheService = org.mockito.Mockito.mock(FileListDirectoryCacheService.class);
+        ReflectionTestUtils.setField(fileService, "fileListDirectoryCacheService", cacheService);
+        PageResponse<FileMetadataResponse> cachedResponse = new PageResponse<>(
+                List.of(new FileMetadataResponse(
+                        100L,
+                        "文档",
+                        "/",
+                        0L,
+                        "directory",
+                        true,
+                        timestamp,
+                        timestamp,
+                        false
+                )),
+                1,
+                0,
+                10
+        );
+        when(cacheService.getOrLoad(eq(7L), eq("/"), eq(0), eq(10), any())).thenReturn(cachedResponse);
+        when(storedFileRepository.findDirectoryPathsWithChildDirectories(7L, List.of("/文档")))
+                .thenReturn(List.of("/文档"));
+
+        var result = fileService.list(FileServiceTestSupport.workspaceUser(user), "/", 0, 10);
+
+        assertThat(result.items()).hasSize(1);
+        assertThat(result.items().get(0).hasChildDirectory()).isTrue();
+        verify(storedFileRepository).findDirectoryPathsWithChildDirectories(7L, List.of("/文档"));
     }
 
     @Test

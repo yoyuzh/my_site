@@ -61,7 +61,8 @@ class RedisFileListDirectoryCacheServiceTest {
                         "size", 12L,
                         "contentType", "text/plain",
                         "directory", false,
-                        "createdAt", List.of(2026, 4, 10, 18, 30)
+                        "createdAt", List.of(2026, 4, 10, 18, 30),
+                        "hasChildDirectory", false
                 )),
                 "total", 1L,
                 "page", 0,
@@ -80,7 +81,8 @@ class RedisFileListDirectoryCacheServiceTest {
                 "text/plain",
                 false,
                 LocalDateTime.of(2026, 4, 10, 18, 30),
-                LocalDateTime.of(2026, 4, 10, 18, 30)
+                LocalDateTime.of(2026, 4, 10, 18, 30),
+                false
         ));
     }
 }

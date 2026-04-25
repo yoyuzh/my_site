@@ -426,13 +426,14 @@ public class FileService implements WorkspaceBootstrapApi, WorkspaceArchiveApi {
 
     public PageResponse<FileMetadataResponse> list(WorkspaceUserContext user, String path, int page, int size) {
         String normalizedPath = normalizeDirectoryPath(path);
-        return fileListDirectoryCacheService.getOrLoad(
+        PageResponse<FileMetadataResponse> response = fileListDirectoryCacheService.getOrLoad(
                 user.userId(),
                 normalizedPath,
                 page,
                 size,
                 () -> workspaceDirectoryApi.loadDirectoryPage(user.userId(), normalizedPath, page, size)
         );
+        return populateDirectoryChildFlags(user.userId(), response);
     }
 
     public List<FileMetadataResponse> recent(Long userId) {
@@ -1173,7 +1174,8 @@ public class FileService implements WorkspaceBootstrapApi, WorkspaceArchiveApi {
                 storedFile.getContentType(),
                 storedFile.isDirectory(),
                 storedFile.getCreatedAt(),
-                storedFile.getUpdatedAt() != null ? storedFile.getUpdatedAt() : storedFile.getCreatedAt());
+                storedFile.getUpdatedAt() != null ? storedFile.getUpdatedAt() : storedFile.getCreatedAt(),
+                false);
     }
 
     private FileMetadataResponse toResponse(RegisteredContentFile storedFile) {
@@ -1185,7 +1187,45 @@ public class FileService implements WorkspaceBootstrapApi, WorkspaceArchiveApi {
                 storedFile.contentType(),
                 storedFile.directory(),
                 storedFile.createdAt(),
-                storedFile.createdAt()
+                storedFile.createdAt(),
+                false
+        );
+    }
+
+    private PageResponse<FileMetadataResponse> populateDirectoryChildFlags(Long userId,
+                                                                           PageResponse<FileMetadataResponse> response) {
+        List<String> directoryPaths = response.items().stream()
+                .filter(FileMetadataResponse::directory)
+                .map(this::buildLogicalPath)
+                .distinct()
+                .toList();
+        if (directoryPaths.isEmpty()) {
+            return response;
+        }
+        Set<String> directoryPathsWithChildren = Set.copyOf(
+                storedFileRepository.findDirectoryPathsWithChildDirectories(userId, directoryPaths)
+        );
+        List<FileMetadataResponse> items = response.items().stream()
+                .map(item -> applyDirectoryChildFlag(item, directoryPathsWithChildren))
+                .toList();
+        return new PageResponse<>(items, response.total(), response.page(), response.size());
+    }
+
+    private FileMetadataResponse applyDirectoryChildFlag(FileMetadataResponse item, Set<String> directoryPathsWithChildren) {
+        if (!item.directory()) {
+            return item;
+        }
+        boolean hasChildDirectory = directoryPathsWithChildren.contains(buildLogicalPath(item));
+        return new FileMetadataResponse(
+                item.id(),
+                item.filename(),
+                item.path(),
+                item.size(),
+                item.contentType(),
+                true,
+                item.createdAt(),
+                item.updatedAt(),
+                hasChildDirectory
         );
     }
 
@@ -1203,6 +1243,19 @@ public class FileService implements WorkspaceBootstrapApi, WorkspaceArchiveApi {
 
     private String buildLogicalPath(StoredFile storedFile) {
         return buildLogicalPath(storedFile.getPath(), storedFile.getFilename());
+    }
+
+    private String buildLogicalPath(FileMetadataResponse item) {
+        if (!item.directory()) {
+            return item.path();
+        }
+        if ("/".equals(item.path())) {
+            return buildLogicalPath(item.path(), item.filename());
+        }
+        String suffix = "/" + item.filename();
+        return item.path().endsWith(suffix)
+                ? item.path()
+                : buildLogicalPath(item.path(), item.filename());
     }
 
     private String buildLogicalPath(String path, String filename) {

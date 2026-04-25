@@ -16,24 +16,22 @@ This repository is split across a Java backend, a Vite/React frontend, a small `
 ## Real project structure
 
 - `backend/`: Spring Boot 3.3.8, Java 17, Maven, domain packages under `com.yoyuzh.{auth,cqu,files,config,common}`.
-- `front/`: Vite 6, React 19, TypeScript, Tailwind CSS v4, route/page code under `src/pages`, reusable UI under `src/components`, shared logic under `src/lib`.
+- `frontend/`: Vite 6, React 19, TypeScript, Tailwind CSS v4, route/page code under `src/pages`, reusable UI under `src/components`, shared logic under `src/lib`.
 - `docs/`: active project docs and active plans under `docs/plans/`; historical implementation plans live under `docs/archive/plans/`.
 - `scripts/`: deployment, migration, smoke, and local startup helpers.
 
 ## Command source of truth
 
-Use only commands that already exist in `front/package.json`, `backend/pom.xml`, `backend/README.md`, `front/README.md`, or the checked-in script files.
+Use only commands that already exist in `frontend/package.json`, `backend/pom.xml`, `backend/README.md`, `README.md`, or the checked-in script files.
 
-### Frontend commands (`cd front`)
+### Frontend commands (`cd frontend`)
 
 - `npm run dev`
 - `npm run build`
 - `npm run preview`
-- `npm run clean`
 - `npm run lint`
-- `npm run test`
 
-Important: in this repo, `npm run lint` runs `tsc --noEmit`. There is no separate ESLint command, and there is no separate `typecheck` script beyond `npm run lint`.
+Important: in this repo, `npm run lint` runs `tsc --noEmit`. There is no separate ESLint command, no separate `typecheck` script beyond `npm run lint`, and no checked-in frontend `clean` or `test` script.
 
 ### Backend commands (`cd backend`)
 
@@ -77,7 +75,7 @@ Important:
 
 - `scripts/deploy-android-apk.mjs` 会顺序执行前端构建、`npx cap sync android`、Android `assembleDebug`、前端静态站发布，以及独立的 APK 发布脚本，并自动补回 `capacitor-cordova-android-plugins/build.gradle` 里的 Google Maven 镜像配置。
 - `scripts/deploy-android-release.mjs` 只负责把 APK 和 `android/releases/latest.json` 发布到 Android 独立对象路径，默认复用文件桶 scope，而不是前端静态桶。
-- `scripts/deploy-front-oss.mjs` 现在只发布 `front/dist` 静态站资源，不再上传 APK。
+- `scripts/deploy-front-oss.mjs` 现在只发布 `frontend/dist` 静态站资源，不再上传 APK。
 - The repository does not currently contain a checked-in backend deploy script. Backend delivery is therefore a two-step process: build `backend/target/yoyuzh-portal-backend-0.0.1-SNAPSHOT.jar`, then upload/restart it via `ssh` or `scp` using the real target host and remote procedure that are available at deploy time.
 - Do not invent a backend service name, process manager, remote directory, or restart command. Discover them from the server or ask only if they cannot be discovered safely.
 
@@ -86,7 +84,7 @@ Important:
 - `orchestrator`: default coordinator. It decides which specialist agent should work next, keeps cross-directory work aligned, and writes the final handoff. It should stay read-only.
 - `planner`: planning only. It produces file-level plans, command plans, and sequencing. It should stay read-only.
 - `explorer`: investigation only. It maps code paths, current behavior, and relevant configs/tests. It should stay read-only.
-- `implementer`: code changes only. It owns edits in `backend/`, `front/`, `scripts/`, or docs, and may update nearby tests when the implementation requires it.
+- `implementer`: code changes only. It owns edits in `backend/`, `frontend/`, `scripts/`, or docs, and may update nearby tests when the implementation requires it.
 - `tester`: verification only. It runs existing repo-backed commands and reports exact failures or missing commands. It should not rewrite source files.
 - `reviewer`: review only. It inspects diffs for correctness, regressions, missing tests, and command coverage gaps. It should stay read-only.
 - `deployer`: release and publish only. It builds the frontend and backend using existing commands, runs the checked-in OSS deploy script for the frontend, and handles backend jar upload/restart over SSH when credentials and remote deployment details are available.
@@ -132,11 +130,11 @@ Important:
 
 ## Repo-specific guardrails
 
-- Do not run `npm` commands at the repository root. The repository root is not an application package; frontend commands belong under `front/`.
-- Frontend API proxying is defined in `front/vite.config.ts`, with `VITE_BACKEND_URL` defaulting to `http://localhost:8080`.
+- Do not run `npm` commands at the repository root. The repository root is not an application package; frontend commands belong under `frontend/`.
+- Frontend API proxying is defined in `frontend/vite.config.ts`, with `VITE_BACKEND_URL` defaulting to `http://localhost:8080`.
 - Backend local development behavior is split between `backend/src/main/resources/application.yml` and `application-dev.yml`; the `dev` profile uses H2 and mock CQU data.
 - Backend tests already exist under `backend/src/test/java/com/yoyuzh/...`; prefer adding or updating tests in the matching package.
-- Frontend tests already exist under `front/src/**/*.test.ts`; keep new tests next to the state or library module they verify.
+- Frontend tests already exist under `frontend/src/**/*.test.ts`; keep new tests next to the state or library module they verify.
 - For frontend releases, prefer `node scripts/deploy-front-oss.mjs` over ad hoc `ossutil` or manual uploads.
 - For backend releases, package from `backend/` and deploy the produced jar; do not commit `backend/target/` artifacts to git unless the user explicitly asks for that unusual workflow.
 
@@ -147,4 +145,4 @@ Important:
 - For WSL-based debugging, prefer the native WSL shell plus the current mirror/proxy settings already in place. If a download path is slow, verify whether the proxy path is actually faster before forcing direct access.
 - If a package source is unstable, switch to a domestic mirror only after confirming whether the failure is in DNS, proxy routing, or the upstream mirror itself.
 
-Directory-level `AGENTS.md` files in `backend/`, `front/`, and `docs/` add more specific rules and override this file where they are more specific.
+Directory-level `AGENTS.md` files in `backend/`, `frontend/`, and `docs/` add more specific rules and override this file where they are more specific.

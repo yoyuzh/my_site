@@ -17,11 +17,19 @@ class RedisConfigurationTest {
                 new ObjectMapper().findAndRegisterModules()
         );
 
-        byte[] serialized = serializer.serialize(new TestPage(
-                List.of(new FileMetadataResponse(1L, "notes.txt", "/docs", 12L, "text/plain", false,
+        byte[] serialized = serializer.serialize(
+                new TestPage(List.of(new FileMetadataResponse(
+                        1L,
+                        "notes.txt",
+                        "/docs",
+                        12L,
+                        "text/plain",
+                        false,
                         LocalDateTime.of(2026, 4, 10, 18, 30),
-                        LocalDateTime.of(2026, 4, 10, 18, 30)))
-        ));
+                        LocalDateTime.of(2026, 4, 10, 18, 30),
+                        false
+                )))
+        );
         Object restored = serializer.deserialize(serialized);
         TestPage restoredPage = new ObjectMapper()
                 .findAndRegisterModules()
@@ -29,9 +37,17 @@ class RedisConfigurationTest {
 
         assertThat(serialized).isNotNull();
         assertThat(restoredPage).isEqualTo(new TestPage(
-                List.of(new FileMetadataResponse(1L, "notes.txt", "/docs", 12L, "text/plain", false,
+                List.of(new FileMetadataResponse(
+                        1L,
+                        "notes.txt",
+                        "/docs",
+                        12L,
+                        "text/plain",
+                        false,
                         LocalDateTime.of(2026, 4, 10, 18, 30),
-                        LocalDateTime.of(2026, 4, 10, 18, 30)))
+                        LocalDateTime.of(2026, 4, 10, 18, 30),
+                        false
+                ))
         ));
     }
 

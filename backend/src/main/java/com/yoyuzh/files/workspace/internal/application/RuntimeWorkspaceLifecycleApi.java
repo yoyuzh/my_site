@@ -352,7 +352,8 @@ public final class RuntimeWorkspaceLifecycleApi implements WorkspaceLifecycleApi
                 storedFile.contentType(),
                 storedFile.directory(),
                 storedFile.createdAt(),
-                storedFile.createdAt()
+                storedFile.createdAt(),
+                false
         );
     }
 
@@ -366,7 +367,8 @@ public final class RuntimeWorkspaceLifecycleApi implements WorkspaceLifecycleApi
                 storedFile.getContentType(),
                 storedFile.isDirectory(),
                 storedFile.getCreatedAt(),
-                storedFile.getUpdatedAt() != null ? storedFile.getUpdatedAt() : storedFile.getCreatedAt()
+                storedFile.getUpdatedAt() != null ? storedFile.getUpdatedAt() : storedFile.getCreatedAt(),
+                false
         );
     }
 

@@ -12,6 +12,10 @@ import com.yoyuzh.files.workspace.api.WorkspacePathPolicy;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 
+import java.util.HashSet;
+import java.util.List;
+import java.util.Set;
+
 public final class RuntimeWorkspaceDirectoryApi implements WorkspaceDirectoryApi {
 
     private final StoredFileRepository storedFileRepository;
@@ -60,10 +64,18 @@ public final class RuntimeWorkspaceDirectoryApi implements WorkspaceDirectoryApi
                 normalizedPath,
                 PageRequest.of(page, size)
         );
-        return new PageResponse<>(result.getContent().stream().map(this::toResponse).toList(), result.getTotalElements(), page, size);
+        Set<String> directoryPathsWithChildren = loadDirectoryPathsWithChildren(userId, result.getContent());
+        List<FileMetadataResponse> items = result.getContent().stream()
+                .map(storedFile -> toResponse(storedFile, directoryPathsWithChildren.contains(buildLogicalPath(storedFile))))
+                .toList();
+        return new PageResponse<>(items, result.getTotalElements(), page, size);
     }
 
     private FileMetadataResponse toResponse(StoredFile storedFile) {
+        return toResponse(storedFile, false);
+    }
+
+    private FileMetadataResponse toResponse(StoredFile storedFile, boolean hasChildDirectory) {
         return new FileMetadataResponse(
                 storedFile.getId(),
                 storedFile.getFilename(),
@@ -72,7 +84,26 @@ public final class RuntimeWorkspaceDirectoryApi implements WorkspaceDirectoryApi
                 storedFile.getContentType(),
                 storedFile.isDirectory(),
                 storedFile.getCreatedAt(),
-                storedFile.getUpdatedAt() != null ? storedFile.getUpdatedAt() : storedFile.getCreatedAt()
+                storedFile.getUpdatedAt() != null ? storedFile.getUpdatedAt() : storedFile.getCreatedAt(),
+                hasChildDirectory
         );
+    }
+
+    private Set<String> loadDirectoryPathsWithChildren(Long userId, List<StoredFile> storedFiles) {
+        List<String> directoryPaths = storedFiles.stream()
+                .filter(StoredFile::isDirectory)
+                .map(this::buildLogicalPath)
+                .distinct()
+                .toList();
+        if (directoryPaths.isEmpty()) {
+            return Set.of();
+        }
+        return new HashSet<>(storedFileRepository.findDirectoryPathsWithChildDirectories(userId, directoryPaths));
+    }
+
+    private String buildLogicalPath(StoredFile storedFile) {
+        return "/".equals(storedFile.getPath())
+                ? "/" + storedFile.getFilename()
+                : storedFile.getPath() + "/" + storedFile.getFilename();
     }
 }

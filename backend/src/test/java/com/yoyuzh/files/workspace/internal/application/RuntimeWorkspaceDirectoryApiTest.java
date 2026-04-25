@@ -45,12 +45,21 @@ class RuntimeWorkspaceDirectoryApiTest {
         assertThat(response.filename()).isEqualTo("docs");
         assertThat(response.path()).isEqualTo("/");
         assertThat(response.directory()).isTrue();
+        assertThat(response.hasChildDirectory()).isFalse();
         verify(fileContentStorage).createDirectory(7L, "/docs");
     }
 
     @Test
-    void shouldLoadDirectoryPage() {
+    void shouldLoadDirectoryPageWithChildDirectoryFlags() {
         RuntimeWorkspaceDirectoryApi api = new RuntimeWorkspaceDirectoryApi(storedFileRepository, fileContentStorage);
+        StoredFile directory = new StoredFile();
+        directory.setId(11L);
+        directory.setFilename("reports");
+        directory.setPath("/docs");
+        directory.setSize(0L);
+        directory.setContentType("directory");
+        directory.setDirectory(true);
+        directory.setCreatedAt(LocalDateTime.now());
         StoredFile storedFile = new StoredFile();
         storedFile.setId(12L);
         storedFile.setFilename("notes.txt");
@@ -60,13 +69,18 @@ class RuntimeWorkspaceDirectoryApiTest {
         storedFile.setDirectory(false);
         storedFile.setCreatedAt(LocalDateTime.now());
         when(storedFileRepository.findByUserIdAndPathOrderByDirectoryDescCreatedAtDesc(7L, "/docs", PageRequest.of(0, 10)))
-                .thenReturn(new PageImpl<>(List.of(storedFile)));
+                .thenReturn(new PageImpl<>(List.of(directory, storedFile)));
+        when(storedFileRepository.findDirectoryPathsWithChildDirectories(7L, List.of("/docs/reports")))
+                .thenReturn(List.of("/docs/reports"));
 
         PageResponse<FileMetadataResponse> response = api.loadDirectoryPage(7L, "/docs", 0, 10);
 
-        assertThat(response.items()).hasSize(1);
-        assertThat(response.items().get(0).filename()).isEqualTo("notes.txt");
-        assertThat(response.total()).isEqualTo(1L);
+        assertThat(response.items()).hasSize(2);
+        assertThat(response.items().get(0).filename()).isEqualTo("reports");
+        assertThat(response.items().get(0).hasChildDirectory()).isTrue();
+        assertThat(response.items().get(1).filename()).isEqualTo("notes.txt");
+        assertThat(response.items().get(1).hasChildDirectory()).isFalse();
+        assertThat(response.total()).isEqualTo(2L);
     }
 
 }

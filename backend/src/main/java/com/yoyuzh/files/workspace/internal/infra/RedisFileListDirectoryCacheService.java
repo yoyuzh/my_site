@@ -176,7 +176,8 @@ public class RedisFileListDirectoryCacheService implements FileListDirectoryCach
                                 item.contentType(),
                                 item.directory(),
                                 item.createdAt(),
-                                item.createdAt()
+                                item.createdAt(),
+                                item.hasChildDirectory()
                         );
                     })
                     .toList();

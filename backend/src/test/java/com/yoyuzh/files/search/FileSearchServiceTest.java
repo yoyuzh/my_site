@@ -45,7 +45,8 @@ class FileSearchServiceTest {
                         "text/plain",
                         false,
                         LocalDateTime.of(2026, 4, 8, 10, 0),
-                        LocalDateTime.of(2026, 4, 8, 10, 0)
+                        LocalDateTime.of(2026, 4, 8, 10, 0),
+                        false
                 )),
                 1,
                 0,

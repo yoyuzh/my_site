@@ -20,40 +20,40 @@ It does not change backend business ownership defined in `backend-next/archtectu
 
 | Route | Page component | Notes |
 | --- | --- | --- |
-| `/login` | `front/src/pages/Login.tsx` | login and register entry |
-| `/share/:token` | `front/src/pages/FileShare.tsx` | public share access page |
+| `/login` | `frontend/src/pages/Login.tsx` | login and register entry |
+| `/share/:token` | `frontend/src/pages/FileShare.tsx` | public share access page |
 
 ### App routes
 
 | Route | Page component | Notes |
 | --- | --- | --- |
-| `/overview` | `front/src/pages/Overview.tsx` | user overview |
-| `/files` | `front/src/pages/files/FilesPage.tsx` | workspace main page |
-| `/tasks` | `front/src/pages/Tasks.tsx` | async task page |
-| `/shares` | `front/src/pages/Shares.tsx` | my shares |
-| `/recycle-bin` | `front/src/pages/RecycleBin.tsx` | recycle bin |
-| `/transfer` | `front/src/transfer/pages/TransferPage.tsx` | transfer |
+| `/overview` | `frontend/src/pages/Overview.tsx` | user overview |
+| `/files` | `frontend/src/pages/files/FilesPage.tsx` | workspace main page |
+| `/tasks` | `frontend/src/pages/Tasks.tsx` | async task page |
+| `/shares` | `frontend/src/pages/Shares.tsx` | my shares |
+| `/recycle-bin` | `frontend/src/pages/RecycleBin.tsx` | recycle bin |
+| `/transfer` | `frontend/src/transfer/pages/TransferPage.tsx` | transfer |
 
 ### Admin routes
 
 | Route | Page component | Current state |
 | --- | --- | --- |
-| `/admin/dashboard` | `front/src/admin/dashboard.tsx` | implemented |
-| `/admin/settings` | `front/src/admin/settings.tsx` | placeholder or partial |
-| `/admin/filesystem` | `front/src/admin/filesystem.tsx` | placeholder or partial |
-| `/admin/storage-policies` | `front/src/admin/storage-policies-list.tsx` | implemented |
-| `/admin/users` | `front/src/admin/users-list.tsx` | implemented |
-| `/admin/files` | `front/src/admin/files-list.tsx` | implemented |
-| `/admin/file-blobs` | `front/src/admin/fileblobs.tsx` | placeholder or partial |
-| `/admin/shares` | `front/src/admin/shares.tsx` | placeholder or partial |
-| `/admin/tasks` | `front/src/admin/tasks.tsx` | placeholder or partial |
-| `/admin/oauth-apps` | `front/src/admin/oauthapps.tsx` | placeholder or partial |
+| `/admin/dashboard` | `frontend/src/admin/dashboard.tsx` | implemented |
+| `/admin/settings` | `frontend/src/admin/settings.tsx` | placeholder or partial |
+| `/admin/filesystem` | `frontend/src/admin/filesystem.tsx` | placeholder or partial |
+| `/admin/storage-policies` | `frontend/src/admin/storage-policies-list.tsx` | implemented |
+| `/admin/users` | `frontend/src/admin/users-list.tsx` | implemented |
+| `/admin/files` | `frontend/src/admin/files-list.tsx` | implemented |
+| `/admin/file-blobs` | `frontend/src/admin/fileblobs.tsx` | placeholder or partial |
+| `/admin/shares` | `frontend/src/admin/shares.tsx` | placeholder or partial |
+| `/admin/tasks` | `frontend/src/admin/tasks.tsx` | placeholder or partial |
+| `/admin/oauth-apps` | `frontend/src/admin/oauthapps.tsx` | placeholder or partial |
 
 ## 4. Shared Shells And Global UI
 
 ### Desktop shell
 
-File: `front/src/components/layout/Layout.tsx`
+File: `frontend/src/components/layout/Layout.tsx`
 
 Contains:
 - left navigation
@@ -66,7 +66,7 @@ Contains:
 
 ### Mobile shell
 
-File: `front/src/mobile-components/MobileLayout.tsx`
+File: `frontend/src/mobile-components/MobileLayout.tsx`
 
 Contains:
 - top controls
@@ -78,7 +78,7 @@ Contains:
 
 ### Admin shell
 
-File: `front/src/admin/AdminLayout.tsx`
+File: `frontend/src/admin/AdminLayout.tsx`
 
 Contains:
 - admin sub-navigation

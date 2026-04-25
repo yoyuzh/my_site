@@ -69,7 +69,7 @@
 ```text
 .
 ├── backend/      Spring Boot 后端
-├── front/        React 前端
+├── frontend/        React 前端
 ├── docs/         活跃文档与归档计划
 ├── scripts/      部署与辅助脚本
 ├── data/         本地数据或辅助文件
@@ -123,27 +123,25 @@ mvn spring-boot:run -Dspring-boot.run.profiles=dev
 ### 2. 启动前端
 
 ```bash
-cd front
+cd frontend
 npm run dev
 ```
 
 说明：
 
 - 默认端口：`3000`
-- 本地前端代理配置位于 `front/vite.config.ts`
+- 本地前端代理配置位于 `frontend/vite.config.ts`
 
 ## 常用命令
 
 ### 前端
 
 ```bash
-cd front
+cd frontend
 npm run dev
 npm run build
 npm run preview
-npm run clean
 npm run lint
-npm run test
 ```
 
 ### 后端
@@ -234,10 +232,10 @@ node scripts/deploy-android-apk.mjs
 
 这个脚本会自动完成以下步骤：
 
-- `cd front && npm run build`
-- `cd front && npx cap sync android`
+- `cd frontend && npm run build`
+- `cd frontend && npx cap sync android`
 - 自动补回 Android 插件工程里的 Google Maven 镜像配置
-- `cd front/android && ./gradlew assembleDebug`
+- `cd frontend/android && ./gradlew assembleDebug`
 - `node scripts/deploy-front-oss.mjs --skip-build`
 - `node scripts/deploy-android-release.mjs`
 
@@ -297,7 +295,7 @@ backend/target/yoyuzh-portal-backend-0.0.1-SNAPSHOT.jar
 ## 相关文档
 
 - [backend/README.md](./backend/README.md)
-- [front/README.md](./front/README.md)
+- [frontend/package.json](./frontend/package.json)
 - [AGENTS.md](./AGENTS.md)
 - `docs/plans/`
 - `docs/archive/plans/`

@@ -4,7 +4,7 @@
 
 **Goal:** Build the next set of `my_site` netdisk product capabilities inspired by Cloudreve, using `my_site` native API contracts instead of Cloudreve `/api/v4` compatibility.
 
-**Architecture:** Keep the backend as a modular monolith: site runtime config in `boot`, account and user settings in `identity.access`, file tree actions in `files.workspace`, physical content derivatives in `files.content`, share policy in `files.sharing`, async work in `platform.job`, and governance entrypoints in `ops.admin`. The frontend continues to use `front/src/lib/*` and existing pages; `third_party/cloudreve-frontend` is reference material only and must not become a runtime dependency.
+**Architecture:** Keep the backend as a modular monolith: site runtime config in `boot`, account and user settings in `identity.access`, file tree actions in `files.workspace`, physical content derivatives in `files.content`, share policy in `files.sharing`, async work in `platform.job`, and governance entrypoints in `ops.admin`. The frontend continues to use `frontend/src/lib/*` and existing pages; `third_party/cloudreve-frontend` is reference material only and must not become a runtime dependency.
 
 **Tech Stack:** Spring Boot 3.3.8, Java 17, Maven, JUnit 5, MockMvc, React 19, Vite 6, TypeScript, Tailwind CSS v4.
 
@@ -112,36 +112,36 @@ Each increment should be implemented in a fresh branch or worktree and committed
 
 ### Frontend files to create
 
-- `front/src/lib/site-config.ts`  
+- `frontend/src/lib/site-config.ts`  
   Frontend API client and type for site runtime config.
 
-- `front/src/lib/user-settings.ts`  
+- `frontend/src/lib/user-settings.ts`  
   Frontend API client and type for user capacity and settings.
 
-- `front/src/lib/file-detail.ts`  
+- `frontend/src/lib/file-detail.ts`  
   Frontend API client and type for file detail and favorites.
 
-- `front/src/lib/share-stats.ts`  
+- `frontend/src/lib/share-stats.ts`  
   Frontend API client and type for share stats and policy updates.
 
 ### Frontend files to modify
 
-- `front/src/App.tsx`  
+- `frontend/src/App.tsx`  
   Load site config during app bootstrap if no existing bootstrap owner is present.
 
-- `front/src/account/pages/LoginPage.tsx`  
+- `frontend/src/account/pages/LoginPage.tsx`  
   Use site config for title, registration visibility, and login text.
 
-- `front/src/workspace/pages/OverviewPage.tsx`  
+- `frontend/src/workspace/pages/OverviewPage.tsx`  
   Display capacity and favorite files.
 
-- `front/src/workspace/pages/FilesPage.tsx`  
+- `frontend/src/workspace/pages/FilesPage.tsx`  
   Add file detail, batch operation, favorite, and thumbnail integration points.
 
-- `front/src/sharing/pages/SharesPage.tsx`  
+- `frontend/src/sharing/pages/SharesPage.tsx`  
   Display share stats and download limits.
 
-- `front/src/operations-admin/pages/settings/index.tsx`  
+- `frontend/src/operations-admin/pages/settings/index.tsx`  
   Surface site runtime settings when admin settings support is added.
 
 ---
@@ -153,8 +153,8 @@ Each increment should be implemented in a fresh branch or worktree and committed
 - Create: `backend/src/main/java/com/yoyuzh/boot/web/SiteRuntimeConfigController.java`
 - Create: `backend/src/test/java/com/yoyuzh/boot/web/SiteRuntimeConfigControllerTest.java`
 - Modify: `backend/src/main/java/com/yoyuzh/boot/security/SecurityConfig.java`
-- Create: `front/src/lib/site-config.ts`
-- Modify: `front/src/account/pages/LoginPage.tsx`
+- Create: `frontend/src/lib/site-config.ts`
+- Modify: `frontend/src/account/pages/LoginPage.tsx`
 
 - [ ] **Step 1: Write the backend controller test**
 
@@ -281,7 +281,7 @@ Expected: PASS.
 
 - [ ] **Step 7: Add the frontend API client**
 
-Create `front/src/lib/site-config.ts`:
+Create `frontend/src/lib/site-config.ts`:
 
 ```ts
 import { fetchApi } from './api';
@@ -304,7 +304,7 @@ export function getSiteRuntimeConfig() {
 
 - [ ] **Step 8: Wire login page text to runtime config**
 
-Modify `front/src/account/pages/LoginPage.tsx` so it calls `getSiteRuntimeConfig()` on mount and uses:
+Modify `frontend/src/account/pages/LoginPage.tsx` so it calls `getSiteRuntimeConfig()` on mount and uses:
 
 ```ts
 const fallbackSiteName = 'Yoyuzh 网盘';
@@ -317,7 +317,7 @@ Use the loaded `siteName` for the visible page title and hide the registration l
 Run:
 
 ```bash
-cd front && npm run lint
+cd frontend && npm run lint
 ```
 
 Expected: PASS.
@@ -329,8 +329,8 @@ git add backend/src/main/java/com/yoyuzh/boot/web/SiteRuntimeConfigResponse.java
   backend/src/main/java/com/yoyuzh/boot/web/SiteRuntimeConfigController.java \
   backend/src/test/java/com/yoyuzh/boot/web/SiteRuntimeConfigControllerTest.java \
   backend/src/main/java/com/yoyuzh/boot/security/SecurityConfig.java \
-  front/src/lib/site-config.ts \
-  front/src/account/pages/LoginPage.tsx
+  frontend/src/lib/site-config.ts \
+  frontend/src/account/pages/LoginPage.tsx
 git commit -m "feat: add site runtime config"
 ```
 
@@ -344,8 +344,8 @@ git commit -m "feat: add site runtime config"
 - Modify: `backend/src/main/java/com/yoyuzh/identity/access/internal/application/AuthService.java`
 - Modify: `backend/src/main/java/com/yoyuzh/identity/access/internal/web/UserController.java`
 - Test: `backend/src/test/java/com/yoyuzh/identity/access/internal/web/UserControllerSettingsTest.java`
-- Create: `front/src/lib/user-settings.ts`
-- Modify: `front/src/workspace/pages/OverviewPage.tsx`
+- Create: `frontend/src/lib/user-settings.ts`
+- Modify: `frontend/src/workspace/pages/OverviewPage.tsx`
 
 - [ ] **Step 1: Write the controller test**
 
@@ -509,7 +509,7 @@ Expected: PASS.
 
 - [ ] **Step 7: Add the frontend user settings client**
 
-Create `front/src/lib/user-settings.ts`:
+Create `frontend/src/lib/user-settings.ts`:
 
 ```ts
 import { fetchApi } from './api';
@@ -539,7 +539,7 @@ export function getUserSettings() {
 
 - [ ] **Step 8: Display capacity on overview**
 
-Modify `front/src/workspace/pages/OverviewPage.tsx` to call `getUserCapacity()` and render used/total bytes using the existing formatter from `front/src/lib/format.ts`.
+Modify `frontend/src/workspace/pages/OverviewPage.tsx` to call `getUserCapacity()` and render used/total bytes using the existing formatter from `frontend/src/lib/format.ts`.
 
 Use this state shape:
 
@@ -553,7 +553,7 @@ Run:
 
 ```bash
 cd backend && mvn -Dtest=UserControllerSettingsTest test
-cd front && npm run lint
+cd frontend && npm run lint
 ```
 
 Expected: both PASS.
@@ -566,8 +566,8 @@ git add backend/src/main/java/com/yoyuzh/identity/access/api/UserCapacityRespons
   backend/src/main/java/com/yoyuzh/identity/access/internal/application/AuthService.java \
   backend/src/main/java/com/yoyuzh/identity/access/internal/web/UserController.java \
   backend/src/test/java/com/yoyuzh/identity/access/internal/web/UserControllerSettingsTest.java \
-  front/src/lib/user-settings.ts \
-  front/src/workspace/pages/OverviewPage.tsx
+  frontend/src/lib/user-settings.ts \
+  frontend/src/workspace/pages/OverviewPage.tsx
 git commit -m "feat: expose user capacity and settings"
 ```
 
@@ -584,8 +584,8 @@ git commit -m "feat: expose user capacity and settings"
 - Modify: `backend/src/main/java/com/yoyuzh/files/workspace/internal/application/FileService.java`
 - Modify: `backend/src/main/java/com/yoyuzh/files/workspace/internal/web/FileController.java`
 - Test: `backend/src/test/java/com/yoyuzh/files/workspace/internal/web/FileProductCapabilityControllerTest.java`
-- Create: `front/src/lib/file-detail.ts`
-- Modify: `front/src/workspace/pages/FilesPage.tsx`
+- Create: `frontend/src/lib/file-detail.ts`
+- Modify: `frontend/src/workspace/pages/FilesPage.tsx`
 
 - [ ] **Step 1: Write controller tests for the new product endpoints**
 
@@ -792,7 +792,7 @@ public ApiResponse<FavoriteFileResponse> unfavorite(@AuthenticationPrincipal Use
 
 - [ ] **Step 8: Add frontend client**
 
-Create `front/src/lib/file-detail.ts`:
+Create `frontend/src/lib/file-detail.ts`:
 
 ```ts
 import { fetchApi } from './api';
@@ -833,7 +833,7 @@ export function setFileFavorite(fileId: number, favorite: boolean) {
 
 - [ ] **Step 9: Wire FilesPage interactions**
 
-Modify `front/src/workspace/pages/FilesPage.tsx` to:
+Modify `frontend/src/workspace/pages/FilesPage.tsx` to:
 
 - call `getFileDetail(file.id)` when opening the file details sidebar;
 - call `batchDeleteFiles(selectedIds)` from the existing multi-selection delete action;
@@ -847,7 +847,7 @@ Run:
 
 ```bash
 cd backend && mvn -Dtest=FileProductCapabilityControllerTest,FileServiceTest test
-cd front && npm run lint
+cd frontend && npm run lint
 ```
 
 Expected: both PASS.
@@ -863,8 +863,8 @@ git add backend/src/main/java/com/yoyuzh/files/workspace/api/FileDetailResponse.
   backend/src/main/java/com/yoyuzh/files/workspace/internal/application/FileService.java \
   backend/src/main/java/com/yoyuzh/files/workspace/internal/web/FileController.java \
   backend/src/test/java/com/yoyuzh/files/workspace/internal/web/FileProductCapabilityControllerTest.java \
-  front/src/lib/file-detail.ts \
-  front/src/workspace/pages/FilesPage.tsx
+  frontend/src/lib/file-detail.ts \
+  frontend/src/workspace/pages/FilesPage.tsx
 git commit -m "feat: add file detail batch actions and favorites"
 ```
 
@@ -876,8 +876,8 @@ git commit -m "feat: add file detail batch actions and favorites"
 - Create: `backend/src/main/java/com/yoyuzh/files/content/api/ThumbnailResponse.java`
 - Create: `backend/src/main/java/com/yoyuzh/files/content/internal/web/ThumbnailController.java`
 - Test: `backend/src/test/java/com/yoyuzh/files/content/internal/web/ThumbnailControllerTest.java`
-- Modify: `front/src/components/media/FileThumbnail.tsx`
-- Modify: `front/src/lib/files.ts`
+- Modify: `frontend/src/components/media/FileThumbnail.tsx`
+- Modify: `frontend/src/lib/files.ts`
 
 - [ ] **Step 1: Write controller test for thumbnail URL fallback**
 
@@ -984,7 +984,7 @@ Expected: PASS.
 
 - [ ] **Step 6: Add frontend thumbnail client**
 
-Modify `front/src/lib/files.ts`:
+Modify `frontend/src/lib/files.ts`:
 
 ```ts
 export type ThumbnailResponse = {
@@ -1000,7 +1000,7 @@ export function getThumbnail(fileId: number) {
 
 - [ ] **Step 7: Update thumbnail component**
 
-Modify `front/src/components/media/FileThumbnail.tsx` so it:
+Modify `frontend/src/components/media/FileThumbnail.tsx` so it:
 
 - calls `getThumbnail(file.id)` for images and videos;
 - uses `response.url` only when `response.available` is true;
@@ -1012,7 +1012,7 @@ Run:
 
 ```bash
 cd backend && mvn -Dtest=ThumbnailControllerTest test
-cd front && npm run lint
+cd frontend && npm run lint
 ```
 
 Expected: both PASS.
@@ -1023,8 +1023,8 @@ Expected: both PASS.
 git add backend/src/main/java/com/yoyuzh/files/content/api/ThumbnailResponse.java \
   backend/src/main/java/com/yoyuzh/files/content/internal/web/ThumbnailController.java \
   backend/src/test/java/com/yoyuzh/files/content/internal/web/ThumbnailControllerTest.java \
-  front/src/components/media/FileThumbnail.tsx \
-  front/src/lib/files.ts
+  frontend/src/components/media/FileThumbnail.tsx \
+  frontend/src/lib/files.ts
 git commit -m "feat: add thumbnail read contract"
 ```
 
@@ -1039,8 +1039,8 @@ git commit -m "feat: add thumbnail read contract"
 - Modify: `backend/src/main/java/com/yoyuzh/files/sharing/internal/application/RuntimeSharingApi.java`
 - Modify: `backend/src/main/java/com/yoyuzh/files/sharing/internal/web/ShareV2Controller.java`
 - Test: `backend/src/test/java/com/yoyuzh/files/sharing/internal/web/ShareV2ControllerIntegrationTest.java`
-- Create: `front/src/lib/share-stats.ts`
-- Modify: `front/src/sharing/pages/SharesPage.tsx`
+- Create: `frontend/src/lib/share-stats.ts`
+- Modify: `frontend/src/sharing/pages/SharesPage.tsx`
 
 - [ ] **Step 1: Add failing integration tests**
 
@@ -1178,7 +1178,7 @@ public ApiResponse<ShareV2Response> updatePolicy(@AuthenticationPrincipal UserDe
 
 - [ ] **Step 7: Add frontend share client**
 
-Create `front/src/lib/share-stats.ts`:
+Create `frontend/src/lib/share-stats.ts`:
 
 ```ts
 import { fetchApi } from './api';
@@ -1205,7 +1205,7 @@ export function updateSharePolicy(id: number, maxDownloads: number | null) {
 
 - [ ] **Step 8: Display stats in share management**
 
-Modify `front/src/sharing/pages/SharesPage.tsx` to show visits, downloads, and remaining downloads for each share where stats are loaded.
+Modify `frontend/src/sharing/pages/SharesPage.tsx` to show visits, downloads, and remaining downloads for each share where stats are loaded.
 
 - [ ] **Step 9: Run verification**
 
@@ -1213,7 +1213,7 @@ Run:
 
 ```bash
 cd backend && mvn -Dtest=ShareV2ControllerIntegrationTest test
-cd front && npm run lint
+cd frontend && npm run lint
 ```
 
 Expected: both PASS.
@@ -1227,8 +1227,8 @@ git add backend/src/main/java/com/yoyuzh/files/sharing/api/ShareStatsResponse.ja
   backend/src/main/java/com/yoyuzh/files/sharing/internal/application/RuntimeSharingApi.java \
   backend/src/main/java/com/yoyuzh/files/sharing/internal/web/ShareV2Controller.java \
   backend/src/test/java/com/yoyuzh/files/sharing/internal/web/ShareV2ControllerIntegrationTest.java \
-  front/src/lib/share-stats.ts \
-  front/src/sharing/pages/SharesPage.tsx
+  frontend/src/lib/share-stats.ts \
+  frontend/src/sharing/pages/SharesPage.tsx
 git commit -m "feat: add share stats and download limits"
 ```
 
@@ -1241,9 +1241,9 @@ git commit -m "feat: add share stats and download limits"
 - Modify: `backend/src/main/java/com/yoyuzh/platform/job/internal/application/BackgroundTaskService.java`
 - Modify: `backend/src/main/java/com/yoyuzh/platform/job/internal/web/BackgroundTaskV2Controller.java`
 - Test: `backend/src/test/java/com/yoyuzh/platform/job/internal/web/BackgroundTaskV2ControllerIntegrationTest.java`
-- Modify: `front/src/lib/background-tasks.ts`
-- Modify: `front/src/common/pages/TasksPage.tsx`
-- Modify: `front/src/operations-admin/pages/monitoring/tasks.tsx`
+- Modify: `frontend/src/lib/background-tasks.ts`
+- Modify: `frontend/src/common/pages/TasksPage.tsx`
+- Modify: `frontend/src/operations-admin/pages/monitoring/tasks.tsx`
 
 - [ ] **Step 1: Add failing task progress tests**
 
@@ -1327,7 +1327,7 @@ public ApiResponse<?> rebuildSearchIndex(@AuthenticationPrincipal UserDetails us
 
 - [ ] **Step 6: Add frontend task progress client**
 
-Modify `front/src/lib/background-tasks.ts`:
+Modify `frontend/src/lib/background-tasks.ts`:
 
 ```ts
 export type TaskProgress = {
@@ -1352,7 +1352,7 @@ export function rebuildSearchIndex() {
 
 - [ ] **Step 7: Wire task pages**
 
-Modify `front/src/common/pages/TasksPage.tsx` and `front/src/operations-admin/pages/monitoring/tasks.tsx` to display `progressPercent`, `processedItems`, and `totalItems` when a task is selected.
+Modify `frontend/src/common/pages/TasksPage.tsx` and `frontend/src/operations-admin/pages/monitoring/tasks.tsx` to display `progressPercent`, `processedItems`, and `totalItems` when a task is selected.
 
 In the admin tasks page, add a command button that calls `rebuildSearchIndex()` and then refreshes the task list.
 
@@ -1362,7 +1362,7 @@ Run:
 
 ```bash
 cd backend && mvn -Dtest=BackgroundTaskV2ControllerIntegrationTest,BackgroundTaskServiceTest test
-cd front && npm run lint
+cd frontend && npm run lint
 ```
 
 Expected: both PASS.
@@ -1374,9 +1374,9 @@ git add backend/src/main/java/com/yoyuzh/platform/job/api/TaskProgressResponse.j
   backend/src/main/java/com/yoyuzh/platform/job/internal/application/BackgroundTaskService.java \
   backend/src/main/java/com/yoyuzh/platform/job/internal/web/BackgroundTaskV2Controller.java \
   backend/src/test/java/com/yoyuzh/platform/job/internal/web/BackgroundTaskV2ControllerIntegrationTest.java \
-  front/src/lib/background-tasks.ts \
-  front/src/common/pages/TasksPage.tsx \
-  front/src/operations-admin/pages/monitoring/tasks.tsx
+  frontend/src/lib/background-tasks.ts \
+  frontend/src/common/pages/TasksPage.tsx \
+  frontend/src/operations-admin/pages/monitoring/tasks.tsx
 git commit -m "feat: expose task progress and search rebuild"
 ```
 
@@ -1391,9 +1391,9 @@ git commit -m "feat: expose task progress and search rebuild"
 - Modify: `backend/src/main/java/com/yoyuzh/ops/admin/internal/web/AdminResourceController.java`
 - Test: `backend/src/test/java/com/yoyuzh/ops/admin/internal/application/AdminMetricsServiceTest.java`
 - Test: `backend/src/test/java/com/yoyuzh/ops/admin/internal/application/AdminResourceGovernanceServiceTest.java`
-- Modify: `front/src/operations-admin/pages/overview/index.tsx`
-- Modify: `front/src/operations-admin/pages/governance/files.tsx`
-- Modify: `front/src/operations-admin/pages/governance/shares.tsx`
+- Modify: `frontend/src/operations-admin/pages/overview/index.tsx`
+- Modify: `frontend/src/operations-admin/pages/governance/files.tsx`
+- Modify: `frontend/src/operations-admin/pages/governance/shares.tsx`
 
 - [ ] **Step 1: Add admin metrics tests**
 
@@ -1467,9 +1467,9 @@ Do not add Cloudreve-style routes such as `/api/v4/admin/file` or `/api/v4/admin
 
 Modify:
 
-- `front/src/operations-admin/pages/overview/index.tsx` to render favorite file count, share downloads, and active tasks.
-- `front/src/operations-admin/pages/governance/files.tsx` to show favorite and thumbnail state.
-- `front/src/operations-admin/pages/governance/shares.tsx` to show visits, downloads, and max downloads.
+- `frontend/src/operations-admin/pages/overview/index.tsx` to render favorite file count, share downloads, and active tasks.
+- `frontend/src/operations-admin/pages/governance/files.tsx` to show favorite and thumbnail state.
+- `frontend/src/operations-admin/pages/governance/shares.tsx` to show visits, downloads, and max downloads.
 
 - [ ] **Step 8: Run verification**
 
@@ -1477,7 +1477,7 @@ Run:
 
 ```bash
 cd backend && mvn -Dtest=AdminMetricsServiceTest,AdminResourceGovernanceServiceTest test
-cd front && npm run lint
+cd frontend && npm run lint
 ```
 
 Expected: both PASS.
@@ -1491,9 +1491,9 @@ git add backend/src/main/java/com/yoyuzh/ops/admin/internal/application/AdminMet
   backend/src/main/java/com/yoyuzh/ops/admin/internal/web/AdminResourceController.java \
   backend/src/test/java/com/yoyuzh/ops/admin/internal/application/AdminMetricsServiceTest.java \
   backend/src/test/java/com/yoyuzh/ops/admin/internal/application/AdminResourceGovernanceServiceTest.java \
-  front/src/operations-admin/pages/overview/index.tsx \
-  front/src/operations-admin/pages/governance/files.tsx \
-  front/src/operations-admin/pages/governance/shares.tsx
+  frontend/src/operations-admin/pages/overview/index.tsx \
+  frontend/src/operations-admin/pages/governance/files.tsx \
+  frontend/src/operations-admin/pages/governance/shares.tsx
 git commit -m "feat: align admin views with product capabilities"
 ```
 
@@ -1520,9 +1520,8 @@ Expected: PASS.
 - [ ] Run frontend verification:
 
 ```bash
-cd front && npm run lint
-cd front && npm run test
-cd front && npm run build
+cd frontend && npm run lint
+cd frontend && npm run build
 ```
 
 Expected: all PASS.
@@ -1531,7 +1530,7 @@ Expected: all PASS.
 
 ```bash
 cd backend && mvn spring-boot:run -Dspring-boot.run.profiles=dev
-cd front && npm run dev
+cd frontend && npm run dev
 ```
 
 Expected:
