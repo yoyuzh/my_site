@@ -59,11 +59,13 @@ public class UploadPolicyResolver {
     }
 
     private UploadSessionUploadMode toUploadSessionMode(StorageUploadMode mode) {
-        return switch (mode) {
-            case PROXY -> UploadSessionUploadMode.PROXY;
-            case DIRECT_SINGLE -> UploadSessionUploadMode.DIRECT_SINGLE;
-            case DIRECT_MULTIPART -> UploadSessionUploadMode.DIRECT_MULTIPART;
-        };
+        if (mode == StorageUploadMode.PROXY) {
+            return UploadSessionUploadMode.PROXY;
+        }
+        if (mode == StorageUploadMode.DIRECT_SINGLE) {
+            return UploadSessionUploadMode.DIRECT_SINGLE;
+        }
+        return UploadSessionUploadMode.DIRECT_MULTIPART;
     }
 
     private static StorageUploadMode resolveDefaultUploadMode(StoragePolicyCapabilities capabilities) {

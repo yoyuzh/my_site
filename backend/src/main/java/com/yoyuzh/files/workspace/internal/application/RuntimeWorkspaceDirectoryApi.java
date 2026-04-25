@@ -46,14 +46,7 @@ public final class RuntimeWorkspaceDirectoryApi implements WorkspaceDirectoryApi
 
         fileContentStorage.createDirectory(userId, normalizedPath);
 
-        StoredFile storedFile = new StoredFile();
-        storedFile.setUserId(userId);
-        storedFile.setFilename(directoryName);
-        storedFile.setPath(parentPath);
-        storedFile.setLegacyStorageName(directoryName);
-        storedFile.setContentType("directory");
-        storedFile.setSize(0L);
-        storedFile.setDirectory(true);
+        StoredFile storedFile = StoredFile.directory(userId, parentPath, directoryName);
         return toResponse(storedFileRepository.save(storedFile));
     }
 

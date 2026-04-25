@@ -172,9 +172,7 @@ public class UploadSessionService {
     }
 
     private UploadSession cancelSession(UploadSession session) {
-        if (session.getStatus() == UploadSessionStatus.COMPLETED) {
-            throw new BusinessException(ErrorCode.INVALID_INPUT, "completed upload session cannot be cancelled");
-        }
+        uploadSessionStateMachine.ensureCancellable(session);
         uploadSessionStateMachine.markCancelled(session, now());
         UploadSession savedSession = uploadSessionRepository.save(session);
         uploadSessionRuntimeStateService.markCancelled(savedSession, savedSession.getUpdatedAt());
@@ -307,18 +305,18 @@ public class UploadSessionService {
     }
 
     private UploadSession completeSession(UploadSession session, Long userId) {
+        LocalDateTime now = now();
+        try {
+            uploadSessionStateMachine.ensureCompletable(session, now);
+        } catch (BusinessException ex) {
+            if (session.getStatus() == UploadSessionStatus.EXPIRED) {
+                UploadSession expiredSession = uploadSessionRepository.save(session);
+                uploadSessionRuntimeStateService.markExpired(expiredSession, expiredSession.getUpdatedAt());
+            }
+            throw ex;
+        }
         if (session.getStatus() == UploadSessionStatus.COMPLETED) {
             return session;
-        }
-        if (session.getStatus() == UploadSessionStatus.CANCELLED || session.getStatus() == UploadSessionStatus.FAILED) {
-            throw new BusinessException(ErrorCode.INVALID_INPUT, "upload session cannot be completed");
-        }
-        LocalDateTime now = now();
-        if (session.getExpiresAt().isBefore(now)) {
-            uploadSessionStateMachine.markExpired(session, now);
-            UploadSession expiredSession = uploadSessionRepository.save(session);
-            uploadSessionRuntimeStateService.markExpired(expiredSession, expiredSession.getUpdatedAt());
-            throw new BusinessException(ErrorCode.SESSION_EXPIRED, "upload session has expired");
         }
 
         uploadSessionStateMachine.markCompleting(session, now);

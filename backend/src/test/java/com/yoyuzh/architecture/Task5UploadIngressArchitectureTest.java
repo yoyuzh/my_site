@@ -26,15 +26,23 @@ class Task5UploadIngressArchitectureTest {
     }
 
     @Test
-    void fileServiceMustDependOnUploadCompletionApi() {
-        ArchRule rule = classes()
+    void workspaceFileIngressServiceMustDependOnUploadCompletionApi() {
+        ArchRule ingressRule = classes()
                 .that()
-                .haveFullyQualifiedName("com.yoyuzh.files.workspace.internal.application.FileService")
+                .haveFullyQualifiedName("com.yoyuzh.files.workspace.internal.application.WorkspaceFileIngressService")
                 .should()
                 .dependOnClassesThat()
                 .haveFullyQualifiedName("com.yoyuzh.files.upload.api.UploadCompletionApi");
 
-        rule.check(classes);
+        ArchRule fileServiceRule = classes()
+                .that()
+                .haveFullyQualifiedName("com.yoyuzh.files.workspace.internal.application.FileService")
+                .should()
+                .dependOnClassesThat()
+                .haveFullyQualifiedName("com.yoyuzh.files.workspace.internal.application.WorkspaceFileIngressService");
+
+        ingressRule.check(classes);
+        fileServiceRule.check(classes);
     }
 
     @Test

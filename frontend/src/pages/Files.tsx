@@ -83,6 +83,29 @@ const VIEW_MODE_STORAGE_KEY = 'cloudreve-files-view-mode';
 const SORT_BY_STORAGE_KEY = 'cloudreve-files-sort-by';
 const SORT_ORDER_STORAGE_KEY = 'cloudreve-files-sort-order';
 
+const CLIPBOARD_EXTENSION_BY_MIME_TYPE: Record<string, string> = {
+  'image/png': 'png',
+  'image/jpeg': 'jpg',
+  'image/jpg': 'jpg',
+  'image/webp': 'webp',
+  'image/gif': 'gif',
+  'image/svg+xml': 'svg',
+  'image/bmp': 'bmp',
+  'image/heic': 'heic',
+  'image/heif': 'heif',
+  'text/plain': 'txt',
+  'text/html': 'html',
+  'text/markdown': 'md',
+  'application/pdf': 'pdf',
+  'application/zip': 'zip',
+  'application/msword': 'doc',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document': 'docx',
+  'application/vnd.ms-excel': 'xls',
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': 'xlsx',
+  'application/vnd.ms-powerpoint': 'ppt',
+  'application/vnd.openxmlformats-officedocument.presentationml.presentation': 'pptx',
+};
+
 function joinDirectoryPath(parentPath: string, filename: string) {
   return parentPath === '/' ? `/${filename}` : `${parentPath}/${filename}`;
 }
@@ -121,6 +144,123 @@ function replaceLogicalPathPrefix(currentPath: string, sourcePath: string, targe
 
 function isExternalUrl(url: string) {
   return /^https?:\/\//i.test(url) || url.startsWith('//');
+}
+
+function getClipboardTimestamp() {
+  const now = new Date();
+  const pad = (value: number) => String(value).padStart(2, '0');
+  return [
+    now.getFullYear(),
+    pad(now.getMonth() + 1),
+    pad(now.getDate()),
+    '-',
+    pad(now.getHours()),
+    pad(now.getMinutes()),
+    pad(now.getSeconds()),
+  ].join('');
+}
+
+function inferClipboardExtension(type: string) {
+  const normalizedType = type.trim().toLowerCase();
+  if (CLIPBOARD_EXTENSION_BY_MIME_TYPE[normalizedType]) {
+    return CLIPBOARD_EXTENSION_BY_MIME_TYPE[normalizedType];
+  }
+
+  const [, subtype = ''] = normalizedType.split('/');
+  if (!subtype) {
+    return 'bin';
+  }
+
+  const cleanedSubtype = subtype.split(';')[0]?.trim() ?? '';
+  if (!cleanedSubtype) {
+    return 'bin';
+  }
+
+  if (cleanedSubtype === 'plain') {
+    return 'txt';
+  }
+
+  return cleanedSubtype.split('+')[0] || 'bin';
+}
+
+function sanitizeClipboardFilenameCandidate(rawValue: string) {
+  const trimmed = rawValue.trim();
+  if (!trimmed || trimmed.includes('\n') || trimmed.includes('\r')) {
+    return null;
+  }
+
+  const withoutQuery = trimmed.split('?')[0]?.split('#')[0] ?? trimmed;
+  const normalized = withoutQuery.replace(/\\/g, '/');
+  const leafName = normalized.split('/').filter(Boolean).pop() ?? normalized;
+  const cleaned = leafName.trim();
+
+  if (!cleaned || cleaned === '.' || cleaned === '..') {
+    return null;
+  }
+
+  return cleaned.replace(/[<>:"/\\|?*\u0000-\u001F]/g, '-');
+}
+
+function ensureFilenameHasExpectedExtension(filename: string, extension: string) {
+  const normalizedExtension = extension.trim().toLowerCase();
+  if (!normalizedExtension) {
+    return filename;
+  }
+
+  const lowerFilename = filename.toLowerCase();
+  const expectedSuffix = `.${normalizedExtension}`;
+  if (lowerFilename.endsWith(expectedSuffix)) {
+    return filename;
+  }
+
+  const dotIndex = filename.lastIndexOf('.');
+  if (dotIndex > 0) {
+    return `${filename.slice(0, dotIndex)}${expectedSuffix}`;
+  }
+
+  return `${filename}${expectedSuffix}`;
+}
+
+async function buildClipboardFilename(
+  item: ClipboardItem,
+  preferredType: string,
+  extension: string,
+  timestamp: string,
+  index: number,
+) {
+  const normalizedType = preferredType.trim().toLowerCase();
+
+  if (normalizedType !== 'text/plain' && item.types.some((type) => type.trim().toLowerCase() === 'text/plain')) {
+    try {
+      const textBlob = await item.getType('text/plain');
+      const textValue = await textBlob.text();
+      const candidate = sanitizeClipboardFilenameCandidate(textValue);
+      if (candidate) {
+        return ensureFilenameHasExpectedExtension(candidate, extension);
+      }
+    } catch {
+      // Ignore and fall back to generated naming below.
+    }
+  }
+
+  const baseName = normalizedType.startsWith('image/')
+    ? 'pasted-image'
+    : normalizedType.startsWith('text/')
+      ? 'pasted-text'
+      : 'clipboard-file';
+  const suffix = index > 0 ? `-${index + 1}` : '';
+  return `${baseName}-${timestamp}${suffix}.${extension}`;
+}
+
+function pickPreferredClipboardType(types: readonly string[]) {
+  const normalizedTypes = types.map((type) => type.trim()).filter(Boolean);
+  return normalizedTypes.find((type) => type.toLowerCase().startsWith('image/'))
+    ?? normalizedTypes.find((type) => {
+      const normalizedType = type.toLowerCase();
+      return !normalizedType.startsWith('text/');
+    })
+    ?? normalizedTypes.find((type) => type.toLowerCase().startsWith('text/'))
+    ?? null;
 }
 
 function triggerBlobDownload(blob: Blob, filename: string) {
@@ -270,6 +410,12 @@ const Files: React.FC = () => {
   const browsingScopeKey = useMemo(() => `${currentPath}::${search.trim()}::${sortBy}::${sortOrder}`, [currentPath, search, sortBy, sortOrder]);
   const visibleFolders = useMemo(() => allRows.filter((file) => file.directory), [allRows]);
 
+  function refreshCurrentListing() {
+    setAllRows([]);
+    setPage(1);
+    void queryClient.invalidateQueries({ queryKey: ['files'] });
+  }
+
   const folderTagQueries = useQueries({
     queries: visibleFolders.map((folder) => ({
       queryKey: ['file-tags', folder.id],
@@ -358,8 +504,7 @@ const Files: React.FC = () => {
     mutationFn: createDirectory,
     onSuccess: () => {
       emitWorkspaceFolderTreeRefresh([currentPath]);
-      setPage(1);
-      void refetch();
+      refreshCurrentListing();
     },
   });
 
@@ -381,8 +526,7 @@ const Files: React.FC = () => {
         }
       }
 
-      setPage(1);
-      void refetch();
+      refreshCurrentListing();
     },
   });
 
@@ -404,8 +548,7 @@ const Files: React.FC = () => {
         }
       }
 
-      setPage(1);
-      void refetch();
+      refreshCurrentListing();
     },
   });
 
@@ -413,8 +556,7 @@ const Files: React.FC = () => {
     mutationFn: ({ fileId, path }: { fileId: number; path: string }) => copyFile(fileId, path),
     onSuccess: (result) => {
       emitWorkspaceFolderTreeRefresh([getWorkspaceFolderParentPath(getLogicalPath(result))]);
-      setPage(1);
-      void refetch();
+      refreshCurrentListing();
     },
   });
 
@@ -430,8 +572,7 @@ const Files: React.FC = () => {
     },
     onSuccess: (result) => {
       setUploadStatus(`已上传 ${result.length} 个文件`);
-      setPage(1);
-      void refetch();
+      refreshCurrentListing();
     },
     onError: (error) => {
       setUploadStatus(error instanceof Error ? error.message : '上传失败');
@@ -462,8 +603,7 @@ const Files: React.FC = () => {
       setDetailFileId(null);
       setDetail(null);
       setDetailError(null);
-      setPage(1);
-      void refetch();
+      refreshCurrentListing();
       void refetchFavorites();
     },
   });
@@ -779,15 +919,23 @@ const Files: React.FC = () => {
     try {
       const items = await navigator.clipboard.read();
       const files: File[] = [];
+      const timestamp = getClipboardTimestamp();
+      let index = 0;
+
       for (const item of items) {
-        for (const type of item.types) {
-          if (type.startsWith('image/') || type.startsWith('text/')) {
-            const blob = await item.getType(type);
-            const ext = type.split('/')[1] === 'plain' ? 'txt' : type.split('/')[1];
-            files.push(new File([blob], `clipboard_${Date.now()}.${ext}`, { type }));
-          }
+        const preferredType = pickPreferredClipboardType(item.types);
+        if (!preferredType) {
+          continue;
         }
+
+        const blob = await item.getType(preferredType);
+        const resolvedType = blob.type || preferredType;
+        const extension = inferClipboardExtension(resolvedType);
+        const filename = await buildClipboardFilename(item, resolvedType, extension, timestamp, index);
+        files.push(new File([blob], filename, { type: resolvedType }));
+        index += 1;
       }
+
       if (files.length > 0) {
         uploadMutation.mutate({ files });
       } else {

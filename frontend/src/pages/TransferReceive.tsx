@@ -2,9 +2,10 @@ import React, { useEffect, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import Topbar from '../components/Topbar';
 import BackgroundEffects from '../components/BackgroundEffects';
-import { joinTransferSession, lookupTransferSession } from '../lib/transfer';
+import { buildOfflineTransferDownloadUrl, joinTransferSession, lookupTransferSession } from '../lib/transfer';
 import { P2pReceiver, type P2pTransferProgress, type ReceivedP2pFile } from '../lib/p2p-transfer';
 import { formatBytes, formatDateTime } from '../lib/format';
+import type { TransferSessionResponse } from '../api/types';
 
 function formatPercent(progress: P2pTransferProgress | null) {
   if (!progress || progress.totalBytes <= 0) {
@@ -20,6 +21,7 @@ export const TransferReceivePanel: React.FC<{ embedded?: boolean }> = ({ embedde
   const receivedFilesRef = useRef<ReceivedP2pFile[]>([]);
   const [pickupCode, setPickupCode] = useState(initialCode);
   const [sessionInfo, setSessionInfo] = useState<{ pickupCode: string; expiresAt: string } | null>(null);
+  const [offlineSession, setOfflineSession] = useState<TransferSessionResponse | null>(null);
   const [status, setStatus] = useState('');
   const [error, setError] = useState('');
   const [progress, setProgress] = useState<P2pTransferProgress | null>(null);
@@ -53,6 +55,7 @@ export const TransferReceivePanel: React.FC<{ embedded?: boolean }> = ({ embedde
     setError('');
     setStatus('正在查找快传会话...');
     setProgress(null);
+    setOfflineSession(null);
     setIsReceiving(true);
 
     try {
@@ -60,12 +63,16 @@ export const TransferReceivePanel: React.FC<{ embedded?: boolean }> = ({ embedde
       if (!lookup) {
         throw new Error('取件码无效或会话已过期');
       }
-      if (lookup.mode !== 'ONLINE') {
-        throw new Error('该取件码是离线快传，不支持 P2P 接收');
-      }
-
       const joined = await joinTransferSession(lookup.sessionId);
       setSessionInfo({ pickupCode: joined.pickupCode, expiresAt: joined.expiresAt });
+
+      if (lookup.mode === 'OFFLINE') {
+        setOfflineSession(joined);
+        setStatus('文件已准备完成，可以直接下载');
+        setIsReceiving(false);
+        return;
+      }
+
       const receiver = new P2pReceiver(joined.sessionId, {
         onStatus: setStatus,
         onError: setError,
@@ -123,7 +130,35 @@ export const TransferReceivePanel: React.FC<{ embedded?: boolean }> = ({ embedde
               </div>
             )}
 
-            {(status || error || progress) && (
+            {offlineSession && (
+              <div className="mt-6 rounded-2xl border border-[#D9E3F2] bg-[#F8FBFF] p-5 dark:border-[#222233] dark:bg-black/20">
+                <h2 className="text-lg font-bold text-text-primary-light dark:text-white">离线快传文件</h2>
+                <p className="mt-2 text-sm text-text-secondary-light dark:text-text-secondary-dark">
+                  这是“稍后接收”快传，文件已经在服务器准备好了，可以直接下载。
+                </p>
+                <div className="mt-4 space-y-3">
+                  {offlineSession.files.map((file) => (
+                    <div key={file.id ?? file.relativePath} className="flex flex-col gap-3 rounded-xl border border-[#D9E3F2] bg-white p-4 dark:border-[#222233] dark:bg-black/20 sm:flex-row sm:items-center sm:justify-between">
+                      <div className="min-w-0">
+                        <p className="truncate font-semibold text-text-primary-light dark:text-white">{file.relativePath}</p>
+                        <p className="text-sm text-text-muted-light dark:text-text-muted-dark">
+                          {formatBytes(file.size)} · {file.contentType}
+                        </p>
+                      </div>
+                      <a
+                        className="btn-primary px-4 py-2 text-center text-sm"
+                        href={buildOfflineTransferDownloadUrl(offlineSession.sessionId, file.id ?? '')}
+                        download={file.name}
+                      >
+                        下载
+                      </a>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {(status || error || progress) && !offlineSession && (
               <div className="mt-6 space-y-3">
                 <div>
                   <div className="flex justify-between text-xs text-text-muted-light dark:text-text-muted-dark mb-1">
@@ -144,7 +179,7 @@ export const TransferReceivePanel: React.FC<{ embedded?: boolean }> = ({ embedde
               </div>
             )}
 
-            {receivedFiles.length > 0 && (
+            {receivedFiles.length > 0 && !offlineSession && (
               <div className="mt-8">
                 <h2 className="text-lg font-bold text-text-primary-light dark:text-white mb-4">已接收文件</h2>
                 <div className="space-y-3">
@@ -164,7 +199,9 @@ export const TransferReceivePanel: React.FC<{ embedded?: boolean }> = ({ embedde
             )}
 
             <div className="mt-8 border-t border-[#D9E3F2] dark:border-[#222233] pt-6">
-              <p className="text-xs text-text-muted-light dark:text-text-muted-dark">接收完成前请保持发送端和接收端页面打开。</p>
+              <p className="text-xs text-text-muted-light dark:text-text-muted-dark">
+                {offlineSession ? '离线快传无需发送端保持在线，过期前都可以重复下载。' : '接收完成前请保持发送端和接收端页面打开。'}
+              </p>
             </div>
           </div>
     </div>

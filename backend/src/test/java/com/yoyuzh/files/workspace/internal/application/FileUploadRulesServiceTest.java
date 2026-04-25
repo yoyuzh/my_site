@@ -43,11 +43,12 @@ class FileUploadRulesServiceTest {
 
     @Test
     void shouldRejectUploadWhenExceedingEffectiveMaxSize() {
+        RuntimeWorkspacePathPolicy workspacePathPolicy = new RuntimeWorkspacePathPolicy(storedFileRepository, fileContentStorage);
         FileUploadRulesService service = new FileUploadRulesService(
                 storedFileRepository,
                 storagePolicyQuery,
                 uploadConstraintPolicy,
-                new WorkspaceNodeRulesService(storedFileRepository, fileContentStorage),
+                new WorkspaceNodeRulesService(workspacePathPolicy, workspacePathPolicy),
                 2_000L
         );
         User user = createUser(7L, 5_000L, 1_500L);
@@ -67,11 +68,12 @@ class FileUploadRulesServiceTest {
 
     @Test
     void shouldRejectWhenStorageQuotaExceeded() {
+        RuntimeWorkspacePathPolicy workspacePathPolicy = new RuntimeWorkspacePathPolicy(storedFileRepository, fileContentStorage);
         FileUploadRulesService service = new FileUploadRulesService(
                 storedFileRepository,
                 null,
                 null,
-                new WorkspaceNodeRulesService(storedFileRepository, fileContentStorage),
+                new WorkspaceNodeRulesService(workspacePathPolicy, workspacePathPolicy),
                 2_000L
         );
         User user = createUser(7L, 1_000L, 2_000L);
@@ -83,11 +85,12 @@ class FileUploadRulesServiceTest {
 
     @Test
     void shouldValidateUploadWhenWithinLimitsAndNoConflict() {
+        RuntimeWorkspacePathPolicy workspacePathPolicy = new RuntimeWorkspacePathPolicy(storedFileRepository, fileContentStorage);
         FileUploadRulesService service = new FileUploadRulesService(
                 storedFileRepository,
                 null,
                 null,
-                new WorkspaceNodeRulesService(storedFileRepository, fileContentStorage),
+                new WorkspaceNodeRulesService(workspacePathPolicy, workspacePathPolicy),
                 2_000L
         );
         User user = createUser(7L, 10_000L, 2_000L);

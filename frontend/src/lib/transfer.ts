@@ -27,6 +27,19 @@ export function createTransferSession(files: File[], mode: TransferMode) {
   });
 }
 
+export function uploadOfflineTransferFile(sessionId: string, fileId: string, file: File) {
+  const formData = new FormData();
+  formData.append('file', file);
+  return apiRequest<void>({
+    url: `/transfer/sessions/${sessionId}/files/${fileId}/content`,
+    method: 'POST',
+    data: formData,
+    headers: {
+      'Content-Type': 'multipart/form-data',
+    },
+  });
+}
+
 export function listMyOfflineTransferSessions() {
   return apiRequest<TransferSessionResponse[]>({
     url: '/transfer/sessions/offline/mine',
@@ -49,6 +62,10 @@ export function joinTransferSession(sessionId: string) {
     method: 'POST',
     authRequired: false,
   });
+}
+
+export function buildOfflineTransferDownloadUrl(sessionId: string, fileId: string) {
+  return `/api/transfer/sessions/${sessionId}/files/${fileId}/download`;
 }
 
 export function postTransferSignal(sessionId: string, role: 'sender' | 'receiver', type: string, payload: string) {

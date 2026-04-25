@@ -39,7 +39,7 @@ class WorkspaceNodeRulesServiceTest {
 
     @Test
     void shouldNormalizeDirectoryPath() {
-        WorkspaceNodeRulesService rulesService = new WorkspaceNodeRulesService(storedFileRepository, fileContentStorage);
+        WorkspaceNodeRulesService rulesService = createRulesService();
 
         String normalized = rulesService.normalizeDirectoryPath("docs//images/");
 
@@ -48,7 +48,7 @@ class WorkspaceNodeRulesServiceTest {
 
     @Test
     void shouldRejectPathTraversalDirectoryPath() {
-        WorkspaceNodeRulesService rulesService = new WorkspaceNodeRulesService(storedFileRepository, fileContentStorage);
+        WorkspaceNodeRulesService rulesService = createRulesService();
 
         assertThatThrownBy(() -> rulesService.normalizeDirectoryPath("../docs"))
                 .isInstanceOf(BusinessException.class);
@@ -56,7 +56,7 @@ class WorkspaceNodeRulesServiceTest {
 
     @Test
     void shouldCreateMissingDirectoryHierarchy() {
-        WorkspaceNodeRulesService rulesService = new WorkspaceNodeRulesService(storedFileRepository, fileContentStorage);
+        WorkspaceNodeRulesService rulesService = createRulesService();
         User user = createUser(7L);
         when(storedFileRepository.findByUserIdAndPathAndFilename(eq(7L), any(), any())).thenReturn(Optional.empty());
         when(storedFileRepository.save(any(StoredFile.class))).thenAnswer(invocation -> invocation.getArgument(0));
@@ -70,7 +70,7 @@ class WorkspaceNodeRulesServiceTest {
 
     @Test
     void shouldRejectExistingPathWhenEntryIsFile() {
-        WorkspaceNodeRulesService rulesService = new WorkspaceNodeRulesService(storedFileRepository, fileContentStorage);
+        WorkspaceNodeRulesService rulesService = createRulesService();
         StoredFile file = createFile(11L, 7L, "/", "projects");
         when(storedFileRepository.findByUserIdAndPathAndFilename(7L, "/", "projects"))
                 .thenReturn(Optional.of(file));
@@ -81,7 +81,7 @@ class WorkspaceNodeRulesServiceTest {
 
     @Test
     void shouldRejectUnavailableNodeName() {
-        WorkspaceNodeRulesService rulesService = new WorkspaceNodeRulesService(storedFileRepository, fileContentStorage);
+        WorkspaceNodeRulesService rulesService = createRulesService();
         when(storedFileRepository.existsByUserIdAndPathAndFilename(7L, "/docs", "notes.txt")).thenReturn(true);
 
         assertThatThrownBy(() -> rulesService.ensureNodeNameAvailable(7L, "/docs", "notes.txt", "冲突"))
@@ -91,7 +91,7 @@ class WorkspaceNodeRulesServiceTest {
 
     @Test
     void shouldRejectRecycleRestoreWhenTargetAlreadyExists() {
-        WorkspaceNodeRulesService rulesService = new WorkspaceNodeRulesService(storedFileRepository, fileContentStorage);
+        WorkspaceNodeRulesService rulesService = createRulesService();
         StoredFile recycledFile = new StoredFile();
         recycledFile.setFilename("notes.txt");
         when(storedFileRepository.existsByUserIdAndPathAndFilename(7L, "/docs", "notes.txt")).thenReturn(true);
@@ -101,6 +101,11 @@ class WorkspaceNodeRulesServiceTest {
                 List.of(recycledFile),
                 ignored -> "/docs"
         )).isInstanceOf(BusinessException.class);
+    }
+
+    private WorkspaceNodeRulesService createRulesService() {
+        RuntimeWorkspacePathPolicy workspacePathPolicy = new RuntimeWorkspacePathPolicy(storedFileRepository, fileContentStorage);
+        return new WorkspaceNodeRulesService(workspacePathPolicy, workspacePathPolicy);
     }
 
     private User createUser(Long id) {

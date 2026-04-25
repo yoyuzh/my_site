@@ -43,15 +43,27 @@ public class ApiV2ExceptionHandler {
     }
 
     private ApiV2ErrorCode mapBusinessErrorCode(ErrorCode errorCode) {
-        return switch (errorCode) {
-            case NOT_LOGGED_IN -> ApiV2ErrorCode.NOT_LOGGED_IN;
-            case PERMISSION_DENIED -> ApiV2ErrorCode.PERMISSION_DENIED;
-            case FILE_NOT_FOUND -> ApiV2ErrorCode.FILE_NOT_FOUND;
-            case SESSION_EXPIRED -> ApiV2ErrorCode.SESSION_EXPIRED;
-            case INVALID_INPUT -> ApiV2ErrorCode.INVALID_INPUT;
-            case QUOTA_EXCEEDED -> ApiV2ErrorCode.QUOTA_EXCEEDED;
-            case DUPLICATE_NAME -> ApiV2ErrorCode.DUPLICATE_NAME;
-            case UNKNOWN -> ApiV2ErrorCode.BAD_REQUEST;
-        };
+        if (errorCode == ErrorCode.NOT_LOGGED_IN) {
+            return ApiV2ErrorCode.NOT_LOGGED_IN;
+        }
+        if (errorCode == ErrorCode.PERMISSION_DENIED) {
+            return ApiV2ErrorCode.PERMISSION_DENIED;
+        }
+        if (errorCode == ErrorCode.FILE_NOT_FOUND) {
+            return ApiV2ErrorCode.FILE_NOT_FOUND;
+        }
+        if (errorCode == ErrorCode.SESSION_EXPIRED) {
+            return ApiV2ErrorCode.SESSION_EXPIRED;
+        }
+        if (errorCode == ErrorCode.INVALID_INPUT) {
+            return ApiV2ErrorCode.INVALID_INPUT;
+        }
+        if (errorCode == ErrorCode.QUOTA_EXCEEDED) {
+            return ApiV2ErrorCode.QUOTA_EXCEEDED;
+        }
+        if (errorCode == ErrorCode.DUPLICATE_NAME) {
+            return ApiV2ErrorCode.DUPLICATE_NAME;
+        }
+        return ApiV2ErrorCode.BAD_REQUEST;
     }
 }

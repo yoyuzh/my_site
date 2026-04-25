@@ -6,6 +6,7 @@ import com.yoyuzh.shared.kernel.ErrorCode;
 import java.time.Duration;
 import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.locks.LockSupport;
 import java.util.function.Supplier;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.data.redis.core.StringRedisTemplate;
@@ -21,6 +22,8 @@ public class RedisDistributedLockGateway implements DistributedLockGateway {
             "if redis.call('get', KEYS[1]) == ARGV[1] then return redis.call('del', KEYS[1]) else return 0 end",
             Long.class
     );
+    private static final Duration LOCK_ACQUIRE_TIMEOUT = Duration.ofSeconds(1);
+    private static final long LOCK_RETRY_INTERVAL_MILLIS = 40L;
 
     private final StringRedisTemplate stringRedisTemplate;
     private final AppRedisProperties redisProperties;
@@ -42,8 +45,7 @@ public class RedisDistributedLockGateway implements DistributedLockGateway {
         Duration effectiveTtl = ttl == null || ttl.isZero() || ttl.isNegative()
                 ? Duration.ofSeconds(60)
                 : ttl;
-        Boolean acquired = stringRedisTemplate.opsForValue().setIfAbsent(key, ownerToken, effectiveTtl);
-        if (!Boolean.TRUE.equals(acquired)) {
+        if (!tryAcquireLock(key, ownerToken, effectiveTtl)) {
             throw new BusinessException(ErrorCode.UNKNOWN, "操作正在处理中，请稍后重试");
         }
 
@@ -58,5 +60,17 @@ public class RedisDistributedLockGateway implements DistributedLockGateway {
         return redisProperties.getKeyPrefix()
                 + ":" + redisProperties.getNamespaces().getLocks()
                 + ":" + lockName.trim();
+    }
+
+    private boolean tryAcquireLock(String key, String ownerToken, Duration effectiveTtl) {
+        long deadlineNanos = System.nanoTime() + LOCK_ACQUIRE_TIMEOUT.toNanos();
+        do {
+            Boolean acquired = stringRedisTemplate.opsForValue().setIfAbsent(key, ownerToken, effectiveTtl);
+            if (Boolean.TRUE.equals(acquired)) {
+                return true;
+            }
+            LockSupport.parkNanos(Duration.ofMillis(LOCK_RETRY_INTERVAL_MILLIS).toNanos());
+        } while (System.nanoTime() < deadlineNanos);
+        return false;
     }
 }

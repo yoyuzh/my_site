@@ -341,7 +341,7 @@ export const FilesExplorerSurface: React.FC<FilesExplorerSurfaceProps> = ({
           </Stack>
           <Box
             sx={{
-              height: 112,
+              height: 156,
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
@@ -354,7 +354,7 @@ export const FilesExplorerSurface: React.FC<FilesExplorerSurfaceProps> = ({
               borderColor: alpha(theme.palette.divider, 0.05),
             }}
           >
-            <Box sx={{ transform: 'scale(3.2)', transformOrigin: 'center center' }}>
+            <Box sx={{ transform: 'scale(4.4)', transformOrigin: 'center center' }}>
               <FileThumbnail file={file} />
             </Box>
           </Box>

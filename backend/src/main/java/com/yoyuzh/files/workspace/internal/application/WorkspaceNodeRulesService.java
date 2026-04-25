@@ -1,26 +1,28 @@
 package com.yoyuzh.files.workspace.internal.application;
 
-import com.yoyuzh.files.storage.FileContentStorage;
 import com.yoyuzh.files.workspace.api.WorkspacePathPolicy;
 import com.yoyuzh.files.workspace.internal.domain.StoredFile;
-import com.yoyuzh.files.workspace.internal.infra.StoredFileRepository;
 
 import java.util.List;
+import java.util.Objects;
 import java.util.function.Function;
+
+interface RecycleRestoreTargetValidator {
+
+    void validateRecycleRestoreTargets(Long userId,
+                                       List<StoredFile> recycleGroupItems,
+                                       Function<StoredFile, String> recycleOriginalPathResolver);
+}
 
 public final class WorkspaceNodeRulesService {
 
     private final WorkspacePathPolicy workspacePathPolicy;
-    private final RuntimeWorkspacePathPolicy recycleRestorePolicy;
+    private final RecycleRestoreTargetValidator recycleRestoreTargetValidator;
 
-    public WorkspaceNodeRulesService(StoredFileRepository storedFileRepository,
-                                     FileContentStorage fileContentStorage) {
-        this(new RuntimeWorkspacePathPolicy(storedFileRepository, fileContentStorage));
-    }
-
-    public WorkspaceNodeRulesService(RuntimeWorkspacePathPolicy runtimeWorkspacePathPolicy) {
-        this.workspacePathPolicy = runtimeWorkspacePathPolicy;
-        this.recycleRestorePolicy = runtimeWorkspacePathPolicy;
+    public WorkspaceNodeRulesService(WorkspacePathPolicy workspacePathPolicy,
+                                     RecycleRestoreTargetValidator recycleRestoreTargetValidator) {
+        this.workspacePathPolicy = Objects.requireNonNull(workspacePathPolicy, "workspacePathPolicy");
+        this.recycleRestoreTargetValidator = Objects.requireNonNull(recycleRestoreTargetValidator, "recycleRestoreTargetValidator");
     }
 
     public String normalizeDirectoryPath(String path) {
@@ -66,6 +68,6 @@ public final class WorkspaceNodeRulesService {
     public void validateRecycleRestoreTargets(Long userId,
                                               List<StoredFile> recycleGroupItems,
                                               Function<StoredFile, String> recycleOriginalPathResolver) {
-        recycleRestorePolicy.validateRecycleRestoreTargets(userId, recycleGroupItems, recycleOriginalPathResolver);
+        recycleRestoreTargetValidator.validateRecycleRestoreTargets(userId, recycleGroupItems, recycleOriginalPathResolver);
     }
 }

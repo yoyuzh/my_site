@@ -14,14 +14,22 @@ class Task4CContentOwnershipArchitectureTest {
 
     @Test
     void fileServiceMustDependOnContentAssetApi() {
-        ArchRule rule = classes()
+        ArchRule ingressRule = classes()
                 .that()
                 .haveFullyQualifiedName("com.yoyuzh.files.workspace.internal.application.FileService")
                 .should()
                 .dependOnClassesThat()
+                .haveFullyQualifiedName("com.yoyuzh.files.workspace.internal.application.WorkspaceFileIngressService");
+
+        ArchRule contentRule = classes()
+                .that()
+                .haveFullyQualifiedName("com.yoyuzh.files.workspace.internal.application.WorkspaceFileIngressService")
+                .should()
+                .dependOnClassesThat()
                 .haveFullyQualifiedName("com.yoyuzh.files.content.api.ContentAssetApi");
 
-        rule.check(classes);
+        ingressRule.check(classes);
+        contentRule.check(classes);
     }
 
     @Test

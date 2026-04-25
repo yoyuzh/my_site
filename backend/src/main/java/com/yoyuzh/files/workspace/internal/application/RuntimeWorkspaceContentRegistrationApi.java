@@ -8,7 +8,9 @@ import com.yoyuzh.files.content.api.ContentRegistrationApi;
 import com.yoyuzh.files.content.api.ContentRegistrationCommand;
 import com.yoyuzh.files.content.api.RegisteredContentFile;
 import com.yoyuzh.files.workspace.internal.domain.StoredFile;
+import com.yoyuzh.files.workspace.internal.infra.FileListDirectoryCacheService;
 import com.yoyuzh.files.workspace.internal.infra.StoredFileRepository;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 @Service
@@ -16,11 +18,22 @@ public final class RuntimeWorkspaceContentRegistrationApi implements ContentRegi
 
     private final StoredFileRepository storedFileRepository;
     private final ContentAssetApi contentAssetApi;
+    private final FileListDirectoryCacheService fileListDirectoryCacheService;
 
     public RuntimeWorkspaceContentRegistrationApi(StoredFileRepository storedFileRepository,
                                                   ContentAssetApi contentAssetApi) {
+        this(storedFileRepository, contentAssetApi, FileListDirectoryCacheService.noOp());
+    }
+
+    @Autowired
+    public RuntimeWorkspaceContentRegistrationApi(StoredFileRepository storedFileRepository,
+                                                  ContentAssetApi contentAssetApi,
+                                                  FileListDirectoryCacheService fileListDirectoryCacheService) {
         this.storedFileRepository = storedFileRepository;
         this.contentAssetApi = contentAssetApi;
+        this.fileListDirectoryCacheService = fileListDirectoryCacheService == null
+                ? FileListDirectoryCacheService.noOp()
+                : fileListDirectoryCacheService;
     }
 
     @Override
@@ -34,19 +47,20 @@ public final class RuntimeWorkspaceContentRegistrationApi implements ContentRegi
     }
 
     private RegisteredContentFile persistBlobBackedFile(ContentRegistrationCommand command) {
-        StoredFile storedFile = new StoredFile();
-        storedFile.setUserId(command.userId());
-        storedFile.setFilename(command.filename());
-        storedFile.setPath(command.normalizedPath());
-        storedFile.setContentType(command.contentType());
-        storedFile.setSize(command.size());
-        storedFile.setDirectory(false);
-        storedFile.setBlobId(command.blob().blobId());
-        storedFile.setLegacyStorageName(command.blob().objectKey());
         ContentPrimaryEntity primaryEntity = contentAssetApi.createOrReferencePrimaryEntity(command.userId(), command.blob());
-        storedFile.setPrimaryEntityId(primaryEntity.entityId());
+        StoredFile storedFile = StoredFile.blobBackedFile(
+                command.userId(),
+                command.normalizedPath(),
+                command.filename(),
+                command.contentType(),
+                command.size(),
+                command.blob().blobId(),
+                command.blob().objectKey(),
+                primaryEntity.entityId()
+        );
         StoredFile savedFile = storedFileRepository.save(storedFile);
         contentAssetApi.savePrimaryEntityRelation(new ContentPrimaryEntityRelationCommand(savedFile.getId(), primaryEntity.entityId()));
+        fileListDirectoryCacheService.touchDirectory(command.userId(), command.normalizedPath());
         return toRegisteredContentFile(savedFile);
     }
 

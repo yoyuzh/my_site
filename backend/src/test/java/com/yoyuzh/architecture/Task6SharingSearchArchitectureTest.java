@@ -48,19 +48,26 @@ class Task6SharingSearchArchitectureTest {
                 .dependOnClassesThat()
                 .haveFullyQualifiedName("com.yoyuzh.files.search.api.FileEventApi");
 
-        ArchRule legacyFileControllerDtoRule = classes()
+        ArchRule legacyShareControllerDtoRule = classes()
+                .that()
+                .haveFullyQualifiedName("com.yoyuzh.files.sharing.legacy.web.LegacyShareLinkController")
+                .should()
+                .dependOnClassesThat()
+                .resideInAnyPackage("com.yoyuzh.files.sharing.api..");
+
+        ArchRule legacyShareControllerSharingRule = classes()
+                .that()
+                .haveFullyQualifiedName("com.yoyuzh.files.sharing.legacy.web.LegacyShareLinkController")
+                .should()
+                .dependOnClassesThat()
+                .haveFullyQualifiedName("com.yoyuzh.files.sharing.api.SharingApi");
+
+        ArchRule fileControllerMustStopDependingOnSharingApi = noClasses()
                 .that()
                 .haveFullyQualifiedName("com.yoyuzh.files.workspace.internal.web.FileController")
                 .should()
                 .dependOnClassesThat()
                 .resideInAnyPackage("com.yoyuzh.files.sharing.api..");
-
-        ArchRule legacyFileControllerSharingRule = classes()
-                .that()
-                .haveFullyQualifiedName("com.yoyuzh.files.workspace.internal.web.FileController")
-                .should()
-                .dependOnClassesThat()
-                .haveFullyQualifiedName("com.yoyuzh.files.sharing.api.SharingApi");
 
         ArchRule legacyTransferControllerDtoRule = classes()
                 .that()
@@ -72,8 +79,9 @@ class Task6SharingSearchArchitectureTest {
         sharingControllerRule.check(classes);
         searchControllerRule.check(classes);
         fileEventsControllerRule.check(classes);
-        legacyFileControllerDtoRule.check(classes);
-        legacyFileControllerSharingRule.check(classes);
+        legacyShareControllerDtoRule.check(classes);
+        legacyShareControllerSharingRule.check(classes);
+        fileControllerMustStopDependingOnSharingApi.check(classes);
         legacyTransferControllerDtoRule.check(classes);
     }
 
@@ -111,9 +119,16 @@ class Task6SharingSearchArchitectureTest {
 
     @Test
     void fileServiceMustUseSearchApiForFileEvents() {
-        ArchRule apiRule = classes()
+        ArchRule activityRule = classes()
                 .that()
                 .haveFullyQualifiedName("com.yoyuzh.files.workspace.internal.application.FileService")
+                .should()
+                .dependOnClassesThat()
+                .haveFullyQualifiedName("com.yoyuzh.files.workspace.internal.application.WorkspaceFileActivityService");
+
+        ArchRule apiRule = classes()
+                .that()
+                .haveFullyQualifiedName("com.yoyuzh.files.workspace.internal.application.WorkspaceFileActivityService")
                 .should()
                 .dependOnClassesThat()
                 .haveFullyQualifiedName("com.yoyuzh.files.search.api.FileEventApi");
@@ -125,6 +140,7 @@ class Task6SharingSearchArchitectureTest {
                 .dependOnClassesThat()
                 .resideInAnyPackage("com.yoyuzh.files.search.internal..", "com.yoyuzh.files.events..");
 
+        activityRule.check(classes);
         apiRule.check(classes);
         noInternalRule.check(classes);
     }

@@ -19,7 +19,7 @@ public class WorkspaceModuleConfiguration {
 
     @Bean
     WorkspaceNodeRulesService workspaceNodeRulesService(RuntimeWorkspacePathPolicy workspacePathPolicy) {
-        return new WorkspaceNodeRulesService(workspacePathPolicy);
+        return new WorkspaceNodeRulesService(workspacePathPolicy, workspacePathPolicy);
     }
 
     @Bean

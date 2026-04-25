@@ -66,7 +66,7 @@ function RequireAdmin({ children }: { children: JSX.Element }) {
 function HomeRedirect() {
   const session = getSession();
   if (!session) return <Navigate to="/login" replace />;
-  return <Navigate to={canAccessAdmin(session.user.role) ? '/admin/home' : '/dashboard/files'} replace />;
+  return <Navigate to="/dashboard/files" replace />;
 }
 
 function App() {

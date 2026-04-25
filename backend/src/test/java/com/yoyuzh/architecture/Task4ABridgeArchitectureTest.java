@@ -98,15 +98,23 @@ class Task4ABridgeArchitectureTest {
                 .dependOnClassesThat()
                 .haveFullyQualifiedName("com.yoyuzh.files.workspace.api.WorkspaceMutationApi");
 
-        ArchRule contentRule = classes()
+        ArchRule ingressRule = classes()
                 .that()
                 .haveFullyQualifiedName("com.yoyuzh.files.workspace.internal.application.FileService")
+                .should()
+                .dependOnClassesThat()
+                .haveFullyQualifiedName("com.yoyuzh.files.workspace.internal.application.WorkspaceFileIngressService");
+
+        ArchRule contentRule = classes()
+                .that()
+                .haveFullyQualifiedName("com.yoyuzh.files.workspace.internal.application.WorkspaceFileIngressService")
                 .should()
                 .dependOnClassesThat()
                 .haveFullyQualifiedName("com.yoyuzh.files.content.api.ContentRegistrationApi");
 
         workspaceRule.check(classes);
         workspaceMutationRule.check(classes);
+        ingressRule.check(classes);
         contentRule.check(classes);
     }
 

@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import DashboardLayout from '../components/DashboardLayout';
 import { useMutation, useQuery } from '@tanstack/react-query';
-import { createTransferSession, listMyOfflineTransferSessions } from '../lib/transfer';
+import { createTransferSession, listMyOfflineTransferSessions, uploadOfflineTransferFile } from '../lib/transfer';
 import { formatBytes, formatDateTime } from '../lib/format';
 import { P2pSender, type P2pTransferProgress } from '../lib/p2p-transfer';
 import type { TransferMode, TransferSessionResponse } from '../api/types';
@@ -65,6 +65,8 @@ const TransferSend: React.FC = () => {
   const [onlineProgress, setOnlineProgress] = useState<P2pTransferProgress | null>(null);
   const [onlineComplete, setOnlineComplete] = useState(false);
   const [isStartingOnline, setIsStartingOnline] = useState(false);
+  const [offlineStatus, setOfflineStatus] = useState('');
+  const [offlineError, setOfflineError] = useState('');
   const [copyFeedback, setCopyFeedback] = useState<string | null>(null);
 
   const offlineSessionsQuery = useQuery({
@@ -72,10 +74,42 @@ const TransferSend: React.FC = () => {
     queryFn: listMyOfflineTransferSessions,
   });
   const createOfflineSessionMutation = useMutation({
-    mutationFn: (files: File[]) => createTransferSession(files, 'OFFLINE'),
+    mutationFn: async (files: File[]) => {
+      setOfflineError('');
+      setOfflineStatus('正在创建稍后接收会话...');
+      const session = await createTransferSession(files, 'OFFLINE');
+      const sessionFilesByRelativePath = new Map(
+        session.files.map((file) => [file.relativePath, file]),
+      );
+
+      for (let index = 0; index < files.length; index += 1) {
+        const file = files[index];
+        const relativePath =
+          'webkitRelativePath' in file &&
+          typeof file.webkitRelativePath === 'string' &&
+          file.webkitRelativePath.length > 0
+            ? file.webkitRelativePath
+            : file.name;
+        const sessionFile = sessionFilesByRelativePath.get(relativePath);
+        if (!sessionFile?.id) {
+          throw new Error(`稍后接收文件映射失败：${relativePath}`);
+        }
+        setOfflineStatus(`正在上传文件 ${index + 1}/${files.length}：${relativePath}`);
+        await uploadOfflineTransferFile(session.sessionId, sessionFile.id, file);
+      }
+
+      setOfflineStatus('文件上传完成，对方现在可以取件了');
+      return {
+        ...session,
+        files: session.files.map((file) => ({ ...file, uploaded: true })),
+      };
+    },
     onSuccess: (result) => {
       setCreatedSession(result);
       void offlineSessionsQuery.refetch();
+    },
+    onError: (error) => {
+      setOfflineError(error instanceof Error ? error.message : '稍后接收创建失败');
     },
   });
 
@@ -135,6 +169,8 @@ const TransferSend: React.FC = () => {
     setOnlineError('');
     setOnlineProgress(null);
     setOnlineComplete(false);
+    setOfflineStatus('');
+    setOfflineError('');
     senderRef.current?.stop();
     createOfflineSessionMutation.mutate(files);
   }
@@ -147,10 +183,12 @@ const TransferSend: React.FC = () => {
     setOnlineError('');
     setOnlineProgress(null);
     setOnlineComplete(false);
+    setOfflineStatus('');
+    setOfflineError('');
   }
 
   const receiveUrl = createdSession
-    ? `${window.location.origin}/dashboard/transfer-send?tab=receive&code=${createdSession.pickupCode}`
+    ? `${window.location.origin}/transfer/receive?code=${createdSession.pickupCode}`
     : '';
   const percent = formatPercent(onlineProgress);
   const friendlyStatus = getFriendlyStatus(onlineStatus);
@@ -286,6 +324,20 @@ const TransferSend: React.FC = () => {
                         </span>
                       </div>
                     </button>
+                    {mode === 'OFFLINE' && (offlineStatus || offlineError) ? (
+                      <div className="mx-auto mt-6 max-w-md space-y-2 text-left">
+                        {offlineStatus ? (
+                          <div className="rounded-xl border border-brand-light/10 bg-brand-light/5 px-4 py-3 text-sm text-text-secondary-light dark:text-text-secondary-dark">
+                            {offlineStatus}
+                          </div>
+                        ) : null}
+                        {offlineError ? (
+                          <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600 dark:border-red-500/20 dark:bg-red-500/10 dark:text-red-400">
+                            {offlineError}
+                          </div>
+                        ) : null}
+                      </div>
+                    ) : null}
                   </div>
                 </div>
               ) : (
@@ -326,28 +378,26 @@ const TransferSend: React.FC = () => {
                         </div>
                       </div>
 
-                      {createdSession.mode === 'ONLINE' && (
-                        <div className="p-6 bg-[#F8FBFF] dark:bg-white/5 rounded-2xl border border-[#D9E3F2] dark:border-[#222233]">
-                          <p className="text-sm font-bold text-text-secondary-light dark:text-text-secondary-dark mb-3 flex items-center gap-2">
-                            <LinkIcon size={14} /> 也可以发送接收链接
-                          </p>
-                          <div className="flex items-center gap-2">
-                            <div className="flex-1 px-4 py-2 bg-white dark:bg-black/20 border border-[#D9E3F2] dark:border-[#222233] rounded-xl text-xs text-text-secondary-light dark:text-text-secondary-dark truncate">
-                              {receiveUrl}
-                            </div>
-                            <button
-                              className={clsx(
-                                "flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold transition-all shrink-0",
-                                copyFeedback === 'link' ? "bg-emerald-500 text-white" : "bg-white dark:bg-[#222233] text-brand-light border border-brand-light/20 hover:border-brand-light"
-                              )}
-                              onClick={() => void copyText(receiveUrl, 'link')}
-                            >
-                              {copyFeedback === 'link' ? <Check size={16} /> : <Copy size={16} />}
-                              {copyFeedback === 'link' ? '已复制' : '复制链接'}
-                            </button>
+                      <div className="p-6 bg-[#F8FBFF] dark:bg-white/5 rounded-2xl border border-[#D9E3F2] dark:border-[#222233]">
+                        <p className="text-sm font-bold text-text-secondary-light dark:text-text-secondary-dark mb-3 flex items-center gap-2">
+                          <LinkIcon size={14} /> 接收链接
+                        </p>
+                        <div className="flex items-center gap-2">
+                          <div className="flex-1 px-4 py-2 bg-white dark:bg-black/20 border border-[#D9E3F2] dark:border-[#222233] rounded-xl text-xs text-text-secondary-light dark:text-text-secondary-dark truncate">
+                            {receiveUrl}
                           </div>
+                          <button
+                            className={clsx(
+                              "flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold transition-all shrink-0",
+                              copyFeedback === 'link' ? "bg-emerald-500 text-white" : "bg-white dark:bg-[#222233] text-brand-light border border-brand-light/20 hover:border-brand-light"
+                            )}
+                            onClick={() => void copyText(receiveUrl, 'link')}
+                          >
+                            {copyFeedback === 'link' ? <Check size={16} /> : <Copy size={16} />}
+                            {copyFeedback === 'link' ? '已复制' : '复制链接'}
+                          </button>
                         </div>
-                      )}
+                      </div>
 
                       <div className="flex items-center gap-4 text-sm text-text-secondary-light dark:text-text-secondary-dark px-2">
                         <span className="flex items-center gap-1.5">
@@ -440,8 +490,11 @@ const TransferSend: React.FC = () => {
                           </div>
                           <div className="mt-6 pt-4 border-t border-black/5 dark:border-white/10">
                             <p className="text-xs text-text-secondary-light dark:text-text-secondary-dark leading-relaxed">
-                              文件已准备就绪。对方可以随时凭取件码取走，无需您保持在线。
+                              {offlineStatus || '文件已准备就绪。对方可以随时凭取件码或链接取走，无需您保持在线。'}
                             </p>
+                            {offlineError ? (
+                              <p className="mt-2 text-xs text-red-500">{offlineError}</p>
+                            ) : null}
                           </div>
                         </div>
                       )}

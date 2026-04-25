@@ -23,9 +23,10 @@ import com.yoyuzh.files.workspace.api.WorkspaceMutationApi;
 import com.yoyuzh.files.workspace.api.WorkspaceUserContext;
 import com.yoyuzh.files.workspace.internal.infra.StoredFileRepository;
 import com.yoyuzh.identity.access.internal.domain.User;
-import com.yoyuzh.platform.job.api.BackgroundTaskLifecycleApi;
 import com.yoyuzh.platform.storage.api.StoragePolicyQuery;
 import com.yoyuzh.platform.storage.api.UploadConstraintPolicy;
+import com.yoyuzh.infra.lock.DistributedLockGateway;
+import com.yoyuzh.files.workspace.internal.infra.FileListDirectoryCacheService;
 
 import java.time.Clock;
 
@@ -117,7 +118,7 @@ final class FileServiceTestSupport {
                                       long maxFileSize,
                                       Clock clock) {
         RuntimeWorkspacePathPolicy workspacePathPolicy = new RuntimeWorkspacePathPolicy(storedFileRepository, fileContentStorage);
-        WorkspaceNodeRulesService workspaceNodeRulesService = new WorkspaceNodeRulesService(workspacePathPolicy);
+        WorkspaceNodeRulesService workspaceNodeRulesService = new WorkspaceNodeRulesService(workspacePathPolicy, workspacePathPolicy);
         WorkspaceDirectoryApi workspaceDirectoryApi = new RuntimeWorkspaceDirectoryApi(storedFileRepository, fileContentStorage, workspacePathPolicy);
         WorkspaceMutationApi workspaceMutationApi = new RuntimeWorkspaceMutationApi(storedFileRepository, workspacePathPolicy);
         RuntimeWorkspaceContentBindingApi workspaceContentBindingApi = new RuntimeWorkspaceContentBindingApi(storedFileRepository);
@@ -163,11 +164,25 @@ final class FileServiceTestSupport {
                 contentBlobRegistrationApi,
                 fileContentStorage
         );
+        WorkspaceFileIngressService workspaceFileIngressService = new WorkspaceFileIngressService(
+                fileContentStorage,
+                contentAssetApi,
+                contentRegistrationApi,
+                contentBlobRegistrationApi,
+                uploadCompletionApi,
+                contentBlobLifecycleApi,
+                fileUploadRulesService,
+                workspaceNodeRulesService
+        );
+        WorkspaceFileActivityService workspaceFileActivityService = new WorkspaceFileActivityService(
+                workspaceNodeRulesService,
+                null,
+                null,
+                FileListDirectoryCacheService.noOp()
+        );
         return new FileService(
                 storedFileRepository,
                 fileContentStorage,
-                storagePolicyQuery,
-                null,
                 workspaceDownloadOptions,
                 workspaceNodeRulesService,
                 workspaceDirectoryApi,
@@ -175,13 +190,12 @@ final class FileServiceTestSupport {
                 workspaceLifecycleApi,
                 fileUploadRulesService,
                 externalImportRulesService,
-                contentAssetApi,
-                contentRegistrationApi,
-                contentBlobRegistrationApi,
-                uploadCompletionApi,
                 contentBlobLifecycleApi,
                 workspaceDownloadMetricsPort,
-                (BackgroundTaskLifecycleApi) null,
+                FileListDirectoryCacheService.noOp(),
+                workspaceFileIngressService,
+                workspaceFileActivityService,
+                DistributedLockGateway.noOp(),
                 maxFileSize,
                 clock
         );

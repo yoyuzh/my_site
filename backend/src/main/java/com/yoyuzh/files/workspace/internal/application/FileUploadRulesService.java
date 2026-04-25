@@ -29,29 +29,7 @@ public final class FileUploadRulesService {
     }
 
     public void validateUpload(WorkspaceUserContext user, String normalizedPath, String filename, long size) {
-        long effectiveMaxUploadSize = Math.min(maxFileSize, user.maxUploadSizeBytes());
-        long policyMaxSizeBytes = 0L;
-        StoragePolicyCapabilities capabilities = null;
-        if (storagePolicyQuery != null) {
-            var defaultPolicySnapshot = storagePolicyQuery.readDefaultPolicySnapshot();
-            policyMaxSizeBytes = defaultPolicySnapshot.policyMaxSizeBytes();
-            capabilities = defaultPolicySnapshot.capabilities();
-        }
-        if (uploadConstraintPolicy != null) {
-            effectiveMaxUploadSize = uploadConstraintPolicy.resolveEffectiveMaxUploadSize(
-                    maxFileSize,
-                    user.maxUploadSizeBytes(),
-                    policyMaxSizeBytes,
-                    capabilities == null ? 0L : capabilities.maxObjectSize()
-            );
-        } else {
-            if (policyMaxSizeBytes > 0) {
-                effectiveMaxUploadSize = Math.min(effectiveMaxUploadSize, policyMaxSizeBytes);
-            }
-            if (capabilities != null && capabilities.maxObjectSize() > 0) {
-                effectiveMaxUploadSize = Math.min(effectiveMaxUploadSize, capabilities.maxObjectSize());
-            }
-        }
+        long effectiveMaxUploadSize = resolveEffectiveMaxUploadSize(user);
         if (size > effectiveMaxUploadSize) {
             throw new BusinessException(ErrorCode.QUOTA_EXCEEDED, "文件大小超出限制");
         }
@@ -69,5 +47,31 @@ public final class FileUploadRulesService {
         if (usedBytes > Long.MAX_VALUE - additionalBytes || usedBytes + additionalBytes > quotaBytes) {
             throw new BusinessException(ErrorCode.QUOTA_EXCEEDED, "存储空间不足");
         }
+    }
+
+    private long resolveEffectiveMaxUploadSize(WorkspaceUserContext user) {
+        long effectiveMaxUploadSize = Math.min(maxFileSize, user.maxUploadSizeBytes());
+        long policyMaxSizeBytes = 0L;
+        StoragePolicyCapabilities capabilities = null;
+        if (storagePolicyQuery != null) {
+            var defaultPolicySnapshot = storagePolicyQuery.readDefaultPolicySnapshot();
+            policyMaxSizeBytes = defaultPolicySnapshot.policyMaxSizeBytes();
+            capabilities = defaultPolicySnapshot.capabilities();
+        }
+        if (uploadConstraintPolicy != null) {
+            return uploadConstraintPolicy.resolveEffectiveMaxUploadSize(
+                    maxFileSize,
+                    user.maxUploadSizeBytes(),
+                    policyMaxSizeBytes,
+                    capabilities == null ? 0L : capabilities.maxObjectSize()
+            );
+        }
+        if (policyMaxSizeBytes > 0) {
+            effectiveMaxUploadSize = Math.min(effectiveMaxUploadSize, policyMaxSizeBytes);
+        }
+        if (capabilities != null && capabilities.maxObjectSize() > 0) {
+            effectiveMaxUploadSize = Math.min(effectiveMaxUploadSize, capabilities.maxObjectSize());
+        }
+        return effectiveMaxUploadSize;
     }
 }

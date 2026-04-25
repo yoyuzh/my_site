@@ -45,19 +45,14 @@ public final class RuntimeWorkspaceMutationApi implements WorkspaceMutationApi {
 
             List<StoredFile> descendants = storedFileRepository.findByUserIdAndPathEqualsOrDescendant(userId, oldLogicalPath);
             for (StoredFile descendant : descendants) {
-                if (descendant.getPath().equals(oldLogicalPath)) {
-                    descendant.setPath(newLogicalPath);
-                    continue;
-                }
-
-                descendant.setPath(newLogicalPath + descendant.getPath().substring(oldLogicalPath.length()));
+                descendant.relocateForAncestorMove(oldLogicalPath, newLogicalPath);
             }
             if (!descendants.isEmpty()) {
                 storedFileRepository.saveAll(descendants);
             }
         }
 
-        storedFile.setFilename(sanitizedFilename);
+        storedFile.renameTo(sanitizedFilename);
         StoredFile savedFile = storedFileRepository.save(storedFile);
         return new WorkspaceMutationResult(
                 toMutationResponse(savedFile),
@@ -89,12 +84,7 @@ public final class RuntimeWorkspaceMutationApi implements WorkspaceMutationApi {
 
             List<StoredFile> descendants = storedFileRepository.findByUserIdAndPathEqualsOrDescendant(userId, oldLogicalPath);
             for (StoredFile descendant : descendants) {
-                if (descendant.getPath().equals(oldLogicalPath)) {
-                    descendant.setPath(newLogicalPath);
-                    continue;
-                }
-
-                descendant.setPath(newLogicalPath + descendant.getPath().substring(oldLogicalPath.length()));
+                descendant.relocateForAncestorMove(oldLogicalPath, newLogicalPath);
             }
             if (!descendants.isEmpty()) {
                 storedFileRepository.saveAll(descendants);
@@ -102,7 +92,7 @@ public final class RuntimeWorkspaceMutationApi implements WorkspaceMutationApi {
         }
 
         String previousParentPath = storedFile.getPath();
-        storedFile.setPath(normalizedTargetPath);
+        storedFile.moveTo(normalizedTargetPath);
         StoredFile savedFile = storedFileRepository.save(storedFile);
         return new WorkspaceMutationResult(
                 toMutationResponse(savedFile),
@@ -125,9 +115,7 @@ public final class RuntimeWorkspaceMutationApi implements WorkspaceMutationApi {
     }
 
     private String buildLogicalPath(StoredFile storedFile) {
-        return "/".equals(storedFile.getPath())
-                ? "/" + storedFile.getFilename()
-                : storedFile.getPath() + "/" + storedFile.getFilename();
+        return storedFile.logicalPath();
     }
 
     private FileMetadataResponse toResponse(StoredFile storedFile) {

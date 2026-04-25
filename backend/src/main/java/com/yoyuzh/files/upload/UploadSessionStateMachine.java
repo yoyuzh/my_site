@@ -29,6 +29,25 @@ public class UploadSessionStateMachine {
         }
     }
 
+    public void ensureCompletable(UploadSession session, LocalDateTime now) {
+        if (session.getStatus() == UploadSessionStatus.COMPLETED) {
+            return;
+        }
+        if (session.getStatus() == UploadSessionStatus.CANCELLED || session.getStatus() == UploadSessionStatus.FAILED) {
+            throw new BusinessException(ErrorCode.INVALID_INPUT, "upload session cannot be completed");
+        }
+        if (session.getExpiresAt().isBefore(now)) {
+            markExpired(session, now);
+            throw new BusinessException(ErrorCode.SESSION_EXPIRED, "upload session has expired");
+        }
+    }
+
+    public void ensureCancellable(UploadSession session) {
+        if (session.getStatus() == UploadSessionStatus.COMPLETED) {
+            throw new BusinessException(ErrorCode.INVALID_INPUT, "completed upload session cannot be cancelled");
+        }
+    }
+
     public void markUploading(UploadSession session, LocalDateTime now) {
         if (session.getStatus() == UploadSessionStatus.CREATED) {
             session.setStatus(UploadSessionStatus.UPLOADING);

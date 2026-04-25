@@ -145,8 +145,61 @@ class FileServiceTest {
     }
 
     @Test
+    void shouldInferOfficeContentTypeWhenBrowserReportsPlainText() {
+        User user = createUser(7L);
+        MockMultipartFile multipartFile = new MockMultipartFile(
+                "file", "slides.pptx", "text/plain", "hello".getBytes());
+        when(storedFileRepository.existsByUserIdAndPathAndFilename(7L, "/docs", "slides.pptx")).thenReturn(false);
+        when(fileBlobRepository.save(any(FileBlob.class))).thenAnswer(invocation -> {
+            FileBlob blob = invocation.getArgument(0);
+            blob.setId(100L);
+            return blob;
+        });
+        when(storedFileRepository.save(any(StoredFile.class))).thenAnswer(invocation -> {
+            StoredFile file = invocation.getArgument(0);
+            file.setId(10L);
+            return file;
+        });
+
+        FileMetadataResponse response = fileService.upload(FileServiceTestSupport.workspaceUser(user), "/docs", multipartFile);
+
+        assertThat(response.contentType()).isEqualTo("application/vnd.openxmlformats-officedocument.presentationml.presentation");
+        verify(fileBlobRepository).save(org.mockito.ArgumentMatchers.argThat(blob ->
+                "application/vnd.openxmlformats-officedocument.presentationml.presentation".equals(blob.getContentType())));
+        verify(storedFileRepository).save(org.mockito.ArgumentMatchers.argThat(file ->
+                "application/vnd.openxmlformats-officedocument.presentationml.presentation".equals(file.getContentType())));
+    }
+
+    @Test
+    void shouldInferImageContentTypeWhenClipboardReportsPlainText() {
+        User user = createUser(7L);
+        MockMultipartFile multipartFile = new MockMultipartFile(
+                "file", "截屏2026-04-25 14.18.37.png", "text/plain", "hello".getBytes());
+        when(storedFileRepository.existsByUserIdAndPathAndFilename(7L, "/docs", "截屏2026-04-25 14.18.37.png")).thenReturn(false);
+        when(fileBlobRepository.save(any(FileBlob.class))).thenAnswer(invocation -> {
+            FileBlob blob = invocation.getArgument(0);
+            blob.setId(100L);
+            return blob;
+        });
+        when(storedFileRepository.save(any(StoredFile.class))).thenAnswer(invocation -> {
+            StoredFile file = invocation.getArgument(0);
+            file.setId(10L);
+            return file;
+        });
+
+        FileMetadataResponse response = fileService.upload(FileServiceTestSupport.workspaceUser(user), "/docs", multipartFile);
+
+        assertThat(response.contentType()).isEqualTo("image/png");
+        verify(fileBlobRepository).save(org.mockito.ArgumentMatchers.argThat(blob ->
+                "image/png".equals(blob.getContentType())));
+        verify(storedFileRepository).save(org.mockito.ArgumentMatchers.argThat(file ->
+                "image/png".equals(file.getContentType())));
+    }
+
+    @Test
     void shouldPublishMediaMetadataTriggerWhenSavingImageFile() {
-        ReflectionTestUtils.setField(fileService, "backgroundTaskLifecycleApi", backgroundTaskLifecycleApi);
+        Object activityService = ReflectionTestUtils.getField(fileService, "workspaceFileActivityService");
+        ReflectionTestUtils.setField(activityService, "backgroundTaskLifecycleApi", backgroundTaskLifecycleApi);
         User user = createUser(7L);
         MockMultipartFile multipartFile = new MockMultipartFile(
                 "file", "photo.png", "image/png", "hello".getBytes());

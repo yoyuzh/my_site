@@ -9,6 +9,7 @@ import com.yoyuzh.files.content.internal.infra.FileEntityRepository;
 import com.yoyuzh.files.content.internal.domain.FileEntityType;
 import com.yoyuzh.files.workspace.internal.application.RuntimeWorkspaceContentRegistrationApi;
 import com.yoyuzh.files.workspace.internal.domain.StoredFile;
+import com.yoyuzh.files.workspace.internal.infra.FileListDirectoryCacheService;
 import com.yoyuzh.files.content.internal.infra.StoredFileEntityRepository;
 import com.yoyuzh.files.workspace.internal.infra.StoredFileRepository;
 import com.yoyuzh.platform.storage.api.StoragePolicyQuery;
@@ -36,6 +37,10 @@ class RuntimeContentRegistrationApiTest {
 
     @Mock
     private StoredFileEntityRepository storedFileEntityRepository;
+
+    @Mock
+    private FileListDirectoryCacheService fileListDirectoryCacheService;
+
     @Test
     void shouldRegisterBlobAndPrimaryEntity() {
         RuntimeWorkspaceContentRegistrationApi api = new RuntimeWorkspaceContentRegistrationApi(
@@ -68,6 +73,39 @@ class RuntimeContentRegistrationApiTest {
         assertThat(response.filename()).isEqualTo("notes.txt");
         verify(fileEntityRepository).findByObjectKeyAndEntityType("blobs/blob-1", FileEntityType.VERSION);
         verify(storedFileEntityRepository).save(any());
+    }
+
+    @Test
+    void shouldTouchDirectoryListWhenRegisteringWorkspaceFile() {
+        RuntimeWorkspaceContentRegistrationApi api = new RuntimeWorkspaceContentRegistrationApi(
+                storedFileRepository,
+                new RuntimeContentAssetApi(null, null, fileEntityRepository, storedFileEntityRepository, null),
+                fileListDirectoryCacheService
+        );
+        FileBlob blob = createBlob("blobs/blob-cache");
+        when(fileEntityRepository.findByObjectKeyAndEntityType("blobs/blob-cache", FileEntityType.VERSION))
+                .thenReturn(Optional.empty());
+        when(fileEntityRepository.save(any(FileEntity.class))).thenAnswer(invocation -> {
+            FileEntity entity = invocation.getArgument(0);
+            entity.setId(22L);
+            return entity;
+        });
+        when(storedFileRepository.save(any(StoredFile.class))).thenAnswer(invocation -> {
+            StoredFile storedFile = invocation.getArgument(0);
+            storedFile.setId(12L);
+            return storedFile;
+        });
+
+        api.registerBlob(new ContentRegistrationCommand(
+                7L,
+                "/docs",
+                "fresh.txt",
+                "text/plain",
+                5L,
+                new ContentBlobReference(blob.getId(), blob.getObjectKey(), blob.getContentType(), blob.getSize())
+        ));
+
+        verify(fileListDirectoryCacheService).touchDirectory(7L, "/docs");
     }
 
     @Test

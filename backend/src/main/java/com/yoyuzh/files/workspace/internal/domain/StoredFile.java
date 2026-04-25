@@ -74,6 +74,39 @@ public class StoredFile {
     @Column(nullable = false)
     private boolean favorite;
 
+    public static StoredFile directory(Long userId, String parentPath, String directoryName) {
+        StoredFile storedFile = new StoredFile();
+        storedFile.setUserId(userId);
+        storedFile.setFilename(directoryName);
+        storedFile.setPath(parentPath);
+        storedFile.setLegacyStorageName(directoryName);
+        storedFile.setContentType("directory");
+        storedFile.setSize(0L);
+        storedFile.setDirectory(true);
+        return storedFile;
+    }
+
+    public static StoredFile blobBackedFile(Long userId,
+                                            String path,
+                                            String filename,
+                                            String contentType,
+                                            long size,
+                                            Long blobId,
+                                            String legacyStorageName,
+                                            Long primaryEntityId) {
+        StoredFile storedFile = new StoredFile();
+        storedFile.setUserId(userId);
+        storedFile.setFilename(filename);
+        storedFile.setPath(path);
+        storedFile.setContentType(contentType);
+        storedFile.setSize(size);
+        storedFile.setDirectory(false);
+        storedFile.setBlobId(blobId);
+        storedFile.setLegacyStorageName(legacyStorageName);
+        storedFile.setPrimaryEntityId(primaryEntityId);
+        return storedFile;
+    }
+
     @PrePersist
     public void prePersist() {
         if (createdAt == null) {
@@ -223,5 +256,61 @@ public class StoredFile {
 
     public void setFavorite(boolean favorite) {
         this.favorite = favorite;
+    }
+
+    public String logicalPath() {
+        return "/".equals(path) ? "/" + filename : path + "/" + filename;
+    }
+
+    public void renameTo(String sanitizedFilename) {
+        this.filename = sanitizedFilename;
+    }
+
+    public void moveTo(String normalizedTargetPath) {
+        this.path = normalizedTargetPath;
+    }
+
+    public void relocateForAncestorMove(String oldLogicalPath, String newLogicalPath) {
+        if (path.equals(oldLogicalPath)) {
+            this.path = newLogicalPath;
+            return;
+        }
+        this.path = newLogicalPath + path.substring(oldLogicalPath.length());
+    }
+
+    public void markFavorite(boolean favorite) {
+        this.favorite = favorite;
+    }
+
+    public void recycleTo(String recyclePath,
+                          String originalPath,
+                          String recycleGroupId,
+                          boolean recycleRoot,
+                          LocalDateTime deletedAt) {
+        this.deletedAt = deletedAt;
+        this.recycleOriginalPath = originalPath;
+        this.recycleGroupId = recycleGroupId;
+        this.recycleRoot = recycleRoot;
+        this.path = recyclePath;
+    }
+
+    public void restoreFromRecycleBin() {
+        this.path = recycleOriginalPath;
+        this.deletedAt = null;
+        this.recycleOriginalPath = null;
+        this.recycleGroupId = null;
+        this.recycleRoot = false;
+    }
+
+    public StoredFile copyForOwner(Long ownerUserId, String nextPath) {
+        StoredFile copiedFile = new StoredFile();
+        copiedFile.setUserId(ownerUserId);
+        copiedFile.setFilename(filename);
+        copiedFile.setPath(nextPath);
+        copiedFile.setContentType(contentType);
+        copiedFile.setSize(size);
+        copiedFile.setDirectory(directory);
+        copiedFile.setBlobId(blobId);
+        return copiedFile;
     }
 }

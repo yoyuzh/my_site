@@ -29,7 +29,7 @@ export function canAccessAdmin(role?: PortalUserRole | null) {
 }
 
 export function getDefaultSignedInRoute(role?: PortalUserRole | null) {
-  return canAccessAdmin(role) ? '/admin/home' : '/dashboard/files';
+  return '/dashboard/files';
 }
 
 export function getSession() {

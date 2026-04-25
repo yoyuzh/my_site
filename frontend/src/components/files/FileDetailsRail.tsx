@@ -117,7 +117,8 @@ const FileDetailsRail: React.FC<FileDetailsRailProps> = ({ detail, loading, erro
           <Box
             sx={{
               width: '100%',
-              aspectRatio: '2/1',
+              minHeight: 220,
+              aspectRatio: '4/3',
               borderRadius: 1,
               overflow: 'hidden',
               display: 'flex',

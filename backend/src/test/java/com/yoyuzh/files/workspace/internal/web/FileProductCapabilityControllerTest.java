@@ -1,7 +1,6 @@
 package com.yoyuzh.files.workspace.internal.web;
 
 import com.yoyuzh.boot.security.CustomUserDetailsService;
-import com.yoyuzh.files.sharing.api.SharingApi;
 import com.yoyuzh.files.workspace.api.FileDetailResponse;
 import com.yoyuzh.files.workspace.api.FavoriteFileResponse;
 import com.yoyuzh.files.workspace.internal.application.WorkspaceTagService;
@@ -47,10 +46,9 @@ class FileProductCapabilityControllerTest {
         fileService = mock(FileService.class);
         userDetailsService = mock(CustomUserDetailsService.class);
         workspaceTagService = mock(WorkspaceTagService.class);
-        SharingApi sharingApi = mock(SharingApi.class);
         when(userDetailsService.loadUserId("alice")).thenReturn(7L);
         when(workspaceTagService.listFileTags(eq(7L), eq(1L))).thenReturn(List.of());
-        mockMvc = MockMvcBuilders.standaloneSetup(new FileController(fileService, userDetailsService, sharingApi, workspaceTagService))
+        mockMvc = MockMvcBuilders.standaloneSetup(new FileController(fileService, userDetailsService, workspaceTagService))
                 .setCustomArgumentResolvers(authenticationPrincipalResolver())
                 .build();
     }

@@ -14,7 +14,7 @@ import java.util.Optional;
 import java.util.function.Function;
 
 @Service
-public final class RuntimeWorkspacePathPolicy implements WorkspacePathPolicy {
+public final class RuntimeWorkspacePathPolicy implements WorkspacePathPolicy, RecycleRestoreTargetValidator {
 
     private final StoredFileRepository storedFileRepository;
     private final FileContentStorage fileContentStorage;
@@ -117,14 +117,7 @@ public final class RuntimeWorkspacePathPolicy implements WorkspacePathPolicy {
             String logicalPath = "/".equals(currentPath) ? "/" + segment : currentPath + "/" + segment;
             fileContentStorage.ensureDirectory(userId, logicalPath);
 
-            StoredFile storedFile = new StoredFile();
-            storedFile.setUserId(userId);
-            storedFile.setFilename(segment);
-            storedFile.setPath(currentPath);
-            storedFile.setContentType("directory");
-            storedFile.setSize(0L);
-            storedFile.setDirectory(true);
-            storedFileRepository.save(storedFile);
+            storedFileRepository.save(StoredFile.directory(userId, currentPath, segment));
 
             currentPath = logicalPath;
         }
@@ -148,6 +141,7 @@ public final class RuntimeWorkspacePathPolicy implements WorkspacePathPolicy {
         }
     }
 
+    @Override
     public void validateRecycleRestoreTargets(Long userId,
                                               List<StoredFile> recycleGroupItems,
                                               Function<StoredFile, String> recycleOriginalPathResolver) {

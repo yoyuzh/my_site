@@ -79,7 +79,8 @@ class ExternalImportRulesServiceTest {
     }
 
     private ExternalImportRulesService createService(long maxFileSize) {
-        WorkspaceNodeRulesService workspaceNodeRulesService = new WorkspaceNodeRulesService(storedFileRepository, fileContentStorage);
+        RuntimeWorkspacePathPolicy workspacePathPolicy = new RuntimeWorkspacePathPolicy(storedFileRepository, fileContentStorage);
+        WorkspaceNodeRulesService workspaceNodeRulesService = new WorkspaceNodeRulesService(workspacePathPolicy, workspacePathPolicy);
         FileUploadRulesService fileUploadRulesService = new FileUploadRulesService(
                 storedFileRepository,
                 null,

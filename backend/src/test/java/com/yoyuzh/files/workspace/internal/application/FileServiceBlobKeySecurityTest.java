@@ -5,6 +5,7 @@ import com.yoyuzh.files.storage.FileContentStorage;
 import com.yoyuzh.files.workspace.api.WorkspaceDownloadOptions;
 import com.yoyuzh.files.workspace.internal.infra.StoredFileRepository;
 import com.yoyuzh.shared.kernel.BusinessException;
+import org.springframework.test.util.ReflectionTestUtils;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import org.junit.jupiter.api.BeforeEach;
@@ -18,7 +19,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
- * 白盒测试：验证 FileService.normalizeBlobObjectKey 的安全边界。
+ * 白盒测试：验证 WorkspaceFileIngressService.normalizeBlobObjectKey 的安全边界。
  */
 @ExtendWith(MockitoExtension.class)
 class FileServiceBlobKeySecurityTest {
@@ -32,11 +33,11 @@ class FileServiceBlobKeySecurityTest {
     @Mock
     private FileContentStorage fileContentStorage;
 
-    private FileService fileService;
+    private WorkspaceFileIngressService workspaceFileIngressService;
 
     @BeforeEach
     void setUp() {
-        fileService = FileServiceTestSupport.create(
+        FileService fileService = FileServiceTestSupport.create(
                 storedFileRepository,
                 fileBlobRepository,
                 fileContentStorage,
@@ -44,13 +45,17 @@ class FileServiceBlobKeySecurityTest {
                 new WorkspaceDownloadOptions(null, null, 300L),
                 500L * 1024 * 1024L
         );
+        workspaceFileIngressService = (WorkspaceFileIngressService) ReflectionTestUtils.getField(
+                fileService,
+                "workspaceFileIngressService"
+        );
     }
 
     private String normalize(String objectKey) {
         try {
-            Method method = FileService.class.getDeclaredMethod("normalizeBlobObjectKey", String.class);
+            Method method = WorkspaceFileIngressService.class.getDeclaredMethod("normalizeBlobObjectKey", String.class);
             method.setAccessible(true);
-            return (String) method.invoke(fileService, objectKey);
+            return (String) method.invoke(workspaceFileIngressService, objectKey);
         } catch (InvocationTargetException exception) {
             Throwable target = exception.getTargetException();
             if (target instanceof RuntimeException runtimeException) {

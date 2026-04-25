@@ -8,12 +8,17 @@ import com.yoyuzh.files.workspace.api.FileMetadataResponse;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.cache.Cache;
 import org.springframework.cache.CacheManager;
+import org.springframework.data.redis.core.Cursor;
+import org.springframework.data.redis.core.ScanOptions;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.util.StringUtils;
 
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.Base64;
 import java.util.Collection;
 import java.util.LinkedHashSet;
@@ -82,6 +87,20 @@ public class RedisFileListDirectoryCacheService implements FileListDirectoryCach
             return;
         }
 
+        if (TransactionSynchronizationManager.isSynchronizationActive()) {
+            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                @Override
+                public void afterCommit() {
+                    touchDirectoriesImmediately(userId, normalizedPaths);
+                }
+            });
+            return;
+        }
+
+        touchDirectoriesImmediately(userId, normalizedPaths);
+    }
+
+    private void touchDirectoriesImmediately(Long userId, Collection<String> normalizedPaths) {
         Duration ttl = Duration.ofSeconds(Math.max(
                 redisProperties.getCache().getDirectoryVersionTtlSeconds(),
                 redisProperties.getCache().getFilesListTtlSeconds() * 2
@@ -90,6 +109,21 @@ public class RedisFileListDirectoryCacheService implements FileListDirectoryCach
             String key = buildDirectoryVersionKey(userId, path);
             stringRedisTemplate.opsForValue().increment(key);
             stringRedisTemplate.expire(key, ttl);
+            evictCachedPages(userId, path);
+        }
+    }
+
+    private void evictCachedPages(Long userId, String path) {
+        String pattern = buildFilesListCacheKeyPattern(userId, path);
+        List<String> keysToDelete = new ArrayList<>();
+        try (Cursor<String> cursor = stringRedisTemplate.scan(ScanOptions.scanOptions()
+                .match(pattern)
+                .count(500)
+                .build())) {
+            cursor.forEachRemaining(keysToDelete::add);
+        }
+        if (!keysToDelete.isEmpty()) {
+            stringRedisTemplate.delete(keysToDelete);
         }
     }
 
@@ -131,6 +165,15 @@ public class RedisFileListDirectoryCacheService implements FileListDirectoryCach
                 + ":" + redisProperties.getNamespaces().getCache()
                 + ":files-list:version:u:" + userId
                 + ":path:" + encode(path);
+    }
+
+    String buildFilesListCacheKeyPattern(Long userId, String path) {
+        return redisProperties.getKeyPrefix()
+                + ":" + redisProperties.getNamespaces().getCache()
+                + ":" + RedisCacheNames.FILES_LIST
+                + ":u:" + userId
+                + ":path:" + encode(path)
+                + ":page:*";
     }
 
     private String encode(String value) {

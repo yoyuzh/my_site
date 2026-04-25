@@ -8,6 +8,7 @@ import com.yoyuzh.files.content.api.ContentDuplicationApi;
 import com.yoyuzh.files.content.api.ContentRegistrationCommand;
 import com.yoyuzh.files.content.api.RegisteredContentFile;
 import com.yoyuzh.files.workspace.internal.domain.StoredFile;
+import com.yoyuzh.files.workspace.internal.domain.WorkspaceRecycleLifecycle;
 import com.yoyuzh.files.workspace.internal.infra.StoredFileRepository;
 import com.yoyuzh.files.storage.FileContentStorage;
 import com.yoyuzh.files.workspace.api.FileMetadataResponse;
@@ -22,17 +23,15 @@ import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
-import java.util.UUID;
 
 public final class RuntimeWorkspaceLifecycleApi implements WorkspaceLifecycleApi {
-
-    private static final String RECYCLE_BIN_PATH_PREFIX = "/.recycle";
 
     private final StoredFileRepository storedFileRepository;
     private final ContentDuplicationApi contentDuplicationApi;
     private final ContentBlobQueryApi contentBlobQueryApi;
     private final WorkspacePathPolicy workspacePathPolicy;
     private final WorkspaceNodeRulesService workspaceNodeRulesService;
+    private final WorkspaceRecycleLifecycle workspaceRecycleLifecycle;
     private final Clock clock;
 
     public RuntimeWorkspaceLifecycleApi(StoredFileRepository storedFileRepository,
@@ -57,6 +56,7 @@ public final class RuntimeWorkspaceLifecycleApi implements WorkspaceLifecycleApi
                 contentBlobQueryApi,
                 workspacePathPolicy,
                 workspaceNodeRulesService,
+                new WorkspaceRecycleLifecycle(),
                 Clock.systemDefaultZone()
         );
     }
@@ -66,12 +66,14 @@ public final class RuntimeWorkspaceLifecycleApi implements WorkspaceLifecycleApi
                                  ContentBlobQueryApi contentBlobQueryApi,
                                  WorkspacePathPolicy workspacePathPolicy,
                                  WorkspaceNodeRulesService workspaceNodeRulesService,
+                                 WorkspaceRecycleLifecycle workspaceRecycleLifecycle,
                                  Clock clock) {
         this.storedFileRepository = storedFileRepository;
         this.contentDuplicationApi = contentDuplicationApi;
         this.contentBlobQueryApi = contentBlobQueryApi;
         this.workspacePathPolicy = workspacePathPolicy;
         this.workspaceNodeRulesService = workspaceNodeRulesService;
+        this.workspaceRecycleLifecycle = workspaceRecycleLifecycle;
         this.clock = clock;
     }
 
@@ -79,14 +81,14 @@ public final class RuntimeWorkspaceLifecycleApi implements WorkspaceLifecycleApi
                                         FileContentStorage fileContentStorage,
                                         ContentDuplicationApi contentDuplicationApi,
                                         ContentBlobQueryApi contentBlobQueryApi) {
-        this(
-                storedFileRepository,
-                contentDuplicationApi,
-                contentBlobQueryApi,
-                new RuntimeWorkspacePathPolicy(storedFileRepository, fileContentStorage),
-                new WorkspaceNodeRulesService(storedFileRepository, fileContentStorage),
-                Clock.systemDefaultZone()
-        );
+        RuntimeWorkspacePathPolicy workspacePathPolicy = new RuntimeWorkspacePathPolicy(storedFileRepository, fileContentStorage);
+        this.storedFileRepository = storedFileRepository;
+        this.contentDuplicationApi = contentDuplicationApi;
+        this.contentBlobQueryApi = contentBlobQueryApi;
+        this.workspacePathPolicy = workspacePathPolicy;
+        this.workspaceNodeRulesService = new WorkspaceNodeRulesService(workspacePathPolicy, workspacePathPolicy);
+        this.workspaceRecycleLifecycle = new WorkspaceRecycleLifecycle();
+        this.clock = Clock.systemDefaultZone();
     }
 
     @Override
@@ -97,7 +99,7 @@ public final class RuntimeWorkspaceLifecycleApi implements WorkspaceLifecycleApi
 
         if (!storedFile.isDirectory()) {
             quotaGuard.ensureWithinQuota(storedFile.getSize());
-            RegisteredContentFile savedFile = duplicateBlobBackedFile(copyStoredFile(storedFile, userId, normalizedTargetPath), userId);
+            RegisteredContentFile savedFile = duplicateBlobBackedFile(storedFile.copyForOwner(userId, normalizedTargetPath), userId);
             return new WorkspaceLifecycleResult(
                     toResponse(savedFile),
                     buildLogicalPath(storedFile),
@@ -120,7 +122,7 @@ public final class RuntimeWorkspaceLifecycleApi implements WorkspaceLifecycleApi
         quotaGuard.ensureWithinQuota(additionalBytes);
         List<StoredFile> copiedEntries = new ArrayList<>();
 
-        StoredFile copiedRoot = copyStoredFile(storedFile, userId, normalizedTargetPath);
+        StoredFile copiedRoot = storedFile.copyForOwner(userId, normalizedTargetPath);
         copiedEntries.add(copiedRoot);
 
         descendants.stream()
@@ -131,7 +133,7 @@ public final class RuntimeWorkspaceLifecycleApi implements WorkspaceLifecycleApi
                 .forEach(descendant -> {
                     String copiedPath = remapCopiedPath(descendant.getPath(), oldLogicalPath, newLogicalPath);
                     workspacePathPolicy.ensureNodeNameAvailable(userId, copiedPath, descendant.getFilename(), "目标目录已存在同名文件");
-                    copiedEntries.add(copyStoredFile(descendant, userId, copiedPath));
+                    copiedEntries.add(descendant.copyForOwner(userId, copiedPath));
                 });
 
         StoredFile savedRoot = null;
@@ -163,7 +165,8 @@ public final class RuntimeWorkspaceLifecycleApi implements WorkspaceLifecycleApi
             String logicalPath = buildLogicalPath(storedFile);
             filesToRecycle.addAll(storedFileRepository.findByUserIdAndPathEqualsOrDescendant(userId, logicalPath));
         }
-        moveToRecycleBin(filesToRecycle, storedFile.getId());
+        workspaceRecycleLifecycle.moveToRecycleBin(filesToRecycle, storedFile.getId(), now());
+        storedFileRepository.saveAll(filesToRecycle);
         return new WorkspaceLifecycleResult(
                 toResponse(storedFile),
                 fromPath,
@@ -187,13 +190,7 @@ public final class RuntimeWorkspaceLifecycleApi implements WorkspaceLifecycleApi
         workspaceNodeRulesService.validateRecycleRestoreTargets(userId, recycleGroupItems, this::requireRecycleOriginalPath);
         workspacePathPolicy.ensureDirectoryHierarchy(userId, requireRecycleOriginalPath(recycleRoot));
 
-        for (StoredFile item : recycleGroupItems) {
-            item.setPath(requireRecycleOriginalPath(item));
-            item.setDeletedAt(null);
-            item.setRecycleOriginalPath(null);
-            item.setRecycleGroupId(null);
-            item.setRecycleRoot(false);
-        }
+        workspaceRecycleLifecycle.restoreFromRecycleBin(recycleGroupItems);
         storedFileRepository.saveAll(recycleGroupItems);
         return new WorkspaceLifecycleResult(
                 toResponse(recycleRoot),
@@ -235,50 +232,6 @@ public final class RuntimeWorkspaceLifecycleApi implements WorkspaceLifecycleApi
         return items;
     }
 
-    private void moveToRecycleBin(List<StoredFile> filesToRecycle, Long recycleRootId) {
-        if (filesToRecycle.isEmpty()) {
-            return;
-        }
-
-        StoredFile recycleRoot = filesToRecycle.stream()
-                .filter(item -> recycleRootId.equals(item.getId()))
-                .findFirst()
-                .orElseThrow(() -> new BusinessException(ErrorCode.FILE_NOT_FOUND, "文件不存在"));
-        String recycleGroupId = UUID.randomUUID().toString().replace("-", "");
-        LocalDateTime deletedAt = now();
-        String rootLogicalPath = buildLogicalPath(recycleRoot);
-        String recycleRootPath = buildRecycleBinPath(recycleGroupId, recycleRoot.getPath());
-        String recycleRootLogicalPath = workspacePathPolicy.buildTargetLogicalPath(recycleRootPath, recycleRoot.getFilename());
-
-        List<StoredFile> orderedItems = filesToRecycle.stream()
-                .sorted(Comparator
-                        .comparingInt((StoredFile item) -> buildLogicalPath(item).length())
-                        .thenComparing(item -> item.isDirectory() ? 0 : 1)
-                        .thenComparing(StoredFile::getFilename))
-                .toList();
-
-        for (StoredFile item : orderedItems) {
-            String originalPath = item.getPath();
-            String recyclePath = recycleRootId.equals(item.getId())
-                    ? recycleRootPath
-                    : remapCopiedPath(item.getPath(), rootLogicalPath, recycleRootLogicalPath);
-            item.setDeletedAt(deletedAt);
-            item.setRecycleOriginalPath(originalPath);
-            item.setRecycleGroupId(recycleGroupId);
-            item.setRecycleRoot(recycleRootId.equals(item.getId()));
-            item.setPath(recyclePath);
-        }
-
-        storedFileRepository.saveAll(orderedItems);
-    }
-
-    private String buildRecycleBinPath(String recycleGroupId, String originalPath) {
-        if ("/".equals(originalPath)) {
-            return RECYCLE_BIN_PATH_PREFIX + "/" + recycleGroupId;
-        }
-        return RECYCLE_BIN_PATH_PREFIX + "/" + recycleGroupId + originalPath;
-    }
-
     private LocalDateTime now() {
         return LocalDateTime.ofInstant(clock.instant(), clock.getZone());
     }
@@ -288,18 +241,6 @@ public final class RuntimeWorkspaceLifecycleApi implements WorkspaceLifecycleApi
             throw new BusinessException(ErrorCode.FILE_NOT_FOUND, "回收站文件不存在");
         }
         return storedFile.getRecycleOriginalPath();
-    }
-
-    private StoredFile copyStoredFile(StoredFile source, Long ownerUserId, String nextPath) {
-        StoredFile copiedFile = new StoredFile();
-        copiedFile.setUserId(ownerUserId);
-        copiedFile.setFilename(source.getFilename());
-        copiedFile.setPath(nextPath);
-        copiedFile.setContentType(source.getContentType());
-        copiedFile.setSize(source.getSize());
-        copiedFile.setDirectory(source.isDirectory());
-        copiedFile.setBlobId(source.getBlobId());
-        return copiedFile;
     }
 
     private String remapCopiedPath(String currentPath, String oldLogicalPath, String newLogicalPath) {
@@ -334,8 +275,8 @@ public final class RuntimeWorkspaceLifecycleApi implements WorkspaceLifecycleApi
     private StoredFile toStoredFile(RegisteredContentFile savedFile) {
         StoredFile storedFile = new StoredFile();
         storedFile.setId(savedFile.id());
-        storedFile.setFilename(savedFile.filename());
-        storedFile.setPath(savedFile.path());
+        storedFile.renameTo(savedFile.filename());
+        storedFile.moveTo(savedFile.path());
         storedFile.setSize(savedFile.size());
         storedFile.setContentType(savedFile.contentType());
         storedFile.setDirectory(savedFile.directory());
@@ -373,7 +314,7 @@ public final class RuntimeWorkspaceLifecycleApi implements WorkspaceLifecycleApi
     }
 
     private String buildLogicalPath(StoredFile storedFile) {
-        return buildLogicalPath(storedFile.getPath(), storedFile.getFilename());
+        return storedFile.logicalPath();
     }
 
     private String buildLogicalPath(String path, String filename) {
