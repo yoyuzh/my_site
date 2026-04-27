@@ -17,10 +17,6 @@ public interface StorageRuntimeProperties {
     interface S3 {
         String getApiBaseUrl();
 
-        String getApiAccessKey();
-
-        String getApiSecretKey();
-
         String getScope();
 
         int getTtlSeconds();
@@ -34,5 +30,9 @@ public interface StorageRuntimeProperties {
         String getPackageDownloadSecret();
 
         int getPackageDownloadTtlSeconds();
+
+        boolean hasApiCredentials();
+
+        String createApiAuthorization(String signTarget);
     }
 }

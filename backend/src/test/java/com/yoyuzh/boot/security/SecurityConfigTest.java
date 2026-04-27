@@ -3,7 +3,15 @@ package com.yoyuzh.boot.security;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.yoyuzh.ops.admin.internal.web.AdminAuditController;
+import com.yoyuzh.ops.admin.internal.web.AdminOverviewController;
+import com.yoyuzh.ops.admin.internal.web.AdminResourceController;
+import com.yoyuzh.ops.admin.internal.web.AdminSettingsController;
+import com.yoyuzh.ops.admin.internal.web.AdminStoragePolicyController;
+import com.yoyuzh.ops.admin.internal.web.AdminTaskController;
+import com.yoyuzh.ops.admin.internal.web.AdminUserController;
 import org.junit.jupiter.api.Test;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
 
@@ -45,5 +53,16 @@ class SecurityConfigTest {
 
         assertThat(configuration).isNotNull();
         assertThat(configuration.getAllowedMethods()).contains("PATCH");
+    }
+
+    @Test
+    void adminControllersShouldRelyOnUrlSecurityForAdminRouteFamily() {
+        assertThat(AdminUserController.class.isAnnotationPresent(PreAuthorize.class)).isFalse();
+        assertThat(AdminResourceController.class.isAnnotationPresent(PreAuthorize.class)).isFalse();
+        assertThat(AdminAuditController.class.isAnnotationPresent(PreAuthorize.class)).isFalse();
+        assertThat(AdminSettingsController.class.isAnnotationPresent(PreAuthorize.class)).isFalse();
+        assertThat(AdminTaskController.class.isAnnotationPresent(PreAuthorize.class)).isFalse();
+        assertThat(AdminStoragePolicyController.class.isAnnotationPresent(PreAuthorize.class)).isFalse();
+        assertThat(AdminOverviewController.class.isAnnotationPresent(PreAuthorize.class)).isFalse();
     }
 }

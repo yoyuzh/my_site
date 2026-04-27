@@ -191,6 +191,9 @@ public class BackgroundTaskService {
                                             Map<String, Object> privateState,
                                             String correlationId,
                                             boolean flushOnSave) {
+        Map<String, Object> safePublicState = publicState == null ? Map.of() : new LinkedHashMap<>(publicState);
+        Map<String, Object> safePrivateState = privateState == null ? new LinkedHashMap<>() : new LinkedHashMap<>(privateState);
+        safePrivateState.putIfAbsent("_publicStateSeed", new LinkedHashMap<>(safePublicState));
         BackgroundTask task = new BackgroundTask();
         task.setUserId(userId);
         task.setType(type);
@@ -198,8 +201,8 @@ public class BackgroundTaskService {
         task.setAttemptCount(0);
         task.setMaxAttempts(retryPolicy.resolveMaxAttempts(type));
         task.setNextRunAt(null);
-        task.setPublicStateJson(stateManager.createInitialPublicState(publicState, task.getAttemptCount(), task.getMaxAttempts()));
-        task.setPrivateStateJson(stateManager.toJson(privateState));
+        task.setPublicStateJson(stateManager.createInitialPublicState(safePublicState, task.getAttemptCount(), task.getMaxAttempts()));
+        task.setPrivateStateJson(stateManager.toJson(safePrivateState));
         task.setCorrelationId(normalizeCorrelationId(correlationId));
         return flushOnSave
                 ? backgroundTaskRepository.saveAndFlush(task)
@@ -212,7 +215,7 @@ public class BackgroundTaskService {
 
     public BackgroundTask getOwnedTask(Long userId, Long id) {
         return backgroundTaskRepository.findByIdAndUserId(id, userId)
-                .orElseThrow(() -> new BusinessException(ErrorCode.FILE_NOT_FOUND, "task not found"));
+                .orElseThrow(() -> new BusinessException(ErrorCode.TASK_NOT_FOUND, "task not found"));
     }
 
     public TaskProgressResponse getOwnedTaskProgress(Long userId, Long id) {
@@ -270,17 +273,22 @@ public class BackgroundTaskService {
 
         if (task.getStatus() == BackgroundTaskStatus.QUEUED || task.getStatus() == BackgroundTaskStatus.RUNNING) {
             LocalDateTime now = now();
-            task.setStatus(BackgroundTaskStatus.CANCELLED);
-            task.setNextRunAt(null);
-            clearLease(task);
-            task.setPublicStateJson(stateManager.merge(
+            String publicStateJson = stateManager.merge(
                     task.getPublicStateJson(),
                     stateManager.cancelledStatePatch(task, now),
                     stateManager.removableKeys(RETRY_TRANSIENT_STATE_KEYS, RUNNING_TRANSIENT_STATE_KEYS)
-            ));
-            task.setFinishedAt(now);
-            task.setErrorMessage(null);
-            return backgroundTaskRepository.save(task);
+            );
+            int updated = backgroundTaskRepository.cancelOwnedTask(
+                    id,
+                    userId,
+                    task.getUpdatedAt(),
+                    List.of(BackgroundTaskStatus.QUEUED, BackgroundTaskStatus.RUNNING),
+                    BackgroundTaskStatus.CANCELLED,
+                    publicStateJson,
+                    now,
+                    now
+            );
+            return getOwnedTask(userId, id);
         }
 
         return task;
@@ -293,14 +301,30 @@ public class BackgroundTaskService {
             throw new BusinessException(ErrorCode.INVALID_INPUT, "only failed tasks can be retried");
         }
 
-        task.setAttemptCount(0);
-        task.setNextRunAt(null);
-        clearLease(task);
-        task.setPublicStateJson(stateManager.resetPublicStateForRetry(task.getPrivateStateJson(), task.getAttemptCount(), task.getMaxAttempts()));
-        task.setStatus(BackgroundTaskStatus.QUEUED);
-        task.setFinishedAt(null);
-        task.setErrorMessage(null);
-        return backgroundTaskRepository.save(task);
+        String publicStateJson = stateManager.resetPublicStateForRetry(
+                task.getPublicStateJson(),
+                task.getPrivateStateJson(),
+                0,
+                task.getMaxAttempts()
+        );
+        LocalDateTime now = now();
+        int updated = backgroundTaskRepository.retryOwnedTask(
+                id,
+                userId,
+                task.getUpdatedAt(),
+                BackgroundTaskStatus.FAILED,
+                BackgroundTaskStatus.QUEUED,
+                publicStateJson,
+                now
+        );
+        if (updated == 1) {
+            return getOwnedTask(userId, id);
+        }
+        BackgroundTask current = getOwnedTask(userId, id);
+        if (current.getStatus() != BackgroundTaskStatus.FAILED) {
+            return current;
+        }
+        throw new IllegalStateException("background task retry transition conflict");
     }
 
     @Transactional

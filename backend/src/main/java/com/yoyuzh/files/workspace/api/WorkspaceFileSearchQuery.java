@@ -4,6 +4,7 @@ import java.time.LocalDateTime;
 
 public record WorkspaceFileSearchQuery(
         String name,
+        String category,
         Boolean directory,
         Long sizeGte,
         Long sizeLte,

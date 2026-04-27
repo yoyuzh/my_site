@@ -1,5 +1,6 @@
 package com.yoyuzh.platform.storage.internal.application;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.yoyuzh.platform.storage.api.DefaultStoragePolicySnapshot;
 import com.yoyuzh.platform.storage.api.StoragePolicyCapabilities;
 import com.yoyuzh.platform.storage.api.StoragePolicyCredentialMode;
@@ -40,7 +41,13 @@ class StoragePolicyServiceTest {
     @BeforeEach
     void setUp() {
         properties = new FileStorageProperties();
-        storagePolicyService = new StoragePolicyService(storagePolicyRepository, properties, uploadModePolicy, uploadConstraintPolicy);
+        storagePolicyService = new StoragePolicyService(
+                storagePolicyRepository,
+                properties,
+                uploadModePolicy,
+                uploadConstraintPolicy,
+                new ObjectMapper()
+        );
     }
 
     @Test

@@ -1,6 +1,7 @@
 package com.yoyuzh.transfer.internal.web;
 
-import com.yoyuzh.boot.security.CustomUserDetailsService;
+import com.yoyuzh.identity.access.api.IdentityUserDirectoryApi;
+import com.yoyuzh.identity.access.api.IdentityUserProfileSummary;
 import com.yoyuzh.shared.kernel.ApiResponse;
 import com.yoyuzh.shared.kernel.BusinessException;
 import com.yoyuzh.shared.kernel.ErrorCode;
@@ -16,10 +17,12 @@ import com.yoyuzh.transfer.api.TransferSessionResponse;
 import com.yoyuzh.transfer.api.TransferSignalRequest;
 import io.swagger.v3.oas.annotations.Operation;
 import jakarta.validation.Valid;
+import java.io.IOException;
 import java.net.URI;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import lombok.RequiredArgsConstructor;
+import org.springframework.core.io.InputStreamResource;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
@@ -41,7 +44,7 @@ import org.springframework.web.multipart.MultipartFile;
 public class TransferController {
 
     private final TransferSessionApi transferSessionApi;
-    private final CustomUserDetailsService userDetailsService;
+    private final IdentityUserDirectoryApi identityUserDirectoryApi;
 
     @Operation(summary = "创建快传会话")
     @PostMapping("/sessions")
@@ -135,24 +138,37 @@ public class TransferController {
         if (userDetails == null) {
             return null;
         }
-        return userDetailsService.loadUserId(userDetails.getUsername());
+        return resolveUserId(userDetails.getUsername());
     }
 
     private Long currentUserId(UserDetails userDetails) {
         requireAuthenticatedUser(userDetails);
-        return userDetailsService.loadUserId(userDetails.getUsername());
+        return resolveUserId(userDetails.getUsername());
+    }
+
+    private Long resolveUserId(String username) {
+        return identityUserDirectoryApi.findProfileByUsername(username)
+                .map(IdentityUserProfileSummary::id)
+                .orElseThrow(() -> new BusinessException(ErrorCode.NOT_LOGGED_IN, "用户不存在"));
     }
 
     private ResponseEntity<?> toResponseEntity(OfflineDownloadResult result) {
         if (result.redirect()) {
             return ResponseEntity.status(302).location(URI.create(result.redirectUrl())).build();
         }
-        return ResponseEntity.ok()
+        ResponseEntity.BodyBuilder responseBuilder = ResponseEntity.ok()
                 .header(
                         HttpHeaders.CONTENT_DISPOSITION,
                         "attachment; filename*=UTF-8''" + URLEncoder.encode(result.filename(), StandardCharsets.UTF_8)
                 )
-                .contentType(MediaType.parseMediaType(result.contentType()))
-                .body(result.body());
+                .contentType(MediaType.parseMediaType(result.contentType()));
+        if (result.contentLength() != null) {
+            responseBuilder.contentLength(result.contentLength());
+        }
+        try {
+            return responseBuilder.body(new InputStreamResource(result.body().getInputStream()));
+        } catch (IOException ex) {
+            throw new BusinessException(ErrorCode.UNKNOWN, "offline transfer download stream open failed");
+        }
     }
 }

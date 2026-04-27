@@ -1,6 +1,7 @@
 package com.yoyuzh.files.workspace.internal.application;
 
 import com.yoyuzh.shared.kernel.BusinessException;
+import com.yoyuzh.shared.kernel.ErrorCode;
 import com.yoyuzh.files.workspace.internal.domain.StoredFile;
 import com.yoyuzh.files.workspace.internal.infra.StoredFileRepository;
 import com.yoyuzh.files.storage.FileContentStorage;
@@ -14,6 +15,8 @@ import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.times;
@@ -61,6 +64,44 @@ class RuntimeWorkspacePathPolicyTest {
                 List.of(recycledFile),
                 ignored -> "/docs"
         )).isInstanceOf(BusinessException.class);
+    }
+
+    @Test
+    void shouldResolveAvailableFileNameByAppendingCounterBeforeExtension() {
+        RuntimeWorkspacePathPolicy policy = new RuntimeWorkspacePathPolicy(storedFileRepository, fileContentStorage);
+        when(storedFileRepository.existsByUserIdAndPathAndFilename(7L, "/docs", "report.txt")).thenReturn(true);
+        when(storedFileRepository.findActiveFilenamesByUserIdAndPathAndFilenamePrefix(7L, "/docs", "report.txt", "report"))
+                .thenReturn(List.of("report.txt", "report(1).txt", "report(2).md", "report-final.txt"));
+
+        assertThat(policy.resolveAvailableNodeName(7L, "/docs", "report.txt")).isEqualTo("report(2).txt");
+    }
+
+    @Test
+    void shouldResolveAvailableDirectoryNameByAppendingCounter() {
+        RuntimeWorkspacePathPolicy policy = new RuntimeWorkspacePathPolicy(storedFileRepository, fileContentStorage);
+        when(storedFileRepository.existsByUserIdAndPathAndFilename(7L, "/", "docs")).thenReturn(true);
+        when(storedFileRepository.findActiveFilenamesByUserIdAndPathAndFilenamePrefix(7L, "/", "docs", "docs"))
+                .thenReturn(List.of("docs", "docs(1).txt"));
+
+        assertThat(policy.resolveAvailableNodeName(7L, "/", "docs")).isEqualTo("docs(1)");
+    }
+
+    @Test
+    void shouldFailWhenAutoResolvedNamesExceedRetryLimit() {
+        RuntimeWorkspacePathPolicy policy = new RuntimeWorkspacePathPolicy(storedFileRepository, fileContentStorage);
+        when(storedFileRepository.existsByUserIdAndPathAndFilename(7L, "/docs", "report.txt")).thenReturn(true);
+        java.util.ArrayList<String> existingNames = new java.util.ArrayList<>();
+        existingNames.add("report.txt");
+        for (int counter = 1; counter <= 100; counter++) {
+            existingNames.add("report(" + counter + ").txt");
+        }
+        when(storedFileRepository.findActiveFilenamesByUserIdAndPathAndFilenamePrefix(7L, "/docs", "report.txt", "report"))
+                .thenReturn(existingNames);
+
+        assertThatThrownBy(() -> policy.resolveAvailableNodeName(7L, "/docs", "report.txt"))
+                .isInstanceOf(BusinessException.class)
+                .extracting(ex -> ((BusinessException) ex).getErrorCode())
+                .isEqualTo(ErrorCode.DUPLICATE_NAME);
     }
 
 }

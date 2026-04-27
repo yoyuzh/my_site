@@ -144,6 +144,7 @@ class ShareV2ControllerIntegrationTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.token").isNotEmpty())
                 .andExpect(jsonPath("$.data.shareName").value("course-share"))
+                .andExpect(jsonPath("$.data.password").value("Share123"))
                 .andExpect(jsonPath("$.data.passwordRequired").value(true))
                 .andExpect(jsonPath("$.data.file.filename").value("notes.txt"))
                 .andReturn()
@@ -201,6 +202,7 @@ class ShareV2ControllerIntegrationTest {
                         .param("size", "20"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.items[0].id").value(shareId))
+                .andExpect(jsonPath("$.data.items[0].password").value(nullValue()))
                 .andExpect(jsonPath("$.data.items[0].file.filename").value("notes.txt"));
 
         mockMvc.perform(delete("/api/v2/shares/{id}", shareId)
@@ -401,6 +403,108 @@ class ShareV2ControllerIntegrationTest {
                                 """))
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.code").value(2404));
+    }
+
+    @Test
+    void shouldSaveShareToSharedWithMeAndKeepRemovedStatusAfterOwnerCancelsIt() throws Exception {
+        String createResponse = mockMvc.perform(post("/api/v2/shares")
+                        .with(user("alice"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "fileId": %d,
+                                  "password": "Share123",
+                                  "shareName": "saved-shortcut"
+                                }
+                                """.formatted(sharedFileId)))
+                .andExpect(status().isOk())
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+        String token = JsonPath.read(createResponse, "$.data.token");
+        Long shareId = ((Number) JsonPath.read(createResponse, "$.data.id")).longValue();
+
+        mockMvc.perform(post("/api/v2/shares/{token}/save", token)
+                        .with(user("bob"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "password": "Share123"
+                                }
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.share.token").value(token))
+                .andExpect(jsonPath("$.data.share.status").value("ACTIVE"))
+                .andExpect(jsonPath("$.data.share.file.filename").value("notes.txt"));
+
+        String listResponse = mockMvc.perform(get("/api/v2/shares/shared-with-me")
+                        .with(user("bob"))
+                        .param("page", "0")
+                        .param("size", "20"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.total").value(1))
+                .andExpect(jsonPath("$.data.items[0].share.token").value(token))
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+        Long savedId = ((Number) JsonPath.read(listResponse, "$.data.items[0].id")).longValue();
+
+        mockMvc.perform(delete("/api/v2/shares/{id}", shareId)
+                        .with(user("alice")))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(get("/api/v2/shares/shared-with-me/{id}", savedId)
+                        .with(user("bob")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.share.status").value("REMOVED"));
+
+        mockMvc.perform(delete("/api/v2/shares/shared-with-me/{id}", savedId)
+                        .with(user("bob")))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(get("/api/v2/shares/shared-with-me")
+                        .with(user("bob"))
+                        .param("page", "0")
+                        .param("size", "20"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.total").value(0));
+    }
+
+    @Test
+    void shouldConsumeShareAfterSuccessfulDownloadWhenExpireAfterConsumeEnabled() throws Exception {
+        String createResponse = mockMvc.perform(post("/api/v2/shares")
+                        .with(user("alice"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "fileId": %d,
+                                  "allowDownload": true,
+                                  "expireAfterConsume": true
+                                }
+                                """.formatted(sharedFileId)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.expireAfterConsume").value(true))
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+        String token = JsonPath.read(createResponse, "$.data.token");
+
+        mockMvc.perform(get("/api/v2/shares/{token}", token)
+                        .with(anonymous())
+                        .param("download", "1"))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(get("/api/v2/shares/{token}", token).with(anonymous()))
+                .andExpect(status().isGone())
+                .andExpect(jsonPath("$.code").value(2405));
+
+        mockMvc.perform(get("/api/v2/shares/mine")
+                        .with(user("alice"))
+                        .param("page", "0")
+                        .param("size", "20"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.items[0].status").value("CONSUMED"))
+                .andExpect(jsonPath("$.data.items[0].downloadCount").value(1));
     }
 
     @Test

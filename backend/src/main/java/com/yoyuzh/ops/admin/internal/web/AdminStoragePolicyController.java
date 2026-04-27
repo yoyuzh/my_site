@@ -11,7 +11,6 @@ import com.yoyuzh.platform.job.api.BackgroundTaskResponse;
 import com.yoyuzh.platform.job.api.BackgroundTaskView;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
-import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -28,7 +27,6 @@ import java.util.List;
 @RestController
 @RequestMapping("/api/admin")
 @RequiredArgsConstructor
-@PreAuthorize("@adminAccessEvaluator.isAdmin(authentication)")
 public class AdminStoragePolicyController {
 
     private final AdminStoragePolicyQueryService adminStoragePolicyQueryService;

@@ -70,7 +70,15 @@ class MediaMetadataTaskBrokerConsumerTest {
         int processed = consumer.drainQueuedMessages(1);
 
         assertThat(processed).isEqualTo(0);
-        verify(lightweightBrokerGateway).requeue(MediaMetadataTaskBrokerPublisher.TOPIC, payload);
+        verify(lightweightBrokerGateway).requeue(
+                MediaMetadataTaskBrokerPublisher.TOPIC,
+                Map.of(
+                        "userId", 7L,
+                        "fileId", 11L,
+                        "correlationId", "media-meta:auto:file:11",
+                        "brokerRetryCount", 1L
+                )
+        );
     }
 
     @Test
@@ -86,6 +94,26 @@ class MediaMetadataTaskBrokerConsumerTest {
 
         assertThat(processed).isEqualTo(0);
         verify(backgroundTaskLifecycleApi, never()).createQueuedAutoMediaMetadataTask(org.mockito.ArgumentMatchers.anyLong(), org.mockito.ArgumentMatchers.anyLong(), org.mockito.ArgumentMatchers.any());
+        verify(lightweightBrokerGateway, never()).requeue(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any());
+    }
+
+    @Test
+    void shouldDropPayloadAfterMaxBrokerRetries() {
+        Map<String, Object> payload = Map.of(
+                "userId", 7L,
+                "fileId", 11L,
+                "correlationId", "media-meta:auto:file:11",
+                "brokerRetryCount", 3
+        );
+        when(lightweightBrokerGateway.poll(MediaMetadataTaskBrokerPublisher.TOPIC))
+                .thenReturn(Optional.of(payload));
+        doThrow(new IllegalStateException("db unavailable"))
+                .when(backgroundTaskLifecycleApi)
+                .createQueuedAutoMediaMetadataTask(7L, 11L, "media-meta:auto:file:11");
+
+        int processed = consumer.drainQueuedMessages(1);
+
+        assertThat(processed).isEqualTo(0);
         verify(lightweightBrokerGateway, never()).requeue(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any());
     }
 }

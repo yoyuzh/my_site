@@ -87,6 +87,30 @@ class FileSearchV2ControllerTest {
     }
 
     @Test
+    void shouldForwardCategoryFilterToSearchApi() throws Exception {
+        when(userDetailsService.loadUserId("alice")).thenReturn(7L);
+        when(fileSearchApi.search(eq(7L), any(SearchFilesQuery.class))).thenReturn(new PageResponse<>(List.of(), 0, 0, 20));
+
+        mockMvc.perform(get("/api/v2/files/search")
+                        .with(user(userDetails()))
+                        .accept(MediaType.APPLICATION_JSON)
+                        .param("category", "image")
+                        .param("type", "file"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(0));
+    }
+
+    @Test
+    void shouldRejectUnsupportedCategoryFilter() throws Exception {
+        mockMvc.perform(get("/api/v2/files/search")
+                        .with(user(userDetails()))
+                        .param("category", "archive"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value(2406))
+                .andExpect(jsonPath("$.msg").value("分类筛选只支持 image、video、audio 或 document"));
+    }
+
+    @Test
     void shouldRejectUnsupportedTypeFilter() throws Exception {
         mockMvc.perform(get("/api/v2/files/search")
                 .with(user(userDetails()))

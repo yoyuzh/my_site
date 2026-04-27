@@ -9,14 +9,14 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 class TransferPathNormalizerTest {
 
     @Test
-    void shouldNormalizePickupCodeByRemovingNonDigits() {
-        assertThat(TransferPathNormalizer.normalizePickupCode("12-34 56"))
-                .isEqualTo("123456");
+    void shouldNormalizePickupCodeByRemovingSeparatorsAndUppercasingLetters() {
+        assertThat(TransferPathNormalizer.normalizePickupCode("ab-12 cd34"))
+                .isEqualTo("AB12CD34");
     }
 
     @Test
-    void shouldRejectPickupCodeWithoutSixDigits() {
-        assertThatThrownBy(() -> TransferPathNormalizer.normalizePickupCode("12-34"))
+    void shouldRejectPickupCodeWithoutEightAlphaNumericCharacters() {
+        assertThatThrownBy(() -> TransferPathNormalizer.normalizePickupCode("ab-12"))
                 .isInstanceOf(BusinessException.class)
                 .hasMessageContaining("invalid pickup code");
     }

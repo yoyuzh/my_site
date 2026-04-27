@@ -12,6 +12,7 @@ public record CreateShareV2Request(
         @Min(1) Integer maxDownloads,
         Boolean allowImport,
         Boolean allowDownload,
+        Boolean expireAfterConsume,
         String shareName
 ) {
 }

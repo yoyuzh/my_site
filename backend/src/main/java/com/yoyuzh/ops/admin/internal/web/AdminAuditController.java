@@ -5,7 +5,6 @@ import com.yoyuzh.ops.admin.internal.application.AdminAuditQueryService;
 import com.yoyuzh.shared.kernel.ApiResponse;
 import com.yoyuzh.shared.kernel.PageResponse;
 import lombok.RequiredArgsConstructor;
-import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -14,7 +13,6 @@ import org.springframework.web.bind.annotation.RestController;
 @RestController
 @RequestMapping("/api/admin")
 @RequiredArgsConstructor
-@PreAuthorize("@adminAccessEvaluator.isAdmin(authentication)")
 public class AdminAuditController {
 
     private final AdminAuditQueryService adminAuditQueryService;

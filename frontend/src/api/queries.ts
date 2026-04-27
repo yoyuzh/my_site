@@ -13,14 +13,18 @@ import {
   type AdminUser,
   type BackgroundTask,
   type FileItem,
+  type MediaCategory,
   type QueryPage,
   type RecycleBinItem,
+  type RemoteDownloadDetail,
+  type RemoteDownloadListItem,
   type ShareItem,
   type UiPage,
   type UserCapacity,
 } from './types';
-import { listFavoriteFiles, listFiles, listRecentFiles, listRecycleBin } from '../lib/files';
-import { getMyShares } from '../lib/shares';
+import { listFavoriteFiles, listFiles, listRecentFiles, listRecycleBin, searchFiles } from '../lib/files';
+import { getRemoteDownload, listRemoteDownloads } from '../lib/remote-downloads';
+import { getMyShares, listSavedShares, getSavedShareDetail } from '../lib/shares';
 import { getTasks } from '../lib/tasks';
 import { getUserCapacity } from '../lib/user-settings';
 
@@ -62,19 +66,23 @@ export const useFavoriteFiles = () =>
     queryFn: () => listFavoriteFiles(),
   });
 
-export const useFiles = (path = '/', page = 1, size = 20, search = '') =>
+export const useFiles = (
+  path = '/',
+  page = 1,
+  size = 20,
+  search = '',
+  options?: { category?: MediaCategory },
+) =>
   useQuery({
-    queryKey: ['files', path, page, size, search],
+    queryKey: ['files', path, page, size, search, options?.category ?? null],
     queryFn: async () => {
-      if (search.trim()) {
-        const params = new URLSearchParams({
-          name: search.trim(),
-          page: String(Math.max(0, page - 1)),
-          size: String(size),
-        });
-        const result = await apiRequest<QueryPage<FileItem>>({
-          url: `/v2/files/search?${params.toString()}`,
-          method: 'GET',
+      if (options?.category || search.trim()) {
+        const result = await searchFiles({
+          name: search.trim() || undefined,
+          page: Math.max(0, page - 1),
+          size,
+          type: options?.category ? 'file' : undefined,
+          category: options?.category,
         });
         return normalizePage(result);
       }
@@ -94,10 +102,38 @@ export const useTasks = (page = 1, size = 20) =>
     queryFn: async () => normalizePage(await getTasks(Math.max(0, page - 1), size)),
   });
 
+export const useRemoteDownloads = () =>
+  useQuery<RemoteDownloadListItem[]>({
+    queryKey: ['remoteDownloads'],
+    queryFn: () => listRemoteDownloads(),
+  });
+
+export const useRemoteDownloadDetail = (id: number | null) =>
+  useQuery<RemoteDownloadDetail>({
+    queryKey: ['remoteDownloadDetail', id],
+    queryFn: () => getRemoteDownload(id as number),
+    enabled: id != null,
+  });
+
 export const useMyShares = (page = 1, size = 20) =>
   useQuery({
     queryKey: ['myShares', page, size],
     queryFn: async () => normalizePage(await getMyShares(Math.max(0, page - 1), size)),
+  });
+
+export const useSharedWithMe = (page = 1, size = 20) =>
+  useQuery({
+    queryKey: ['sharedWithMe', page, size],
+    queryFn: async () => {
+      return normalizePage(await listSavedShares(Math.max(0, page - 1), size));
+    },
+  });
+
+export const useSharedWithMeDetail = (id: number) =>
+  useQuery({
+    queryKey: ['sharedWithMeDetail', id],
+    queryFn: () => getSavedShareDetail(id),
+    enabled: !!id,
   });
 
 export const useAdminSummary = () =>

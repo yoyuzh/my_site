@@ -4,6 +4,7 @@ import com.yoyuzh.files.storage.FileContentStorage;
 import com.yoyuzh.platform.storage.api.StorageRuntimeProperties;
 import com.yoyuzh.platform.storage.internal.infra.FileStorageProperties;
 import com.yoyuzh.shared.kernel.BusinessException;
+import com.yoyuzh.shared.kernel.ErrorCode;
 import com.yoyuzh.transfer.api.CreateTransferSessionCommand;
 import com.yoyuzh.transfer.api.OfflineDownloadResult;
 import com.yoyuzh.transfer.api.TransferFileItem;
@@ -19,11 +20,13 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.mock.web.MockMultipartFile;
 
+import java.io.ByteArrayInputStream;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.function.Predicate;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -63,20 +66,19 @@ class OfflineTransferServiceTest {
     // ── normalizePickupCode ────────────────────────────────────────────────
 
     @Test
-    void shouldRejectPickupCodeWithFewerThanSixDigits() {
-        assertThatThrownBy(() -> service.lookupReadySession("1234"))
+    void shouldRejectPickupCodeWithFewerThanEightAlphaNumericCharacters() {
+        assertThatThrownBy(() -> service.lookupReadySession("AB12"))
                 .isInstanceOf(BusinessException.class)
                 .hasMessageContaining("invalid pickup code");
     }
 
     @Test
-    void shouldStripNonDigitCharactersFromPickupCode() {
-        // "123-456" has exactly 6 digits after stripping, so it should not fail on format
+    void shouldStripSeparatorsAndUppercasePickupCode() {
         // but the session does not exist → FILE_NOT_FOUND
-        when(offlineTransferSessionRepository.findWithFilesByPickupCode("123456"))
+        when(offlineTransferSessionRepository.findWithFilesByPickupCode("AB12CD34"))
                 .thenReturn(Optional.empty());
 
-        assertThatThrownBy(() -> service.lookupReadySession("123-456"))
+        assertThatThrownBy(() -> service.lookupReadySession("ab-12 cd34"))
                 .isInstanceOf(BusinessException.class)
                 .hasMessageContaining("not found");
     }
@@ -85,20 +87,21 @@ class OfflineTransferServiceTest {
 
     @Test
     void shouldRejectLookupOfExpiredSession() {
-        OfflineTransferSession expiredSession = buildReadySession(1L, "123456", Instant.now().minusSeconds(1));
+        OfflineTransferSession expiredSession = buildReadySession(1L, "AB12CD34", Instant.now().minusSeconds(1));
 
-        when(offlineTransferSessionRepository.findWithFilesByPickupCode("123456"))
+        when(offlineTransferSessionRepository.findWithFilesByPickupCode("AB12CD34"))
                 .thenReturn(Optional.of(expiredSession));
 
-        assertThatThrownBy(() -> service.lookupReadySession("123456"))
+        assertThatThrownBy(() -> service.lookupReadySession("AB12CD34"))
                 .isInstanceOf(BusinessException.class)
-                .hasMessageContaining("not found");
+                .extracting(ex -> ((BusinessException) ex).getErrorCode())
+                .isEqualTo(ErrorCode.SESSION_EXPIRED);
     }
 
     @Test
     void shouldRejectJoinOfExpiredSession() {
         String sessionId = UUID.randomUUID().toString();
-        OfflineTransferSession expiredSession = buildReadySession(1L, "123456", Instant.now().minusSeconds(1));
+        OfflineTransferSession expiredSession = buildReadySession(1L, "AB12CD34", Instant.now().minusSeconds(1));
         expiredSession.setSessionId(sessionId);
 
         when(offlineTransferSessionRepository.findWithFilesBySessionId(sessionId))
@@ -106,7 +109,8 @@ class OfflineTransferServiceTest {
 
         assertThatThrownBy(() -> service.joinReadySession(sessionId))
                 .isInstanceOf(BusinessException.class)
-                .hasMessageContaining("not found");
+                .extracting(ex -> ((BusinessException) ex).getErrorCode())
+                .isEqualTo(ErrorCode.SESSION_EXPIRED);
     }
 
     // ── uploadOfflineFile permission ───────────────────────────────────────
@@ -142,15 +146,15 @@ class OfflineTransferServiceTest {
 
         assertThatThrownBy(() -> service.uploadOfflineFile(ownerId, sessionId, session.getFiles().get(0).getId(), file))
                 .isInstanceOf(BusinessException.class)
-                .hasMessageContaining("not found");
+                .extracting(ex -> ((BusinessException) ex).getErrorCode())
+                .isEqualTo(ErrorCode.SESSION_EXPIRED);
     }
 
     // ── normalizeLeafName / normalizeRelativePath ─────────────────────────
 
     @Test
     void shouldRejectSessionCreationWithEmptyFilename() {
-        when(sessionStore.nextPickupCode()).thenReturn("111111");
-        when(offlineTransferSessionRepository.existsByPickupCode("111111")).thenReturn(false);
+        when(sessionStore.nextPickupCode(org.mockito.ArgumentMatchers.<Predicate<String>>any())).thenReturn("AB12CD34");
 
         CreateTransferSessionCommand command = new CreateTransferSessionCommand(
                 TransferMode.OFFLINE,
@@ -164,8 +168,7 @@ class OfflineTransferServiceTest {
 
     @Test
     void shouldRejectSessionCreationWithPathTraversalInFilename() {
-        when(sessionStore.nextPickupCode()).thenReturn("222222");
-        when(offlineTransferSessionRepository.existsByPickupCode("222222")).thenReturn(false);
+        when(sessionStore.nextPickupCode(org.mockito.ArgumentMatchers.<Predicate<String>>any())).thenReturn("CD34EF56");
 
         CreateTransferSessionCommand command = new CreateTransferSessionCommand(
                 TransferMode.OFFLINE,
@@ -179,8 +182,7 @@ class OfflineTransferServiceTest {
 
     @Test
     void shouldRejectSessionCreationWithDotDotInRelativePath() {
-        when(sessionStore.nextPickupCode()).thenReturn("333333");
-        when(offlineTransferSessionRepository.existsByPickupCode("333333")).thenReturn(false);
+        when(sessionStore.nextPickupCode(org.mockito.ArgumentMatchers.<Predicate<String>>any())).thenReturn("EF56GH78");
 
         CreateTransferSessionCommand command = new CreateTransferSessionCommand(
                 TransferMode.OFFLINE,
@@ -196,42 +198,45 @@ class OfflineTransferServiceTest {
 
     @Test
     void shouldRejectLookupOfNotYetReadySession() {
-        OfflineTransferSession session = buildReadySession(1L, "444444", Instant.now().plusSeconds(3600));
+        OfflineTransferSession session = buildReadySession(1L, "GH78JK90", Instant.now().plusSeconds(3600));
         session.setReady(false); // override: not ready
 
-        when(offlineTransferSessionRepository.findWithFilesByPickupCode("444444"))
+        when(offlineTransferSessionRepository.findWithFilesByPickupCode("GH78JK90"))
                 .thenReturn(Optional.of(session));
 
-        assertThatThrownBy(() -> service.lookupReadySession("444444"))
+        assertThatThrownBy(() -> service.lookupReadySession("GH78JK90"))
                 .isInstanceOf(BusinessException.class)
                 .hasMessageContaining("still uploading");
     }
 
     @Test
-    void shouldDownloadUploadedOfflineFileInlineWhenStorageCannotRedirect() {
+    void shouldDownloadUploadedOfflineFileInlineWhenStorageCannotRedirect() throws Exception {
         String sessionId = UUID.randomUUID().toString();
-        OfflineTransferSession session = buildReadySession(1L, "666666", Instant.now().plusSeconds(3600));
+        OfflineTransferSession session = buildReadySession(1L, "LM12NP34", Instant.now().plusSeconds(3600));
         session.setSessionId(sessionId);
         OfflineTransferFile file = session.getFiles().get(0);
         byte[] content = "offline-content".getBytes(java.nio.charset.StandardCharsets.UTF_8);
+        file.setSize(content.length);
 
         when(offlineTransferSessionRepository.findWithFilesBySessionId(sessionId))
                 .thenReturn(Optional.of(session));
-        when(fileContentStorage.readTransferFile(sessionId, file.getStorageName()))
-                .thenReturn(content);
+        when(fileContentStorage.readTransferFileStream(sessionId, file.getStorageName()))
+                .thenReturn(new ByteArrayInputStream(content));
 
         OfflineDownloadResult result = service.downloadOfflineFile(sessionId, file.getId());
 
         assertThat(result.redirect()).isFalse();
         assertThat(result.filename()).isEqualTo("report.pdf");
         assertThat(result.contentType()).isEqualTo("application/pdf");
-        assertThat(result.body()).isEqualTo(content);
+        assertThat(result.contentLength()).isEqualTo(content.length);
+        assertThat(result.body()).isNotNull();
+        assertThat(result.body().getInputStream().readAllBytes()).isEqualTo(content);
     }
 
     @Test
     void shouldDownloadUploadedOfflineFileByRedirectWhenStorageSupportsDirectDownload() {
         String sessionId = UUID.randomUUID().toString();
-        OfflineTransferSession session = buildReadySession(1L, "777777", Instant.now().plusSeconds(3600));
+        OfflineTransferSession session = buildReadySession(1L, "NP34QR56", Instant.now().plusSeconds(3600));
         session.setSessionId(sessionId);
         OfflineTransferFile file = session.getFiles().get(0);
 
@@ -246,13 +251,13 @@ class OfflineTransferServiceTest {
         assertThat(result.redirect()).isTrue();
         assertThat(result.redirectUrl()).isEqualTo("https://cdn.example.test/offline/report.pdf");
         assertThat(result.body()).isNull();
-        verify(fileContentStorage, never()).readTransferFile(anyString(), anyString());
+        verify(fileContentStorage, never()).readTransferFileStream(anyString(), anyString());
     }
 
     @Test
     void shouldRejectDownloadWhenOfflineFileIsNotUploaded() {
         String sessionId = UUID.randomUUID().toString();
-        OfflineTransferSession session = buildReadySession(1L, "888888", Instant.now().plusSeconds(3600));
+        OfflineTransferSession session = buildReadySession(1L, "QR56ST78", Instant.now().plusSeconds(3600));
         session.setSessionId(sessionId);
         OfflineTransferFile file = session.getFiles().get(0);
         file.setUploaded(false);
@@ -262,16 +267,17 @@ class OfflineTransferServiceTest {
 
         assertThatThrownBy(() -> service.downloadOfflineFile(sessionId, file.getId()))
                 .isInstanceOf(BusinessException.class)
-                .hasMessageContaining("offline transfer file not found");
+                .extracting(ex -> ((BusinessException) ex).getErrorCode())
+                .isEqualTo(ErrorCode.INVALID_INPUT);
 
-        verify(fileContentStorage, never()).readTransferFile(anyString(), anyString());
+        verify(fileContentStorage, never()).readTransferFileStream(anyString(), anyString());
         verify(fileContentStorage, never()).createTransferDownloadUrl(anyString(), anyString(), anyString());
     }
 
     @Test
     void shouldPruneOnlyUploadedFilesFromExpiredOfflineSessions() {
         Instant now = Instant.now();
-        OfflineTransferSession session = buildReadySession(1L, "999999", now.minusSeconds(1));
+        OfflineTransferSession session = buildReadySession(1L, "ST78UV90", now.minusSeconds(1));
         OfflineTransferFile uploaded = session.getFiles().get(0);
         OfflineTransferFile pending = buildFile("pending.txt");
         pending.setStorageName("pending.txt");
@@ -300,9 +306,7 @@ class OfflineTransferServiceTest {
 
     @Test
     void shouldRetryPickupCodeAllocationWhenCollisionExists() {
-        when(sessionStore.nextPickupCode()).thenReturn("111111", "222222");
-        when(offlineTransferSessionRepository.existsByPickupCode("111111")).thenReturn(true);
-        when(offlineTransferSessionRepository.existsByPickupCode("222222")).thenReturn(false);
+        when(sessionStore.nextPickupCode(org.mockito.ArgumentMatchers.<Predicate<String>>any())).thenReturn("WX12YZ34");
         when(offlineTransferSessionRepository.save(any(OfflineTransferSession.class)))
                 .thenAnswer(invocation -> invocation.getArgument(0));
 
@@ -311,14 +315,14 @@ class OfflineTransferServiceTest {
                 List.of(new TransferFileItem(null, "report.pdf", null, 100L, "application/pdf", null))
         );
 
-        assertThat(service.createSession(1L, command).pickupCode()).isEqualTo("222222");
-        verify(sessionStore, times(2)).nextPickupCode();
+        assertThat(service.createSession(1L, command).pickupCode()).isEqualTo("WX12YZ34");
+        verify(sessionStore).nextPickupCode(org.mockito.ArgumentMatchers.<Predicate<String>>any());
     }
 
     @Test
     void shouldFailWhenPickupCodeAllocationKeepsColliding() {
-        when(sessionStore.nextPickupCode()).thenReturn("111111");
-        when(offlineTransferSessionRepository.existsByPickupCode("111111")).thenReturn(true);
+        when(sessionStore.nextPickupCode(org.mockito.ArgumentMatchers.<Predicate<String>>any()))
+                .thenThrow(new IllegalStateException("unable to allocate pickup code"));
 
         CreateTransferSessionCommand command = new CreateTransferSessionCommand(
                 TransferMode.OFFLINE,
@@ -329,7 +333,7 @@ class OfflineTransferServiceTest {
                 .isInstanceOf(BusinessException.class)
                 .hasMessageContaining("unable to allocate pickup code");
 
-        verify(sessionStore, times(32)).nextPickupCode();
+        verify(sessionStore).nextPickupCode(org.mockito.ArgumentMatchers.<Predicate<String>>any());
         verify(offlineTransferSessionRepository, never()).save(any());
     }
 

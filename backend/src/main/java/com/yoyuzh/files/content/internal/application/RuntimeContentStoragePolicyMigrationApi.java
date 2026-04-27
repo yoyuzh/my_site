@@ -3,6 +3,7 @@ package com.yoyuzh.files.content.internal.application;
 import com.yoyuzh.files.content.api.ContentStoragePolicyMigrationApi;
 import com.yoyuzh.files.content.api.ContentStoragePolicyMigrationInspection;
 import com.yoyuzh.files.content.api.ContentStoragePolicyMigrationItem;
+import com.yoyuzh.files.content.api.ContentStoragePolicyMigrationMutation;
 import com.yoyuzh.files.content.internal.domain.FileBlob;
 import com.yoyuzh.files.content.internal.domain.FileEntity;
 import com.yoyuzh.files.content.internal.domain.FileEntityType;
@@ -56,20 +57,25 @@ public class RuntimeContentStoragePolicyMigrationApi implements ContentStoragePo
 
     @Override
     @Transactional
-    public void reassignVersionItem(Long entityId, Long blobId, Long targetStoragePolicyId, String nextObjectKey) {
-        FileEntity entity = fileEntityRepository.findById(entityId)
-                .orElseThrow(() -> new IllegalStateException("storage policy migration entity not found"));
-        if (entity.getEntityType() != FileEntityType.VERSION) {
-            throw new IllegalStateException("storage policy migration only supports version entities");
+    public void reassignVersionItems(Long targetStoragePolicyId, List<ContentStoragePolicyMigrationMutation> mutations) {
+        if (mutations == null || mutations.isEmpty()) {
+            return;
         }
-        FileBlob blob = fileBlobRepository.findById(blobId)
-                .orElseThrow(() -> new IllegalStateException("storage policy migration blob not found"));
-        entity.setObjectKey(nextObjectKey);
-        entity.setStoragePolicyId(targetStoragePolicyId);
-        fileEntityRepository.save(entity);
+        for (ContentStoragePolicyMigrationMutation mutation : mutations) {
+            FileEntity entity = fileEntityRepository.findById(mutation.entityId())
+                    .orElseThrow(() -> new IllegalStateException("storage policy migration entity not found"));
+            if (entity.getEntityType() != FileEntityType.VERSION) {
+                throw new IllegalStateException("storage policy migration only supports version entities");
+            }
+            FileBlob blob = fileBlobRepository.findById(mutation.blobId())
+                    .orElseThrow(() -> new IllegalStateException("storage policy migration blob not found"));
+            entity.setObjectKey(mutation.nextObjectKey());
+            entity.setStoragePolicyId(targetStoragePolicyId);
+            fileEntityRepository.save(entity);
 
-        blob.setObjectKey(nextObjectKey);
-        fileBlobRepository.save(blob);
+            blob.setObjectKey(mutation.nextObjectKey());
+            fileBlobRepository.save(blob);
+        }
     }
 
     private ContentStoragePolicyMigrationItem toMigrationItem(FileEntity entity) {

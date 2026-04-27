@@ -39,8 +39,8 @@ const WorkspaceFolderTreeNode: React.FC<WorkspaceFolderTreeNodeProps> = ({
       <div
         className={
           active
-            ? 'flex items-center gap-1 rounded-xl bg-slate-100 px-2 py-1.5 text-slate-950 dark:bg-white/10 dark:text-white'
-            : 'flex items-center gap-1 rounded-xl px-2 py-1.5 text-slate-500 transition hover:bg-slate-100/80 hover:text-slate-950 dark:text-slate-400 dark:hover:bg-white/5 dark:hover:text-white'
+            ? 'sidebar-tree-item-active'
+            : 'sidebar-tree-item'
         }
         style={{ marginLeft: depth * 12 }}
       >
@@ -48,13 +48,13 @@ const WorkspaceFolderTreeNode: React.FC<WorkspaceFolderTreeNodeProps> = ({
           <button
             type="button"
             aria-label={expanded ? 'Collapse folder' : 'Expand folder'}
-            className="flex h-5 w-5 items-center justify-center rounded-md text-slate-400 transition hover:bg-black/5 hover:text-slate-700 dark:hover:bg-white/5 dark:hover:text-white"
+            className={active ? 'sidebar-toggle-button-active h-5 w-5 rounded-md' : 'sidebar-toggle-button h-5 w-5 rounded-md'}
             onClick={(event) => {
               event.stopPropagation();
               onToggle(node.path);
             }}
           >
-            {expanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+            {expanded ? <ChevronDown size={12} strokeWidth={2.5} /> : <ChevronRight size={12} strokeWidth={2.5} />}
           </button>
         ) : showLoading ? (
           <span className="flex h-5 w-5 items-center justify-center text-slate-400">
@@ -81,8 +81,12 @@ const WorkspaceFolderTreeNode: React.FC<WorkspaceFolderTreeNodeProps> = ({
           className="flex min-w-0 flex-1 items-center gap-2 text-left"
           onClick={() => onSelect(node.path)}
         >
-          <Folder size={14} className={active ? 'text-brand-light dark:text-brand-dark' : 'text-amber-500'} />
-          <span className="truncate text-xs font-medium">{node.name}</span>
+          <Folder
+            size={13}
+            strokeWidth={2.5}
+            className={active ? 'text-brand-light dark:text-brand-dark' : 'text-slate-400 dark:text-slate-500'}
+          />
+          <span className="truncate text-xs font-semibold">{node.name}</span>
         </button>
       </div>
 

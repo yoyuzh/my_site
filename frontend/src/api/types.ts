@@ -64,6 +64,9 @@ export interface FileTag {
   color: string;
 }
 
+export type MediaCategory = 'image' | 'video' | 'audio' | 'document';
+export type RemoteDownloadSourceType = 'HTTP' | 'MAGNET' | 'TORRENT_FILE';
+
 export interface FileDetail extends FileItem {
   favorite: boolean;
   shared: boolean;
@@ -97,14 +100,41 @@ export interface ShareItem {
   ownerUsername: string;
   passwordRequired: boolean;
   passwordVerified: boolean;
+  password?: string | null; // Owner-facing only
   allowImport: boolean;
   allowDownload: boolean;
   maxDownloads: number | null;
   downloadCount: number;
   viewCount: number;
   expiresAt: string | null;
+  expireAfterConsume: boolean;
+  status: 'ACTIVE' | 'EXPIRED' | 'CONSUMED' | 'REMOVED';
   createdAt: string;
   file: FileItem | null;
+}
+
+export interface SavedShareItem {
+  id: number;
+  savedAt: string;
+  share: ShareItem;
+}
+
+export interface CreateSharePayload {
+  fileId: number;
+  shareName?: string;
+  password?: string;
+  expiresAt?: string;
+  maxDownloads?: number;
+  allowImport?: boolean;
+  allowDownload?: boolean;
+  expireAfterConsume?: boolean;
+}
+
+export interface UpdateSharePolicyPayload {
+  password?: string;
+  expiresAt?: string;
+  maxDownloads?: number;
+  expireAfterConsume?: boolean;
 }
 
 export interface ShareStats {
@@ -139,6 +169,44 @@ export interface TaskProgress {
   processedItems: number;
   totalItems: number;
   message: string;
+}
+
+export interface RemoteDownloadCandidateFile {
+  fileKey: string;
+  relativePath: string;
+  size: number;
+  selected: boolean;
+}
+
+export interface RemoteDownloadDetail {
+  id: number;
+  backgroundTaskId: number | null;
+  status: string;
+  sourceType: RemoteDownloadSourceType;
+  engineType: string;
+  targetPath: string;
+  sourceValue: string;
+  downloadNodeId: string;
+  selectedFileCount: number;
+  importedFileCount: number;
+  failureCode: string | null;
+  failureMessage: string | null;
+  candidateFiles: RemoteDownloadCandidateFile[];
+  createdAt: string;
+  updatedAt: string;
+  finishedAt: string | null;
+}
+
+export interface RemoteDownloadListItem {
+  id: number;
+  backgroundTaskId: number | null;
+  status: string;
+  sourceType: RemoteDownloadSourceType;
+  engineType: string;
+  targetPath: string;
+  createdAt: string;
+  updatedAt: string;
+  finishedAt: string | null;
 }
 
 export type TransferMode = 'ONLINE' | 'OFFLINE';

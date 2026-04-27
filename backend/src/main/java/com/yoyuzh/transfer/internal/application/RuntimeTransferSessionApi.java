@@ -31,34 +31,39 @@ public class RuntimeTransferSessionApi implements TransferSessionApi {
     private final OfflineTransferService offlineTransferService;
     private final TransferImportApi transferImportApi;
     private final TransferRuntimeMetricsPort transferRuntimeMetricsPort;
+    private final TransferMetricsRecorder transferMetricsRecorder;
 
     public RuntimeTransferSessionApi(OnlineTransferService onlineTransferService,
                                      OfflineTransferService offlineTransferService,
                                      TransferImportApi transferImportApi,
-                                     TransferRuntimeMetricsPort transferRuntimeMetricsPort) {
+                                     TransferRuntimeMetricsPort transferRuntimeMetricsPort,
+                                     TransferMetricsRecorder transferMetricsRecorder) {
         this.onlineTransferService = onlineTransferService;
         this.offlineTransferService = offlineTransferService;
         this.transferImportApi = transferImportApi;
         this.transferRuntimeMetricsPort = transferRuntimeMetricsPort;
+        this.transferMetricsRecorder = transferMetricsRecorder;
     }
 
     @Override
     @Transactional
     public TransferSessionResponse createSession(Long senderUserId, CreateTransferSessionCommand command) {
-        pruneExpiredSessions();
-        transferRuntimeMetricsPort.recordTransferUsage(command.files().stream().mapToLong(TransferFileItem::size).sum());
+        long transferBytes = command.files().stream().mapToLong(TransferFileItem::size).sum();
+        TransferSessionResponse response;
         if (command.mode() == TransferMode.OFFLINE) {
             if (senderUserId == null) {
                 throw new BusinessException(ErrorCode.NOT_LOGGED_IN, "offline transfer requires authenticated user");
             }
-            return offlineTransferService.createSession(senderUserId, command);
+            response = offlineTransferService.createSession(senderUserId, command);
+        } else {
+            response = onlineTransferService.createSession(command);
         }
-        return onlineTransferService.createSession(command);
+        transferMetricsRecorder.recordTransferUsageAfterCommit(transferBytes);
+        return response;
     }
 
     @Override
     public LookupTransferSessionResponse lookupSession(String pickupCode) {
-        pruneExpiredSessions();
         String normalizedPickupCode = normalizePickupCode(pickupCode);
 
         LookupTransferSessionResponse online = onlineTransferService.lookupSession(normalizedPickupCode);
@@ -70,7 +75,6 @@ public class RuntimeTransferSessionApi implements TransferSessionApi {
 
     @Override
     public TransferSessionResponse joinSession(String sessionId) {
-        pruneExpiredSessions();
         TransferSessionResponse online = onlineTransferService.joinSession(sessionId);
         if (online != null) {
             return online;
@@ -80,20 +84,17 @@ public class RuntimeTransferSessionApi implements TransferSessionApi {
 
     @Override
     public List<TransferSessionResponse> listOfflineSessions(Long senderUserId) {
-        pruneExpiredSessions();
         return offlineTransferService.listOfflineSessions(senderUserId);
     }
 
     @Override
     @Transactional
     public void uploadOfflineFile(Long senderUserId, String sessionId, String fileId, MultipartFile multipartFile) {
-        pruneExpiredSessions();
         offlineTransferService.uploadOfflineFile(senderUserId, sessionId, fileId, multipartFile);
     }
 
     @Override
     public void postSignal(String sessionId, String role, TransferSignalRequest request) {
-        pruneExpiredSessions();
         if (onlineTransferService.postSignal(sessionId, role, request)) {
             return;
         }
@@ -105,7 +106,6 @@ public class RuntimeTransferSessionApi implements TransferSessionApi {
 
     @Override
     public PollTransferSignalsResponse pollSignals(String sessionId, String role, long after) {
-        pruneExpiredSessions();
         PollTransferSignalsResponse online = onlineTransferService.pollSignals(sessionId, role, after);
         if (online != null) {
             return online;
@@ -118,7 +118,6 @@ public class RuntimeTransferSessionApi implements TransferSessionApi {
 
     @Override
     public OfflineDownloadResult downloadOfflineFile(String sessionId, String fileId) {
-        pruneExpiredSessions();
         transferRuntimeMetricsPort.recordDownloadTraffic(offlineTransferService.getReadyFileSize(sessionId, fileId));
         return offlineTransferService.downloadOfflineFile(sessionId, fileId);
     }
@@ -126,7 +125,6 @@ public class RuntimeTransferSessionApi implements TransferSessionApi {
     @Override
     @Transactional
     public FileMetadataResponse importOfflineFile(Long recipientUserId, String sessionId, String fileId, TransferImportCommand command) {
-        pruneExpiredSessions();
         return transferImportApi.importOfflineFile(recipientUserId, sessionId, fileId, command);
     }
 

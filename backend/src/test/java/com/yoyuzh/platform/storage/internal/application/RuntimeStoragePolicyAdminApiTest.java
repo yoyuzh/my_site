@@ -19,6 +19,8 @@ import com.yoyuzh.platform.storage.api.StoragePolicyCapabilities;
 import com.yoyuzh.platform.storage.api.StoragePolicyCredentialMode;
 import com.yoyuzh.platform.storage.api.StoragePolicyMigrationCandidate;
 import com.yoyuzh.platform.storage.api.StoragePolicyType;
+import com.yoyuzh.shared.kernel.BusinessException;
+import com.yoyuzh.shared.kernel.ErrorCode;
 import java.time.LocalDateTime;
 import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
@@ -224,6 +226,34 @@ class RuntimeStoragePolicyAdminApiTest {
 
         assertThat(response.type()).isEqualTo(StoragePolicyType.LOCAL);
         assertThat(response.prefix()).isEqualTo("/srv/my-site/archive");
+    }
+
+    @Test
+    void shouldRejectMissingCapabilities() {
+        assertThatThrownBy(() -> runtimeStoragePolicyAdminApi.createStoragePolicyAsAdmin(new StoragePolicyAdminUpsertCommand(
+                "Archive Bucket",
+                StoragePolicyType.S3_COMPATIBLE,
+                "archive-bucket",
+                "https://s3.example.com",
+                "auto",
+                true,
+                "archive/",
+                StoragePolicyCredentialMode.DOGECLOUD_TEMP,
+                40960L,
+                null,
+                true
+        )))
+                .isInstanceOf(NullPointerException.class)
+                .hasMessageContaining("storage policy capabilities");
+    }
+
+    @Test
+    void shouldUseStoragePolicyNotFoundErrorCode() {
+        when(storagePolicyRepository.findById(404L)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> runtimeStoragePolicyAdminApi.updateStoragePolicyStatusAsAdmin(404L, true))
+                .isInstanceOf(BusinessException.class)
+                .satisfies(ex -> assertThat(((BusinessException) ex).getErrorCode()).isEqualTo(ErrorCode.STORAGE_POLICY_NOT_FOUND));
     }
 
     private StoragePolicy createPolicy(Long id, String name) {

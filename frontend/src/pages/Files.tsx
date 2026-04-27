@@ -37,14 +37,15 @@ import { FilesExplorerSurface } from '../components/files/FilesExplorerSurface';
 import { FilesPreviewDialog } from '../components/files/FilesPreviewDialog';
 import { FileTagsManagerDialog } from '../components/files/FileTagsManagerDialog';
 import { FilesTopBar } from '../components/files/FilesTopBar';
+import CreateShareDialog from '../components/files/CreateShareDialog';
+import CreateRemoteDownloadDialog from '../components/files/CreateRemoteDownloadDialog';
 import { useFavoriteFiles, useFiles } from '../api/queries';
-import type { FileDetail, FileItem, FileTag } from '../api/types';
+import type { FileDetail, FileItem, FileTag, MediaCategory } from '../api/types';
 import {
   addFileTag,
   batchDeleteFiles,
   copyFile,
   createDirectory,
-  createLegacyShareLink,
   listTags,
   downloadFileBlob,
   getFileDetail,
@@ -82,6 +83,13 @@ const FILES_PAGE_SIZE = 30;
 const VIEW_MODE_STORAGE_KEY = 'cloudreve-files-view-mode';
 const SORT_BY_STORAGE_KEY = 'cloudreve-files-sort-by';
 const SORT_ORDER_STORAGE_KEY = 'cloudreve-files-sort-order';
+
+const MEDIA_CATEGORY_META: Record<MediaCategory, { title: string; rootLabel: string }> = {
+  image: { title: '图片', rootLabel: '图片' },
+  video: { title: '视频', rootLabel: '视频' },
+  audio: { title: '音乐', rootLabel: '音乐' },
+  document: { title: '文档', rootLabel: '文档' },
+};
 
 const CLIPBOARD_EXTENSION_BY_MIME_TYPE: Record<string, string> = {
   'image/png': 'png',
@@ -285,11 +293,17 @@ function triggerUrlDownload(url: string, filename: string) {
   link.remove();
 }
 
-const Files: React.FC = () => {
+type FilesProps = {
+  mediaCategory?: MediaCategory;
+};
+
+const Files: React.FC<FilesProps> = ({ mediaCategory }) => {
   const [searchParams, setSearchParams] = useSearchParams();
   const queryClient = useQueryClient();
   const { theme } = useAppTheme();
-  const requestedPath = getWorkspaceFolderPathFromSearchParams(searchParams);
+  const requestedPath = mediaCategory ? '/' : getWorkspaceFolderPathFromSearchParams(searchParams);
+  const categoryMeta = mediaCategory ? MEDIA_CATEGORY_META[mediaCategory] : null;
+  const isCategoryMode = mediaCategory != null;
   const muiTheme = useMemo(
     () => {
       const isDark = theme === 'dark';
@@ -390,6 +404,9 @@ const Files: React.FC = () => {
   const [detailError, setDetailError] = useState<string | null>(null);
   const [tagManagerOpen, setTagManagerOpen] = useState(false);
   const [tagFile, setTagFile] = useState<FileItem | null>(null);
+  const [shareDialogOpen, setShareDialogOpen] = useState(false);
+  const [shareFileItem, setShareFileItem] = useState<FileItem | null>(null);
+  const [remoteDownloadDialogOpen, setRemoteDownloadDialogOpen] = useState(false);
   const [tagSubmenuAnchor, setTagSubmenuAnchor] = useState<HTMLElement | null>(null);
   const activeMenuFile = contextMenu?.file;
 
@@ -405,9 +422,18 @@ const Files: React.FC = () => {
     enabled: !!activeMenuFile && !!activeMenuFile.directory,
   });
 
-  const { data, isLoading, isError, refetch, isFetching } = useFiles(currentPath, page, FILES_PAGE_SIZE, search);
+  const { data, isLoading, isError, refetch, isFetching } = useFiles(
+    currentPath,
+    page,
+    FILES_PAGE_SIZE,
+    search,
+    { category: mediaCategory },
+  );
   const { data: favoriteFiles, refetch: refetchFavorites } = useFavoriteFiles();
-  const browsingScopeKey = useMemo(() => `${currentPath}::${search.trim()}::${sortBy}::${sortOrder}`, [currentPath, search, sortBy, sortOrder]);
+  const browsingScopeKey = useMemo(
+    () => `${mediaCategory ?? 'directory'}::${currentPath}::${search.trim()}::${sortBy}::${sortOrder}`,
+    [currentPath, mediaCategory, search, sortBy, sortOrder],
+  );
   const visibleFolders = useMemo(() => allRows.filter((file) => file.directory), [allRows]);
 
   function refreshCurrentListing() {
@@ -579,13 +605,11 @@ const Files: React.FC = () => {
     },
   });
 
-  const shareMutation = useMutation({
-    mutationFn: createLegacyShareLink,
-    onSuccess: (result) => {
-      window.prompt('已创建分享链接 Token', result.token);
-    },
-  });
-
+  function shareFile(file: FileItem) {
+    setShareFileItem(file);
+    setShareDialogOpen(true);
+    closeContextMenus();
+  }
   const deleteMutation = useMutation({
     mutationFn: batchDeleteFiles,
     onSuccess: (_, fileIds) => {
@@ -761,7 +785,7 @@ const Files: React.FC = () => {
       setCurrentPath(normalizedPath);
     }
 
-    if (options?.updateUrl !== false) {
+    if (!isCategoryMode && options?.updateUrl !== false) {
       updatePathSearchParam(normalizedPath, options?.replaceUrl);
     }
   }
@@ -772,13 +796,16 @@ const Files: React.FC = () => {
   }
 
   useEffect(() => {
+    if (isCategoryMode) {
+      return;
+    }
     if (requestedPath !== currentPath) {
       handlePathChange(requestedPath, { updateUrl: false, replaceUrl: true });
     }
-  }, [requestedPath]);
+  }, [currentPath, isCategoryMode, requestedPath]);
 
   function openDirectory(file: FileItem) {
-    if (!file.directory) {
+    if (!file.directory || isCategoryMode) {
       return;
     }
     handlePathChange(getLogicalPath(file));
@@ -844,11 +871,6 @@ const Files: React.FC = () => {
       fileId: file.id,
       favorite: !favoriteIds.has(file.id),
     });
-    closeContextMenus();
-  }
-
-  function shareFile(file: FileItem) {
-    shareMutation.mutate(file.id);
     closeContextMenus();
   }
 
@@ -1013,7 +1035,7 @@ const Files: React.FC = () => {
   }
 
   return (
-    <DashboardLayout title="文件 Files" hideHeader={true}>
+    <DashboardLayout title={categoryMeta?.title ?? '文件 Files'} hideHeader={true}>
       <MuiThemeProvider theme={muiTheme}>
         <input
           ref={fileInputRef}
@@ -1056,6 +1078,8 @@ const Files: React.FC = () => {
           <FilesTopBar
             currentPath={currentPath}
             onPathChange={handlePathChange}
+            rootLabel={categoryMeta?.rootLabel ?? '根目录'}
+            pathNavigationEnabled={!isCategoryMode}
             search={search}
             onSearchChange={handleSearchChange}
             onRefresh={() => {
@@ -1201,7 +1225,7 @@ const Files: React.FC = () => {
                 <ListItemIcon><ContentPaste fontSize="small" /></ListItemIcon>
                 <ListItemText>从剪贴板上传</ListItemText>
               </MenuItem>
-              <MenuItem onClick={() => { alert('暂未接入离线下载'); setContextMenu(null); }}>
+              <MenuItem onClick={() => { setRemoteDownloadDialogOpen(true); setContextMenu(null); }}>
                 <ListItemIcon><CloudDownload fontSize="small" /></ListItemIcon>
                 <ListItemText>离线下载</ListItemText>
               </MenuItem>
@@ -1455,6 +1479,25 @@ const Files: React.FC = () => {
             setTagFile(null);
           }}
           file={tagFile}
+        />
+        <CreateShareDialog
+          open={shareDialogOpen}
+          onClose={() => {
+            setShareDialogOpen(false);
+            setShareFileItem(null);
+          }}
+          file={shareFileItem}
+        />
+        <CreateRemoteDownloadDialog
+          open={remoteDownloadDialogOpen}
+          defaultPath={currentPath}
+          onClose={() => {
+            setRemoteDownloadDialogOpen(false);
+          }}
+          onCreated={(detail) => {
+            setUploadStatus(`离线下载任务已创建 #${detail.backgroundTaskId ?? detail.id}`);
+            void queryClient.invalidateQueries({ queryKey: ['tasks'] });
+          }}
         />
       </MuiThemeProvider>
     </DashboardLayout>

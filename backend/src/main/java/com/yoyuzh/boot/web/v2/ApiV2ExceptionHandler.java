@@ -49,7 +49,9 @@ public class ApiV2ExceptionHandler {
         if (errorCode == ErrorCode.PERMISSION_DENIED) {
             return ApiV2ErrorCode.PERMISSION_DENIED;
         }
-        if (errorCode == ErrorCode.FILE_NOT_FOUND) {
+        if (errorCode == ErrorCode.FILE_NOT_FOUND
+                || errorCode == ErrorCode.TASK_NOT_FOUND
+                || errorCode == ErrorCode.STORAGE_POLICY_NOT_FOUND) {
             return ApiV2ErrorCode.FILE_NOT_FOUND;
         }
         if (errorCode == ErrorCode.SESSION_EXPIRED) {

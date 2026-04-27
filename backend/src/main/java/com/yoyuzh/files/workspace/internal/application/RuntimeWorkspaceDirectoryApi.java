@@ -41,10 +41,11 @@ public final class RuntimeWorkspaceDirectoryApi implements WorkspaceDirectoryApi
             throw new BusinessException(ErrorCode.UNKNOWN, "根目录无需创建");
         }
         String parentPath = workspacePathPolicy.extractParentPath(normalizedPath);
-        String directoryName = workspacePathPolicy.extractLeafName(normalizedPath);
-        workspacePathPolicy.ensureNodeNameAvailable(userId, parentPath, directoryName, "目录已存在");
+        String requestedDirectoryName = workspacePathPolicy.extractLeafName(normalizedPath);
+        String directoryName = workspacePathPolicy.resolveAvailableNodeName(userId, parentPath, requestedDirectoryName);
+        String targetPath = workspacePathPolicy.buildTargetLogicalPath(parentPath, directoryName);
 
-        fileContentStorage.createDirectory(userId, normalizedPath);
+        fileContentStorage.createDirectory(userId, targetPath);
 
         StoredFile storedFile = StoredFile.directory(userId, parentPath, directoryName);
         return toResponse(storedFileRepository.save(storedFile));

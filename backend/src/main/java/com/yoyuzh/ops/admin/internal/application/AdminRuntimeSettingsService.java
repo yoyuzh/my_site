@@ -1,14 +1,10 @@
 package com.yoyuzh.ops.admin.internal.application;
 
-import com.yoyuzh.infra.cache.AppRedisProperties;
 import com.yoyuzh.ops.admin.api.AdminRuntimeSettingsApi;
 import com.yoyuzh.ops.admin.api.AdminSettingsUpdateRequest;
 import com.yoyuzh.ops.admin.internal.infra.AdminRuntimeSettingsState;
 import com.yoyuzh.ops.admin.internal.infra.AdminRuntimeSettingsStateRepository;
-import com.yoyuzh.platform.storage.api.StorageRuntimeProperties;
-import com.yoyuzh.boot.security.JwtProperties;
 import org.springframework.dao.DataIntegrityViolationException;
-import org.springframework.core.env.Environment;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
@@ -32,30 +28,9 @@ public class AdminRuntimeSettingsService implements AdminRuntimeSettingsApi {
     private final State defaultState;
 
     public AdminRuntimeSettingsService(AdminRuntimeSettingsStateRepository adminRuntimeSettingsStateRepository,
-                                       AppRedisProperties redisProperties,
-                                       StorageRuntimeProperties storageRuntimeProperties,
-                                       JwtProperties jwtProperties,
-                                       Environment environment) {
+                                       AdminRuntimeSettingsDefaults adminRuntimeSettingsDefaults) {
         this.adminRuntimeSettingsStateRepository = adminRuntimeSettingsStateRepository;
-        boolean redisEnabled = redisProperties.isEnabled();
-        defaultState = new State(
-                false,
-                true,
-                DEFAULT_MANAGEMENT_ROLES,
-                jwtProperties.getAccessExpirationSeconds(),
-                jwtProperties.getRefreshExpirationSeconds(),
-                redisEnabled,
-                redisProperties.getTtlBufferSeconds(),
-                true,
-                false,
-                false,
-                redisEnabled ? "redis" : "in-memory",
-                environment.getProperty("app.redis.broker.media-meta.fixed-delay-ms", Long.class, 3000L),
-                environment.getProperty("app.redis.broker.media-meta.initial-delay-ms", Long.class, 15000L),
-                false,
-                normalizeStorageProvider(storageRuntimeProperties.getProvider()),
-                redisEnabled
-        );
+        defaultState = adminRuntimeSettingsDefaults.create();
     }
 
     @Transactional(readOnly = true)
@@ -65,28 +40,9 @@ public class AdminRuntimeSettingsService implements AdminRuntimeSettingsApi {
 
     @Transactional
     public State update(AdminSettingsUpdateRequest request) {
-        if (request.registration() == null) {
-            throw new IllegalArgumentException("registration section is required");
-        }
         AdminRuntimeSettingsState state = ensureCurrentStateForUpdate();
-        State next = new State(
-                defaultState.siteSupported(),
-                request.registration().inviteCodeRequired(),
-                normalizeManagementRoles(request.registration().managementRoles()),
-                defaultState.userSessionAccessExpirationSeconds(),
-                defaultState.userSessionRefreshExpirationSeconds(),
-                defaultState.userSessionTokenBlacklistEnabled(),
-                defaultState.userSessionTokenBlacklistTtlBufferSeconds(),
-                defaultState.mediaMetadataExtractionEnabled(),
-                defaultState.mediaThumbnailGenerationEnabled(),
-                defaultState.mediaVideoPosterEnabled(),
-                defaultState.queueBackend(),
-                defaultState.queueMediaMetadataFixedDelayMs(),
-                defaultState.queueMediaMetadataInitialDelayMs(),
-                defaultState.appearanceSupported(),
-                defaultState.serverStorageProvider(),
-                defaultState.serverRedisEnabled()
-        );
+        State currentState = toState(state);
+        State next = mergeState(currentState, request);
         applyState(state, next);
         return toState(adminRuntimeSettingsStateRepository.save(state));
     }
@@ -138,22 +94,97 @@ public class AdminRuntimeSettingsService implements AdminRuntimeSettingsApi {
 
     private State toState(AdminRuntimeSettingsState state) {
         return new State(
-                defaultState.siteSupported(),
-                state.isRegistrationInviteCodeRequired(),
+                state.isSiteSupported() == null ? defaultState.siteSupported() : state.isSiteSupported(),
+                state.isRegistrationInviteCodeRequired() == null
+                        ? defaultState.registrationInviteCodeRequired()
+                        : state.isRegistrationInviteCodeRequired(),
                 parseManagementRoles(state.getRegistrationManagementRoles()),
-                defaultState.userSessionAccessExpirationSeconds(),
-                defaultState.userSessionRefreshExpirationSeconds(),
-                defaultState.userSessionTokenBlacklistEnabled(),
-                defaultState.userSessionTokenBlacklistTtlBufferSeconds(),
-                defaultState.mediaMetadataExtractionEnabled(),
-                defaultState.mediaThumbnailGenerationEnabled(),
-                defaultState.mediaVideoPosterEnabled(),
-                normalizeQueueBackend(defaultState.queueBackend()),
-                defaultState.queueMediaMetadataFixedDelayMs(),
-                defaultState.queueMediaMetadataInitialDelayMs(),
-                defaultState.appearanceSupported(),
-                normalizeStorageProvider(defaultState.serverStorageProvider()),
-                defaultState.serverRedisEnabled()
+                normalizePositiveLong(
+                        state.getUserSessionAccessExpirationSeconds(),
+                        defaultState.userSessionAccessExpirationSeconds()
+                ),
+                normalizePositiveLong(
+                        state.getUserSessionRefreshExpirationSeconds(),
+                        defaultState.userSessionRefreshExpirationSeconds()
+                ),
+                state.isUserSessionTokenBlacklistEnabled() == null
+                        ? defaultState.userSessionTokenBlacklistEnabled()
+                        : state.isUserSessionTokenBlacklistEnabled(),
+                normalizeNonNegativeLong(
+                        state.getUserSessionTokenBlacklistTtlBufferSeconds(),
+                        defaultState.userSessionTokenBlacklistTtlBufferSeconds()
+                ),
+                state.isMediaMetadataExtractionEnabled() == null
+                        ? defaultState.mediaMetadataExtractionEnabled()
+                        : state.isMediaMetadataExtractionEnabled(),
+                state.isMediaThumbnailGenerationEnabled() == null
+                        ? defaultState.mediaThumbnailGenerationEnabled()
+                        : state.isMediaThumbnailGenerationEnabled(),
+                state.isMediaVideoPosterEnabled() == null
+                        ? defaultState.mediaVideoPosterEnabled()
+                        : state.isMediaVideoPosterEnabled(),
+                normalizeQueueBackend(state.getQueueBackend(), defaultState.queueBackend()),
+                normalizePositiveLong(
+                        state.getQueueMediaMetadataFixedDelayMs(),
+                        defaultState.queueMediaMetadataFixedDelayMs()
+                ),
+                normalizePositiveLong(
+                        state.getQueueMediaMetadataInitialDelayMs(),
+                        defaultState.queueMediaMetadataInitialDelayMs()
+                ),
+                state.isAppearanceSupported() == null
+                        ? defaultState.appearanceSupported()
+                        : state.isAppearanceSupported(),
+                normalizeStorageProvider(state.getServerStorageProvider(), defaultState.serverStorageProvider()),
+                state.isServerRedisEnabled() == null
+                        ? defaultState.serverRedisEnabled()
+                        : state.isServerRedisEnabled()
+        );
+    }
+
+    private State mergeState(State currentState, AdminSettingsUpdateRequest request) {
+        if (request == null) {
+            return currentState;
+        }
+        return new State(
+                request.site() == null ? currentState.siteSupported() : request.site().supported(),
+                request.registration() == null
+                        ? currentState.registrationInviteCodeRequired()
+                        : request.registration().inviteCodeRequired(),
+                request.registration() == null
+                        ? currentState.registrationManagementRoles()
+                        : normalizeManagementRoles(request.registration().managementRoles()),
+                request.userSession() == null
+                        ? currentState.userSessionAccessExpirationSeconds()
+                        : request.userSession().accessExpirationSeconds(),
+                request.userSession() == null
+                        ? currentState.userSessionRefreshExpirationSeconds()
+                        : request.userSession().refreshExpirationSeconds(),
+                request.userSession() == null
+                        ? currentState.userSessionTokenBlacklistEnabled()
+                        : request.userSession().tokenBlacklistEnabled(),
+                request.userSession() == null
+                        ? currentState.userSessionTokenBlacklistTtlBufferSeconds()
+                        : request.userSession().tokenBlacklistTtlBufferSeconds(),
+                request.mediaProcessing() == null
+                        ? currentState.mediaMetadataExtractionEnabled()
+                        : request.mediaProcessing().metadataExtractionEnabled(),
+                request.mediaProcessing() == null
+                        ? currentState.mediaThumbnailGenerationEnabled()
+                        : request.mediaProcessing().thumbnailGenerationEnabled(),
+                request.mediaProcessing() == null
+                        ? currentState.mediaVideoPosterEnabled()
+                        : request.mediaProcessing().videoPosterEnabled(),
+                request.queue() == null ? currentState.queueBackend() : request.queue().backend(),
+                request.queue() == null
+                        ? currentState.queueMediaMetadataFixedDelayMs()
+                        : request.queue().mediaMetadataFixedDelayMs(),
+                request.queue() == null
+                        ? currentState.queueMediaMetadataInitialDelayMs()
+                        : request.queue().mediaMetadataInitialDelayMs(),
+                request.appearance() == null ? currentState.appearanceSupported() : request.appearance().supported(),
+                request.server() == null ? currentState.serverStorageProvider() : request.server().storageProvider(),
+                request.server() == null ? currentState.serverRedisEnabled() : request.server().redisEnabled()
         );
     }
 
@@ -168,11 +199,11 @@ public class AdminRuntimeSettingsService implements AdminRuntimeSettingsApi {
         target.setMediaMetadataExtractionEnabled(state.mediaMetadataExtractionEnabled());
         target.setMediaThumbnailGenerationEnabled(state.mediaThumbnailGenerationEnabled());
         target.setMediaVideoPosterEnabled(state.mediaVideoPosterEnabled());
-        target.setQueueBackend(normalizeQueueBackend(state.queueBackend()));
+        target.setQueueBackend(normalizeQueueBackend(state.queueBackend(), defaultState.queueBackend()));
         target.setQueueMediaMetadataFixedDelayMs(state.queueMediaMetadataFixedDelayMs());
         target.setQueueMediaMetadataInitialDelayMs(state.queueMediaMetadataInitialDelayMs());
         target.setAppearanceSupported(state.appearanceSupported());
-        target.setServerStorageProvider(normalizeStorageProvider(state.serverStorageProvider()));
+        target.setServerStorageProvider(normalizeStorageProvider(state.serverStorageProvider(), defaultState.serverStorageProvider()));
         target.setServerRedisEnabled(state.serverRedisEnabled());
     }
 
@@ -188,14 +219,28 @@ public class AdminRuntimeSettingsService implements AdminRuntimeSettingsApi {
         return normalizeManagementRoles(Arrays.asList(persistedRoles.split(MANAGEMENT_ROLE_DELIMITER)));
     }
 
-    private static String normalizeQueueBackend(String backend) {
+    private static String normalizeQueueBackend(String backend, String fallback) {
         String normalized = backend == null ? "" : backend.trim().toLowerCase(Locale.ROOT);
-        return StringUtils.hasText(normalized) ? normalized : "in-memory";
+        if (StringUtils.hasText(normalized)) {
+            return normalized;
+        }
+        return StringUtils.hasText(fallback) ? fallback : "in-memory";
     }
 
-    private static String normalizeStorageProvider(String provider) {
+    private static String normalizeStorageProvider(String provider, String fallback) {
         String normalized = provider == null ? "" : provider.trim().toLowerCase(Locale.ROOT);
-        return StringUtils.hasText(normalized) ? normalized : "local";
+        if (StringUtils.hasText(normalized)) {
+            return normalized;
+        }
+        return StringUtils.hasText(fallback) ? fallback : "local";
+    }
+
+    private static long normalizePositiveLong(Long value, long fallback) {
+        return value == null || value <= 0 ? fallback : value;
+    }
+
+    private static long normalizeNonNegativeLong(Long value, long fallback) {
+        return value == null || value < 0 ? fallback : value;
     }
 
     private static List<String> normalizeManagementRoles(List<String> roles) {

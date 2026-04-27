@@ -10,6 +10,8 @@ import com.yoyuzh.transfer.api.TransferImportApi;
 import com.yoyuzh.transfer.api.TransferMode;
 import com.yoyuzh.transfer.api.TransferRuntimeMetricsPort;
 import com.yoyuzh.transfer.api.TransferSessionResponse;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -31,6 +33,7 @@ class RuntimeTransferSessionApiTest {
     private OfflineTransferService offlineTransferService;
     private TransferImportApi transferImportApi;
     private TransferRuntimeMetricsPort transferRuntimeMetricsPort;
+    private TransferMetricsRecorder transferMetricsRecorder;
     private RuntimeTransferSessionApi transferSessionApi;
 
     @BeforeEach
@@ -39,11 +42,13 @@ class RuntimeTransferSessionApiTest {
         offlineTransferService = mock(OfflineTransferService.class);
         transferImportApi = mock(TransferImportApi.class);
         transferRuntimeMetricsPort = mock(TransferRuntimeMetricsPort.class);
+        transferMetricsRecorder = new TransferMetricsRecorder(transferRuntimeMetricsPort);
         transferSessionApi = new RuntimeTransferSessionApi(
                 onlineTransferService,
                 offlineTransferService,
                 transferImportApi,
-                transferRuntimeMetricsPort
+                transferRuntimeMetricsPort,
+                transferMetricsRecorder
         );
     }
 
@@ -67,6 +72,8 @@ class RuntimeTransferSessionApiTest {
         assertThat(actual.sessionId()).isEqualTo("session-1");
         verify(transferRuntimeMetricsPort).recordTransferUsage(12L);
         verify(onlineTransferService).createSession(any());
+        verify(onlineTransferService, never()).pruneExpiredSessions(any());
+        verify(offlineTransferService, never()).pruneExpiredSessions(any());
     }
 
     @Test
@@ -109,13 +116,13 @@ class RuntimeTransferSessionApiTest {
     void shouldLookupOnlineSessionBeforeOfflineFallback() {
         LookupTransferSessionResponse response = new LookupTransferSessionResponse(
                 "session-1",
-                "123456",
+                "AB12CD34",
                 TransferMode.ONLINE,
                 Instant.now().plusSeconds(60)
         );
-        when(onlineTransferService.lookupSession("123456")).thenReturn(response);
+        when(onlineTransferService.lookupSession("AB12CD34")).thenReturn(response);
 
-        LookupTransferSessionResponse actual = transferSessionApi.lookupSession("123456");
+        LookupTransferSessionResponse actual = transferSessionApi.lookupSession("AB12CD34");
 
         assertThat(actual.sessionId()).isEqualTo("session-1");
     }
@@ -133,5 +140,44 @@ class RuntimeTransferSessionApiTest {
         verify(transferRuntimeMetricsPort).recordDownloadTraffic(128L);
         verify(offlineTransferService).downloadOfflineFile("session-1", "file-1");
         verify(onlineTransferService, never()).lookupSession(any());
+        verify(onlineTransferService, never()).pruneExpiredSessions(any());
+        verify(offlineTransferService, never()).pruneExpiredSessions(any());
+    }
+
+    @Test
+    void shouldPruneSessionsOnlyDuringScheduledCleanup() {
+        transferSessionApi.pruneExpiredTransfers();
+
+        verify(onlineTransferService).pruneExpiredSessions(any());
+        verify(offlineTransferService).pruneExpiredSessions(any());
+    }
+
+    @Test
+    void shouldRecordTransferUsageOnlyAfterCommitWhenTransactionSynchronizationIsActive() {
+        CreateTransferSessionCommand command = new CreateTransferSessionCommand(
+                TransferMode.ONLINE,
+                List.of(new TransferFileItem("demo.txt", 12L, "text/plain"))
+        );
+        TransferSessionResponse response = new TransferSessionResponse(
+                "session-1",
+                "AB12CD34",
+                TransferMode.ONLINE,
+                Instant.now().plusSeconds(60),
+                command.files()
+        );
+        when(onlineTransferService.createSession(any())).thenReturn(response);
+
+        TransactionSynchronizationManager.initSynchronization();
+        try {
+            transferSessionApi.createSession(null, command);
+
+            verify(transferRuntimeMetricsPort, never()).recordTransferUsage(12L);
+            for (TransactionSynchronization synchronization : TransactionSynchronizationManager.getSynchronizations()) {
+                synchronization.afterCommit();
+            }
+            verify(transferRuntimeMetricsPort).recordTransferUsage(12L);
+        } finally {
+            TransactionSynchronizationManager.clearSynchronization();
+        }
     }
 }

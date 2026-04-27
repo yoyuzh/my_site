@@ -43,6 +43,7 @@ public class LegacyShareLinkController {
                 null,
                 null,
                 null,
+                null,
                 null
         ));
         if (response.file() == null) {

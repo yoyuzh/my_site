@@ -57,7 +57,7 @@ public class RuntimeBackgroundTaskAdminQueryApi implements BackgroundTaskAdminQu
     @Override
     public AdminBackgroundTaskView getTask(Long taskId) {
         BackgroundTask task = backgroundTaskRepository.findById(taskId)
-                .orElseThrow(() -> new BusinessException(ErrorCode.FILE_NOT_FOUND, "task not found"));
+                .orElseThrow(() -> new BusinessException(ErrorCode.TASK_NOT_FOUND, "task not found"));
         return toAdminView(task);
     }
 

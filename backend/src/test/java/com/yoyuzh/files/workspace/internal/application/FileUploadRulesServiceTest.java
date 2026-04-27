@@ -24,7 +24,6 @@ import java.time.LocalDateTime;
 
 import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
-import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -98,8 +97,6 @@ class FileUploadRulesServiceTest {
 
         assertThatCode(() -> service.validateUpload(FileServiceTestSupport.workspaceUser(user), "/docs", "a.txt", 200L))
                 .doesNotThrowAnyException();
-
-        verify(storedFileRepository).existsByUserIdAndPathAndFilename(7L, "/docs", "a.txt");
     }
 
     private User createUser(Long id, Long storageQuotaBytes, Long maxUploadSizeBytes) {

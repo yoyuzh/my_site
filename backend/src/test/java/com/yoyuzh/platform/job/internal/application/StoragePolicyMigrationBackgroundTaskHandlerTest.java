@@ -20,6 +20,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
+import java.io.ByteArrayInputStream;
 import java.util.List;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -60,7 +61,8 @@ class StoragePolicyMigrationBackgroundTaskHandlerTest {
         when(storagePolicyQuery.readPolicyDescriptor(3L)).thenReturn(sourcePolicy);
         when(storagePolicyQuery.readPolicyDescriptor(4L)).thenReturn(targetPolicy);
         when(contentStoragePolicyMigrationApi.listVersionItemsByStoragePolicyId(3L)).thenReturn(List.of(entity));
-        when(storagePolicyBlobAccessApi.readBlob(sourcePolicy, "blobs/source-1")).thenReturn("payload".getBytes());
+        when(storagePolicyBlobAccessApi.openBlobStream(sourcePolicy, "blobs/source-1"))
+                .thenReturn(new ByteArrayInputStream("payload".getBytes()));
 
         BackgroundTask task = new BackgroundTask();
         task.setId(11L);
@@ -83,8 +85,8 @@ class StoragePolicyMigrationBackgroundTaskHandlerTest {
         assertThat(result.publicStatePatch()).containsEntry("migratedStoredFileCount", 2L);
         assertThat(result.publicStatePatch()).containsEntry("processedEntityCount", 1L);
         assertThat(result.publicStatePatch()).containsEntry("progressPercent", 100);
-        verify(contentStoragePolicyMigrationApi).reassignVersionItem(eq(21L), eq(30L), eq(4L), startsWith("policies/4/blobs/"));
-        verify(storagePolicyBlobAccessApi).storeBlob(eq(targetPolicy), startsWith("policies/4/blobs/"), eq("video/mp4"), any());
+        verify(contentStoragePolicyMigrationApi).reassignVersionItems(eq(4L), any());
+        verify(storagePolicyBlobAccessApi).storeBlob(eq(targetPolicy), startsWith("policies/4/blobs/"), eq("video/mp4"), any(), eq(12L));
     }
 
     @Test
@@ -95,9 +97,10 @@ class StoragePolicyMigrationBackgroundTaskHandlerTest {
         when(storagePolicyQuery.readPolicyDescriptor(3L)).thenReturn(sourcePolicy);
         when(storagePolicyQuery.readPolicyDescriptor(4L)).thenReturn(targetPolicy);
         when(contentStoragePolicyMigrationApi.listVersionItemsByStoragePolicyId(3L)).thenReturn(List.of(entity));
-        when(storagePolicyBlobAccessApi.readBlob(sourcePolicy, "blobs/source-1")).thenReturn("payload".getBytes());
+        when(storagePolicyBlobAccessApi.openBlobStream(sourcePolicy, "blobs/source-1"))
+                .thenReturn(new ByteArrayInputStream("payload".getBytes()));
         doThrow(new IllegalStateException("store failed")).when(storagePolicyBlobAccessApi)
-                .storeBlob(eq(targetPolicy), startsWith("policies/4/blobs/"), eq("video/mp4"), any());
+                .storeBlob(eq(targetPolicy), startsWith("policies/4/blobs/"), eq("video/mp4"), any(), eq(12L));
 
         BackgroundTask task = new BackgroundTask();
         task.setId(11L);

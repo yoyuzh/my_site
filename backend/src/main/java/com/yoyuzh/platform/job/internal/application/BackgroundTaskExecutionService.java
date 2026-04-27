@@ -64,7 +64,7 @@ public class BackgroundTaskExecutionService {
                 continue;
             }
             BackgroundTask task = backgroundTaskRepository.findById(taskId)
-                    .orElseThrow(() -> new BusinessException(ErrorCode.FILE_NOT_FOUND, "task not found"));
+                    .orElseThrow(() -> new BusinessException(ErrorCode.TASK_NOT_FOUND, "task not found"));
             resetTaskToQueued(task);
             backgroundTaskRepository.save(task);
             recovered += 1;
@@ -121,7 +121,7 @@ public class BackgroundTaskExecutionService {
                                                  long leaseDurationSeconds) {
         LeaseTouch leaseTouch = refreshLease(id, workerOwner, leaseDurationSeconds);
         BackgroundTask task = backgroundTaskRepository.findById(id)
-                .orElseThrow(() -> new BusinessException(ErrorCode.FILE_NOT_FOUND, "task not found"));
+                .orElseThrow(() -> new BusinessException(ErrorCode.TASK_NOT_FOUND, "task not found"));
         task.setLeaseOwner(workerOwner);
         task.setLeaseExpiresAt(leaseTouch.leaseExpiresAt());
         task.setHeartbeatAt(leaseTouch.now());
@@ -146,7 +146,7 @@ public class BackgroundTaskExecutionService {
                                                   long leaseDurationSeconds) {
         LeaseTouch leaseTouch = refreshLease(id, workerOwner, leaseDurationSeconds);
         BackgroundTask task = backgroundTaskRepository.findById(id)
-                .orElseThrow(() -> new BusinessException(ErrorCode.FILE_NOT_FOUND, "task not found"));
+                .orElseThrow(() -> new BusinessException(ErrorCode.TASK_NOT_FOUND, "task not found"));
         task.setPublicStateJson(stateManager.merge(
                 task.getPublicStateJson(),
                 stateManager.completedStatePatch(task, leaseTouch.now(), publicStatePatch),
@@ -161,6 +161,29 @@ public class BackgroundTaskExecutionService {
     }
 
     @Transactional
+    public BackgroundTask markWorkerTaskRequeued(Long id,
+                                                 String workerOwner,
+                                                 Map<String, Object> publicStatePatch,
+                                                 long nextRunDelaySeconds,
+                                                 long leaseDurationSeconds) {
+        LeaseTouch leaseTouch = refreshLease(id, workerOwner, leaseDurationSeconds);
+        BackgroundTask task = backgroundTaskRepository.findById(id)
+                .orElseThrow(() -> new BusinessException(ErrorCode.TASK_NOT_FOUND, "task not found"));
+        LocalDateTime nextRunAt = leaseTouch.now().plusSeconds(Math.max(1L, nextRunDelaySeconds));
+        task.setPublicStateJson(stateManager.merge(
+                task.getPublicStateJson(),
+                requeuedStatePatch(task, leaseTouch.now(), nextRunAt, publicStatePatch),
+                RUNNING_TRANSIENT_STATE_KEYS
+        ));
+        task.setStatus(BackgroundTaskStatus.QUEUED);
+        task.setNextRunAt(nextRunAt);
+        clearLease(task);
+        task.setFinishedAt(null);
+        task.setErrorMessage(null);
+        return backgroundTaskRepository.save(task);
+    }
+
+    @Transactional
     public BackgroundTask markWorkerTaskFailed(Long id,
                                                String workerOwner,
                                                String errorMessage,
@@ -168,7 +191,7 @@ public class BackgroundTaskExecutionService {
                                                long leaseDurationSeconds) {
         LeaseTouch leaseTouch = refreshLease(id, workerOwner, leaseDurationSeconds);
         BackgroundTask task = backgroundTaskRepository.findById(id)
-                .orElseThrow(() -> new BusinessException(ErrorCode.FILE_NOT_FOUND, "task not found"));
+                .orElseThrow(() -> new BusinessException(ErrorCode.TASK_NOT_FOUND, "task not found"));
         String normalizedErrorMessage = StringUtils.hasText(errorMessage) ? errorMessage.trim() : "task failed";
         LocalDateTime now = leaseTouch.now();
         if (failureCategory.isRetryable() && retryPolicy.hasRemainingAttempts(task)) {
@@ -217,7 +240,12 @@ public class BackgroundTaskExecutionService {
     private void resetTaskToQueued(BackgroundTask task) {
         task.setNextRunAt(null);
         clearLease(task);
-        task.setPublicStateJson(stateManager.resetPublicStateForRetry(task.getPrivateStateJson(), task.getAttemptCount(), task.getMaxAttempts()));
+        task.setPublicStateJson(stateManager.resetPublicStateForRetry(
+                task.getPublicStateJson(),
+                task.getPrivateStateJson(),
+                task.getAttemptCount(),
+                task.getMaxAttempts()
+        ));
         task.setStatus(BackgroundTaskStatus.QUEUED);
         task.setFinishedAt(null);
         task.setErrorMessage(null);
@@ -244,6 +272,19 @@ public class BackgroundTaskExecutionService {
         task.setLeaseOwner(null);
         task.setLeaseExpiresAt(null);
         task.setHeartbeatAt(null);
+    }
+
+    private Map<String, Object> requeuedStatePatch(BackgroundTask task,
+                                                   LocalDateTime heartbeatAt,
+                                                   LocalDateTime nextRunAt,
+                                                   Map<String, Object> publicStatePatch) {
+        Map<String, Object> patch = new LinkedHashMap<>(stateManager.retryStatePatch(task.getAttemptCount(), task.getMaxAttempts()));
+        patch.put(BackgroundTaskStateKeys.HEARTBEAT_AT, heartbeatAt.toString());
+        patch.put("nextRunAt", nextRunAt.toString());
+        if (publicStatePatch != null) {
+            patch.putAll(publicStatePatch);
+        }
+        return patch;
     }
 
     private record LeaseTouch(LocalDateTime now, LocalDateTime leaseExpiresAt) {

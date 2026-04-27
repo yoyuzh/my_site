@@ -31,6 +31,7 @@ class RuntimeBackgroundTaskExecutionGatewayTest {
         when(backgroundTaskExecutionService.claimQueuedTask(1L, "worker-a", 120L)).thenReturn(Optional.of(task));
         when(backgroundTaskExecutionService.markWorkerTaskProgress(1L, "worker-a", Map.of("phase", "running"), 120L)).thenReturn(task);
         when(backgroundTaskExecutionService.markWorkerTaskCompleted(1L, "worker-a", Map.of("done", true), 120L)).thenReturn(task);
+        when(backgroundTaskExecutionService.markWorkerTaskRequeued(1L, "worker-a", Map.of("phase", "downloading"), 15L, 120L)).thenReturn(task);
         when(backgroundTaskExecutionService.markWorkerTaskFailed(1L, "worker-a", "boom", BackgroundTaskFailureCategory.UNKNOWN, 120L)).thenReturn(task);
 
         assertThat(gateway.requeueExpiredRunningTasks()).isEqualTo(2);
@@ -38,6 +39,7 @@ class RuntimeBackgroundTaskExecutionGatewayTest {
         assertThat(gateway.claimQueuedTask(1L, "worker-a", 120L)).containsSame(task);
         assertThat(gateway.markWorkerTaskProgress(1L, "worker-a", Map.of("phase", "running"), 120L)).isSameAs(task);
         assertThat(gateway.markWorkerTaskCompleted(1L, "worker-a", Map.of("done", true), 120L)).isSameAs(task);
+        assertThat(gateway.markWorkerTaskRequeued(1L, "worker-a", Map.of("phase", "downloading"), 15L, 120L)).isSameAs(task);
         assertThat(gateway.markWorkerTaskFailed(1L, "worker-a", "boom", BackgroundTaskFailureCategory.UNKNOWN, 120L)).isSameAs(task);
 
         verify(backgroundTaskExecutionService).requeueExpiredRunningTasks();
@@ -45,6 +47,7 @@ class RuntimeBackgroundTaskExecutionGatewayTest {
         verify(backgroundTaskExecutionService).claimQueuedTask(1L, "worker-a", 120L);
         verify(backgroundTaskExecutionService).markWorkerTaskProgress(1L, "worker-a", Map.of("phase", "running"), 120L);
         verify(backgroundTaskExecutionService).markWorkerTaskCompleted(1L, "worker-a", Map.of("done", true), 120L);
+        verify(backgroundTaskExecutionService).markWorkerTaskRequeued(1L, "worker-a", Map.of("phase", "downloading"), 15L, 120L);
         verify(backgroundTaskExecutionService).markWorkerTaskFailed(1L, "worker-a", "boom", BackgroundTaskFailureCategory.UNKNOWN, 120L);
     }
 }

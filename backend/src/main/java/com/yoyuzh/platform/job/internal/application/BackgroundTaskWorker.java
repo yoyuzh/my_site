@@ -75,12 +75,22 @@ public class BackgroundTaskWorker {
                             publicStatePatch,
                             DEFAULT_LEASE_DURATION_SECONDS
                     ));
-            backgroundTaskExecutionGateway.markWorkerTaskCompleted(
-                    task.getId(),
-                    workerOwner,
-                    result.publicStatePatch(),
-                    DEFAULT_LEASE_DURATION_SECONDS
-            );
+            if (result.completed()) {
+                backgroundTaskExecutionGateway.markWorkerTaskCompleted(
+                        task.getId(),
+                        workerOwner,
+                        result.publicStatePatch(),
+                        DEFAULT_LEASE_DURATION_SECONDS
+                );
+            } else {
+                backgroundTaskExecutionGateway.markWorkerTaskRequeued(
+                        task.getId(),
+                        workerOwner,
+                        result.publicStatePatch(),
+                        result.nextRunDelaySeconds() == null ? 1L : result.nextRunDelaySeconds(),
+                        DEFAULT_LEASE_DURATION_SECONDS
+                );
+            }
         } catch (BackgroundTaskLeaseLostException ignored) {
             // Another worker reclaimed the task after this worker stopped heartbeating.
         } catch (Exception ex) {

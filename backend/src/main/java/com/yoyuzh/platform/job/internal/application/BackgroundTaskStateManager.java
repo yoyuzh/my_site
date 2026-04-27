@@ -13,15 +13,45 @@ import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 @Component
 public class BackgroundTaskStateManager {
 
     private static final TypeReference<LinkedHashMap<String, Object>> JSON_OBJECT_TYPE = new TypeReference<>() {
     };
+    private static final String PUBLIC_STATE_SEED_KEY = "_publicStateSeed";
+    private static final Set<String> PRIVATE_ONLY_STATE_KEYS = Set.of(
+            PUBLIC_STATE_SEED_KEY,
+            "taskType",
+            "remoteDownloadId"
+    );
+    private static final List<String> RETRY_FALLBACK_REMOVABLE_KEYS = List.of(
+            BackgroundTaskStateKeys.PHASE,
+            BackgroundTaskStateKeys.WORKER_OWNER,
+            BackgroundTaskStateKeys.HEARTBEAT_AT,
+            BackgroundTaskStateKeys.LEASE_EXPIRES_AT,
+            BackgroundTaskStateKeys.STARTED_AT,
+            BackgroundTaskStateKeys.RETRY_SCHEDULED,
+            BackgroundTaskStateKeys.NEXT_RETRY_AT,
+            BackgroundTaskStateKeys.RETRY_DELAY_SECONDS,
+            BackgroundTaskStateKeys.LAST_FAILURE_MESSAGE,
+            BackgroundTaskStateKeys.LAST_FAILURE_AT,
+            BackgroundTaskStateKeys.FAILURE_CATEGORY,
+            "worker",
+            "processedFileCount",
+            "totalFileCount",
+            "processedDirectoryCount",
+            "totalDirectoryCount",
+            "processedItems",
+            "totalItems",
+            "progressPercent",
+            "completedAt"
+    );
 
     private final ObjectMapper objectMapper;
 
@@ -126,9 +156,11 @@ public class BackgroundTaskStateManager {
         return toJson(nextPublicState);
     }
 
-    public String resetPublicStateForRetry(String privateStateJson, int attemptCount, int maxAttempts) {
-        Map<String, Object> nextPublicState = parse(privateStateJson);
-        nextPublicState.remove("taskType");
+    public String resetPublicStateForRetry(String currentPublicStateJson,
+                                           String privateStateJson,
+                                           int attemptCount,
+                                           int maxAttempts) {
+        Map<String, Object> nextPublicState = extractRetryPublicState(currentPublicStateJson, privateStateJson);
         nextPublicState.put(BackgroundTaskStateKeys.PHASE, "queued");
         nextPublicState.putAll(retryStatePatch(attemptCount, maxAttempts));
         return toJson(nextPublicState);
@@ -187,5 +219,39 @@ public class BackgroundTaskStateManager {
 
     private Map<String, Object> parse(String value) {
         return new LinkedHashMap<>(parseJsonObject(value, "Failed to parse background task state"));
+    }
+
+    private Map<String, Object> extractRetryPublicState(String currentPublicStateJson, String privateStateJson) {
+        Map<String, Object> privateState = parse(privateStateJson);
+        Object publicStateSeed = privateState.get(PUBLIC_STATE_SEED_KEY);
+        if (publicStateSeed instanceof Map<?, ?> mapSeed) {
+            return sanitizeRetryState(copyStringKeyMap(mapSeed), true);
+        }
+
+        Map<String, Object> filteredPrivateState = sanitizeRetryState(privateState, true);
+        if (!filteredPrivateState.isEmpty()) {
+            return filteredPrivateState;
+        }
+        return sanitizeRetryState(parse(currentPublicStateJson), false);
+    }
+
+    private Map<String, Object> sanitizeRetryState(Map<String, Object> state, boolean stripPrivateOnlyKeys) {
+        Map<String, Object> sanitized = new LinkedHashMap<>(state);
+        if (stripPrivateOnlyKeys) {
+            PRIVATE_ONLY_STATE_KEYS.forEach(sanitized::remove);
+        } else {
+            new ArrayList<>(RETRY_FALLBACK_REMOVABLE_KEYS).forEach(sanitized::remove);
+        }
+        return sanitized;
+    }
+
+    private Map<String, Object> copyStringKeyMap(Map<?, ?> source) {
+        Map<String, Object> copy = new LinkedHashMap<>();
+        source.forEach((key, value) -> {
+            if (key instanceof String stringKey) {
+                copy.put(stringKey, value);
+            }
+        });
+        return copy;
     }
 }

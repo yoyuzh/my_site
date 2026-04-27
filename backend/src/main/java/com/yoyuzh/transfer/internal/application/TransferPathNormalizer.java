@@ -3,6 +3,7 @@ package com.yoyuzh.transfer.internal.application;
 import com.yoyuzh.shared.kernel.BusinessException;
 import com.yoyuzh.shared.kernel.ErrorCode;
 import java.util.ArrayList;
+import java.util.Locale;
 import java.util.List;
 import java.util.Objects;
 
@@ -12,8 +13,10 @@ final class TransferPathNormalizer {
     }
 
     static String normalizePickupCode(String pickupCode) {
-        String normalized = Objects.requireNonNullElse(pickupCode, "").replaceAll("\\D", "");
-        if (normalized.length() != 6) {
+        String normalized = Objects.requireNonNullElse(pickupCode, "")
+                .replaceAll("[^A-Za-z0-9]", "")
+                .toUpperCase(Locale.ROOT);
+        if (!normalized.matches("[A-Z0-9]{8}")) {
             throw new BusinessException(ErrorCode.INVALID_INPUT, "invalid pickup code");
         }
         return normalized;

@@ -15,6 +15,7 @@ import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 import java.util.function.Function;
+import java.util.function.Predicate;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -65,8 +66,8 @@ class OnlineTransferServiceTest {
 
     @Test
     void shouldFailWhenPickupCodeCollidesTooManyTimes() {
-        when(sessionStore.nextPickupCode()).thenReturn("123456");
-        when(offlineTransferSessionRepository.existsByPickupCode("123456")).thenReturn(true);
+        when(sessionStore.nextPickupCode(org.mockito.ArgumentMatchers.<Predicate<String>>any()))
+                .thenThrow(new IllegalStateException("unable to allocate pickup code"));
 
         CreateTransferSessionCommand command = new CreateTransferSessionCommand(
                 com.yoyuzh.transfer.api.TransferMode.ONLINE,
@@ -77,13 +78,13 @@ class OnlineTransferServiceTest {
                 .isInstanceOf(BusinessException.class)
                 .hasMessageContaining("unable to allocate pickup code");
 
-        verify(sessionStore, times(32)).nextPickupCode();
+        verify(sessionStore).nextPickupCode(org.mockito.ArgumentMatchers.<Predicate<String>>any());
     }
 
     private TransferSession onlineSession() {
         return new TransferSession(
                 "session-1",
-                "123456",
+                "AB12CD34",
                 Instant.now().plusSeconds(300),
                 List.of(new TransferFileItem("demo.txt", 12, "text/plain"))
         );

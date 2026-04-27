@@ -5,10 +5,12 @@ import com.yoyuzh.boot.security.CustomUserDetailsService;
 import com.yoyuzh.shared.kernel.PageResponse;
 import com.yoyuzh.files.sharing.api.CreateShareCommand;
 import com.yoyuzh.files.sharing.api.ImportShareCommand;
+import com.yoyuzh.files.sharing.api.SavedShareV2Response;
 import com.yoyuzh.files.sharing.api.ShareDownloadResult;
 import com.yoyuzh.files.sharing.api.ShareStatsResponse;
 import com.yoyuzh.files.sharing.api.ShareV2Response;
 import com.yoyuzh.files.sharing.api.SharingApi;
+import com.yoyuzh.files.sharing.api.UpdateSharePolicyCommand;
 import com.yoyuzh.files.workspace.api.FileMetadataResponse;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Max;
@@ -52,9 +54,42 @@ public class ShareV2Controller {
                 request.shareName(),
                 request.allowImport(),
                 request.allowDownload(),
+                request.expireAfterConsume(),
                 request.expiresAt(),
                 request.maxDownloads()
         )));
+    }
+
+    @PostMapping("/{token}/save")
+    public ApiV2Response<SavedShareV2Response> saveShare(@AuthenticationPrincipal UserDetails userDetails,
+                                                         @PathVariable String token,
+                                                         @RequestBody(required = false) SaveShareV2Request request) {
+        return ApiV2Response.success(sharingApi.saveSharedWithMe(
+                currentUserId(userDetails),
+                token,
+                request == null ? null : request.password()
+        ));
+    }
+
+    @GetMapping("/shared-with-me")
+    public ApiV2Response<PageResponse<SavedShareV2Response>> sharedWithMe(@AuthenticationPrincipal UserDetails userDetails,
+                                                                          @RequestParam(defaultValue = "0") @Min(0) int page,
+                                                                          @RequestParam(defaultValue = "20") @Min(1) @Max(100) int size) {
+        var result = sharingApi.listSharedWithMe(currentUserId(userDetails), PageRequest.of(page, size, Sort.by(Sort.Direction.DESC, "savedAt")));
+        return ApiV2Response.success(new PageResponse<>(result.getContent(), result.getTotalElements(), result.getNumber(), result.getSize()));
+    }
+
+    @GetMapping("/shared-with-me/{id}")
+    public ApiV2Response<SavedShareV2Response> sharedWithMeDetail(@AuthenticationPrincipal UserDetails userDetails,
+                                                                  @PathVariable Long id) {
+        return ApiV2Response.success(sharingApi.getSharedWithMe(currentUserId(userDetails), id));
+    }
+
+    @DeleteMapping("/shared-with-me/{id}")
+    public ApiV2Response<Void> deleteSharedWithMe(@AuthenticationPrincipal UserDetails userDetails,
+                                                  @PathVariable Long id) {
+        sharingApi.deleteSharedWithMe(currentUserId(userDetails), id);
+        return ApiV2Response.success(null);
     }
 
     @GetMapping("/{token}")
@@ -99,7 +134,12 @@ public class ShareV2Controller {
     public ApiV2Response<ShareV2Response> updatePolicy(@AuthenticationPrincipal UserDetails userDetails,
                                                        @PathVariable Long id,
                                                        @Valid @RequestBody UpdateSharePolicyV2Request request) {
-        return ApiV2Response.success(sharingApi.updatePolicy(currentUserId(userDetails), id, request.maxDownloads()));
+        return ApiV2Response.success(sharingApi.updatePolicy(currentUserId(userDetails), id, new UpdateSharePolicyCommand(
+                request.password(),
+                request.expiresAt(),
+                request.maxDownloads(),
+                request.expireAfterConsume()
+        )));
     }
 
     @DeleteMapping("/{id}")

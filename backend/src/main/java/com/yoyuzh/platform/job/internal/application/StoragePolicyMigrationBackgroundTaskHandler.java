@@ -10,15 +10,15 @@ import com.yoyuzh.shared.kernel.BusinessException;
 import com.yoyuzh.shared.kernel.ErrorCode;
 import com.yoyuzh.files.content.api.ContentStoragePolicyMigrationApi;
 import com.yoyuzh.files.content.api.ContentStoragePolicyMigrationItem;
+import com.yoyuzh.files.content.api.ContentStoragePolicyMigrationMutation;
 import com.yoyuzh.platform.storage.api.StoragePolicyDescriptor;
 import com.yoyuzh.platform.storage.api.StoragePolicyBlobAccessApi;
 import com.yoyuzh.platform.storage.api.StoragePolicyQuery;
-import org.springframework.transaction.annotation.Transactional;
 import org.springframework.stereotype.Component;
-import org.springframework.transaction.support.TransactionSynchronization;
-import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.util.StringUtils;
 
+import java.io.IOException;
+import java.io.InputStream;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -28,7 +28,6 @@ import java.util.Map;
 import java.util.UUID;
 
 @Component
-@Transactional
 public class StoragePolicyMigrationBackgroundTaskHandler implements BackgroundTaskHandler {
 
     private final StoragePolicyQuery storagePolicyQuery;
@@ -83,6 +82,7 @@ public class StoragePolicyMigrationBackgroundTaskHandler implements BackgroundTa
         long migratedStoredFileCount = 0L;
         List<String> copiedObjectKeys = new ArrayList<>();
         LinkedHashSet<String> staleObjectKeys = new LinkedHashSet<>();
+        List<ContentStoragePolicyMigrationMutation> mutations = new ArrayList<>();
         progressReporter.report(progressPatch(
                 sourcePolicy,
                 targetPolicy,
@@ -101,16 +101,19 @@ public class StoragePolicyMigrationBackgroundTaskHandler implements BackgroundTa
                 String newObjectKey = buildTargetObjectKey(targetPolicy.id());
                 String contentType = StringUtils.hasText(entity.contentType()) ? entity.contentType() : entity.blobContentType();
 
-                byte[] content = storagePolicyBlobAccessApi.readBlob(sourcePolicy, oldObjectKey);
-                copiedObjectKeys.add(newObjectKey);
-                storagePolicyBlobAccessApi.storeBlob(targetPolicy, newObjectKey, contentType, content);
-
-                contentStoragePolicyMigrationApi.reassignVersionItem(
-                        entity.entityId(),
-                        entity.blobId(),
-                        targetPolicy.id(),
-                        newObjectKey
-                );
+                try (InputStream content = storagePolicyBlobAccessApi.openBlobStream(sourcePolicy, oldObjectKey)) {
+                    copiedObjectKeys.add(newObjectKey);
+                    storagePolicyBlobAccessApi.storeBlob(
+                            targetPolicy,
+                            newObjectKey,
+                            contentType,
+                            content,
+                            entity.blobSize() == null ? 0L : entity.blobSize()
+                    );
+                } catch (IOException ex) {
+                    throw new IllegalStateException("storage policy migration failed to close blob stream", ex);
+                }
+                mutations.add(new ContentStoragePolicyMigrationMutation(entity.entityId(), entity.blobId(), newObjectKey));
 
                 staleObjectKeys.add(oldObjectKey);
                 processedEntityCount += 1;
@@ -132,7 +135,13 @@ public class StoragePolicyMigrationBackgroundTaskHandler implements BackgroundTa
             throw ex;
         }
 
-        scheduleStaleObjectCleanup(sourcePolicy, staleObjectKeys);
+        try {
+            contentStoragePolicyMigrationApi.reassignVersionItems(targetPolicy.id(), mutations);
+        } catch (RuntimeException ex) {
+            cleanupCopiedObjects(targetPolicy, copiedObjectKeys);
+            throw ex;
+        }
+        cleanupStaleObjects(sourcePolicy, staleObjectKeys);
         return new BackgroundTaskHandlerResult(progressPatch(
                 sourcePolicy,
                 targetPolicy,
@@ -213,22 +222,17 @@ public class StoragePolicyMigrationBackgroundTaskHandler implements BackgroundTa
         return (int) Math.min(100L, Math.floor((processed * 100.0d) / total));
     }
 
-    private void scheduleStaleObjectCleanup(StoragePolicyDescriptor sourcePolicy, LinkedHashSet<String> staleObjectKeys) {
-        if (staleObjectKeys.isEmpty() || !TransactionSynchronizationManager.isSynchronizationActive()) {
+    private void cleanupStaleObjects(StoragePolicyDescriptor sourcePolicy, LinkedHashSet<String> staleObjectKeys) {
+        if (staleObjectKeys.isEmpty()) {
             return;
         }
-        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
-            @Override
-            public void afterCommit() {
-                for (String staleObjectKey : staleObjectKeys) {
-                    try {
-                        storagePolicyBlobAccessApi.deleteBlob(sourcePolicy, staleObjectKey);
-                    } catch (RuntimeException ignored) {
-                        // Database state already committed; leave old object cleanup as best effort.
-                    }
-                }
+        for (String staleObjectKey : staleObjectKeys) {
+            try {
+                storagePolicyBlobAccessApi.deleteBlob(sourcePolicy, staleObjectKey);
+            } catch (RuntimeException ignored) {
+                // Metadata update already committed; leave source cleanup as best effort.
             }
-        });
+        }
     }
 
     private void cleanupCopiedObjects(StoragePolicyDescriptor targetPolicy, List<String> copiedObjectKeys) {

@@ -23,6 +23,7 @@ import org.springframework.util.StringUtils;
 import java.nio.file.InvalidPathException;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.Objects;
 
 @Service
 @RequiredArgsConstructor
@@ -106,7 +107,7 @@ public class RuntimeStoragePolicyAdminApi implements StoragePolicyAdminApi {
 
     private StoragePolicy getRequiredStoragePolicy(Long policyId) {
         return storagePolicyRepository.findById(policyId)
-                .orElseThrow(() -> new BusinessException(ErrorCode.FILE_NOT_FOUND, "storage policy not found"));
+                .orElseThrow(() -> new BusinessException(ErrorCode.STORAGE_POLICY_NOT_FOUND, "storage policy not found"));
     }
 
     private void applyStoragePolicyUpsert(StoragePolicy policy, StoragePolicyAdminUpsertCommand command) {
@@ -123,7 +124,9 @@ public class RuntimeStoragePolicyAdminApi implements StoragePolicyAdminApi {
         policy.setPrefix(normalizePrefix(command.prefix()));
         policy.setCredentialMode(command.credentialMode());
         policy.setMaxSizeBytes(command.maxSizeBytes());
-        policy.setCapabilitiesJson(storagePolicyService.writeCapabilities(command.capabilities()));
+        policy.setCapabilitiesJson(storagePolicyService.writeCapabilities(
+                Objects.requireNonNull(command.capabilities(), "storage policy capabilities must not be null")
+        ));
         policy.setEnabled(command.enabled());
     }
 

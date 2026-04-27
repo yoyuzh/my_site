@@ -12,15 +12,43 @@ import jakarta.persistence.Table;
 
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
+import java.util.Locale;
+import java.util.Set;
 
 @Entity
 @Table(name = "portal_file", indexes = {
         @Index(name = "uk_file_user_path_name", columnList = "user_id,path,filename", unique = true),
         @Index(name = "idx_file_created_at", columnList = "created_at"),
         @Index(name = "idx_file_deleted_at", columnList = "deleted_at"),
-        @Index(name = "idx_file_recycle_group", columnList = "recycle_group_id")
+        @Index(name = "idx_file_recycle_group", columnList = "recycle_group_id"),
+        @Index(name = "idx_file_user_deleted_category", columnList = "user_id,deleted_at,search_category")
 })
 public class StoredFile {
+
+    private static final Set<String> DOCUMENT_CONTENT_TYPES = Set.of(
+            "application/pdf",
+            "application/msword",
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            "application/vnd.ms-excel",
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            "application/vnd.ms-powerpoint",
+            "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+            "text/plain",
+            "text/markdown"
+    );
+
+    private static final Set<String> IMAGE_EXTENSIONS = Set.of(
+            "png", "jpg", "jpeg", "gif", "webp", "bmp", "svg", "heic", "heif", "avif"
+    );
+    private static final Set<String> VIDEO_EXTENSIONS = Set.of(
+            "mp4", "mov", "m4v", "mkv", "avi", "webm"
+    );
+    private static final Set<String> AUDIO_EXTENSIONS = Set.of(
+            "mp3", "wav", "flac", "aac", "m4a", "ogg"
+    );
+    private static final Set<String> DOCUMENT_EXTENSIONS = Set.of(
+            "pdf", "doc", "docx", "xls", "xlsx", "ppt", "pptx", "txt", "md"
+    );
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
@@ -46,6 +74,9 @@ public class StoredFile {
 
     @Column(name = "content_type", length = 255)
     private String contentType;
+
+    @Column(name = "search_category", length = 32)
+    private String searchCategory;
 
     @Column(nullable = false)
     private Long size;
@@ -109,6 +140,7 @@ public class StoredFile {
 
     @PrePersist
     public void prePersist() {
+        refreshSearchCategory();
         if (createdAt == null) {
             createdAt = LocalDateTime.now(ZoneOffset.UTC);
         }
@@ -119,6 +151,7 @@ public class StoredFile {
 
     @PreUpdate
     public void preUpdate() {
+        refreshSearchCategory();
         updatedAt = LocalDateTime.now(ZoneOffset.UTC);
     }
 
@@ -144,6 +177,7 @@ public class StoredFile {
 
     public void setFilename(String filename) {
         this.filename = filename;
+        refreshSearchCategory();
     }
 
     public String getPath() {
@@ -184,6 +218,11 @@ public class StoredFile {
 
     public void setContentType(String contentType) {
         this.contentType = contentType;
+        refreshSearchCategory();
+    }
+
+    public String getSearchCategory() {
+        return searchCategory;
     }
 
     public Long getSize() {
@@ -200,6 +239,7 @@ public class StoredFile {
 
     public void setDirectory(boolean directory) {
         this.directory = directory;
+        refreshSearchCategory();
     }
 
     public LocalDateTime getCreatedAt() {
@@ -263,7 +303,7 @@ public class StoredFile {
     }
 
     public void renameTo(String sanitizedFilename) {
-        this.filename = sanitizedFilename;
+        setFilename(sanitizedFilename);
     }
 
     public void moveTo(String normalizedTargetPath) {
@@ -312,5 +352,58 @@ public class StoredFile {
         copiedFile.setDirectory(directory);
         copiedFile.setBlobId(blobId);
         return copiedFile;
+    }
+
+    private void refreshSearchCategory() {
+        this.searchCategory = deriveSearchCategory();
+    }
+
+    private String deriveSearchCategory() {
+        if (directory) {
+            return null;
+        }
+        String normalizedContentType = normalizeContentType(contentType);
+        if (normalizedContentType.startsWith("image/")) {
+            return "image";
+        }
+        if (normalizedContentType.startsWith("video/")) {
+            return "video";
+        }
+        if (normalizedContentType.startsWith("audio/")) {
+            return "audio";
+        }
+        if (DOCUMENT_CONTENT_TYPES.contains(normalizedContentType)) {
+            return "document";
+        }
+
+        String extension = extractExtension(filename);
+        if (IMAGE_EXTENSIONS.contains(extension)) {
+            return "image";
+        }
+        if (VIDEO_EXTENSIONS.contains(extension)) {
+            return "video";
+        }
+        if (AUDIO_EXTENSIONS.contains(extension)) {
+            return "audio";
+        }
+        if (DOCUMENT_EXTENSIONS.contains(extension)) {
+            return "document";
+        }
+        return null;
+    }
+
+    private String normalizeContentType(String value) {
+        return value == null ? "" : value.trim().toLowerCase(Locale.ROOT);
+    }
+
+    private String extractExtension(String value) {
+        if (value == null) {
+            return "";
+        }
+        int dotIndex = value.lastIndexOf('.');
+        if (dotIndex < 0 || dotIndex == value.length() - 1) {
+            return "";
+        }
+        return value.substring(dotIndex + 1).trim().toLowerCase(Locale.ROOT);
     }
 }

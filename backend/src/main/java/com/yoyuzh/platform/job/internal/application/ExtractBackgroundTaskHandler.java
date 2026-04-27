@@ -15,7 +15,6 @@ import com.yoyuzh.files.workspace.api.WorkspaceExternalFileImport;
 import com.yoyuzh.files.workspace.api.WorkspaceUserContext;
 import com.yoyuzh.files.workspace.api.WorkspaceZipArchive;
 import com.yoyuzh.files.workspace.api.WorkspaceZipArchiveEntry;
-import org.springframework.transaction.annotation.Transactional;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 
@@ -28,7 +27,6 @@ import java.util.Map;
 import java.util.Optional;
 
 @Component
-@Transactional
 public class ExtractBackgroundTaskHandler implements BackgroundTaskHandler {
 
     private final IdentityUserDirectoryApi identityUserDirectoryApi;

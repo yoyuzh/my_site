@@ -2,6 +2,7 @@ package com.yoyuzh.ops.admin.internal.application;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.yoyuzh.boot.security.AuthenticatedUserPrincipal;
 import com.yoyuzh.identity.access.api.IdentityUserDirectoryApi;
 import com.yoyuzh.ops.admin.internal.infra.AdminAuditLogEntity;
 import com.yoyuzh.ops.admin.internal.infra.AdminAuditLogRepository;
@@ -47,9 +48,7 @@ public class AdminAuditService {
             return new ActorSnapshot(null, "system", "");
         }
         String username = authentication.getName();
-        Long userId = StringUtils.hasText(username)
-                ? identityUserDirectoryApi.findProfileByUsername(username).map(profile -> profile.id()).orElse(null)
-                : null;
+        Long userId = resolveActorUserId(authentication, username);
         String authorities = authentication.getAuthorities() == null
                 ? ""
                 : authentication.getAuthorities().stream()
@@ -62,11 +61,22 @@ public class AdminAuditService {
         return new ActorSnapshot(userId, username, authorities);
     }
 
+    private Long resolveActorUserId(Authentication authentication, String username) {
+        Object principal = authentication.getPrincipal();
+        if (principal instanceof AuthenticatedUserPrincipal authenticatedUserPrincipal) {
+            return authenticatedUserPrincipal.getUserId();
+        }
+        if (!StringUtils.hasText(username)) {
+            return null;
+        }
+        return identityUserDirectoryApi.findProfileByUsername(username).map(profile -> profile.id()).orElse(null);
+    }
+
     private String serializeDetails(Map<String, Object> details) {
         try {
             return objectMapper.writeValueAsString(details == null ? Map.of() : details);
         } catch (JsonProcessingException ex) {
-            return "{}";
+            throw new IllegalStateException("failed to serialize admin audit details", ex);
         }
     }
 

@@ -21,6 +21,8 @@ import com.yoyuzh.transfer.api.TransferImportApi;
 import com.yoyuzh.transfer.api.TransferImportCommand;
 import org.springframework.stereotype.Service;
 
+import java.io.IOException;
+import java.io.InputStream;
 import java.util.UUID;
 
 @Service
@@ -72,7 +74,9 @@ public class RuntimeTransferImportApi implements TransferImportApi {
 
         String objectKey = createBlobObjectKey();
         try {
-            fileContentStorage.storeBlob(objectKey, readyFile.contentType(), readyFile.content());
+            try (InputStream content = readyFile.content().getInputStream()) {
+                fileContentStorage.storeBlob(objectKey, readyFile.contentType(), content, readyFile.size());
+            }
             var blob = contentBlobRegistrationApi.registerStoredBlob(objectKey, readyFile.contentType(), readyFile.size());
             RegisteredContentFile storedFile = contentRegistrationApi.registerBlob(new ContentRegistrationCommand(
                     recipient.id(),
@@ -93,14 +97,21 @@ public class RuntimeTransferImportApi implements TransferImportApi {
                     storedFile.createdAt(),
                     false
             );
+        } catch (IOException ex) {
+            cleanupBlobQuietly(objectKey);
+            throw new BusinessException(ErrorCode.UNKNOWN, "offline transfer file read failed");
         } catch (RuntimeException ex) {
             try {
-                fileContentStorage.deleteBlob(objectKey);
+                cleanupBlobQuietly(objectKey);
             } catch (RuntimeException cleanupEx) {
                 ex.addSuppressed(cleanupEx);
             }
             throw ex;
         }
+    }
+
+    private void cleanupBlobQuietly(String objectKey) {
+        fileContentStorage.deleteBlob(objectKey);
     }
 
     private void validateImportTarget(IdentityUserSnapshot recipient, String normalizedPath, String normalizedFilename, long size) {

@@ -73,6 +73,19 @@ app:
       - capacitor://localhost
       - https://yoyuzh.xyz
       - https://www.yoyuzh.xyz
+  transfer:
+    remote-download:
+      aria2:
+        base-url: ${APP_REMOTE_DOWNLOAD_ARIA2_BASE_URL:http://127.0.0.1:6800/jsonrpc}
+        secret: ${APP_REMOTE_DOWNLOAD_ARIA2_SECRET:}
+        download-dir: ${APP_REMOTE_DOWNLOAD_ARIA2_DOWNLOAD_DIR:}
+      qbittorrent:
+        base-url: ${APP_REMOTE_DOWNLOAD_QBITTORRENT_BASE_URL:http://127.0.0.1:8081}
+        username: ${APP_REMOTE_DOWNLOAD_QBITTORRENT_USERNAME:}
+        password: ${APP_REMOTE_DOWNLOAD_QBITTORRENT_PASSWORD:}
+        save-path: ${APP_REMOTE_DOWNLOAD_QBITTORRENT_SAVE_PATH:}
+        category: ${APP_REMOTE_DOWNLOAD_QBITTORRENT_CATEGORY:}
+        tag-prefix: ${APP_REMOTE_DOWNLOAD_QBITTORRENT_TAG_PREFIX:remote-download-}
   redis:
     enabled: ${APP_REDIS_ENABLED:false}
     key-prefix: ${APP_REDIS_KEY_PREFIX:yoyuzh}

@@ -83,4 +83,22 @@ class RuntimeWorkspaceDirectoryApiTest {
         assertThat(response.total()).isEqualTo(2L);
     }
 
+    @Test
+    void shouldCreateDirectoryWithAutoRenamedNameWhenSameDirectoryExists() {
+        RuntimeWorkspaceDirectoryApi api = new RuntimeWorkspaceDirectoryApi(storedFileRepository, fileContentStorage);
+        when(storedFileRepository.existsByUserIdAndPathAndFilename(7L, "/", "docs")).thenReturn(true);
+        when(storedFileRepository.findActiveFilenamesByUserIdAndPathAndFilenamePrefix(7L, "/", "docs", "docs"))
+                .thenReturn(List.of("docs"));
+        when(storedFileRepository.save(any(StoredFile.class))).thenAnswer(invocation -> {
+            StoredFile storedFile = invocation.getArgument(0);
+            storedFile.setId(11L);
+            return storedFile;
+        });
+
+        FileMetadataResponse response = api.createDirectory(7L, "/docs");
+
+        assertThat(response.filename()).isEqualTo("docs(1)");
+        verify(fileContentStorage).createDirectory(7L, "/docs(1)");
+    }
+
 }

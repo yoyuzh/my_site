@@ -16,14 +16,17 @@ public interface FileShareLinkRepository extends JpaRepository<FileShareLink, Lo
 
     Optional<FileShareLink> findByToken(String token);
 
-    Page<FileShareLink> findByOwnerIdOrderByCreatedAtDesc(Long ownerId, Pageable pageable);
+    Optional<FileShareLink> findByTokenAndCancelledAtIsNull(String token);
 
-    Optional<FileShareLink> findByIdAndOwnerId(Long id, Long ownerId);
+    Page<FileShareLink> findByOwnerIdAndCancelledAtIsNullOrderByCreatedAtDesc(Long ownerId, Pageable pageable);
+
+    Optional<FileShareLink> findByIdAndOwnerIdAndCancelledAtIsNull(Long id, Long ownerId);
 
     @Query("""
             select share from FileShareLink share
             join StoredFile file on file.id = share.fileId
-            where (:userQuery is null or :userQuery = ''
+            where share.cancelledAt is null
+              and (:userQuery is null or :userQuery = ''
                 or exists (
                     select 1 from User owner
                     where owner.id = share.ownerId

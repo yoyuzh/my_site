@@ -97,6 +97,34 @@ class BackgroundTaskStateManagerTest {
         assertThat(patch.get(BackgroundTaskStateKeys.FAILURE_CATEGORY)).isEqualTo("TRANSIENT_INFRASTRUCTURE");
     }
 
+    @Test
+    void shouldResetPublicStateWithoutLeakingPrivateOnlyKeys() {
+        String currentPublicState = """
+                {"phase":"failed","message":"remote download failed","worker":"remote-download"}
+                """;
+        String privateState = """
+                {
+                  "taskType":"REMOTE_DOWNLOAD",
+                  "remoteDownloadId":42,
+                  "_publicStateSeed":{
+                    "phase":"pending",
+                    "message":"remote download queued",
+                    "sourceType":"HTTP"
+                  }
+                }
+                """;
+
+        String reset = stateManager.resetPublicStateForRetry(currentPublicState, privateState, 0, 2);
+
+        assertThat(reset).contains("\"phase\":\"queued\"");
+        assertThat(reset).contains("\"sourceType\":\"HTTP\"");
+        assertThat(reset).contains("\"attemptCount\":0");
+        assertThat(reset).contains("\"maxAttempts\":2");
+        assertThat(reset).doesNotContain("remoteDownloadId");
+        assertThat(reset).doesNotContain("taskType");
+        assertThat(reset).doesNotContain("worker");
+    }
+
     private BackgroundTask createTask(int attemptCount, int maxAttempts) {
         BackgroundTask task = new BackgroundTask();
         task.setAttemptCount(attemptCount);

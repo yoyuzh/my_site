@@ -14,6 +14,8 @@ public interface WorkspacePathPolicy {
 
     String normalizeLeafName(String filename);
 
+    String resolveAvailableNodeName(Long userId, String path, String filename);
+
     boolean existsNodeName(Long userId, String path, String filename);
 
     void ensureNodeNameAvailable(Long userId, String path, String filename, String errorMessage);

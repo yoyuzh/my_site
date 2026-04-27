@@ -26,6 +26,12 @@ public interface BackgroundTaskExecutionGateway {
                                            Map<String, Object> publicStatePatch,
                                            long leaseDurationSeconds);
 
+    BackgroundTask markWorkerTaskRequeued(Long id,
+                                          String workerOwner,
+                                          Map<String, Object> publicStatePatch,
+                                          long nextRunDelaySeconds,
+                                          long leaseDurationSeconds);
+
     BackgroundTask markWorkerTaskFailed(Long id,
                                         String workerOwner,
                                         String errorMessage,

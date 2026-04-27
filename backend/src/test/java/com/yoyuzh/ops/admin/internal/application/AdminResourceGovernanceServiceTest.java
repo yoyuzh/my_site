@@ -11,6 +11,7 @@ import com.yoyuzh.files.sharing.api.SharingApi;
 import com.yoyuzh.files.workspace.api.WorkspaceAdminFileSnapshot;
 import com.yoyuzh.files.workspace.api.WorkspaceAdminGovernanceApi;
 import com.yoyuzh.shared.kernel.BusinessException;
+import com.yoyuzh.shared.kernel.ErrorCode;
 import java.util.Objects;
 import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
@@ -63,6 +64,10 @@ class AdminResourceGovernanceServiceTest {
 
         assertThatThrownBy(() -> adminResourceGovernanceService.deleteShare(99L))
                 .isInstanceOf(BusinessException.class)
+                .extracting(error -> ((BusinessException) error).getErrorCode())
+                .isEqualTo(ErrorCode.SHARE_NOT_FOUND);
+        assertThatThrownBy(() -> adminResourceGovernanceService.deleteShare(99L))
+                .isInstanceOf(BusinessException.class)
                 .hasMessageContaining("share not found");
     }
 
@@ -97,6 +102,10 @@ class AdminResourceGovernanceServiceTest {
     void shouldThrowWhenDeletingNonExistentFile() {
         when(workspaceAdminGovernanceApi.deleteFileAsAdmin(99L)).thenReturn(Optional.empty());
 
+        assertThatThrownBy(() -> adminResourceGovernanceService.deleteFile(99L))
+                .isInstanceOf(BusinessException.class)
+                .extracting(error -> ((BusinessException) error).getErrorCode())
+                .isEqualTo(ErrorCode.FILE_NOT_FOUND);
         assertThatThrownBy(() -> adminResourceGovernanceService.deleteFile(99L))
                 .isInstanceOf(BusinessException.class)
                 .hasMessageContaining("file not found");

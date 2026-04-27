@@ -14,11 +14,13 @@ import org.springframework.util.StringUtils;
 
 import java.time.Duration;
 import java.time.Instant;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.function.Function;
+import java.util.function.Predicate;
 import java.util.function.Supplier;
 import lombok.extern.slf4j.Slf4j;
 
@@ -28,6 +30,9 @@ public class TransferSessionStore {
 
     private static final String RESERVED_PICKUP_CODE = "__reserved__";
     private static final Duration SESSION_LOCK_TTL = Duration.ofSeconds(5);
+    private static final String PICKUP_CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+    private static final int PICKUP_CODE_LENGTH = 8;
+    private static final int PICKUP_CODE_COLLISION_RETRY_LIMIT = 32;
 
     private final Map<String, TransferSession> sessionsById = new ConcurrentHashMap<>();
     private final Map<String, String> sessionIdsByPickupCode = new ConcurrentHashMap<>();
@@ -165,27 +170,52 @@ public class TransferSessionStore {
     }
 
     public String nextPickupCode() {
+        return nextPickupCode(code -> true);
+    }
+
+    public String nextPickupCode(Predicate<String> availabilityCheck) {
+        Predicate<String> effectiveAvailabilityCheck = availabilityCheck == null ? code -> true : availabilityCheck;
+        for (int attempt = 0; attempt < PICKUP_CODE_COLLISION_RETRY_LIMIT; attempt++) {
+            String pickupCode = generatePickupCode();
+            if (redisEnabled()) {
+                if (!reservePickupCodeInRedis(pickupCode)) {
+                    continue;
+                }
+                if (effectiveAvailabilityCheck.test(pickupCode)) {
+                    return pickupCode;
+                }
+                stringRedisTemplate.delete(buildPickupCodeKey(pickupCode));
+                continue;
+            }
+            if (!sessionIdsByPickupCode.containsKey(pickupCode) && effectiveAvailabilityCheck.test(pickupCode)) {
+                return pickupCode;
+            }
+        }
+        throw new IllegalStateException("unable to allocate pickup code");
+    }
+
+    private String generatePickupCode() {
+        StringBuilder pickupCode = new StringBuilder(PICKUP_CODE_LENGTH);
+        ThreadLocalRandom random = ThreadLocalRandom.current();
+        for (int index = 0; index < PICKUP_CODE_LENGTH; index++) {
+            pickupCode.append(PICKUP_CODE_ALPHABET.charAt(random.nextInt(PICKUP_CODE_ALPHABET.length())));
+        }
+        return pickupCode.toString().toUpperCase(Locale.ROOT);
+    }
+
+    private boolean reservePickupCodeInRedis(String pickupCode) {
         if (redisEnabled()) {
             Duration reservationTtl = Duration.ofSeconds(Math.max(
                     redisProperties == null ? 60L : redisProperties.getTtlBufferSeconds(),
                     60L
             ));
-            String pickupCode;
-            do {
-                pickupCode = String.valueOf(ThreadLocalRandom.current().nextInt(100000, 1000000));
-            } while (!Boolean.TRUE.equals(stringRedisTemplate.opsForValue().setIfAbsent(
+            return Boolean.TRUE.equals(stringRedisTemplate.opsForValue().setIfAbsent(
                     buildPickupCodeKey(pickupCode),
                     RESERVED_PICKUP_CODE,
                     reservationTtl
-            )));
-            return pickupCode;
+            ));
         }
-
-        String pickupCode;
-        do {
-            pickupCode = String.valueOf(ThreadLocalRandom.current().nextInt(100000, 1000000));
-        } while (sessionIdsByPickupCode.containsKey(pickupCode));
-        return pickupCode;
+        return false;
     }
 
     public <T> T executeWithSessionLock(String sessionId, Supplier<T> action) {

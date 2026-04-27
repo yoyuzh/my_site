@@ -52,6 +52,18 @@ public interface StoredFileRepository extends JpaRepository<StoredFile, Long> {
                                              @Param("filename") String filename);
 
     @Query("""
+            select f.filename from StoredFile f
+            where f.userId = :userId
+              and f.path = :path
+              and f.deletedAt is null
+              and (f.filename = :filename or f.filename like concat(:filenamePrefix, '%') escape '\\')
+            """)
+    List<String> findActiveFilenamesByUserIdAndPathAndFilenamePrefix(@Param("userId") Long userId,
+                                                                     @Param("path") String path,
+                                                                     @Param("filename") String filename,
+                                                                     @Param("filenamePrefix") String filenamePrefix);
+
+    @Query("""
             select f from StoredFile f
             where f.userId = :userId and f.path = :path and f.filename = :filename and f.deletedAt is null
             """)
@@ -84,6 +96,7 @@ public interface StoredFileRepository extends JpaRepository<StoredFile, Long> {
             where f.userId = :userId
               and f.deletedAt is null
               and (:name is null or :name = '' or lower(f.filename) like lower(concat('%', :name, '%')))
+              and (:category is null or :category = '' or f.searchCategory = :category)
               and (:directory is null or f.directory = :directory)
               and (:sizeGte is null or f.size >= :sizeGte)
               and (:sizeLte is null or f.size <= :sizeLte)
@@ -95,6 +108,7 @@ public interface StoredFileRepository extends JpaRepository<StoredFile, Long> {
             """)
     Page<StoredFile> searchUserFiles(@Param("userId") Long userId,
                                      @Param("name") String name,
+                                     @Param("category") String category,
                                      @Param("directory") Boolean directory,
                                      @Param("sizeGte") Long sizeGte,
                                      @Param("sizeLte") Long sizeLte,

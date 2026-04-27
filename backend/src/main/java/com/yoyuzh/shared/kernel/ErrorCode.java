@@ -8,7 +8,10 @@ public enum ErrorCode {
     INVALID_INPUT(1004),
     SESSION_EXPIRED(1005),
     QUOTA_EXCEEDED(1006),
-    DUPLICATE_NAME(1007);
+    DUPLICATE_NAME(1007),
+    SHARE_NOT_FOUND(1008),
+    TASK_NOT_FOUND(1009),
+    STORAGE_POLICY_NOT_FOUND(1010);
 
     private final int code;
 

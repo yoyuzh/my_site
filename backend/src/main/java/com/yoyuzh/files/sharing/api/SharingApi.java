@@ -19,11 +19,19 @@ public interface SharingApi {
 
     FileMetadataResponse importSharedFile(Long recipientUserId, String token, ImportShareCommand command);
 
+    SavedShareV2Response saveSharedWithMe(Long recipientUserId, String token, String password);
+
+    Page<SavedShareV2Response> listSharedWithMe(Long recipientUserId, Pageable pageable);
+
+    SavedShareV2Response getSharedWithMe(Long recipientUserId, Long savedShareId);
+
+    void deleteSharedWithMe(Long recipientUserId, Long savedShareId);
+
     ShareDownloadResult downloadSharedFile(String token, String password);
 
     Page<ShareV2Response> listOwnedShares(Long ownerUserId, Pageable pageable);
 
-    ShareV2Response updatePolicy(Long ownerUserId, Long id, Integer maxDownloads);
+    ShareV2Response updatePolicy(Long ownerUserId, Long id, UpdateSharePolicyCommand command);
 
     void deleteOwnedShare(Long ownerUserId, Long id);
 

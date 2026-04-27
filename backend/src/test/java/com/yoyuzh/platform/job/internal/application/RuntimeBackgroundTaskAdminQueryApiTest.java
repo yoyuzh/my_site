@@ -10,6 +10,7 @@ import com.yoyuzh.platform.job.api.BackgroundTaskLeaseState;
 import com.yoyuzh.platform.job.api.BackgroundTaskStatus;
 import com.yoyuzh.platform.job.api.BackgroundTaskType;
 import com.yoyuzh.shared.kernel.BusinessException;
+import com.yoyuzh.shared.kernel.ErrorCode;
 import com.yoyuzh.shared.kernel.PageResponse;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -99,6 +100,7 @@ class RuntimeBackgroundTaskAdminQueryApiTest {
 
         assertThatThrownBy(() -> runtimeBackgroundTaskAdminQueryApi.getTask(404L))
                 .isInstanceOf(BusinessException.class)
+                .satisfies(ex -> assertThat(((BusinessException) ex).getErrorCode()).isEqualTo(ErrorCode.TASK_NOT_FOUND))
                 .hasMessageContaining("task not found");
     }
 

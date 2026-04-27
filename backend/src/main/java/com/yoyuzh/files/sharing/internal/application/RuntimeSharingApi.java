@@ -10,15 +10,20 @@ import com.yoyuzh.files.content.api.ContentRegistrationCommand;
 import com.yoyuzh.files.content.api.RegisteredContentFile;
 import com.yoyuzh.files.sharing.api.CreateShareCommand;
 import com.yoyuzh.files.sharing.api.ImportShareCommand;
+import com.yoyuzh.files.sharing.api.SavedShareV2Response;
 import com.yoyuzh.files.sharing.api.ShareDownloadResult;
+import com.yoyuzh.files.sharing.api.ShareStatus;
 import com.yoyuzh.files.sharing.api.ShareStatsResponse;
 import com.yoyuzh.files.sharing.api.SharingAdminShareQuery;
 import com.yoyuzh.files.sharing.api.SharingAdminShareSnapshot;
 import com.yoyuzh.files.sharing.api.SharingAdminShareView;
 import com.yoyuzh.files.sharing.api.SharingApi;
 import com.yoyuzh.files.sharing.api.ShareV2Response;
+import com.yoyuzh.files.sharing.api.UpdateSharePolicyCommand;
 import com.yoyuzh.files.sharing.internal.domain.FileShareLink;
+import com.yoyuzh.files.sharing.internal.domain.SavedShareShortcut;
 import com.yoyuzh.files.sharing.internal.infra.FileShareLinkRepository;
+import com.yoyuzh.files.sharing.internal.infra.SavedShareShortcutRepository;
 import com.yoyuzh.files.storage.FileContentStorage;
 import com.yoyuzh.files.upload.api.UploadTargetPolicy;
 import com.yoyuzh.files.upload.api.ValidatedUploadTarget;
@@ -52,6 +57,7 @@ public class RuntimeSharingApi implements SharingApi {
 
     private final WorkspaceFileQueryApi workspaceFileQueryApi;
     private final FileShareLinkRepository fileShareLinkRepository;
+    private final SavedShareShortcutRepository savedShareShortcutRepository;
     private final WorkspacePathPolicy workspacePathPolicy;
     private final UploadTargetPolicy uploadTargetPolicy;
     private final ContentDuplicationApi contentDuplicationApi;
@@ -64,6 +70,7 @@ public class RuntimeSharingApi implements SharingApi {
     @Autowired
     public RuntimeSharingApi(WorkspaceFileQueryApi workspaceFileQueryApi,
                              FileShareLinkRepository fileShareLinkRepository,
+                             SavedShareShortcutRepository savedShareShortcutRepository,
                              WorkspacePathPolicy workspacePathPolicy,
                              UploadTargetPolicy uploadTargetPolicy,
                              ContentDuplicationApi contentDuplicationApi,
@@ -74,6 +81,7 @@ public class RuntimeSharingApi implements SharingApi {
         this(
                 workspaceFileQueryApi,
                 fileShareLinkRepository,
+                savedShareShortcutRepository,
                 workspacePathPolicy,
                 uploadTargetPolicy,
                 contentDuplicationApi,
@@ -87,6 +95,7 @@ public class RuntimeSharingApi implements SharingApi {
 
     RuntimeSharingApi(WorkspaceFileQueryApi workspaceFileQueryApi,
                       FileShareLinkRepository fileShareLinkRepository,
+                      SavedShareShortcutRepository savedShareShortcutRepository,
                       WorkspacePathPolicy workspacePathPolicy,
                       UploadTargetPolicy uploadTargetPolicy,
                       ContentDuplicationApi contentDuplicationApi,
@@ -97,6 +106,7 @@ public class RuntimeSharingApi implements SharingApi {
                       Clock clock) {
         this.workspaceFileQueryApi = workspaceFileQueryApi;
         this.fileShareLinkRepository = fileShareLinkRepository;
+        this.savedShareShortcutRepository = savedShareShortcutRepository;
         this.workspacePathPolicy = workspacePathPolicy;
         this.uploadTargetPolicy = uploadTargetPolicy;
         this.contentDuplicationApi = contentDuplicationApi;
@@ -117,30 +127,32 @@ public class RuntimeSharingApi implements SharingApi {
         }
 
         validateSharePolicy(command.expiresAt(), command.maxDownloads());
+        String normalizedPassword = normalizeSharePassword(command.password());
 
         FileShareLink shareLink = new FileShareLink();
         shareLink.setOwnerId(ownerUserId);
         shareLink.setFileId(file.id());
         shareLink.setToken(UUID.randomUUID().toString().replace("-", ""));
         shareLink.setShareName(StringUtils.hasText(command.shareName()) ? command.shareName().trim() : file.filename());
-        shareLink.setPasswordHash(StringUtils.hasText(command.password()) ? passwordEncoder.encode(command.password()) : null);
+        shareLink.setPasswordHash(normalizedPassword == null ? null : passwordEncoder.encode(normalizedPassword));
         shareLink.setExpiresAt(command.expiresAt());
         shareLink.setMaxDownloads(command.maxDownloads());
         shareLink.setAllowImport(command.allowImport() == null ? true : command.allowImport());
         shareLink.setAllowDownload(command.allowDownload() == null ? true : command.allowDownload());
+        shareLink.setExpireAfterConsume(command.expireAfterConsume() == null ? false : command.expireAfterConsume());
         FileShareLink saved = fileShareLinkRepository.save(shareLink);
-        return toResponse(saved, identityUserDirectoryApi.findProfileById(ownerUserId).orElse(null), true, true, file);
+        return toResponse(saved, identityUserDirectoryApi.findProfileById(ownerUserId).orElse(null), true, true, file, normalizedPassword);
     }
 
     @Override
     @Transactional
     public ShareV2Response getShare(String token) {
-        FileShareLink shareLink = getShareLink(token);
-        ensureShareNotExpired(shareLink);
+        FileShareLink shareLink = getActiveShareLink(token);
+        ensureShareAvailable(shareLink);
         shareLink.recordVisit();
         boolean passwordRequired = shareLink.hasPassword();
         WorkspaceFileSnapshot file = passwordRequired ? null : findShareFile(shareLink).orElse(null);
-        return toResponse(shareLink, ownerProfile(shareLink), !passwordRequired, !passwordRequired, file);
+        return toResponse(shareLink, ownerProfile(shareLink), !passwordRequired, !passwordRequired, file, null);
     }
 
     @Override
@@ -159,22 +171,22 @@ public class RuntimeSharingApi implements SharingApi {
     @Override
     @Transactional
     public ShareV2Response verifyPassword(String token, String password) {
-        FileShareLink shareLink = getShareLink(token);
-        ensureShareNotExpired(shareLink);
+        FileShareLink shareLink = getActiveShareLink(token);
+        ensureShareAvailable(shareLink);
         if (shareLink.hasPassword()) {
             if (!StringUtils.hasText(password) || !passwordEncoder.matches(password, shareLink.getPasswordHash())) {
                 throw new BusinessException(ErrorCode.INVALID_INPUT, "invalid password");
             }
         }
         shareLink.recordVisit();
-        return toResponse(shareLink, ownerProfile(shareLink), true, true, requireShareFile(shareLink));
+        return toResponse(shareLink, ownerProfile(shareLink), true, true, requireShareFile(shareLink), null);
     }
 
     @Override
     @Transactional
     public FileMetadataResponse importSharedFile(Long recipientUserId, String token, ImportShareCommand command) {
-        FileShareLink shareLink = getShareLink(token);
-        ensureShareNotExpired(shareLink);
+        FileShareLink shareLink = getActiveShareLink(token);
+        ensureShareAvailable(shareLink);
         ensureImportAllowed(shareLink);
         ensurePasswordAccepted(shareLink, command.password());
         WorkspaceFileSnapshot sourceFile = requireShareFile(shareLink);
@@ -199,19 +211,79 @@ public class RuntimeSharingApi implements SharingApi {
                         )
         );
         shareLink.recordDownload();
+        consumeIfNeeded(shareLink);
         return toFileMetadataResponse(importedFile);
     }
 
     @Override
     @Transactional
+    public SavedShareV2Response saveSharedWithMe(Long recipientUserId, String token, String password) {
+        FileShareLink shareLink = getActiveShareLink(token);
+        ensureShareAvailable(shareLink);
+        ensurePasswordAccepted(shareLink, password);
+        SavedShareShortcut existing = savedShareShortcutRepository
+                .findByRecipientUserIdAndShareId(recipientUserId, shareLink.getId())
+                .orElse(null);
+        if (existing != null) {
+            return toSavedResponse(existing, shareLink, ownerProfile(shareLink), requireShareFile(shareLink));
+        }
+
+        SavedShareShortcut shortcut = new SavedShareShortcut();
+        shortcut.setRecipientUserId(recipientUserId);
+        shortcut.setShareId(shareLink.getId());
+        shortcut.setShareToken(shareLink.getToken());
+        SavedShareShortcut saved = savedShareShortcutRepository.save(shortcut);
+        return toSavedResponse(saved, shareLink, ownerProfile(shareLink), requireShareFile(shareLink));
+    }
+
+    @Override
+    @Transactional
+    public Page<SavedShareV2Response> listSharedWithMe(Long recipientUserId, Pageable pageable) {
+        Page<SavedShareShortcut> page = savedShareShortcutRepository.findByRecipientUserIdOrderBySavedAtDesc(recipientUserId, pageable);
+        Map<Long, FileShareLink> shares = loadShares(page.getContent());
+        Map<Long, IdentityUserProfileSummary> ownerProfiles = loadOwnerProfiles(shares.values());
+        Map<Long, WorkspaceFileSnapshot> files = loadFiles(shares.values());
+        return new PageImpl<>(
+                page.getContent().stream()
+                        .map(shortcut -> {
+                            FileShareLink share = shares.get(shortcut.getShareId());
+                            WorkspaceFileSnapshot file = share == null ? null : files.get(share.getFileId());
+                            IdentityUserProfileSummary owner = share == null ? null : ownerProfiles.get(share.getOwnerId());
+                            return toSavedResponse(shortcut, share, owner, file);
+                        })
+                        .toList(),
+                pageable,
+                page.getTotalElements()
+        );
+    }
+
+    @Override
+    @Transactional
+    public SavedShareV2Response getSharedWithMe(Long recipientUserId, Long savedShareId) {
+        SavedShareShortcut shortcut = getSavedShareShortcut(recipientUserId, savedShareId);
+        FileShareLink share = fileShareLinkRepository.findById(shortcut.getShareId()).orElse(null);
+        WorkspaceFileSnapshot file = share == null ? null : findShareFile(share).orElse(null);
+        IdentityUserProfileSummary owner = share == null ? null : ownerProfile(share);
+        return toSavedResponse(shortcut, share, owner, file);
+    }
+
+    @Override
+    @Transactional
+    public void deleteSharedWithMe(Long recipientUserId, Long savedShareId) {
+        savedShareShortcutRepository.delete(getSavedShareShortcut(recipientUserId, savedShareId));
+    }
+
+    @Override
+    @Transactional
     public ShareDownloadResult downloadSharedFile(String token, String password) {
-        FileShareLink shareLink = getShareLink(token);
-        ensureShareNotExpired(shareLink);
+        FileShareLink shareLink = getActiveShareLink(token);
+        ensureShareAvailable(shareLink);
         ensureDownloadAllowed(shareLink);
         ensurePasswordAccepted(shareLink, password);
         WorkspaceFileSnapshot sourceFile = requireShareFile(shareLink);
 
         shareLink.recordDownload();
+        consumeIfNeeded(shareLink);
         ContentBlobReference blob = requireShareBlob(sourceFile);
         if (fileContentStorage.supportsDirectDownload()) {
             return ShareDownloadResult.redirect(fileContentStorage.createBlobDownloadUrl(blob.objectKey(), sourceFile.filename()));
@@ -228,11 +300,11 @@ public class RuntimeSharingApi implements SharingApi {
     @Transactional
     public Page<ShareV2Response> listOwnedShares(Long ownerUserId, Pageable pageable) {
         IdentityUserProfileSummary ownerProfile = identityUserDirectoryApi.findProfileById(ownerUserId).orElse(null);
-        Page<FileShareLink> page = fileShareLinkRepository.findByOwnerIdOrderByCreatedAtDesc(ownerUserId, pageable);
+        Page<FileShareLink> page = fileShareLinkRepository.findByOwnerIdAndCancelledAtIsNullOrderByCreatedAtDesc(ownerUserId, pageable);
         Map<Long, WorkspaceFileSnapshot> files = loadFiles(page.getContent());
         return new PageImpl<>(
                 page.getContent().stream()
-                        .map(shareLink -> toResponse(shareLink, ownerProfile, true, true, files.get(shareLink.getFileId())))
+                        .map(shareLink -> toResponse(shareLink, ownerProfile, true, true, files.get(shareLink.getFileId()), null))
                         .toList(),
                 pageable,
                 page.getTotalElements()
@@ -241,18 +313,32 @@ public class RuntimeSharingApi implements SharingApi {
 
     @Override
     @Transactional
-    public ShareV2Response updatePolicy(Long ownerUserId, Long id, Integer maxDownloads) {
-        validateSharePolicy(null, maxDownloads);
+    public ShareV2Response updatePolicy(Long ownerUserId, Long id, UpdateSharePolicyCommand command) {
+        validateSharePolicy(command.expiresAt(), command.maxDownloads());
         FileShareLink shareLink = getOwnedShare(ownerUserId, id);
-        shareLink.setMaxDownloads(maxDownloads);
-        return toResponse(shareLink, ownerProfile(shareLink), true, true, findShareFile(shareLink).orElse(null));
+        String normalizedPassword = command.password() == null ? null : normalizeSharePassword(command.password());
+        shareLink.setMaxDownloads(command.maxDownloads());
+        if (command.expiresAt() != null) {
+            shareLink.setExpiresAt(command.expiresAt());
+        }
+        if (command.expireAfterConsume() != null) {
+            shareLink.setExpireAfterConsume(command.expireAfterConsume());
+        }
+        if (command.password() != null) {
+            if (normalizedPassword == null) {
+                shareLink.setPasswordHash(null);
+            } else {
+                shareLink.setPasswordHash(passwordEncoder.encode(normalizedPassword));
+            }
+        }
+        return toResponse(shareLink, ownerProfile(shareLink), true, true, findShareFile(shareLink).orElse(null), normalizedPassword);
     }
 
     @Override
     @Transactional
     public void deleteOwnedShare(Long ownerUserId, Long id) {
         FileShareLink shareLink = getOwnedShare(ownerUserId, id);
-        fileShareLinkRepository.delete(shareLink);
+        shareLink.cancel(now());
     }
 
     @Override
@@ -264,7 +350,7 @@ public class RuntimeSharingApi implements SharingApi {
         }
         FileShareLink target = shareLink.get();
         SharingAdminShareSnapshot snapshot = new SharingAdminShareSnapshot(target.getId(), target.getToken());
-        fileShareLinkRepository.delete(target);
+        target.cancel(now());
         return Optional.of(snapshot);
     }
 
@@ -294,13 +380,13 @@ public class RuntimeSharingApi implements SharingApi {
         );
     }
 
-    private FileShareLink getShareLink(String token) {
-        return fileShareLinkRepository.findByToken(token)
+    private FileShareLink getActiveShareLink(String token) {
+        return fileShareLinkRepository.findByTokenAndCancelledAtIsNull(token)
                 .orElseThrow(() -> new BusinessException(ErrorCode.FILE_NOT_FOUND, "share not found"));
     }
 
     private FileShareLink getOwnedShareByToken(Long ownerUserId, String token) {
-        FileShareLink shareLink = getShareLink(token);
+        FileShareLink shareLink = getActiveShareLink(token);
         if (!ownerUserId.equals(shareLink.getOwnerId())) {
             throw new BusinessException(ErrorCode.FILE_NOT_FOUND, "share not found");
         }
@@ -308,13 +394,30 @@ public class RuntimeSharingApi implements SharingApi {
     }
 
     private FileShareLink getOwnedShare(Long ownerUserId, Long id) {
-        return fileShareLinkRepository.findByIdAndOwnerId(id, ownerUserId)
+        return fileShareLinkRepository.findByIdAndOwnerIdAndCancelledAtIsNull(id, ownerUserId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.FILE_NOT_FOUND, "share not found"));
     }
 
-    private void ensureShareNotExpired(FileShareLink shareLink) {
+    private SavedShareShortcut getSavedShareShortcut(Long recipientUserId, Long savedShareId) {
+        return savedShareShortcutRepository.findByIdAndRecipientUserId(savedShareId, recipientUserId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.FILE_NOT_FOUND, "saved share not found"));
+    }
+
+    private void ensureShareAvailable(FileShareLink shareLink) {
+        if (shareLink.isCancelled()) {
+            throw new BusinessException(ErrorCode.FILE_NOT_FOUND, "share not found");
+        }
+        if (shareLink.isConsumed()) {
+            throw new BusinessException(ErrorCode.SESSION_EXPIRED, "share consumed");
+        }
         if (shareLink.getExpiresAt() != null && !now().isBefore(shareLink.getExpiresAt())) {
             throw new BusinessException(ErrorCode.SESSION_EXPIRED, "share expired");
+        }
+    }
+
+    private void consumeIfNeeded(FileShareLink shareLink) {
+        if (shareLink.isExpireAfterConsumeEnabled()) {
+            shareLink.markConsumed(now());
         }
     }
 
@@ -394,29 +497,69 @@ public class RuntimeSharingApi implements SharingApi {
                                        IdentityUserProfileSummary ownerProfile,
                                        boolean passwordVerified,
                                        boolean includeFile,
-                                       WorkspaceFileSnapshot file) {
+                                       WorkspaceFileSnapshot file,
+                                       String ownerPassword) {
+        ShareStatus status = resolveStatus(shareLink);
         return new ShareV2Response(
                 shareLink.getId(),
                 shareLink.getToken(),
                 shareLink.getShareNameOrDefault(),
                 ownerProfile == null ? null : ownerProfile.username(),
+                ownerPassword,
                 shareLink.hasPassword(),
                 passwordVerified,
                 shareLink.isAllowImportEnabled(),
                 shareLink.isAllowDownloadEnabled(),
+                shareLink.isExpireAfterConsumeEnabled(),
                 shareLink.getMaxDownloads(),
                 shareLink.getDownloadCountOrZero(),
                 shareLink.getViewCountOrZero(),
+                status,
                 shareLink.getExpiresAt(),
                 shareLink.getCreatedAt(),
                 includeFile && file != null ? toFileMetadataResponse(file) : null
         );
     }
 
+    private SavedShareV2Response toSavedResponse(SavedShareShortcut shortcut,
+                                                 FileShareLink shareLink,
+                                                 IdentityUserProfileSummary ownerProfile,
+                                                 WorkspaceFileSnapshot file) {
+        ShareV2Response share = shareLink == null
+                ? new ShareV2Response(
+                        null,
+                        shortcut.getShareToken(),
+                        null,
+                        null,
+                        null,
+                        false,
+                        false,
+                        false,
+                        false,
+                        false,
+                        null,
+                        0,
+                        0,
+                        ShareStatus.REMOVED,
+                        null,
+                        null,
+                        null
+                )
+                : toResponse(shareLink, ownerProfile, false, true, file, null);
+        return new SavedShareV2Response(shortcut.getId(), shortcut.getSavedAt(), share);
+    }
+
+    private String normalizeSharePassword(String password) {
+        if (!StringUtils.hasText(password)) {
+            return null;
+        }
+        return password.trim();
+    }
+
     private SharingAdminShareView toAdminShareView(FileShareLink shareLink,
                                                    IdentityUserProfileSummary ownerProfile,
                                                    WorkspaceFileSnapshot file) {
-        boolean expired = shareLink.getExpiresAt() != null && shareLink.getExpiresAt().isBefore(now());
+        boolean expired = resolveStatus(shareLink) == ShareStatus.EXPIRED;
         return new SharingAdminShareView(
                 shareLink.getId(),
                 shareLink.getToken(),
@@ -479,6 +622,15 @@ public class RuntimeSharingApi implements SharingApi {
         return workspaceFileQueryApi.findActiveFilesByIds(fileIds);
     }
 
+    private Map<Long, FileShareLink> loadShares(java.util.Collection<SavedShareShortcut> shortcuts) {
+        Set<Long> shareIds = shortcuts.stream()
+                .map(SavedShareShortcut::getShareId)
+                .filter(id -> id != null)
+                .collect(java.util.stream.Collectors.toSet());
+        return fileShareLinkRepository.findAllById(shareIds).stream()
+                .collect(java.util.stream.Collectors.toMap(FileShareLink::getId, share -> share));
+    }
+
     private IdentityUserProfileSummary ownerProfile(FileShareLink shareLink) {
         if (shareLink.getOwnerId() == null) {
             return null;
@@ -502,5 +654,18 @@ public class RuntimeSharingApi implements SharingApi {
 
     private LocalDateTime now() {
         return LocalDateTime.ofInstant(clock.instant(), clock.getZone());
+    }
+
+    private ShareStatus resolveStatus(FileShareLink shareLink) {
+        if (shareLink == null || shareLink.isCancelled()) {
+            return ShareStatus.REMOVED;
+        }
+        if (shareLink.isConsumed()) {
+            return ShareStatus.CONSUMED;
+        }
+        if (shareLink.getExpiresAt() != null && !now().isBefore(shareLink.getExpiresAt())) {
+            return ShareStatus.EXPIRED;
+        }
+        return ShareStatus.ACTIVE;
     }
 }

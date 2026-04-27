@@ -17,9 +17,7 @@ import org.springframework.stereotype.Service;
 
 import java.time.Duration;
 import java.time.Instant;
-import java.util.ArrayList;
 import java.util.List;
-import java.util.Objects;
 import java.util.UUID;
 
 @Service
@@ -27,14 +25,12 @@ import java.util.UUID;
 public class OnlineTransferService {
 
     private static final Duration ONLINE_SESSION_TTL = Duration.ofMinutes(15);
-    private static final int PICKUP_CODE_COLLISION_RETRY_LIMIT = 32;
-
     private final TransferSessionStore sessionStore;
     private final OfflineTransferSessionRepository offlineTransferSessionRepository;
 
     public TransferSessionResponse createSession(CreateTransferSessionCommand command) {
         String sessionId = UUID.randomUUID().toString();
-        String pickupCode = nextPickupCode();
+        String pickupCode = allocatePickupCode();
         Instant expiresAt = Instant.now().plus(ONLINE_SESSION_TTL);
         List<TransferFileItem> files = command.files().stream()
                 .map(this::normalizeOnlineFileItem)
@@ -83,14 +79,12 @@ public class OnlineTransferService {
         sessionStore.pruneExpired(now);
     }
 
-    private String nextPickupCode() {
-        for (int attempt = 0; attempt < PICKUP_CODE_COLLISION_RETRY_LIMIT; attempt++) {
-            String pickupCode = sessionStore.nextPickupCode();
-            if (!offlineTransferSessionRepository.existsByPickupCode(pickupCode)) {
-                return pickupCode;
-            }
+    private String allocatePickupCode() {
+        try {
+            return sessionStore.nextPickupCode(pickupCode -> !offlineTransferSessionRepository.existsByPickupCode(pickupCode));
+        } catch (IllegalStateException ex) {
+            throw new BusinessException(ErrorCode.UNKNOWN, "unable to allocate pickup code");
         }
-        throw new BusinessException(ErrorCode.UNKNOWN, "unable to allocate pickup code");
     }
 
     private TransferFileItem normalizeOnlineFileItem(TransferFileItem file) {

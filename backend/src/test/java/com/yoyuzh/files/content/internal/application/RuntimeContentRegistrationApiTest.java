@@ -171,6 +171,41 @@ class RuntimeContentRegistrationApiTest {
         verify(storedFileEntityRepository).save(any());
     }
 
+    @Test
+    void shouldAutoRenameRegisteredFileWhenTargetNameAlreadyExists() {
+        RuntimeWorkspaceContentRegistrationApi api = new RuntimeWorkspaceContentRegistrationApi(
+                storedFileRepository,
+                new RuntimeContentAssetApi(null, null, fileEntityRepository, storedFileEntityRepository, null)
+        );
+        FileBlob blob = createBlob("blobs/blob-rename");
+        when(fileEntityRepository.findByObjectKeyAndEntityType("blobs/blob-rename", FileEntityType.VERSION))
+                .thenReturn(Optional.empty());
+        when(fileEntityRepository.save(any(FileEntity.class))).thenAnswer(invocation -> {
+            FileEntity entity = invocation.getArgument(0);
+            entity.setId(25L);
+            return entity;
+        });
+        when(storedFileRepository.existsByUserIdAndPathAndFilename(7L, "/docs", "notes.txt")).thenReturn(true);
+        when(storedFileRepository.findActiveFilenamesByUserIdAndPathAndFilenamePrefix(7L, "/docs", "notes.txt", "notes"))
+                .thenReturn(java.util.List.of("notes.txt"));
+        when(storedFileRepository.save(any(StoredFile.class))).thenAnswer(invocation -> {
+            StoredFile storedFile = invocation.getArgument(0);
+            storedFile.setId(15L);
+            return storedFile;
+        });
+
+        RegisteredContentFile response = api.registerBlob(new ContentRegistrationCommand(
+                7L,
+                "/docs",
+                "notes.txt",
+                "text/plain",
+                5L,
+                new ContentBlobReference(blob.getId(), blob.getObjectKey(), blob.getContentType(), blob.getSize())
+        ));
+
+        assertThat(response.filename()).isEqualTo("notes(1).txt");
+    }
+
     private FileBlob createBlob(String objectKey) {
         FileBlob blob = new FileBlob();
         blob.setId(99L);

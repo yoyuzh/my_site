@@ -10,9 +10,12 @@ import FileShare from './pages/FileShare';
 import Files from './pages/Files';
 import Tasks from './pages/Tasks';
 import Shares from './pages/Shares';
+import SharedWithMe from './pages/SharedWithMe';
 import RecycleBin from './pages/RecycleBin';
 import TransferSend from './pages/TransferSend';
 import TransferReceive from './pages/TransferReceive';
+import AccountSettings from './pages/AccountSettings';
+import DashboardUnderConstruction from './pages/DashboardUnderConstruction';
 
 // Admin Pages
 import AdminHome from './pages/admin/AdminHome';
@@ -87,10 +90,18 @@ function App() {
           <Route path="/dashboard">
             <Route index element={<Navigate to="files" replace />} />
             <Route path="files" element={<RequireAuth><Files /></RequireAuth>} />
+            <Route path="images" element={<RequireAuth><Files mediaCategory="image" /></RequireAuth>} />
+            <Route path="videos" element={<RequireAuth><Files mediaCategory="video" /></RequireAuth>} />
+            <Route path="music" element={<RequireAuth><Files mediaCategory="audio" /></RequireAuth>} />
+            <Route path="documents" element={<RequireAuth><Files mediaCategory="document" /></RequireAuth>} />
+            <Route path="shared-with-me" element={<RequireAuth><SharedWithMe /></RequireAuth>} />
             <Route path="tasks" element={<RequireAuth><Tasks /></RequireAuth>} />
             <Route path="shares" element={<RequireAuth><Shares /></RequireAuth>} />
             <Route path="recycle-bin" element={<RequireAuth><RecycleBin /></RequireAuth>} />
+            <Route path="connections" element={<RequireAuth><DashboardUnderConstruction /></RequireAuth>} />
+            <Route path="offline-downloads" element={<RequireAuth><DashboardUnderConstruction /></RequireAuth>} />
             <Route path="transfer-send" element={<RequireAuth><TransferSend /></RequireAuth>} />
+            <Route path="settings" element={<RequireAuth><AccountSettings /></RequireAuth>} />
           </Route>
 
           {/* Admin Routes */}

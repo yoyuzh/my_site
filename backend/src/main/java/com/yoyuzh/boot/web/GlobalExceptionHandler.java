@@ -27,7 +27,7 @@ public class GlobalExceptionHandler {
         HttpStatus status = switch (ex.getErrorCode()) {
             case NOT_LOGGED_IN -> HttpStatus.UNAUTHORIZED;
             case PERMISSION_DENIED -> HttpStatus.FORBIDDEN;
-            case FILE_NOT_FOUND -> HttpStatus.NOT_FOUND;
+            case FILE_NOT_FOUND, SHARE_NOT_FOUND, TASK_NOT_FOUND, STORAGE_POLICY_NOT_FOUND -> HttpStatus.NOT_FOUND;
             case SESSION_EXPIRED -> HttpStatus.GONE;
             case DUPLICATE_NAME -> HttpStatus.CONFLICT;
             case QUOTA_EXCEEDED -> HttpStatus.TOO_MANY_REQUESTS;

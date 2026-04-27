@@ -25,6 +25,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.nio.charset.StandardCharsets;
 import java.util.Map;
@@ -143,6 +144,11 @@ class ExtractBackgroundTaskHandlerTest {
                 .hasMessage("extract task only supports zip-compatible archives");
 
         verify(workspaceBootstrapApi, never()).importExternalFilesAtomically(any(), any(), any(), any());
+    }
+
+    @Test
+    void shouldNotHoldClassLevelTransactionBoundary() {
+        assertThat(ExtractBackgroundTaskHandler.class.isAnnotationPresent(Transactional.class)).isFalse();
     }
 
     private BackgroundTask createExtractTask(Long fileId, Long userId, String outputDirectoryName) {

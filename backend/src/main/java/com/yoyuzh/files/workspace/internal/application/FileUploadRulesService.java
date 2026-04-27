@@ -33,7 +33,6 @@ public final class FileUploadRulesService {
         if (size > effectiveMaxUploadSize) {
             throw new BusinessException(ErrorCode.QUOTA_EXCEEDED, "文件大小超出限制");
         }
-        workspaceNodeRulesService.ensureNodeNameAvailable(user.userId(), normalizedPath, filename, "同目录下文件已存在");
         ensureWithinStorageQuota(user, size);
     }
 

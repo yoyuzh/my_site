@@ -32,6 +32,7 @@ public class FileSearchV2Controller {
     @GetMapping("/search")
     public ApiV2Response<PageResponse<FileMetadataResponse>> search(@AuthenticationPrincipal UserDetails userDetails,
                                                                     @RequestParam(required = false) String name,
+                                                                    @RequestParam(required = false) String category,
                                                                     @RequestParam(required = false) String type,
                                                                     @RequestParam(required = false) Long sizeGte,
                                                                     @RequestParam(required = false) Long sizeLte,
@@ -52,8 +53,19 @@ public class FileSearchV2Controller {
         Boolean directory = parseType(type);
         return ApiV2Response.success(fileSearchApi.search(
                 currentUserId(userDetails),
-                new SearchFilesQuery(name, directory, sizeGte, sizeLte, createdGte, createdLte, updatedGte, updatedLte, page, size)
+                new SearchFilesQuery(name, parseCategory(category), directory, sizeGte, sizeLte, createdGte, createdLte, updatedGte, updatedLte, page, size)
         ));
+    }
+
+    private String parseCategory(String category) {
+        if (!StringUtils.hasText(category)) {
+            return null;
+        }
+
+        return switch (category.trim().toLowerCase(Locale.ROOT)) {
+            case "image", "video", "audio", "document" -> category.trim().toLowerCase(Locale.ROOT);
+            default -> throw new ApiV2Exception(ApiV2ErrorCode.INVALID_INPUT, "分类筛选只支持 image、video、audio 或 document");
+        };
     }
 
     private Boolean parseType(String type) {

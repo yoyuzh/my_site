@@ -24,6 +24,7 @@ public class RuntimeWorkspaceFileSearchApi implements WorkspaceFileSearchApi {
         Page<StoredFile> result = storedFileRepository.searchUserFiles(
                 userId,
                 query.name(),
+                query.category(),
                 query.directory(),
                 query.sizeGte(),
                 query.sizeLte(),

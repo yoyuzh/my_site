@@ -54,6 +54,7 @@ class FileSearchServiceTest {
         );
         when(fileSearchApi.search(7L, new SearchFilesQuery(
                 " note ",
+                null,
                 false,
                 1L,
                 100L,

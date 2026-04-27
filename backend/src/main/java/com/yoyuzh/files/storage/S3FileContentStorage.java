@@ -30,6 +30,7 @@ import software.amazon.awssdk.services.s3.presigner.model.PutObjectPresignReques
 import software.amazon.awssdk.services.s3.presigner.model.UploadPartPresignRequest;
 
 import java.io.IOException;
+import java.io.InputStream;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
@@ -157,8 +158,18 @@ public class S3FileContentStorage implements FileContentStorage, AutoCloseable {
     }
 
     @Override
+    public void storeBlob(String objectKey, String contentType, InputStream content, long size) {
+        putObject(objectKey, contentType, content, size);
+    }
+
+    @Override
     public byte[] readBlob(String objectKey) {
         return readObject(sessionProvider.currentSession(), normalizeObjectKey(objectKey));
+    }
+
+    @Override
+    public InputStream readBlobStream(String objectKey) {
+        return readObjectStream(sessionProvider.currentSession(), normalizeObjectKey(objectKey));
     }
 
     @Override
@@ -316,6 +327,11 @@ public class S3FileContentStorage implements FileContentStorage, AutoCloseable {
     }
 
     @Override
+    public InputStream readTransferFileStream(String sessionId, String storageName) {
+        return readObjectStream(sessionProvider.currentSession(), resolveTransferObjectKey(sessionId, storageName));
+    }
+
+    @Override
     public void deleteTransferFile(String sessionId, String storageName) {
         deleteBlob(resolveTransferObjectKey(sessionId, storageName));
     }
@@ -363,6 +379,22 @@ public class S3FileContentStorage implements FileContentStorage, AutoCloseable {
         }
     }
 
+    private void putObject(String objectKey, String contentType, InputStream content, long size) {
+        S3FileRuntimeSession session = sessionProvider.currentSession();
+        PutObjectRequest.Builder requestBuilder = PutObjectRequest.builder()
+                .bucket(session.bucket())
+                .key(normalizeObjectKey(objectKey));
+        if (StringUtils.hasText(contentType)) {
+            requestBuilder.contentType(contentType);
+        }
+
+        try (InputStream inputStream = content) {
+            session.s3Client().putObject(requestBuilder.build(), RequestBody.fromInputStream(inputStream, size));
+        } catch (IOException | S3Exception ex) {
+            throw new BusinessException(ErrorCode.UNKNOWN, "File write failed");
+        }
+    }
+
     private byte[] readObject(S3FileRuntimeSession session, String objectKey) {
         try {
             ResponseBytes<?> response = session.s3Client().getObjectAsBytes(GetObjectRequest.builder()
@@ -370,6 +402,19 @@ public class S3FileContentStorage implements FileContentStorage, AutoCloseable {
                     .key(normalizeObjectKey(objectKey))
                     .build());
             return response.asByteArray();
+        } catch (NoSuchKeyException ex) {
+            throw new BusinessException(ErrorCode.FILE_NOT_FOUND, "File content does not exist");
+        } catch (S3Exception ex) {
+            throw new BusinessException(ErrorCode.UNKNOWN, "File read failed");
+        }
+    }
+
+    private InputStream readObjectStream(S3FileRuntimeSession session, String objectKey) {
+        try {
+            return session.s3Client().getObject(GetObjectRequest.builder()
+                    .bucket(session.bucket())
+                    .key(normalizeObjectKey(objectKey))
+                    .build());
         } catch (NoSuchKeyException ex) {
             throw new BusinessException(ErrorCode.FILE_NOT_FOUND, "File content does not exist");
         } catch (S3Exception ex) {

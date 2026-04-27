@@ -67,6 +67,8 @@ class ApiV2ExceptionHandlerTest {
         assertBusinessMapping(ErrorCode.INVALID_INPUT, HttpStatus.BAD_REQUEST, ApiV2ErrorCode.INVALID_INPUT);
         assertBusinessMapping(ErrorCode.DUPLICATE_NAME, HttpStatus.CONFLICT, ApiV2ErrorCode.DUPLICATE_NAME);
         assertBusinessMapping(ErrorCode.QUOTA_EXCEEDED, HttpStatus.TOO_MANY_REQUESTS, ApiV2ErrorCode.QUOTA_EXCEEDED);
+        assertBusinessMapping(ErrorCode.TASK_NOT_FOUND, HttpStatus.NOT_FOUND, ApiV2ErrorCode.FILE_NOT_FOUND);
+        assertBusinessMapping(ErrorCode.STORAGE_POLICY_NOT_FOUND, HttpStatus.NOT_FOUND, ApiV2ErrorCode.FILE_NOT_FOUND);
     }
 
     private void assertBusinessMapping(ErrorCode sourceCode,

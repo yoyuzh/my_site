@@ -7,6 +7,7 @@ import org.springframework.util.StringUtils;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
+import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
@@ -76,8 +77,18 @@ public class LocalFileContentStorage implements FileContentStorage {
     }
 
     @Override
+    public void storeBlob(String objectKey, String contentType, InputStream content, long size) {
+        write(resolveObjectKey(objectKey), content);
+    }
+
+    @Override
     public byte[] readBlob(String objectKey) {
         return read(resolveObjectKey(objectKey));
+    }
+
+    @Override
+    public InputStream readBlobStream(String objectKey) {
+        return readStream(resolveObjectKey(objectKey));
     }
 
     @Override
@@ -108,6 +119,11 @@ public class LocalFileContentStorage implements FileContentStorage {
     @Override
     public byte[] readTransferFile(String sessionId, String storageName) {
         return read(resolveTransferPath(sessionId, storageName));
+    }
+
+    @Override
+    public InputStream readTransferFileStream(String sessionId, String storageName) {
+        return readStream(resolveTransferPath(sessionId, storageName));
     }
 
     @Override
@@ -198,9 +214,26 @@ public class LocalFileContentStorage implements FileContentStorage {
         }
     }
 
+    private void write(Path target, InputStream content) {
+        try (InputStream inputStream = content) {
+            createDirectories(target.getParent());
+            Files.copy(inputStream, target, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+        } catch (IOException ex) {
+            throw new BusinessException(ErrorCode.UNKNOWN, "File write failed");
+        }
+    }
+
     private byte[] read(Path target) {
         try {
             return Files.readAllBytes(target);
+        } catch (IOException ex) {
+            throw new BusinessException(ErrorCode.FILE_NOT_FOUND, "File content does not exist");
+        }
+    }
+
+    private InputStream readStream(Path target) {
+        try {
+            return Files.newInputStream(target, StandardOpenOption.READ);
         } catch (IOException ex) {
             throw new BusinessException(ErrorCode.FILE_NOT_FOUND, "File content does not exist");
         }

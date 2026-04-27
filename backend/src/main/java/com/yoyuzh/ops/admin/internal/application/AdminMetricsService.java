@@ -22,6 +22,7 @@ import java.time.LocalDateTime;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.function.Supplier;
 import java.util.TreeMap;
 import java.util.stream.IntStream;
 
@@ -74,9 +75,7 @@ public class AdminMetricsService implements WorkspaceDownloadMetricsPort, AdminR
     public void incrementRequestCount() {
         LocalDateTime now = LocalDateTime.now();
         LocalDate today = now.toLocalDate();
-        AdminMetricsState state = refreshRequestCountDateIfNeeded(ensureCurrentStateForUpdate(), today, false);
-        state.setRequestCount(state.getRequestCount() + 1);
-        adminMetricsStateRepository.save(state);
+        ensureStateUpdated(() -> adminMetricsStateRepository.incrementRequestCount(STATE_ID, today, now));
         incrementRequestTimelinePoint(today, now.getHour());
     }
 
@@ -86,9 +85,11 @@ public class AdminMetricsService implements WorkspaceDownloadMetricsPort, AdminR
         if (bytes <= 0) {
             return;
         }
-        AdminMetricsState state = ensureCurrentStateForUpdate();
-        state.setDownloadTrafficBytes(state.getDownloadTrafficBytes() + bytes);
-        adminMetricsStateRepository.save(state);
+        ensureStateUpdated(() -> adminMetricsStateRepository.incrementDownloadTrafficBytes(
+                STATE_ID,
+                bytes,
+                LocalDateTime.now()
+        ));
     }
 
     @Transactional
@@ -96,9 +97,11 @@ public class AdminMetricsService implements WorkspaceDownloadMetricsPort, AdminR
         if (bytes <= 0) {
             return;
         }
-        AdminMetricsState state = ensureCurrentStateForUpdate();
-        state.setTransferUsageBytes(state.getTransferUsageBytes() + bytes);
-        adminMetricsStateRepository.save(state);
+        ensureStateUpdated(() -> adminMetricsStateRepository.incrementTransferUsageBytes(
+                STATE_ID,
+                bytes,
+                LocalDateTime.now()
+        ));
     }
 
     @Transactional
@@ -133,7 +136,7 @@ public class AdminMetricsService implements WorkspaceDownloadMetricsPort, AdminR
                 .orElseGet(() -> {
                     createInitialState();
                     return adminMetricsStateRepository.findByIdForUpdate(STATE_ID)
-                            .orElseThrow(() -> new IllegalStateException("管理统计状态初始化失败"));
+                            .orElseThrow(() -> new IllegalStateException("admin metrics state initialization failed"));
                 });
     }
 
@@ -236,16 +239,26 @@ public class AdminMetricsService implements WorkspaceDownloadMetricsPort, AdminR
         adminDailyActiveUserRepository.deleteAllByMetricDateBefore(today.minusDays(DAILY_ACTIVE_USER_RETENTION_DAYS - 1L));
     }
 
+    private void ensureStateUpdated(Supplier<Integer> updateOperation) {
+        if (updateOperation.get() > 0) {
+            return;
+        }
+        createInitialState();
+        if (updateOperation.get() == 0) {
+            throw new IllegalStateException("admin metrics state update failed");
+        }
+    }
+
     private String formatHourLabel(int hour) {
         return "%02d:00".formatted(hour);
     }
 
     private String formatDailyActiveUserLabel(LocalDate metricDate, LocalDate today) {
         if (metricDate.equals(today)) {
-            return "今天";
+            return "today";
         }
         if (metricDate.equals(today.minusDays(1))) {
-            return "昨天";
+            return "yesterday";
         }
         return "%02d-%02d".formatted(metricDate.getMonthValue(), metricDate.getDayOfMonth());
     }

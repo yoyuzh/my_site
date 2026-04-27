@@ -5,8 +5,6 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.yoyuzh.platform.storage.api.StorageRuntimeProperties;
 import org.springframework.util.StringUtils;
 
-import javax.crypto.Mac;
-import javax.crypto.spec.SecretKeySpec;
 import java.io.IOException;
 import java.net.URI;
 import java.net.http.HttpClient;
@@ -83,9 +81,7 @@ final class DogeCloudTmpTokenClient {
     }
 
     private void validateConfiguration() {
-        if (!StringUtils.hasText(properties.getApiAccessKey())
-                || !StringUtils.hasText(properties.getApiSecretKey())
-                || !StringUtils.hasText(properties.getScope())) {
+        if (!properties.hasApiCredentials() || !StringUtils.hasText(properties.getScope())) {
             throw new IllegalStateException("多吉云存储配置不完整");
         }
     }
@@ -104,7 +100,7 @@ final class DogeCloudTmpTokenClient {
 
     private String buildAuthorization(String body) {
         String signTarget = API_PATH + "\n" + body;
-        return "TOKEN " + properties.getApiAccessKey() + ":" + hmacSha1Hex(properties.getApiSecretKey(), signTarget);
+        return properties.createApiAuthorization(signTarget);
     }
 
     private String resolveBaseUrl() {
@@ -152,21 +148,6 @@ final class DogeCloudTmpTokenClient {
             throw new IllegalStateException("多吉云临时密钥响应缺少字段: " + fieldName);
         }
         return value;
-    }
-
-    private static String hmacSha1Hex(String secret, String content) {
-        try {
-            Mac mac = Mac.getInstance("HmacSHA1");
-            mac.init(new SecretKeySpec(secret.getBytes(StandardCharsets.UTF_8), "HmacSHA1"));
-            byte[] digest = mac.doFinal(content.getBytes(StandardCharsets.UTF_8));
-            StringBuilder builder = new StringBuilder(digest.length * 2);
-            for (byte current : digest) {
-                builder.append(String.format("%02x", current));
-            }
-            return builder.toString();
-        } catch (Exception ex) {
-            throw new IllegalStateException("生成多吉云 API 签名失败", ex);
-        }
     }
 
     interface Transport {

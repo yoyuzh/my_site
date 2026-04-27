@@ -31,6 +31,12 @@ app:
     usernames: ${APP_ADMIN_USERNAMES:admin}
   registration:
     invite-code: ${APP_AUTH_REGISTRATION_INVITE_CODE:dev-invite-code}
+  transfer:
+    remote-download:
+      aria2:
+        base-url: ${APP_REMOTE_DOWNLOAD_ARIA2_BASE_URL:http://127.0.0.1:6800/jsonrpc}
+      qbittorrent:
+        base-url: ${APP_REMOTE_DOWNLOAD_QBITTORRENT_BASE_URL:http://127.0.0.1:8081}
   redis:
     enabled: ${APP_REDIS_ENABLED:false}
     cache:

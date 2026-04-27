@@ -15,6 +15,7 @@ import com.yoyuzh.files.workspace.api.WorkspaceFileSnapshot;
 import com.yoyuzh.identity.access.internal.domain.User;
 import com.yoyuzh.infra.lock.DistributedLockGateway;
 import com.yoyuzh.shared.kernel.BusinessException;
+import com.yoyuzh.shared.kernel.ErrorCode;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -31,6 +32,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -84,6 +86,15 @@ class BackgroundTaskServiceTest {
                 null
         )).isInstanceOf(BusinessException.class)
                 .hasMessage("file not found");
+    }
+
+    @Test
+    void shouldUseTaskNotFoundErrorCodeForOwnedTaskLookup() {
+        when(backgroundTaskRepository.findByIdAndUserId(404L, 7L)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> backgroundTaskService.getOwnedTask(7L, 404L))
+                .isInstanceOf(BusinessException.class)
+                .satisfies(ex -> assertThat(((BusinessException) ex).getErrorCode()).isEqualTo(ErrorCode.TASK_NOT_FOUND));
     }
 
     @Test
@@ -502,18 +513,40 @@ class BackgroundTaskServiceTest {
                 {"fileId":11,"path":"/docs/extract.zip","phase":"failed","worker":"extract","processedFileCount":1,"totalFileCount":2}
                 """);
         task.setPrivateStateJson("""
-                {"fileId":11,"path":"/docs/extract.zip","taskType":"EXTRACT","outputPath":"/docs","outputDirectoryName":"extract"}
+                {
+                  "fileId":11,
+                  "path":"/docs/extract.zip",
+                  "taskType":"EXTRACT",
+                  "outputPath":"/docs",
+                  "outputDirectoryName":"extract",
+                  "_publicStateSeed":{
+                    "fileId":11,
+                    "path":"/docs/extract.zip",
+                    "outputPath":"/docs",
+                    "outputDirectoryName":"extract"
+                  }
+                }
                 """);
         task.setFinishedAt(java.time.LocalDateTime.now());
         task.setErrorMessage("extract task only supports zip-compatible archives");
-        when(backgroundTaskRepository.findByIdAndUserId(8L, 7L)).thenReturn(Optional.of(task));
-        when(backgroundTaskRepository.save(any(BackgroundTask.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        BackgroundTask reloaded = createTask(8L, BackgroundTaskType.EXTRACT, BackgroundTaskStatus.QUEUED);
+        reloaded.setPublicStateJson("""
+                {"fileId":11,"path":"/docs/extract.zip","outputPath":"/docs","outputDirectoryName":"extract","phase":"queued","attemptCount":0,"maxAttempts":3}
+                """);
+        when(backgroundTaskRepository.findByIdAndUserId(8L, 7L)).thenReturn(Optional.of(task), Optional.of(reloaded));
+        when(backgroundTaskRepository.retryOwnedTask(
+                eq(8L),
+                eq(7L),
+                eq(task.getUpdatedAt()),
+                eq(BackgroundTaskStatus.FAILED),
+                eq(BackgroundTaskStatus.QUEUED),
+                anyString(),
+                any()
+        )).thenReturn(1);
 
         BackgroundTask result = backgroundTaskService.retryOwnedTask(7L, 8L);
 
         assertThat(result.getStatus()).isEqualTo(BackgroundTaskStatus.QUEUED);
-        assertThat(result.getFinishedAt()).isNull();
-        assertThat(result.getErrorMessage()).isNull();
         assertThat(result.getPublicStateJson()).contains("\"phase\":\"queued\"");
         assertThat(result.getPublicStateJson()).contains("\"outputPath\":\"/docs\"");
         assertThat(result.getPublicStateJson()).contains("\"outputDirectoryName\":\"extract\"");
@@ -523,6 +556,43 @@ class BackgroundTaskServiceTest {
         assertThat(result.getPublicStateJson()).doesNotContain("worker");
         assertThat(result.getPublicStateJson()).doesNotContain("processedFileCount");
         assertThat(result.getPublicStateJson()).doesNotContain("totalFileCount");
+        verify(backgroundTaskRepository, never()).save(any(BackgroundTask.class));
+    }
+
+    @Test
+    void shouldNotLeakRemoteDownloadIdWhenRetryingTask() {
+        BackgroundTask task = createTask(18L, BackgroundTaskType.REMOTE_DOWNLOAD, BackgroundTaskStatus.FAILED);
+        task.setPublicStateJson("""
+                {"phase":"failed","message":"remote download failed"}
+                """);
+        task.setPrivateStateJson("""
+                {
+                  "taskType":"REMOTE_DOWNLOAD",
+                  "remoteDownloadId":42,
+                  "_publicStateSeed":{
+                    "message":"remote download queued",
+                    "sourceType":"HTTP"
+                  }
+                }
+                """);
+        BackgroundTask reloaded = createTask(18L, BackgroundTaskType.REMOTE_DOWNLOAD, BackgroundTaskStatus.QUEUED);
+        reloaded.setPublicStateJson("""
+                {"message":"remote download queued","sourceType":"HTTP","phase":"queued","attemptCount":0,"maxAttempts":3}
+                """);
+        when(backgroundTaskRepository.findByIdAndUserId(18L, 7L)).thenReturn(Optional.of(task), Optional.of(reloaded));
+        when(backgroundTaskRepository.retryOwnedTask(
+                eq(18L),
+                eq(7L),
+                eq(task.getUpdatedAt()),
+                eq(BackgroundTaskStatus.FAILED),
+                eq(BackgroundTaskStatus.QUEUED),
+                anyString(),
+                any()
+        )).thenReturn(1);
+
+        BackgroundTask result = backgroundTaskService.retryOwnedTask(7L, 18L);
+
+        assertThat(result.getPublicStateJson()).doesNotContain("remoteDownloadId");
     }
 
     @Test
@@ -580,7 +650,19 @@ class BackgroundTaskServiceTest {
                 {"fileId":11,"path":"/docs/extract.zip","phase":"extracting","worker":"extract","workerOwner":"worker-stale"}
                 """);
         expired.setPrivateStateJson("""
-                {"fileId":11,"path":"/docs/extract.zip","taskType":"EXTRACT","outputPath":"/docs","outputDirectoryName":"extract"}
+                {
+                  "fileId":11,
+                  "path":"/docs/extract.zip",
+                  "taskType":"EXTRACT",
+                  "outputPath":"/docs",
+                  "outputDirectoryName":"extract",
+                  "_publicStateSeed":{
+                    "fileId":11,
+                    "path":"/docs/extract.zip",
+                    "outputPath":"/docs",
+                    "outputDirectoryName":"extract"
+                  }
+                }
                 """);
         expired.setFinishedAt(java.time.LocalDateTime.now());
         expired.setErrorMessage("partial failure");

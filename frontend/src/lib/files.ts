@@ -6,6 +6,7 @@ import type {
   FileDetail,
   FileItem,
   FileTag,
+  MediaCategory,
   QueryPage,
   RecycleBinItem,
   ThumbnailResponse,
@@ -19,6 +20,42 @@ export async function listFiles(path = '/', page = 0, size = 100) {
   });
   return apiRequest<QueryPage<FileItem>>({
     url: `/files/list?${params.toString()}`,
+    method: 'GET',
+  });
+}
+
+export async function searchFiles({
+  name,
+  page = 0,
+  size = 100,
+  type,
+  category,
+}: {
+  name?: string;
+  page?: number;
+  size?: number;
+  type?: 'file' | 'directory';
+  category?: MediaCategory;
+}) {
+  const params = new URLSearchParams({
+    page: String(page),
+    size: String(size),
+  });
+
+  if (name?.trim()) {
+    params.set('name', name.trim());
+  }
+
+  if (type) {
+    params.set('type', type);
+  }
+
+  if (category) {
+    params.set('category', category);
+  }
+
+  return apiRequest<QueryPage<FileItem>>({
+    url: `/v2/files/search?${params.toString()}`,
     method: 'GET',
   });
 }
@@ -126,13 +163,6 @@ export async function uploadFile(path: string, file: File) {
     url: `/files/upload?${params.toString()}`,
     method: 'POST',
     data: formData,
-  });
-}
-
-export async function createLegacyShareLink(fileId: number) {
-  return apiRequest<{ token: string }>({
-    url: `/files/${fileId}/share-links`,
-    method: 'POST',
   });
 }
 

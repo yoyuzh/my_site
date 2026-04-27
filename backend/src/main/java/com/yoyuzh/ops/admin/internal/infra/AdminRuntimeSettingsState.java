@@ -17,52 +17,52 @@ public class AdminRuntimeSettingsState {
     private Long id;
 
     @Column(name = "site_supported", nullable = false)
-    private boolean siteSupported;
+    private Boolean siteSupported;
 
     @Column(name = "registration_invite_code_required", nullable = false)
-    private boolean registrationInviteCodeRequired;
+    private Boolean registrationInviteCodeRequired;
 
     @Column(name = "registration_management_roles", nullable = false, length = 512)
     private String registrationManagementRoles;
 
     @Column(name = "user_session_access_expiration_seconds", nullable = false)
-    private long userSessionAccessExpirationSeconds;
+    private Long userSessionAccessExpirationSeconds;
 
     @Column(name = "user_session_refresh_expiration_seconds", nullable = false)
-    private long userSessionRefreshExpirationSeconds;
+    private Long userSessionRefreshExpirationSeconds;
 
     @Column(name = "user_session_token_blacklist_enabled", nullable = false)
-    private boolean userSessionTokenBlacklistEnabled;
+    private Boolean userSessionTokenBlacklistEnabled;
 
     @Column(name = "user_session_token_blacklist_ttl_buffer_seconds", nullable = false)
-    private long userSessionTokenBlacklistTtlBufferSeconds;
+    private Long userSessionTokenBlacklistTtlBufferSeconds;
 
     @Column(name = "media_metadata_extraction_enabled", nullable = false)
-    private boolean mediaMetadataExtractionEnabled;
+    private Boolean mediaMetadataExtractionEnabled;
 
     @Column(name = "media_thumbnail_generation_enabled", nullable = false)
-    private boolean mediaThumbnailGenerationEnabled;
+    private Boolean mediaThumbnailGenerationEnabled;
 
     @Column(name = "media_video_poster_enabled", nullable = false)
-    private boolean mediaVideoPosterEnabled;
+    private Boolean mediaVideoPosterEnabled;
 
     @Column(name = "queue_backend", nullable = false, length = 64)
     private String queueBackend;
 
     @Column(name = "queue_media_metadata_fixed_delay_ms", nullable = false)
-    private long queueMediaMetadataFixedDelayMs;
+    private Long queueMediaMetadataFixedDelayMs;
 
     @Column(name = "queue_media_metadata_initial_delay_ms", nullable = false)
-    private long queueMediaMetadataInitialDelayMs;
+    private Long queueMediaMetadataInitialDelayMs;
 
     @Column(name = "appearance_supported", nullable = false)
-    private boolean appearanceSupported;
+    private Boolean appearanceSupported;
 
     @Column(name = "server_storage_provider", nullable = false, length = 64)
     private String serverStorageProvider;
 
     @Column(name = "server_redis_enabled", nullable = false)
-    private boolean serverRedisEnabled;
+    private Boolean serverRedisEnabled;
 
     @Column(name = "updated_at", nullable = false)
     private LocalDateTime updatedAt;
@@ -81,19 +81,19 @@ public class AdminRuntimeSettingsState {
         this.id = id;
     }
 
-    public boolean isSiteSupported() {
+    public Boolean isSiteSupported() {
         return siteSupported;
     }
 
-    public void setSiteSupported(boolean siteSupported) {
+    public void setSiteSupported(Boolean siteSupported) {
         this.siteSupported = siteSupported;
     }
 
-    public boolean isRegistrationInviteCodeRequired() {
+    public Boolean isRegistrationInviteCodeRequired() {
         return registrationInviteCodeRequired;
     }
 
-    public void setRegistrationInviteCodeRequired(boolean registrationInviteCodeRequired) {
+    public void setRegistrationInviteCodeRequired(Boolean registrationInviteCodeRequired) {
         this.registrationInviteCodeRequired = registrationInviteCodeRequired;
     }
 
@@ -105,59 +105,59 @@ public class AdminRuntimeSettingsState {
         this.registrationManagementRoles = registrationManagementRoles;
     }
 
-    public long getUserSessionAccessExpirationSeconds() {
+    public Long getUserSessionAccessExpirationSeconds() {
         return userSessionAccessExpirationSeconds;
     }
 
-    public void setUserSessionAccessExpirationSeconds(long userSessionAccessExpirationSeconds) {
+    public void setUserSessionAccessExpirationSeconds(Long userSessionAccessExpirationSeconds) {
         this.userSessionAccessExpirationSeconds = userSessionAccessExpirationSeconds;
     }
 
-    public long getUserSessionRefreshExpirationSeconds() {
+    public Long getUserSessionRefreshExpirationSeconds() {
         return userSessionRefreshExpirationSeconds;
     }
 
-    public void setUserSessionRefreshExpirationSeconds(long userSessionRefreshExpirationSeconds) {
+    public void setUserSessionRefreshExpirationSeconds(Long userSessionRefreshExpirationSeconds) {
         this.userSessionRefreshExpirationSeconds = userSessionRefreshExpirationSeconds;
     }
 
-    public boolean isUserSessionTokenBlacklistEnabled() {
+    public Boolean isUserSessionTokenBlacklistEnabled() {
         return userSessionTokenBlacklistEnabled;
     }
 
-    public void setUserSessionTokenBlacklistEnabled(boolean userSessionTokenBlacklistEnabled) {
+    public void setUserSessionTokenBlacklistEnabled(Boolean userSessionTokenBlacklistEnabled) {
         this.userSessionTokenBlacklistEnabled = userSessionTokenBlacklistEnabled;
     }
 
-    public long getUserSessionTokenBlacklistTtlBufferSeconds() {
+    public Long getUserSessionTokenBlacklistTtlBufferSeconds() {
         return userSessionTokenBlacklistTtlBufferSeconds;
     }
 
-    public void setUserSessionTokenBlacklistTtlBufferSeconds(long userSessionTokenBlacklistTtlBufferSeconds) {
+    public void setUserSessionTokenBlacklistTtlBufferSeconds(Long userSessionTokenBlacklistTtlBufferSeconds) {
         this.userSessionTokenBlacklistTtlBufferSeconds = userSessionTokenBlacklistTtlBufferSeconds;
     }
 
-    public boolean isMediaMetadataExtractionEnabled() {
+    public Boolean isMediaMetadataExtractionEnabled() {
         return mediaMetadataExtractionEnabled;
     }
 
-    public void setMediaMetadataExtractionEnabled(boolean mediaMetadataExtractionEnabled) {
+    public void setMediaMetadataExtractionEnabled(Boolean mediaMetadataExtractionEnabled) {
         this.mediaMetadataExtractionEnabled = mediaMetadataExtractionEnabled;
     }
 
-    public boolean isMediaThumbnailGenerationEnabled() {
+    public Boolean isMediaThumbnailGenerationEnabled() {
         return mediaThumbnailGenerationEnabled;
     }
 
-    public void setMediaThumbnailGenerationEnabled(boolean mediaThumbnailGenerationEnabled) {
+    public void setMediaThumbnailGenerationEnabled(Boolean mediaThumbnailGenerationEnabled) {
         this.mediaThumbnailGenerationEnabled = mediaThumbnailGenerationEnabled;
     }
 
-    public boolean isMediaVideoPosterEnabled() {
+    public Boolean isMediaVideoPosterEnabled() {
         return mediaVideoPosterEnabled;
     }
 
-    public void setMediaVideoPosterEnabled(boolean mediaVideoPosterEnabled) {
+    public void setMediaVideoPosterEnabled(Boolean mediaVideoPosterEnabled) {
         this.mediaVideoPosterEnabled = mediaVideoPosterEnabled;
     }
 
@@ -169,27 +169,27 @@ public class AdminRuntimeSettingsState {
         this.queueBackend = queueBackend;
     }
 
-    public long getQueueMediaMetadataFixedDelayMs() {
+    public Long getQueueMediaMetadataFixedDelayMs() {
         return queueMediaMetadataFixedDelayMs;
     }
 
-    public void setQueueMediaMetadataFixedDelayMs(long queueMediaMetadataFixedDelayMs) {
+    public void setQueueMediaMetadataFixedDelayMs(Long queueMediaMetadataFixedDelayMs) {
         this.queueMediaMetadataFixedDelayMs = queueMediaMetadataFixedDelayMs;
     }
 
-    public long getQueueMediaMetadataInitialDelayMs() {
+    public Long getQueueMediaMetadataInitialDelayMs() {
         return queueMediaMetadataInitialDelayMs;
     }
 
-    public void setQueueMediaMetadataInitialDelayMs(long queueMediaMetadataInitialDelayMs) {
+    public void setQueueMediaMetadataInitialDelayMs(Long queueMediaMetadataInitialDelayMs) {
         this.queueMediaMetadataInitialDelayMs = queueMediaMetadataInitialDelayMs;
     }
 
-    public boolean isAppearanceSupported() {
+    public Boolean isAppearanceSupported() {
         return appearanceSupported;
     }
 
-    public void setAppearanceSupported(boolean appearanceSupported) {
+    public void setAppearanceSupported(Boolean appearanceSupported) {
         this.appearanceSupported = appearanceSupported;
     }
 
@@ -201,11 +201,11 @@ public class AdminRuntimeSettingsState {
         this.serverStorageProvider = serverStorageProvider;
     }
 
-    public boolean isServerRedisEnabled() {
+    public Boolean isServerRedisEnabled() {
         return serverRedisEnabled;
     }
 
-    public void setServerRedisEnabled(boolean serverRedisEnabled) {
+    public void setServerRedisEnabled(Boolean serverRedisEnabled) {
         this.serverRedisEnabled = serverRedisEnabled;
     }
 

@@ -1,6 +1,7 @@
 package com.yoyuzh.ops.admin.internal.application;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
@@ -123,7 +124,7 @@ class AdminUserGovernanceServiceTest {
                 eq("Updated user password"),
                 detailsCaptor.capture()
         );
-        assertThat(detailsCaptor.getValue()).containsEntry("passwordLength", 14);
+        assertThat(detailsCaptor.getValue()).doesNotContainKey("passwordLength");
         assertThat(detailsCaptor.getValue()).containsEntry("temporaryPassword", false);
     }
 
@@ -136,7 +137,7 @@ class AdminUserGovernanceServiceTest {
 
         AdminPasswordResetResponse response = adminUserGovernanceService.resetUserPassword(2L);
 
-        assertThat(response.temporaryPassword()).hasSize(12);
+        assertThat(response.temporaryPassword()).hasSize(16);
         assertThat(response.temporaryPassword()).matches(".*[A-Z].*");
         ArgumentCaptor<Map<String, Object>> detailsCaptor = ArgumentCaptor.forClass(Map.class);
         verify(adminAuditService).record(
@@ -147,6 +148,7 @@ class AdminUserGovernanceServiceTest {
                 detailsCaptor.capture()
         );
         assertThat(detailsCaptor.getValue()).containsEntry("temporaryPassword", true);
+        assertThat(detailsCaptor.getValue()).doesNotContainKey("passwordLength");
     }
 
     @Test

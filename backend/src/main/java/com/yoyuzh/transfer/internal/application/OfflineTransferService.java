@@ -16,6 +16,7 @@ import com.yoyuzh.transfer.internal.infra.OfflineTransferSessionRepository;
 import com.yoyuzh.transfer.internal.infra.TransferSessionStore;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.stereotype.Service;
+import org.springframework.core.io.InputStreamSource;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.time.Duration;
@@ -28,8 +29,6 @@ import java.util.UUID;
 public class OfflineTransferService {
 
     private static final Duration OFFLINE_SESSION_TTL = Duration.ofDays(7);
-    private static final int PICKUP_CODE_COLLISION_RETRY_LIMIT = 32;
-
     private final TransferSessionStore sessionStore;
     private final OfflineTransferSessionRepository offlineTransferSessionRepository;
     private final FileContentStorage fileContentStorage;
@@ -52,7 +51,7 @@ public class OfflineTransferService {
     public TransferSessionResponse createSession(Long senderUserId, CreateTransferSessionCommand command) {
         OfflineTransferSession session = new OfflineTransferSession();
         session.setSessionId(UUID.randomUUID().toString());
-        session.setPickupCode(nextPickupCode());
+        session.setPickupCode(allocatePickupCode());
         session.setSenderUserId(senderUserId);
         session.setExpiresAt(Instant.now().plus(OFFLINE_SESSION_TTL));
         session.setReady(false);
@@ -79,15 +78,15 @@ public class OfflineTransferService {
     public LookupTransferSessionResponse lookupReadySession(String pickupCode) {
         String normalizedPickupCode = TransferPathNormalizer.normalizePickupCode(pickupCode);
         OfflineTransferSession offlineSession = offlineTransferSessionRepository.findWithFilesByPickupCode(normalizedPickupCode)
-                .orElseThrow(() -> new BusinessException(ErrorCode.FILE_NOT_FOUND, "pickup code not found or expired"));
-        validateOfflineReadySession(offlineSession, "pickup code not found or expired");
+                .orElseThrow(() -> new BusinessException(ErrorCode.FILE_NOT_FOUND, "pickup code not found"));
+        validateOfflineReadySession(offlineSession, "pickup code expired");
         return toLookupResponse(offlineSession);
     }
 
     public TransferSessionResponse joinReadySession(String sessionId) {
         OfflineTransferSession offlineSession = offlineTransferSessionRepository.findWithFilesBySessionId(sessionId)
-                .orElseThrow(() -> new BusinessException(ErrorCode.FILE_NOT_FOUND, "offline transfer session not found or expired"));
-        validateOfflineReadySession(offlineSession, "offline transfer session not found or expired");
+                .orElseThrow(() -> new BusinessException(ErrorCode.FILE_NOT_FOUND, "offline transfer session not found"));
+        validateOfflineReadySession(offlineSession, "offline transfer session expired");
         return toSessionResponse(offlineSession);
     }
 
@@ -133,11 +132,11 @@ public class OfflineTransferService {
             return OfflineDownloadResult.redirect(downloadUrl);
         }
 
-        byte[] content = fileContentStorage.readTransferFile(sessionId, file.getStorageName());
         return OfflineDownloadResult.inline(
                 file.getFilename(),
                 TransferPathNormalizer.normalizeContentType(file.getContentType()),
-                content
+                file.getSize(),
+                () -> fileContentStorage.readTransferFileStream(sessionId, file.getStorageName())
         );
     }
 
@@ -152,12 +151,11 @@ public class OfflineTransferService {
         OfflineTransferSession session = getRequiredOfflineReadySession(sessionId);
         OfflineTransferFile file = getRequiredOfflineFile(session, fileId);
         ensureOfflineFileUploaded(file);
-        byte[] content = fileContentStorage.readTransferFile(sessionId, file.getStorageName());
         return new ReadyOfflineTransferFile(
                 file.getFilename(),
                 TransferPathNormalizer.normalizeContentType(file.getContentType()),
                 file.getSize(),
-                content
+                () -> fileContentStorage.readTransferFileStream(sessionId, file.getStorageName())
         );
     }
 
@@ -178,14 +176,12 @@ public class OfflineTransferService {
         offlineTransferSessionRepository.deleteAll(expiredSessions);
     }
 
-    private String nextPickupCode() {
-        for (int attempt = 0; attempt < PICKUP_CODE_COLLISION_RETRY_LIMIT; attempt++) {
-            String pickupCode = sessionStore.nextPickupCode();
-            if (!offlineTransferSessionRepository.existsByPickupCode(pickupCode)) {
-                return pickupCode;
-            }
+    private String allocatePickupCode() {
+        try {
+            return sessionStore.nextPickupCode(pickupCode -> !offlineTransferSessionRepository.existsByPickupCode(pickupCode));
+        } catch (IllegalStateException ex) {
+            throw new BusinessException(ErrorCode.UNKNOWN, "unable to allocate pickup code");
         }
-        throw new BusinessException(ErrorCode.UNKNOWN, "unable to allocate pickup code");
     }
 
     private TransferSessionResponse toSessionResponse(OfflineTransferSession session) {
@@ -220,20 +216,20 @@ public class OfflineTransferService {
 
     private OfflineTransferSession getRequiredOfflineEditableSession(Long senderUserId, String sessionId) {
         OfflineTransferSession session = offlineTransferSessionRepository.findWithFilesBySessionId(sessionId)
-                .orElseThrow(() -> new BusinessException(ErrorCode.FILE_NOT_FOUND, "offline transfer session not found or expired"));
+                .orElseThrow(() -> new BusinessException(ErrorCode.FILE_NOT_FOUND, "offline transfer session not found"));
         if (!Objects.equals(session.getSenderUserId(), senderUserId)) {
             throw new BusinessException(ErrorCode.PERMISSION_DENIED, "no permission to upload this offline transfer file");
         }
         if (session.isExpired(Instant.now())) {
-            throw new BusinessException(ErrorCode.FILE_NOT_FOUND, "offline transfer session not found or expired");
+            throw new BusinessException(ErrorCode.SESSION_EXPIRED, "offline transfer session expired");
         }
         return session;
     }
 
     private OfflineTransferSession getRequiredOfflineReadySession(String sessionId) {
         OfflineTransferSession session = offlineTransferSessionRepository.findWithFilesBySessionId(sessionId)
-                .orElseThrow(() -> new BusinessException(ErrorCode.FILE_NOT_FOUND, "offline transfer session not found or expired"));
-        validateOfflineReadySession(session, "offline transfer session not found or expired");
+                .orElseThrow(() -> new BusinessException(ErrorCode.FILE_NOT_FOUND, "offline transfer session not found"));
+        validateOfflineReadySession(session, "offline transfer session expired");
         return session;
     }
 
@@ -246,7 +242,7 @@ public class OfflineTransferService {
 
     private void ensureOfflineFileUploaded(OfflineTransferFile file) {
         if (!file.isUploaded()) {
-            throw new BusinessException(ErrorCode.FILE_NOT_FOUND, "offline transfer file not found");
+            throw new BusinessException(ErrorCode.INVALID_INPUT, "offline transfer file is not uploaded yet");
         }
     }
 
@@ -269,7 +265,7 @@ public class OfflineTransferService {
             String filename,
             String contentType,
             long size,
-            byte[] content
+            InputStreamSource content
     ) {
     }
 }

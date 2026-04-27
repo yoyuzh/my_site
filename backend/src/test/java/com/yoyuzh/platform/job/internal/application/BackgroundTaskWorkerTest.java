@@ -91,6 +91,28 @@ class BackgroundTaskWorkerTest {
     }
 
     @Test
+    void shouldRequeueTaskWhenHandlerRequestsAnotherPollingRound() {
+        BackgroundTask task = createTask(5L, BackgroundTaskType.REMOTE_DOWNLOAD, BackgroundTaskStatus.RUNNING);
+        when(backgroundTaskExecutionGateway.findQueuedTaskIds(5)).thenReturn(List.of(5L));
+        when(backgroundTaskExecutionGateway.claimQueuedTask(eq(5L), anyString(), anyLong())).thenReturn(Optional.of(task));
+        when(backgroundTaskHandler.supports(BackgroundTaskType.REMOTE_DOWNLOAD)).thenReturn(true);
+        when(backgroundTaskHandler.handle(eq(task), any(BackgroundTaskProgressReporter.class)))
+                .thenReturn(BackgroundTaskHandlerResult.reschedule(Map.of("phase", "downloading"), 15L));
+
+        int processedCount = backgroundTaskWorker.processQueuedTasks(5);
+
+        assertThat(processedCount).isEqualTo(1);
+        verify(backgroundTaskExecutionGateway).markWorkerTaskRequeued(
+                eq(5L),
+                anyString(),
+                eq(Map.of("phase", "downloading")),
+                eq(15L),
+                anyLong()
+        );
+        verify(backgroundTaskExecutionGateway, never()).markWorkerTaskCompleted(eq(5L), anyString(), any(), anyLong());
+    }
+
+    @Test
     void shouldAutoRetryUnexpectedWorkerFailure() {
         BackgroundTask task = createTask(3L, BackgroundTaskType.ARCHIVE, BackgroundTaskStatus.RUNNING);
         when(backgroundTaskExecutionGateway.findQueuedTaskIds(5)).thenReturn(List.of(3L));

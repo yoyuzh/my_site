@@ -49,6 +49,10 @@ public final class WorkspaceNodeRulesService {
         return workspacePathPolicy.normalizeLeafName(filename);
     }
 
+    public String resolveAvailableNodeName(Long userId, String path, String filename) {
+        return workspacePathPolicy.resolveAvailableNodeName(userId, path, filename);
+    }
+
     public boolean existsNodeName(Long userId, String path, String filename) {
         return workspacePathPolicy.existsNodeName(userId, path, filename);
     }

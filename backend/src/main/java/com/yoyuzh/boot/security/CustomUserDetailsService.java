@@ -4,7 +4,9 @@ import com.yoyuzh.identity.access.api.IdentityAuthenticatedUser;
 import com.yoyuzh.identity.access.api.IdentityAuthenticationApi;
 import com.yoyuzh.shared.kernel.BusinessException;
 import com.yoyuzh.shared.kernel.ErrorCode;
+import java.util.List;
 import lombok.RequiredArgsConstructor;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.security.core.userdetails.UserDetailsService;
 import org.springframework.security.core.userdetails.UsernameNotFoundException;
@@ -24,11 +26,13 @@ public class CustomUserDetailsService implements UserDetailsService {
     }
 
     public UserDetails toUserDetails(IdentityAuthenticatedUser user) {
-        return org.springframework.security.core.userdetails.User.withUsername(user.username())
-                .password(user.passwordHash())
-                .authorities("ROLE_" + user.role().name())
-                .disabled(user.banned())
-                .build();
+        return new AuthenticatedUserPrincipal(
+                user.id(),
+                user.username(),
+                user.passwordHash(),
+                List.of(new SimpleGrantedAuthority("ROLE_" + user.role().name())),
+                !user.banned()
+        );
     }
 
     public IdentityAuthenticatedUser loadAuthenticatedUser(String username) {

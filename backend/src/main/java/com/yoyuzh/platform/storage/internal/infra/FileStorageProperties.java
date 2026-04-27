@@ -4,6 +4,10 @@ import com.yoyuzh.platform.storage.api.StorageRuntimeProperties;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.stereotype.Component;
 
+import javax.crypto.Mac;
+import javax.crypto.spec.SecretKeySpec;
+import java.nio.charset.StandardCharsets;
+
 @Component
 @ConfigurationProperties(prefix = "app.storage")
 public class FileStorageProperties implements StorageRuntimeProperties {
@@ -46,6 +50,18 @@ public class FileStorageProperties implements StorageRuntimeProperties {
         local.setRootDir(rootDir);
     }
 
+    public boolean hasS3ApiCredentials() {
+        return s3.hasApiCredentials();
+    }
+
+    public void copyS3ApiCredentialsTo(FileStorageProperties target) {
+        if (target == null) {
+            throw new IllegalArgumentException("target properties must not be null");
+        }
+        target.getS3().setApiAccessKey(s3.apiAccessKey);
+        target.getS3().setApiSecretKey(s3.apiSecretKey);
+    }
+
     public static class Local implements StorageRuntimeProperties.Local {
         private String rootDir = "./storage";
 
@@ -78,16 +94,8 @@ public class FileStorageProperties implements StorageRuntimeProperties {
             this.apiBaseUrl = apiBaseUrl;
         }
 
-        public String getApiAccessKey() {
-            return apiAccessKey;
-        }
-
         public void setApiAccessKey(String apiAccessKey) {
             this.apiAccessKey = apiAccessKey;
-        }
-
-        public String getApiSecretKey() {
-            return apiSecretKey;
         }
 
         public void setApiSecretKey(String apiSecretKey) {
@@ -148,6 +156,37 @@ public class FileStorageProperties implements StorageRuntimeProperties {
 
         public void setPackageDownloadTtlSeconds(int packageDownloadTtlSeconds) {
             this.packageDownloadTtlSeconds = packageDownloadTtlSeconds;
+        }
+
+        @Override
+        public boolean hasApiCredentials() {
+            return apiAccessKey != null
+                    && !apiAccessKey.isBlank()
+                    && apiSecretKey != null
+                    && !apiSecretKey.isBlank();
+        }
+
+        @Override
+        public String createApiAuthorization(String signTarget) {
+            if (!hasApiCredentials()) {
+                throw new IllegalStateException("S3 API credentials are not configured");
+            }
+            return "TOKEN " + apiAccessKey + ":" + hmacSha1Hex(apiSecretKey, signTarget);
+        }
+
+        private String hmacSha1Hex(String secret, String content) {
+            try {
+                Mac mac = Mac.getInstance("HmacSHA1");
+                mac.init(new SecretKeySpec(secret.getBytes(StandardCharsets.UTF_8), "HmacSHA1"));
+                byte[] digest = mac.doFinal(content.getBytes(StandardCharsets.UTF_8));
+                StringBuilder builder = new StringBuilder(digest.length * 2);
+                for (byte current : digest) {
+                    builder.append(String.format("%02x", current));
+                }
+                return builder.toString();
+            } catch (Exception ex) {
+                throw new IllegalStateException("生成多吉云 API 签名失败", ex);
+            }
         }
     }
 }

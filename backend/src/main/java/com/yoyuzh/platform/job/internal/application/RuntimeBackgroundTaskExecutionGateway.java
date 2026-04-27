@@ -49,6 +49,21 @@ public class RuntimeBackgroundTaskExecutionGateway implements BackgroundTaskExec
     }
 
     @Override
+    public BackgroundTask markWorkerTaskRequeued(Long id,
+                                                 String workerOwner,
+                                                 Map<String, Object> publicStatePatch,
+                                                 long nextRunDelaySeconds,
+                                                 long leaseDurationSeconds) {
+        return backgroundTaskExecutionService.markWorkerTaskRequeued(
+                id,
+                workerOwner,
+                publicStatePatch,
+                nextRunDelaySeconds,
+                leaseDurationSeconds
+        );
+    }
+
+    @Override
     public BackgroundTask markWorkerTaskFailed(Long id,
                                                String workerOwner,
                                                String errorMessage,

@@ -15,6 +15,7 @@ import java.time.Instant;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
@@ -61,5 +62,22 @@ class TransferSessionStoreTest {
 
         assertThat(reloaded.toSessionResponse().sessionId()).isEqualTo("session-1");
         assertThat(reloaded.toLookupResponse().pickupCode()).isEqualTo("123456");
+    }
+
+    @Test
+    void shouldGenerateEightCharacterAlphaNumericPickupCodes() {
+        AppRedisProperties redisProperties = new AppRedisProperties();
+        TransferSessionStore store = new TransferSessionStore(
+                null,
+                new ObjectMapper().findAndRegisterModules(),
+                redisProperties,
+                DistributedLockGateway.noOp()
+        );
+
+        String pickupCode = store.nextPickupCode();
+
+        assertThat(pickupCode)
+                .hasSize(8)
+                .matches("[A-Z0-9]{8}");
     }
 }

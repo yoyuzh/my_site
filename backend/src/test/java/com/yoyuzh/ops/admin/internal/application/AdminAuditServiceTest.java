@@ -1,6 +1,8 @@
 package com.yoyuzh.ops.admin.internal.application;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.yoyuzh.boot.security.AuthenticatedUserPrincipal;
 import com.yoyuzh.identity.access.api.IdentityUserDirectoryApi;
 import com.yoyuzh.identity.access.api.IdentityUserProfileSummary;
 import com.yoyuzh.ops.admin.internal.infra.AdminAuditLogEntity;
@@ -21,6 +23,8 @@ import java.util.Map;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -46,10 +50,14 @@ class AdminAuditServiceTest {
 
     @Test
     void shouldRecordAuditLogWithAuthenticatedActorSnapshot() {
-        IdentityUserProfileSummary adminUser = new IdentityUserProfileSummary(99L, "service-admin", "admin@example.com");
-        when(identityUserDirectoryApi.findProfileByUsername("service-admin")).thenReturn(Optional.of(adminUser));
         SecurityContextHolder.getContext().setAuthentication(new UsernamePasswordAuthenticationToken(
-                "service-admin",
+                new AuthenticatedUserPrincipal(
+                        99L,
+                        "service-admin",
+                        "N/A",
+                        List.of(new SimpleGrantedAuthority("ROLE_ADMIN"), new SimpleGrantedAuthority("ROLE_MODERATOR")),
+                        true
+                ),
                 "N/A",
                 List.of(new SimpleGrantedAuthority("ROLE_ADMIN"), new SimpleGrantedAuthority("ROLE_MODERATOR"))
         ));
@@ -73,6 +81,7 @@ class AdminAuditServiceTest {
         assertThat(entity.getTargetId()).isEqualTo(42L);
         assertThat(entity.getSummary()).isEqualTo("Updated user role");
         assertThat(entity.getDetailsJson()).contains("\"role\":\"ADMIN\"");
+        verify(identityUserDirectoryApi, never()).findProfileByUsername("service-admin");
     }
 
     @Test
@@ -92,5 +101,45 @@ class AdminAuditServiceTest {
         assertThat(entity.getActorUsername()).isEqualTo("system");
         assertThat(entity.getActorAuthorities()).isEmpty();
         assertThat(entity.getActionType()).isEqualTo("DELETE_FILE");
+    }
+
+    @Test
+    void shouldFallbackToDirectoryLookupWhenPrincipalDoesNotExposeUserId() {
+        IdentityUserProfileSummary adminUser = new IdentityUserProfileSummary(99L, "service-admin", "admin@example.com");
+        when(identityUserDirectoryApi.findProfileByUsername("service-admin")).thenReturn(Optional.of(adminUser));
+        SecurityContextHolder.getContext().setAuthentication(new UsernamePasswordAuthenticationToken(
+                "service-admin",
+                "N/A",
+                List.of(new SimpleGrantedAuthority("ROLE_ADMIN"))
+        ));
+
+        adminAuditService.record(
+                AdminAuditAction.UPDATE_USER_ROLE,
+                "USER",
+                42L,
+                "Updated user role",
+                Map.of("role", "ADMIN")
+        );
+
+        verify(identityUserDirectoryApi).findProfileByUsername("service-admin");
+    }
+
+    @Test
+    void shouldFailWhenAuditDetailsCannotBeSerialized() throws Exception {
+        ObjectMapper failingMapper = org.mockito.Mockito.mock(ObjectMapper.class);
+        when(failingMapper.writeValueAsString(Map.of("role", "ADMIN")))
+                .thenThrow(new JsonProcessingException("boom") {
+                });
+        AdminAuditService service = new AdminAuditService(adminAuditLogRepository, identityUserDirectoryApi, failingMapper);
+
+        assertThatThrownBy(() -> service.record(
+                AdminAuditAction.UPDATE_USER_ROLE,
+                "USER",
+                42L,
+                "Updated user role",
+                Map.of("role", "ADMIN")
+        ))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("serialize");
     }
 }

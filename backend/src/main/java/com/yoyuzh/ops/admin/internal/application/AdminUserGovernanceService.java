@@ -24,6 +24,8 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 public class AdminUserGovernanceService {
 
+    private static final int TEMPORARY_PASSWORD_LENGTH = 16;
+
     private final IdentityAdminUserGovernanceApi identityAdminUserGovernanceApi;
     private final WorkspaceAdminGovernanceApi workspaceAdminGovernanceApi;
     private final AdminAuditService adminAuditService;
@@ -91,7 +93,6 @@ public class AdminUserGovernanceService {
         IdentityAdminUserView user = identityAdminUserGovernanceApi.updateUserPasswordAsAdmin(userId, newPassword);
         AdminUserResponse response = toUserResponse(user, workspaceAdminGovernanceApi.loadUsedStorageBytesByUserId(userId));
         Map<String, Object> details = new LinkedHashMap<>();
-        details.put("passwordLength", newPassword.length());
         details.put("temporaryPassword", action == AdminAuditAction.RESET_USER_PASSWORD);
         adminAuditService.record(
                 action,
@@ -144,7 +145,7 @@ public class AdminUserGovernanceService {
         String digits = "23456789";
         String specials = "!@#$%^&*";
         String all = lowers + uppers + digits + specials;
-        char[] password = new char[12];
+        char[] password = new char[TEMPORARY_PASSWORD_LENGTH];
         password[0] = lowers.charAt(secureRandom.nextInt(lowers.length()));
         password[1] = uppers.charAt(secureRandom.nextInt(uppers.length()));
         password[2] = digits.charAt(secureRandom.nextInt(digits.length()));

@@ -22,6 +22,7 @@ public class FileSearchService {
                 userId,
                 new SearchFilesQuery(
                         query.name(),
+                        null,
                         query.directory(),
                         query.sizeGte(),
                         query.sizeLte(),

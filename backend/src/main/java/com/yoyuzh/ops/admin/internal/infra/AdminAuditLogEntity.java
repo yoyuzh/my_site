@@ -5,13 +5,21 @@ import jakarta.persistence.Entity;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
+import jakarta.persistence.Index;
 import jakarta.persistence.PrePersist;
 import jakarta.persistence.Table;
 
 import java.time.LocalDateTime;
 
 @Entity
-@Table(name = "portal_admin_audit_log")
+@Table(
+        name = "portal_admin_audit_log",
+        indexes = {
+                @Index(name = "idx_admin_audit_actor_created_at", columnList = "actor_username,created_at"),
+                @Index(name = "idx_admin_audit_action_created_at", columnList = "action_type,created_at"),
+                @Index(name = "idx_admin_audit_target_created_at", columnList = "target_type,target_id,created_at")
+        }
+)
 public class AdminAuditLogEntity {
 
     @Id

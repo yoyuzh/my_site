@@ -808,7 +808,8 @@ class AdminControllerIntegrationTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value(0));
 
-        assertThat(fileShareLinkRepository.findById(share.getId())).isEmpty();
+        assertThat(fileShareLinkRepository.findById(share.getId())).isPresent();
+        assertThat(fileShareLinkRepository.findById(share.getId()).orElseThrow().getCancelledAt()).isNotNull();
     }
 
     @Test

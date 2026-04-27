@@ -142,13 +142,21 @@ class FileServiceEdgeCaseTest {
     }
 
     @Test
-    void shouldRejectCreatingAlreadyExistingDirectory() {
+    void shouldAutoRenameCreatingAlreadyExistingDirectory() {
         User user = createUser(1L);
         when(storedFileRepository.existsByUserIdAndPathAndFilename(1L, "/", "docs")).thenReturn(true);
+        when(storedFileRepository.findActiveFilenamesByUserIdAndPathAndFilenamePrefix(1L, "/", "docs", "docs"))
+                .thenReturn(List.of("docs"));
+        when(storedFileRepository.save(any(StoredFile.class))).thenAnswer(inv -> {
+            StoredFile f = inv.getArgument(0);
+            f.setId(11L);
+            return f;
+        });
 
-        assertThatThrownBy(() -> fileService.mkdir(FileServiceTestSupport.workspaceUser(user), "/docs"))
-                .isInstanceOf(BusinessException.class)
-                .hasMessageContaining("目录已存在");
+        FileMetadataResponse response = fileService.mkdir(FileServiceTestSupport.workspaceUser(user), "/docs");
+
+        assertThat(response.filename()).isEqualTo("docs(1)");
+        assertThat(response.path()).isEqualTo("/");
     }
 
     // --- download redirect for direct download ---

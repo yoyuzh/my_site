@@ -4,36 +4,58 @@ import { useParams } from 'react-router-dom';
 import Topbar from '../components/Topbar';
 import BackgroundEffects from '../components/BackgroundEffects';
 import { formatBytes, formatDateTime } from '../lib/format';
-import { buildShareDownloadUrl, getShareDetails, importShare, verifySharePassword } from '../lib/shares';
+import { buildShareDownloadUrl, getShareDetails, importShare, verifySharePassword, saveShare } from '../lib/shares';
 import { ApiError } from '../api/client';
+import { getSession } from '../lib/session';
 
 const FileShare: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const [password, setPassword] = useState('');
   const [verifiedShare, setVerifiedShare] = useState<Awaited<ReturnType<typeof getShareDetails>> | null>(null);
+  const session = getSession();
+
   const shareQuery = useQuery({
     queryKey: ['publicShare', id],
     queryFn: () => getShareDetails(id ?? ''),
     enabled: !!id,
   });
+
   const verifyMutation = useMutation({
     mutationFn: (value: string) => verifySharePassword(id ?? '', { password: value }),
     onSuccess: (result) => {
       setVerifiedShare(result);
     },
   });
+
   const importMutation = useMutation({
     mutationFn: () => importShare(id ?? '', '/', password || undefined),
   });
 
+  const saveMutation = useMutation({
+    mutationFn: () => saveShare(id ?? '', password || undefined),
+    onSuccess: () => {
+      alert('已成功保存到与我共享');
+    },
+  });
+
   const share = verifiedShare ?? shareQuery.data;
-  const canDownload = !!share && (!share.passwordRequired || share.passwordVerified) && share.allowDownload;
+  const canDownload = !!share && share.status === 'ACTIVE' && (!share.passwordRequired || share.passwordVerified) && share.allowDownload;
+  const canSave = !!share && !!session && share.status === 'ACTIVE';
+
+  const getStatusText = (status?: string) => {
+    switch (status) {
+      case 'EXPIRED': return ' (已过期)';
+      case 'CONSUMED': return ' (已失效)';
+      case 'REMOVED': return ' (已移除)';
+      default: return '';
+    }
+  };
 
   return (
     <div className="min-h-screen pt-[72px] px-6 py-12">
       <Topbar meta="公开分享" />
       <BackgroundEffects />
-      
+
       <main className="max-w-[1200px] mx-auto animate-fade-in-up">
         <header className="mb-12 ml-4">
           <h2 className="text-[34px] font-bold text-text-primary-light dark:text-white leading-tight">
@@ -58,7 +80,7 @@ const FileShare: React.FC = () => {
               </div>
               
               <h3 className="text-[28px] font-bold text-text-primary-light dark:text-white leading-snug">
-                {share?.file?.filename ?? '正在加载分享文件'}
+                {share?.file?.filename ?? '正在加载分享文件'}{getStatusText(share?.status)}
               </h3>
               
               <p className="text-[14px] text-text-secondary-light dark:text-text-secondary-dark leading-relaxed font-geist">
@@ -143,12 +165,21 @@ const FileShare: React.FC = () => {
             下载文件
           </a>
           <button
-            className="bg-white dark:bg-transparent border border-[#BFD2F7] dark:border-[#222233] text-brand-light dark:text-white font-semibold py-3 px-6 rounded-lg transition-all duration-300 hover:bg-brand-light/5 w-[212px]"
+            className="bg-white dark:bg-transparent border border-[#BFD2F7] dark:border-[#222233] text-brand-light dark:text-white font-semibold py-3 px-6 rounded-lg transition-all duration-300 hover:bg-brand-light/5 w-[212px] disabled:opacity-50"
             onClick={() => importMutation.mutate()}
-            disabled={!share || !share.allowImport || importMutation.isPending}
+            disabled={!share || share.status !== 'ACTIVE' || !share.allowImport || importMutation.isPending}
           >
             {importMutation.isPending ? '导入中...' : '导入到网盘'}
           </button>
+          {session && (
+            <button
+              className="bg-white dark:bg-transparent border border-[#BFD2F7] dark:border-[#222233] text-brand-light dark:text-white font-semibold py-3 px-6 rounded-lg transition-all duration-300 hover:bg-brand-light/5 w-[212px] disabled:opacity-50"
+              onClick={() => saveMutation.mutate()}
+              disabled={!canSave || saveMutation.isPending || saveMutation.isSuccess}
+            >
+              {saveMutation.isPending ? '保存中...' : saveMutation.isSuccess ? '已保存' : '保存到与我共享'}
+            </button>
+          )}
         </div>
 
         <p className="mt-8 ml-4 text-[12px] text-text-muted-light dark:text-text-muted-dark font-geist">

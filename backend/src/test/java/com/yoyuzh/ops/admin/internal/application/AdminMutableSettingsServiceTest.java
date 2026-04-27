@@ -50,25 +50,6 @@ class AdminMutableSettingsServiceTest {
 
     @Test
     void shouldUpdateWholeAdminSettingsSnapshot() {
-        when(adminRuntimeSettingsService.snapshot()).thenReturn(new AdminRuntimeSettingsService.State(
-                false,
-                true,
-                java.util.List.of("MODERATOR", "ADMIN"),
-                900L,
-                1209600L,
-                false,
-                60L,
-                true,
-                false,
-                false,
-                "in-memory",
-                3000L,
-                15000L,
-                false,
-                "local",
-                false
-        ));
-        when(adminMetricsService.getOfflineTransferStorageLimitBytes()).thenReturn(1024L);
         AdminSettingsUpdateRequest request = new AdminSettingsUpdateRequest(
                 new AdminSettingsUpdateRequest.SiteSection(true),
                 new AdminSettingsUpdateRequest.RegistrationSection(
@@ -102,47 +83,23 @@ class AdminMutableSettingsServiceTest {
         verify(identityAdminSummaryApi).currentInviteCode();
         verify(identityAdminSummaryApi, never()).updateInviteCode(anyString());
         verify(adminRuntimeSettingsService).update(argThat(effective ->
-                !effective.site().supported()
+                effective.site() == null
                         && !effective.registration().inviteCodeRequired()
                         && effective.registration().currentInviteCode().equals("INV-CURRENT")
                         && effective.registration().managementRoles().equals(java.util.List.of("ADMIN"))
-                        && effective.userSession().accessExpirationSeconds() == 900L
-                        && effective.userSession().refreshExpirationSeconds() == 1209600L
-                        && !effective.userSession().tokenBlacklistEnabled()
-                        && effective.userSession().tokenBlacklistTtlBufferSeconds() == 60L
+                        && effective.userSession() == null
                         && effective.transfer().offlineTransferStorageLimitBytes() == 2048L
-                        && effective.queue().backend().equals("in-memory")
-                        && effective.queue().mediaMetadataFixedDelayMs() == 3000L
-                        && effective.queue().mediaMetadataInitialDelayMs() == 15000L
-                        && !effective.appearance().supported()
-                        && effective.server().storageProvider().equals("local")
-                        && !effective.server().redisEnabled()
+                        && effective.mediaProcessing() == null
+                        && effective.queue() == null
+                        && effective.appearance() == null
+                        && effective.server() == null
                 ));
         verify(adminMetricsService).updateOfflineTransferStorageLimit(2048L);
     }
 
     @Test
     void shouldAllowRegistrationOnlyUpdateWithoutTransferPayload() {
-        when(adminRuntimeSettingsService.snapshot()).thenReturn(new AdminRuntimeSettingsService.State(
-                false,
-                true,
-                java.util.List.of("MODERATOR", "ADMIN"),
-                900L,
-                1209600L,
-                false,
-                60L,
-                true,
-                false,
-                false,
-                "in-memory",
-                3000L,
-                15000L,
-                false,
-                "local",
-                false
-        ));
         when(identityAdminSummaryApi.currentInviteCode()).thenReturn("INV-OLD");
-        when(adminMetricsService.getOfflineTransferStorageLimitBytes()).thenReturn(1024L);
         when(adminConfigSnapshotService.getSettings()).thenReturn(new AdminSettingsResponse(
                 new AdminSettingsResponse.SiteSection(false, false),
                 new AdminSettingsResponse.RegistrationSection(false, "INV-OLD", java.util.List.of("ADMIN"), true),
@@ -175,7 +132,7 @@ class AdminMutableSettingsServiceTest {
                 !effective.registration().inviteCodeRequired()
                         && effective.registration().currentInviteCode().equals("INV-OLD")
                         && effective.registration().managementRoles().equals(java.util.List.of("ADMIN"))
-                        && effective.transfer().offlineTransferStorageLimitBytes() == 1024L
+                        && effective.transfer() == null
         ));
         verify(adminMetricsService, never()).updateOfflineTransferStorageLimit(anyLong());
         verify(identityAdminSummaryApi, never()).updateInviteCode(anyString());
@@ -183,26 +140,7 @@ class AdminMutableSettingsServiceTest {
 
     @Test
     void shouldPreserveCurrentInviteCodeWhenUpdatingRegistrationSettings() {
-        when(adminRuntimeSettingsService.snapshot()).thenReturn(new AdminRuntimeSettingsService.State(
-                false,
-                true,
-                java.util.List.of("MODERATOR", "ADMIN"),
-                900L,
-                1209600L,
-                false,
-                60L,
-                true,
-                false,
-                false,
-                "in-memory",
-                3000L,
-                15000L,
-                false,
-                "local",
-                false
-        ));
         when(identityAdminSummaryApi.currentInviteCode()).thenReturn("INV-LATEST");
-        when(adminMetricsService.getOfflineTransferStorageLimitBytes()).thenReturn(1024L);
         when(adminConfigSnapshotService.getSettings()).thenReturn(new AdminSettingsResponse(
                 new AdminSettingsResponse.SiteSection(false, false),
                 new AdminSettingsResponse.RegistrationSection(false, "INV-LATEST", java.util.List.of("ADMIN"), true),

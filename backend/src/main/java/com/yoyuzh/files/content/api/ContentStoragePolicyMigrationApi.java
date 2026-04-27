@@ -10,5 +10,5 @@ public interface ContentStoragePolicyMigrationApi {
 
     ContentStoragePolicyMigrationInspection inspectVersionItemsByStoragePolicyId(Long storagePolicyId);
 
-    void reassignVersionItem(Long entityId, Long blobId, Long targetStoragePolicyId, String nextObjectKey);
+    void reassignVersionItems(Long targetStoragePolicyId, List<ContentStoragePolicyMigrationMutation> mutations);
 }

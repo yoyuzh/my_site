@@ -8,6 +8,7 @@ public record CreateShareCommand(
         String shareName,
         Boolean allowImport,
         Boolean allowDownload,
+        Boolean expireAfterConsume,
         LocalDateTime expiresAt,
         Integer maxDownloads
 ) {

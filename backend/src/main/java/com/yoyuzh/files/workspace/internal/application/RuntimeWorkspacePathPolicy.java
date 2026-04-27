@@ -11,10 +11,16 @@ import org.springframework.util.StringUtils;
 
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import java.util.function.Function;
+import java.util.stream.Collectors;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 @Service
 public final class RuntimeWorkspacePathPolicy implements WorkspacePathPolicy, RecycleRestoreTargetValidator {
+    private static final Pattern TRAILING_COUNTER_PATTERN = Pattern.compile("^(.*)\\((\\d+)\\)$");
+    private static final int AVAILABLE_NAME_RESOLUTION_LIMIT = 100;
 
     private final StoredFileRepository storedFileRepository;
     private final FileContentStorage fileContentStorage;
@@ -81,6 +87,38 @@ public final class RuntimeWorkspacePathPolicy implements WorkspacePathPolicy, Re
             throw new BusinessException(ErrorCode.INVALID_INPUT, "文件名不合法");
         }
         return cleaned;
+    }
+
+    @Override
+    public String resolveAvailableNodeName(Long userId, String path, String filename) {
+        String normalizedFilename = normalizeLeafName(filename);
+        if (!existsNodeName(userId, path, normalizedFilename)) {
+            return normalizedFilename;
+        }
+        NameParts nameParts = splitName(normalizedFilename);
+        Set<String> existingNames = storedFileRepository.findActiveFilenamesByUserIdAndPathAndFilenamePrefix(
+                userId,
+                path,
+                normalizedFilename,
+                escapeLikePrefix(nameParts.baseName()))
+                .stream()
+                .filter(existingName -> matchesResolvedName(existingName, normalizedFilename, nameParts))
+                .collect(Collectors.toSet());
+        return resolveAvailableNodeNameFromExistingNames(existingNames, nameParts);
+    }
+
+    private String resolveAvailableNodeNameFromExistingNames(Set<String> existingNames, NameParts nameParts) {
+        String baseName = nameParts.baseName();
+        int counter = nameParts.nextCounter();
+        String extension = nameParts.extension();
+        for (int attempt = 0; attempt < AVAILABLE_NAME_RESOLUTION_LIMIT; attempt++) {
+            String candidate = baseName + "(" + counter + ")" + extension;
+            if (!existingNames.contains(candidate)) {
+                return candidate;
+            }
+            counter++;
+        }
+        throw new BusinessException(ErrorCode.DUPLICATE_NAME, "同名文件过多，无法自动生成可用名称");
     }
 
     @Override
@@ -151,5 +189,41 @@ public final class RuntimeWorkspacePathPolicy implements WorkspacePathPolicy, Re
                 throw new BusinessException(ErrorCode.DUPLICATE_NAME, "原目录已存在同名文件，无法恢复");
             }
         }
+    }
+
+    private NameParts splitName(String filename) {
+        int lastDot = filename.lastIndexOf('.');
+        String stem = lastDot > 0 ? filename.substring(0, lastDot) : filename;
+        String extension = lastDot > 0 ? filename.substring(lastDot) : "";
+
+        Matcher matcher = TRAILING_COUNTER_PATTERN.matcher(stem);
+        if (matcher.matches() && StringUtils.hasText(matcher.group(1))) {
+            return new NameParts(matcher.group(1), extension, Integer.parseInt(matcher.group(2)) + 1);
+        }
+        return new NameParts(stem, extension, 1);
+    }
+
+    private boolean matchesResolvedName(String candidate, String normalizedFilename, NameParts nameParts) {
+        if (normalizedFilename.equals(candidate)) {
+            return true;
+        }
+        if (!candidate.endsWith(nameParts.extension())) {
+            return false;
+        }
+        String stem = nameParts.extension().isEmpty()
+                ? candidate
+                : candidate.substring(0, candidate.length() - nameParts.extension().length());
+        Matcher matcher = TRAILING_COUNTER_PATTERN.matcher(stem);
+        return matcher.matches() && nameParts.baseName().equals(matcher.group(1));
+    }
+
+    private String escapeLikePrefix(String value) {
+        return value
+                .replace("\\", "\\\\")
+                .replace("%", "\\%")
+                .replace("_", "\\_");
+    }
+
+    private record NameParts(String baseName, String extension, int nextCounter) {
     }
 }

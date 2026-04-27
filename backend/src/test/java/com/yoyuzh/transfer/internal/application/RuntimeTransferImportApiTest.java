@@ -27,6 +27,8 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
+import java.io.ByteArrayInputStream;
+import java.io.InputStream;
 import java.time.LocalDateTime;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -85,7 +87,7 @@ class RuntimeTransferImportApiTest {
                 "offline.txt",
                 "text/plain",
                 12L,
-                "hello offline".getBytes()
+                () -> new ByteArrayInputStream("hello offline".getBytes())
         );
         when(offlineTransferService.readReadyFile("session-1", "file-1")).thenReturn(readyFile);
         when(workspacePathPolicy.normalizeDirectoryPath("/docs")).thenReturn("/docs");
@@ -118,7 +120,7 @@ class RuntimeTransferImportApiTest {
         assertThat(response.path()).isEqualTo("/docs");
         verify(workspacePathPolicy).ensureNodeNameAvailable(7L, "/docs", "offline.txt", "同目录下文件已存在");
         verify(workspacePathPolicy).ensureDirectoryHierarchy(7L, "/docs");
-        verify(fileContentStorage).storeBlob(any(), eq("text/plain"), eq("hello offline".getBytes()));
+        verify(fileContentStorage).storeBlob(any(), eq("text/plain"), any(InputStream.class), eq(12L));
         verify(contentRegistrationApi).registerBlob(any(ContentRegistrationCommand.class));
     }
 
@@ -129,7 +131,7 @@ class RuntimeTransferImportApiTest {
                 "offline.txt",
                 "text/plain",
                 12L,
-                "hello offline".getBytes()
+                () -> new ByteArrayInputStream("hello offline".getBytes())
         );
         when(offlineTransferService.readReadyFile("session-1", "file-1")).thenReturn(readyFile);
         when(workspacePathPolicy.normalizeDirectoryPath("/docs")).thenReturn("/docs");

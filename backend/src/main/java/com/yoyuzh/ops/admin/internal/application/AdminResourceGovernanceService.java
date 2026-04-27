@@ -24,7 +24,7 @@ public class AdminResourceGovernanceService {
     @Transactional
     public void deleteShare(Long shareId) {
         SharingAdminShareSnapshot shareSnapshot = sharingApi.deleteShareAsAdmin(shareId)
-                .orElseThrow(() -> new BusinessException(ErrorCode.FILE_NOT_FOUND, "share not found"));
+                .orElseThrow(() -> new BusinessException(ErrorCode.SHARE_NOT_FOUND, "share not found"));
         Map<String, Object> details = new LinkedHashMap<>();
         details.put("token", shareSnapshot.token());
         adminAuditService.record(

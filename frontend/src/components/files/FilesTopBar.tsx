@@ -66,6 +66,8 @@ function isInputTarget(target: EventTarget | null) {
 export interface FilesTopBarProps {
   currentPath: string;
   onPathChange: (path: string) => void;
+  rootLabel?: string;
+  pathNavigationEnabled?: boolean;
   search: string;
   onSearchChange: (search: string) => void;
   onRefresh: () => void;
@@ -97,6 +99,8 @@ export interface FilesTopBarProps {
 export const FilesTopBar: React.FC<FilesTopBarProps> = ({
   currentPath,
   onPathChange,
+  rootLabel = '根目录',
+  pathNavigationEnabled = true,
   search,
   onSearchChange,
   onRefresh,
@@ -222,8 +226,8 @@ export const FilesTopBar: React.FC<FilesTopBarProps> = ({
                 <Tooltip title="返回上级">
                   <span>
                     <Button
-                      disabled={currentPath === '/'}
-                      onClick={() => onPathChange(parentDirectoryPath(currentPath))}
+                      disabled={!pathNavigationEnabled || currentPath === '/'}
+                      onClick={() => pathNavigationEnabled && onPathChange(parentDirectoryPath(currentPath))}
                       sx={{ px: 1 }}
                     >
                       <ArrowBack fontSize="small" />
@@ -259,15 +263,16 @@ export const FilesTopBar: React.FC<FilesTopBarProps> = ({
                   sx={{
                     minWidth: 'auto',
                     px: 0.5,
-                    color: currentPath === '/' ? 'primary.main' : 'text.secondary',
-                    fontWeight: currentPath === '/' ? 600 : 400,
+                    color: currentPath === '/' || !pathNavigationEnabled ? 'primary.main' : 'text.secondary',
+                    fontWeight: currentPath === '/' || !pathNavigationEnabled ? 600 : 400,
                     textTransform: 'none',
                   }}
-                  onClick={() => onPathChange('/')}
+                  onClick={() => pathNavigationEnabled && onPathChange('/')}
+                  disabled={!pathNavigationEnabled}
                 >
-                  根目录
+                  {rootLabel}
                 </Button>
-                {breadcrumbs.map((segment, index) => {
+                {pathNavigationEnabled && breadcrumbs.map((segment, index) => {
                   const targetPath = `/${breadcrumbs.slice(0, index + 1).join('/')}`;
                   return (
                     <React.Fragment key={targetPath}>

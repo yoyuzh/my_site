@@ -145,6 +145,30 @@ class FileServiceTest {
     }
 
     @Test
+    void shouldAutoRenameUploadedFileWhenSameDirectoryNameExists() {
+        User user = createUser(7L);
+        MockMultipartFile multipartFile = new MockMultipartFile(
+                "file", "notes.txt", "text/plain", "hello".getBytes());
+        when(storedFileRepository.existsByUserIdAndPathAndFilename(7L, "/docs", "notes.txt")).thenReturn(true);
+        when(storedFileRepository.findActiveFilenamesByUserIdAndPathAndFilenamePrefix(7L, "/docs", "notes.txt", "notes"))
+                .thenReturn(List.of("notes.txt"));
+        when(fileBlobRepository.save(any(FileBlob.class))).thenAnswer(invocation -> {
+            FileBlob blob = invocation.getArgument(0);
+            blob.setId(101L);
+            return blob;
+        });
+        when(storedFileRepository.save(any(StoredFile.class))).thenAnswer(invocation -> {
+            StoredFile file = invocation.getArgument(0);
+            file.setId(11L);
+            return file;
+        });
+
+        FileMetadataResponse response = fileService.upload(FileServiceTestSupport.workspaceUser(user), "/docs", multipartFile);
+
+        assertThat(response.filename()).isEqualTo("notes(1).txt");
+    }
+
+    @Test
     void shouldInferOfficeContentTypeWhenBrowserReportsPlainText() {
         User user = createUser(7L);
         MockMultipartFile multipartFile = new MockMultipartFile(
@@ -333,7 +357,6 @@ class FileServiceTest {
     @Test
     void shouldInitiateDirectUploadThroughStorage() {
         User user = createUser(7L);
-        when(storedFileRepository.existsByUserIdAndPathAndFilename(7L, "/docs", "notes.txt")).thenReturn(false);
         when(fileContentStorage.prepareBlobUpload(eq("/docs"), eq("notes.txt"), org.mockito.ArgumentMatchers.argThat((String key) -> key != null && key.startsWith("blobs/")), eq("text/plain"), eq(12L)))
                 .thenReturn(new PreparedUpload(true, "https://upload.example.com", "PUT", Map.of("Content-Type", "text/plain"), "blobs/upload-1"));
 
@@ -350,7 +373,6 @@ class FileServiceTest {
     void shouldAllowInitiatingUploadAtFiveHundredMegabytes() {
         User user = createUser(7L);
         long uploadSize = 500L * 1024 * 1024;
-        when(storedFileRepository.existsByUserIdAndPathAndFilename(7L, "/docs", "movie.zip")).thenReturn(false);
         when(fileContentStorage.prepareBlobUpload(eq("/docs"), eq("movie.zip"), org.mockito.ArgumentMatchers.argThat((String key) -> key != null && key.startsWith("blobs/")), eq("application/zip"), eq(uploadSize)))
                 .thenReturn(new PreparedUpload(true, "https://upload.example.com", "PUT", Map.of(), "blobs/upload-2"));
 
@@ -375,7 +397,6 @@ class FileServiceTest {
                 new FileStorageProperties().getMaxFileSize()
         );
         User user = createUser(7L);
-        when(storedFileRepository.existsByUserIdAndPathAndFilename(7L, "/docs", "notes.txt")).thenReturn(false);
         when(storagePolicyQuery.readDefaultPolicySnapshot()).thenReturn(new DefaultStoragePolicySnapshot(42L, 500L * 1024 * 1024, new StoragePolicyCapabilities(
                 false,
                 false,
@@ -1122,12 +1143,13 @@ class FileServiceTest {
     void shouldReadZipCompatibleArchiveForExtractTaskReuse() throws Exception {
         User user = createUser(7L);
         StoredFile archive = createFile(20L, user, "/docs", "extract.zip", createBlob(20L, "blobs/blob-20", 64L, "application/zip"));
-        when(fileContentStorage.readBlob("blobs/blob-20")).thenReturn(createZipArchive(Map.of(
+        byte[] archiveBytes = createZipArchive(Map.of(
                 "archive/", "",
                 "archive/nested/", "",
                 "archive/notes.txt", "hello",
                 "archive/nested/todo.txt", "world"
-        )));
+        ));
+        when(fileContentStorage.readBlobStream("blobs/blob-20")).thenReturn(new ByteArrayInputStream(archiveBytes));
 
         FileService.ZipCompatibleArchive zipArchive = fileService.readZipCompatibleArchive(archive);
 
@@ -1151,16 +1173,17 @@ class FileServiceTest {
         assertThat(fileEntries)
                 .containsEntry("archive/notes.txt", "hello")
                 .containsEntry("archive/nested/todo.txt", "world");
-        verify(fileContentStorage).readBlob("blobs/blob-20");
+        verify(fileContentStorage).readBlobStream("blobs/blob-20");
+        verify(fileContentStorage, never()).readBlob("blobs/blob-20");
     }
 
     @Test
     void shouldRejectZipCompatibleArchiveWithTraversalEntry() throws Exception {
         User user = createUser(7L);
         StoredFile archive = createFile(21L, user, "/docs", "extract.zip", createBlob(21L, "blobs/blob-21", 32L, "application/zip"));
-        when(fileContentStorage.readBlob("blobs/blob-21")).thenReturn(createZipArchive(Map.of(
+        when(fileContentStorage.readBlobStream("blobs/blob-21")).thenReturn(new ByteArrayInputStream(createZipArchive(Map.of(
                 "../evil.txt", "oops"
-        )));
+        ))));
 
         assertThatThrownBy(() -> fileService.readZipCompatibleArchive(archive))
                 .isInstanceOf(BusinessException.class)
@@ -1171,7 +1194,7 @@ class FileServiceTest {
     void shouldReadEmptyZipCompatibleArchiveWhenSignatureIsValid() throws Exception {
         User user = createUser(7L);
         StoredFile archive = createFile(22L, user, "/docs", "empty.zip", createBlob(22L, "blobs/blob-22", 22L, "application/zip"));
-        when(fileContentStorage.readBlob("blobs/blob-22")).thenReturn(createZipArchive(Map.of()));
+        when(fileContentStorage.readBlobStream("blobs/blob-22")).thenReturn(new ByteArrayInputStream(createZipArchive(Map.of())));
 
         FileService.ZipCompatibleArchive zipArchive = fileService.readZipCompatibleArchive(archive);
 
@@ -1183,11 +1206,34 @@ class FileServiceTest {
     void shouldRejectZipCompatibleArchiveWhenNoEntryAndSignatureIsInvalid() {
         User user = createUser(7L);
         StoredFile archive = createFile(25L, user, "/docs", "broken.zip", createBlob(25L, "blobs/blob-25", 9L, "application/zip"));
-        when(fileContentStorage.readBlob("blobs/blob-25")).thenReturn("not-a-zip".getBytes(StandardCharsets.UTF_8));
+        when(fileContentStorage.readBlobStream("blobs/blob-25")).thenReturn(new ByteArrayInputStream("not-a-zip".getBytes(StandardCharsets.UTF_8)));
 
         assertThatThrownBy(() -> fileService.readZipCompatibleArchive(archive))
                 .isInstanceOf(BusinessException.class)
                 .hasMessage("压缩包读取失败");
+    }
+
+    @Test
+    void shouldRejectZipCompatibleArchiveWhenInflatedBytesExceedConfiguredLimit() throws Exception {
+        FileStorageProperties properties = new FileStorageProperties();
+        properties.setMaxFileSize(32L);
+        fileService = FileServiceTestSupport.create(
+                storedFileRepository,
+                fileBlobRepository,
+                fileContentStorage,
+                adminMetricsService,
+                toDownloadOptions(properties),
+                properties.getMaxFileSize()
+        );
+        User user = createUser(7L);
+        StoredFile archive = createFile(26L, user, "/docs", "oversized.zip", createBlob(26L, "blobs/blob-26", 10L, "application/zip"));
+        when(fileContentStorage.readBlobStream("blobs/blob-26")).thenReturn(new ByteArrayInputStream(createZipArchive(Map.of(
+                "notes.txt", "abcdefghijklmnopqrstuvwxyz0123456789"
+        ))));
+
+        assertThatThrownBy(() -> fileService.readZipCompatibleArchive(archive))
+                .isInstanceOf(BusinessException.class)
+                .hasMessage("压缩包内容不合法");
     }
 
     @Test

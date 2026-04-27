@@ -52,9 +52,11 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.io.BufferedInputStream;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.io.InputStream;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.time.Clock;
@@ -81,6 +83,9 @@ import javax.crypto.spec.SecretKeySpec;
 public class FileService implements WorkspaceBootstrapApi, WorkspaceArchiveApi {
     private static final List<String> DEFAULT_DIRECTORIES = List.of("下载", "文档", "图片");
     private static final long RECYCLE_BIN_RETENTION_DAYS = 10L;
+    private static final long DEFAULT_MAX_ZIP_EXTRACT_BYTES = 500L * 1024 * 1024L;
+    private static final long MAX_ZIP_INFLATION_RATIO = 100L;
+    private static final int ZIP_READ_BUFFER_SIZE = 8192;
     private static final String SECURE_LINK_SIGNATURE_ALGORITHM = "HmacSHA256";
     private static final Map<String, String> CONTENT_TYPE_BY_EXTENSION = Map.ofEntries(
             Map.entry("png", "image/png"),
@@ -775,14 +780,19 @@ public class FileService implements WorkspaceBootstrapApi, WorkspaceArchiveApi {
     }
 
     public ZipCompatibleArchive readZipCompatibleArchive(StoredFile source) {
-        byte[] archiveBytes = fileContentStorage.readBlob(
-                getRequiredBlob(source).objectKey()
-        );
-        try (ZipInputStream zipInputStream = new ZipInputStream(
-                new ByteArrayInputStream(archiveBytes),
-                StandardCharsets.UTF_8)) {
+        long compressedSize = source.getSize() == null ? 0L : Math.max(0L, source.getSize());
+        byte[] signature = new byte[4];
+        try (BufferedInputStream bufferedStream = new BufferedInputStream(
+                fileContentStorage.readBlobStream(getRequiredBlob(source).objectKey())
+        )) {
+            bufferedStream.mark(signature.length);
+            int signatureBytes = bufferedStream.read(signature, 0, signature.length);
+            bufferedStream.reset();
+            try (ZipInputStream zipInputStream = new ZipInputStream(bufferedStream, StandardCharsets.UTF_8)) {
             List<ZipCompatibleArchiveEntry> entries = new ArrayList<>();
             Map<String, Boolean> seenEntries = new HashMap<>();
+            long totalUncompressedBytes = 0L;
+            long maxInflatedBytes = resolveMaxZipInflatedBytes(compressedSize);
             ZipEntry entry = zipInputStream.getNextEntry();
             while (entry != null) {
                 String relativePath = normalizeZipCompatibleEntryPath(entry.getName());
@@ -792,18 +802,23 @@ public class FileService implements WorkspaceBootstrapApi, WorkspaceArchiveApi {
                     if (existingType != null) {
                         throw new BusinessException(ErrorCode.UNKNOWN, "压缩包内容不合法");
                     }
+                    byte[] content = directory
+                            ? new byte[0]
+                            : readZipEntryContent(zipInputStream, maxInflatedBytes, totalUncompressedBytes);
+                    totalUncompressedBytes += content.length;
                     entries.add(new ZipCompatibleArchiveEntry(
                             relativePath,
                             directory,
-                            directory ? new byte[0] : zipInputStream.readAllBytes()
+                            content
                     ));
                 }
                 entry = zipInputStream.getNextEntry();
             }
-            if (entries.isEmpty() && !hasZipCompatibleSignature(archiveBytes)) {
+            if (entries.isEmpty() && !hasZipCompatibleSignature(signature, signatureBytes)) {
                 throw new BusinessException(ErrorCode.UNKNOWN, "压缩包读取失败");
             }
             return new ZipCompatibleArchive(entries, detectCommonRootDirectoryName(entries));
+            }
         } catch (BusinessException ex) {
             throw ex;
         } catch (IOException ex) {
@@ -1241,14 +1256,43 @@ public class FileService implements WorkspaceBootstrapApi, WorkspaceArchiveApi {
         return candidate;
     }
 
-    private boolean hasZipCompatibleSignature(byte[] archiveBytes) {
-        if (archiveBytes == null || archiveBytes.length < 4) {
+    private boolean hasZipCompatibleSignature(byte[] archiveBytes, int bytesRead) {
+        if (archiveBytes == null || bytesRead < 4) {
             return false;
         }
         return archiveBytes[0] == 'P'
                 && archiveBytes[1] == 'K'
                 && (archiveBytes[2] == 3 || archiveBytes[2] == 5 || archiveBytes[2] == 7)
                 && (archiveBytes[3] == 4 || archiveBytes[3] == 6 || archiveBytes[3] == 8);
+    }
+
+    private byte[] readZipEntryContent(ZipInputStream zipInputStream,
+                                       long maxInflatedBytes,
+                                       long currentTotalBytes) throws IOException {
+        try (ByteArrayOutputStream outputStream = new ByteArrayOutputStream()) {
+            byte[] buffer = new byte[ZIP_READ_BUFFER_SIZE];
+            int read;
+            long entryBytes = 0L;
+            while ((read = zipInputStream.read(buffer)) != -1) {
+                entryBytes += read;
+                if (currentTotalBytes + entryBytes > maxInflatedBytes) {
+                    throw new BusinessException(ErrorCode.UNKNOWN, "压缩包内容不合法");
+                }
+                outputStream.write(buffer, 0, read);
+            }
+            return outputStream.toByteArray();
+        }
+    }
+
+    private long resolveMaxZipInflatedBytes(long compressedSize) {
+        long configuredLimit = maxFileSize > 0 ? maxFileSize : DEFAULT_MAX_ZIP_EXTRACT_BYTES;
+        long ratioLimit;
+        if (compressedSize <= 0L || compressedSize > Long.MAX_VALUE / MAX_ZIP_INFLATION_RATIO) {
+            ratioLimit = configuredLimit;
+        } else {
+            ratioLimit = compressedSize * MAX_ZIP_INFLATION_RATIO;
+        }
+        return Math.max(1L, Math.min(configuredLimit, ratioLimit));
     }
 
     public ArchiveSourceSummary summarizeArchiveSource(StoredFile source) {

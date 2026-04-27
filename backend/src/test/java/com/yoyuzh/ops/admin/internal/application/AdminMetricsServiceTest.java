@@ -21,6 +21,9 @@ import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -92,15 +95,8 @@ class AdminMetricsServiceTest {
 
     @Test
     void shouldStartNewDayRequestCountAtOneWhenIncrementingPreviousDayState() {
-        AdminMetricsState state = new AdminMetricsState();
-        state.setId(1L);
-        state.setRequestCount(42L);
-        state.setRequestCountDate(LocalDate.now().minusDays(1));
-        state.setOfflineTransferStorageLimitBytes(20L * 1024 * 1024 * 1024);
-
-        when(adminMetricsStateRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(state));
-        when(adminMetricsStateRepository.save(any(AdminMetricsState.class))).thenAnswer(invocation -> invocation.getArgument(0));
-        when(adminRequestTimelinePointRepository.findByMetricDateAndHourForUpdate(LocalDate.now(), LocalTime.now().getHour()))
+        when(adminMetricsStateRepository.incrementRequestCount(eq(1L), eq(LocalDate.now()), any())).thenReturn(1);
+        when(adminRequestTimelinePointRepository.findByMetricDateAndHourForUpdate(eq(LocalDate.now()), eq(LocalTime.now().getHour())))
                 .thenReturn(Optional.empty());
         when(adminRequestTimelinePointRepository.save(any(AdminRequestTimelinePointEntity.class)))
                 .thenAnswer(invocation -> invocation.getArgument(0));
@@ -109,10 +105,18 @@ class AdminMetricsServiceTest {
 
         adminMetricsService.incrementRequestCount();
 
-        assertThat(state.getRequestCount()).isEqualTo(1L);
-        assertThat(state.getRequestCountDate()).isEqualTo(LocalDate.now());
-        verify(adminMetricsStateRepository).save(state);
+        verify(adminMetricsStateRepository).incrementRequestCount(eq(1L), eq(LocalDate.now()), any());
         verify(adminRequestTimelinePointRepository).save(any(AdminRequestTimelinePointEntity.class));
+    }
+
+    @Test
+    void shouldIncrementDownloadTrafficAtomically() {
+        when(adminMetricsStateRepository.incrementDownloadTrafficBytes(eq(1L), eq(1024L), any())).thenReturn(1);
+
+        adminMetricsService.recordDownloadTraffic(1024L);
+
+        verify(adminMetricsStateRepository).incrementDownloadTrafficBytes(eq(1L), eq(1024L), any());
+        verify(adminMetricsStateRepository, never()).findByIdForUpdate(1L);
     }
 
     @Test

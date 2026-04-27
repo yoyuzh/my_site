@@ -12,11 +12,15 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 
+import java.util.Locale;
+import java.util.Set;
+
 @Service
 @RequiredArgsConstructor
 public class RuntimeFileSearchApi implements FileSearchApi {
 
     private static final int MAX_PAGE_SIZE = 100;
+    private static final Set<String> SUPPORTED_CATEGORIES = Set.of("image", "video", "audio", "document");
 
     private final WorkspaceFileSearchApi workspaceFileSearchApi;
 
@@ -25,6 +29,7 @@ public class RuntimeFileSearchApi implements FileSearchApi {
         validateQuery(query);
         return workspaceFileSearchApi.search(userId, new WorkspaceFileSearchQuery(
                 normalizeName(query.name()),
+                normalizeCategory(query.category()),
                 query.directory(),
                 query.sizeGte(),
                 query.sizeLte(),
@@ -63,6 +68,18 @@ public class RuntimeFileSearchApi implements FileSearchApi {
 
     private String normalizeName(String name) {
         return StringUtils.hasText(name) ? name.trim() : null;
+    }
+
+    private String normalizeCategory(String category) {
+        if (!StringUtils.hasText(category)) {
+            return null;
+        }
+
+        String normalized = category.trim().toLowerCase(Locale.ROOT);
+        if (!SUPPORTED_CATEGORIES.contains(normalized)) {
+            throw new BusinessException(ErrorCode.INVALID_INPUT, "分类筛选只支持 image、video、audio 或 document");
+        }
+        return normalized;
     }
 
 }

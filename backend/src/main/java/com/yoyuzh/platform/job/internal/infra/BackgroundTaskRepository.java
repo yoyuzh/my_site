@@ -66,7 +66,7 @@ public interface BackgroundTaskRepository extends JpaRepository<BackgroundTask, 
                                              @Param("now") LocalDateTime now,
                                              Pageable pageable);
 
-    @Modifying
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
     @Query("""
             update BackgroundTask task
             set task.status = :runningStatus,
@@ -98,7 +98,7 @@ public interface BackgroundTaskRepository extends JpaRepository<BackgroundTask, 
                                          @Param("now") LocalDateTime now,
                                          Pageable pageable);
 
-    @Modifying
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
     @Query("""
             update BackgroundTask task
             set task.status = :queuedStatus,
@@ -119,7 +119,7 @@ public interface BackgroundTaskRepository extends JpaRepository<BackgroundTask, 
                                   @Param("now") LocalDateTime now,
                                   @Param("updatedAt") LocalDateTime updatedAt);
 
-    @Modifying
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
     @Query("""
             update BackgroundTask task
             set task.leaseExpiresAt = :leaseExpiresAt,
@@ -135,6 +135,58 @@ public interface BackgroundTaskRepository extends JpaRepository<BackgroundTask, 
                                 @Param("leaseExpiresAt") LocalDateTime leaseExpiresAt,
                                 @Param("heartbeatAt") LocalDateTime heartbeatAt,
                                 @Param("updatedAt") LocalDateTime updatedAt);
+
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query("""
+            update BackgroundTask task
+            set task.status = :cancelledStatus,
+                task.nextRunAt = null,
+                task.leaseOwner = null,
+                task.leaseExpiresAt = null,
+                task.heartbeatAt = null,
+                task.publicStateJson = :publicStateJson,
+                task.finishedAt = :finishedAt,
+                task.errorMessage = null,
+                task.updatedAt = :updatedAt
+            where task.id = :id
+              and task.userId = :userId
+              and task.updatedAt = :expectedUpdatedAt
+              and task.status in :cancellableStatuses
+            """)
+    int cancelOwnedTask(@Param("id") Long id,
+                        @Param("userId") Long userId,
+                        @Param("expectedUpdatedAt") LocalDateTime expectedUpdatedAt,
+                        @Param("cancellableStatuses") Collection<BackgroundTaskStatus> cancellableStatuses,
+                        @Param("cancelledStatus") BackgroundTaskStatus cancelledStatus,
+                        @Param("publicStateJson") String publicStateJson,
+                        @Param("finishedAt") LocalDateTime finishedAt,
+                        @Param("updatedAt") LocalDateTime updatedAt);
+
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query("""
+            update BackgroundTask task
+            set task.status = :queuedStatus,
+                task.attemptCount = 0,
+                task.nextRunAt = null,
+                task.leaseOwner = null,
+                task.leaseExpiresAt = null,
+                task.heartbeatAt = null,
+                task.publicStateJson = :publicStateJson,
+                task.finishedAt = null,
+                task.errorMessage = null,
+                task.updatedAt = :updatedAt
+            where task.id = :id
+              and task.userId = :userId
+              and task.updatedAt = :expectedUpdatedAt
+              and task.status = :failedStatus
+            """)
+    int retryOwnedTask(@Param("id") Long id,
+                       @Param("userId") Long userId,
+                       @Param("expectedUpdatedAt") LocalDateTime expectedUpdatedAt,
+                       @Param("failedStatus") BackgroundTaskStatus failedStatus,
+                       @Param("queuedStatus") BackgroundTaskStatus queuedStatus,
+                       @Param("publicStateJson") String publicStateJson,
+                       @Param("updatedAt") LocalDateTime updatedAt);
 
     @Query("""
             select count(task)

@@ -8,7 +8,6 @@ import com.yoyuzh.shared.kernel.ApiResponse;
 import com.yoyuzh.ops.admin.api.AdminSettingsGovernanceApi;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
-import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
@@ -20,7 +19,6 @@ import org.springframework.web.bind.annotation.RestController;
 @RestController
 @RequestMapping("/api/admin")
 @RequiredArgsConstructor
-@PreAuthorize("@adminAccessEvaluator.isAdmin(authentication)")
 public class AdminSettingsController {
 
     private final AdminSettingsGovernanceApi adminSettingsGovernanceApi;

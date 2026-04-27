@@ -3,6 +3,7 @@ package com.yoyuzh.transfer.internal.web;
 import com.yoyuzh.PortalBackendApplication;
 import com.yoyuzh.identity.access.internal.domain.User;
 import com.yoyuzh.identity.access.internal.infra.UserRepository;
+import com.yoyuzh.transfer.internal.infra.RemoteDownloadTaskRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -49,9 +50,13 @@ class TransferControllerIntegrationTest {
     @Autowired
     private UserRepository userRepository;
 
+    @Autowired
+    private RemoteDownloadTaskRepository remoteDownloadTaskRepository;
+
     @BeforeEach
     void setUp() {
       userRepository.deleteAll();
+      remoteDownloadTaskRepository.deleteAll();
 
       User portalUser = new User();
       portalUser.setUsername("alice");
@@ -142,6 +147,31 @@ class TransferControllerIntegrationTest {
 
         mockMvc.perform(post("/api/transfer/sessions/{sessionId}/join", "missing-session"))
                 .andExpect(status().isNotFound());
+    }
+
+    @Test
+    void shouldRequireAuthenticationForRemoteDownloadCreation() throws Exception {
+        mockMvc.perform(multipart("/api/transfer/remote-downloads")
+                        .param("sourceType", "HTTP")
+                        .param("sourceValue", "https://example.com/demo.zip")
+                        .param("targetPath", "/downloads"))
+                .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    @WithMockUser(username = "alice")
+    void shouldCreateRemoteDownloadTask() throws Exception {
+        mockMvc.perform(multipart("/api/transfer/remote-downloads")
+                        .param("sourceType", "HTTP")
+                        .param("sourceValue", "https://example.com/demo.zip")
+                        .param("targetPath", "/downloads"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(0))
+                .andExpect(jsonPath("$.data.status").value("PENDING"))
+                .andExpect(jsonPath("$.data.engineType").value("ARIA2"))
+                .andExpect(jsonPath("$.data.backgroundTaskId").isNumber());
+
+        assertThat(remoteDownloadTaskRepository.count()).isEqualTo(1L);
     }
 
     @Test

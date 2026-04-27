@@ -26,7 +26,7 @@ public class OfflineTransferSession {
     @Column(name = "session_id", nullable = false, length = 64)
     private String sessionId;
 
-    @Column(name = "pickup_code", nullable = false, unique = true, length = 6)
+    @Column(name = "pickup_code", nullable = false, unique = true, length = 8)
     private String pickupCode;
 
     @Column(name = "sender_user_id", nullable = false)

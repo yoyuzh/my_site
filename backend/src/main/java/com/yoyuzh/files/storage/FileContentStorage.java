@@ -2,6 +2,10 @@ package com.yoyuzh.files.storage;
 
 import org.springframework.web.multipart.MultipartFile;
 
+import java.io.ByteArrayInputStream;
+import java.io.IOException;
+import java.io.InputStream;
+
 public interface FileContentStorage {
 
     PreparedUpload prepareUpload(Long userId, String path, String storageName, String contentType, long size);
@@ -47,7 +51,20 @@ public interface FileContentStorage {
 
     void storeBlob(String objectKey, String contentType, byte[] content);
 
+    default void storeBlob(String objectKey, String contentType, InputStream content, long size) {
+        try {
+            // Storage adapters should override this to stream large blobs instead of buffering them fully in memory.
+            storeBlob(objectKey, contentType, content.readAllBytes());
+        } catch (IOException ex) {
+            throw new IllegalStateException("Failed to read blob content stream", ex);
+        }
+    }
+
     byte[] readBlob(String objectKey);
+
+    default InputStream readBlobStream(String objectKey) {
+        return new ByteArrayInputStream(readBlob(objectKey));
+    }
 
     void deleteBlob(String objectKey);
 
@@ -80,6 +97,10 @@ public interface FileContentStorage {
     void storeTransferFile(String sessionId, String storageName, String contentType, byte[] content);
 
     byte[] readTransferFile(String sessionId, String storageName);
+
+    default InputStream readTransferFileStream(String sessionId, String storageName) {
+        return new ByteArrayInputStream(readTransferFile(sessionId, storageName));
+    }
 
     void deleteTransferFile(String sessionId, String storageName);
 

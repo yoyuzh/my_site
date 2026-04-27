@@ -7,6 +7,7 @@ import com.yoyuzh.files.content.api.ContentPrimaryEntityRelationCommand;
 import com.yoyuzh.files.content.api.ContentRegistrationApi;
 import com.yoyuzh.files.content.api.ContentRegistrationCommand;
 import com.yoyuzh.files.content.api.RegisteredContentFile;
+import com.yoyuzh.files.workspace.api.WorkspacePathPolicy;
 import com.yoyuzh.files.workspace.internal.domain.StoredFile;
 import com.yoyuzh.files.workspace.internal.infra.FileListDirectoryCacheService;
 import com.yoyuzh.files.workspace.internal.infra.StoredFileRepository;
@@ -19,26 +20,47 @@ public final class RuntimeWorkspaceContentRegistrationApi implements ContentRegi
     private final StoredFileRepository storedFileRepository;
     private final ContentAssetApi contentAssetApi;
     private final FileListDirectoryCacheService fileListDirectoryCacheService;
+    private final WorkspacePathPolicy workspacePathPolicy;
 
     public RuntimeWorkspaceContentRegistrationApi(StoredFileRepository storedFileRepository,
                                                   ContentAssetApi contentAssetApi) {
-        this(storedFileRepository, contentAssetApi, FileListDirectoryCacheService.noOp());
+        this(storedFileRepository, contentAssetApi, FileListDirectoryCacheService.noOp(), new RuntimeWorkspacePathPolicy(storedFileRepository, null));
+    }
+
+    public RuntimeWorkspaceContentRegistrationApi(StoredFileRepository storedFileRepository,
+                                                  ContentAssetApi contentAssetApi,
+                                                  FileListDirectoryCacheService fileListDirectoryCacheService) {
+        this(storedFileRepository, contentAssetApi, fileListDirectoryCacheService, new RuntimeWorkspacePathPolicy(storedFileRepository, null));
     }
 
     @Autowired
     public RuntimeWorkspaceContentRegistrationApi(StoredFileRepository storedFileRepository,
                                                   ContentAssetApi contentAssetApi,
-                                                  FileListDirectoryCacheService fileListDirectoryCacheService) {
+                                                  FileListDirectoryCacheService fileListDirectoryCacheService,
+                                                  WorkspacePathPolicy workspacePathPolicy) {
         this.storedFileRepository = storedFileRepository;
         this.contentAssetApi = contentAssetApi;
         this.fileListDirectoryCacheService = fileListDirectoryCacheService == null
                 ? FileListDirectoryCacheService.noOp()
                 : fileListDirectoryCacheService;
+        this.workspacePathPolicy = workspacePathPolicy;
     }
 
     @Override
     public RegisteredContentFile registerBlob(ContentRegistrationCommand command) {
-        return persistBlobBackedFile(command);
+        String resolvedFilename = workspacePathPolicy.resolveAvailableNodeName(
+                command.userId(),
+                command.normalizedPath(),
+                command.filename()
+        );
+        return persistBlobBackedFile(new ContentRegistrationCommand(
+                command.userId(),
+                command.normalizedPath(),
+                resolvedFilename,
+                command.contentType(),
+                command.size(),
+                command.blob()
+        ));
     }
 
     @Override

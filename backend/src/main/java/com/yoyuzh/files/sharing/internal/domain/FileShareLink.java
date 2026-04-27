@@ -14,7 +14,8 @@ import java.time.LocalDateTime;
 @Entity
 @Table(name = "portal_file_share_link", indexes = {
         @Index(name = "uk_file_share_token", columnList = "token", unique = true),
-        @Index(name = "idx_file_share_created_at", columnList = "created_at")
+        @Index(name = "idx_file_share_created_at", columnList = "created_at"),
+        @Index(name = "idx_file_share_cancelled_at", columnList = "cancelled_at")
 })
 public class FileShareLink {
 
@@ -40,6 +41,12 @@ public class FileShareLink {
     @Column(name = "expires_at")
     private LocalDateTime expiresAt;
 
+    @Column(name = "consumed_at")
+    private LocalDateTime consumedAt;
+
+    @Column(name = "cancelled_at")
+    private LocalDateTime cancelledAt;
+
     @Column(name = "max_downloads")
     private Integer maxDownloads;
 
@@ -54,6 +61,9 @@ public class FileShareLink {
 
     @Column(name = "allow_download")
     private Boolean allowDownload;
+
+    @Column(name = "expire_after_consume")
+    private Boolean expireAfterConsume;
 
     @Column(name = "share_name", length = 255)
     private String shareName;
@@ -75,6 +85,9 @@ public class FileShareLink {
         }
         if (allowDownload == null) {
             allowDownload = true;
+        }
+        if (expireAfterConsume == null) {
+            expireAfterConsume = false;
         }
     }
 
@@ -134,6 +147,22 @@ public class FileShareLink {
         this.expiresAt = expiresAt;
     }
 
+    public LocalDateTime getConsumedAt() {
+        return consumedAt;
+    }
+
+    public void setConsumedAt(LocalDateTime consumedAt) {
+        this.consumedAt = consumedAt;
+    }
+
+    public LocalDateTime getCancelledAt() {
+        return cancelledAt;
+    }
+
+    public void setCancelledAt(LocalDateTime cancelledAt) {
+        this.cancelledAt = cancelledAt;
+    }
+
     public Integer getMaxDownloads() {
         return maxDownloads;
     }
@@ -174,6 +203,14 @@ public class FileShareLink {
         this.allowDownload = allowDownload;
     }
 
+    public Boolean getExpireAfterConsume() {
+        return expireAfterConsume;
+    }
+
+    public void setExpireAfterConsume(Boolean expireAfterConsume) {
+        this.expireAfterConsume = expireAfterConsume;
+    }
+
     public String getShareName() {
         return shareName;
     }
@@ -202,6 +239,16 @@ public class FileShareLink {
         downloadCount = getDownloadCountOrZero() + 1;
     }
 
+    public void markConsumed(LocalDateTime consumedAt) {
+        this.consumedAt = consumedAt;
+    }
+
+    public void cancel(LocalDateTime cancelledAt) {
+        if (this.cancelledAt == null) {
+            this.cancelledAt = cancelledAt;
+        }
+    }
+
     public boolean isDownloadLimitReached() {
         return maxDownloads != null && getDownloadCountOrZero() >= maxDownloads;
     }
@@ -212,6 +259,18 @@ public class FileShareLink {
 
     public long getViewCountOrZero() {
         return viewCount == null ? 0L : viewCount;
+    }
+
+    public boolean isExpireAfterConsumeEnabled() {
+        return expireAfterConsume != null && expireAfterConsume;
+    }
+
+    public boolean isConsumed() {
+        return consumedAt != null;
+    }
+
+    public boolean isCancelled() {
+        return cancelledAt != null;
     }
 
     public String getShareNameOrDefault() {
