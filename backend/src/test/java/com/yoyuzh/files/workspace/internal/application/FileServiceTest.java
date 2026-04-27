@@ -27,6 +27,8 @@ import com.yoyuzh.files.workspace.api.DownloadUrlResponse;
 import com.yoyuzh.files.workspace.api.FileMetadataResponse;
 import com.yoyuzh.files.workspace.api.WorkspaceDownloadOptions;
 import com.yoyuzh.files.workspace.api.WorkspaceDownloadResult;
+import com.yoyuzh.files.workspace.api.WorkspaceZipArchive;
+import com.yoyuzh.files.workspace.api.WorkspaceZipArchiveEntry;
 import com.yoyuzh.platform.storage.internal.infra.FileStorageProperties;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -1153,11 +1155,11 @@ class FileServiceTest {
         ));
         when(fileContentStorage.readBlobStream("blobs/blob-20")).thenReturn(new ByteArrayInputStream(archiveBytes));
 
-        FileService.ZipCompatibleArchive zipArchive = fileService.readZipCompatibleArchive(archive);
+        WorkspaceZipArchive zipArchive = fileService.readZipCompatibleArchive(archive);
 
         assertThat(zipArchive.commonRootDirectoryName()).isEqualTo("archive");
         assertThat(zipArchive.entries())
-                .extracting(FileService.ZipCompatibleArchiveEntry::relativePath, FileService.ZipCompatibleArchiveEntry::directory)
+                .extracting(WorkspaceZipArchiveEntry::relativePath, WorkspaceZipArchiveEntry::directory)
                 .containsExactlyInAnyOrder(
                         org.assertj.core.groups.Tuple.tuple("archive", true),
                         org.assertj.core.groups.Tuple.tuple("archive/nested", true),
@@ -1167,7 +1169,7 @@ class FileServiceTest {
         Map<String, String> fileEntries = zipArchive.entries().stream()
                 .filter(entry -> !entry.directory())
                 .collect(java.util.stream.Collectors.toMap(
-                        FileService.ZipCompatibleArchiveEntry::relativePath,
+                        WorkspaceZipArchiveEntry::relativePath,
                         entry -> new String(entry.content(), StandardCharsets.UTF_8),
                         (left, right) -> left,
                         LinkedHashMap::new
@@ -1199,7 +1201,7 @@ class FileServiceTest {
         StoredFile archive = createFile(22L, user, "/docs", "empty.zip", createBlob(22L, "blobs/blob-22", 22L, "application/zip"));
         when(fileContentStorage.readBlobStream("blobs/blob-22")).thenReturn(new ByteArrayInputStream(createZipArchive(Map.of())));
 
-        FileService.ZipCompatibleArchive zipArchive = fileService.readZipCompatibleArchive(archive);
+        WorkspaceZipArchive zipArchive = fileService.readZipCompatibleArchive(archive);
 
         assertThat(zipArchive.entries()).isEmpty();
         assertThat(zipArchive.commonRootDirectoryName()).isNull();

@@ -585,7 +585,6 @@ class Task8OpsAdminArchitectureTest {
         assertThat(classes.get("com.yoyuzh.ops.admin.internal.web.AdminTaskController")).isNotNull();
         assertThat(classes.get("com.yoyuzh.ops.admin.internal.web.AdminStoragePolicyController")).isNotNull();
         assertThat(classes.get("com.yoyuzh.ops.admin.internal.web.AdminAccessEvaluator")).isNotNull();
-        assertThat(classes.get("com.yoyuzh.ops.admin.internal.web.ApiRequestMetricsFilter")).isNotNull();
 
         assertThat(classes.stream().map(JavaClass::getFullName))
                 .doesNotContain(

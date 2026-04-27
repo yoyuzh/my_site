@@ -76,9 +76,11 @@ class Task9BootSharedInfraArchitectureTest {
         assertThat(classes.get("com.yoyuzh.boot.security.AuthTokenInvalidationService")).isNotNull();
         assertThat(classes.get("com.yoyuzh.boot.security.NoOpAuthTokenInvalidationService")).isNotNull();
         assertThat(classes.get("com.yoyuzh.boot.security.CustomUserDetailsService")).isNotNull();
+        assertThat(classes.get("com.yoyuzh.boot.security.ApiRequestMetricsFilter")).isNotNull();
 
         assertThat(classes.stream().map(JavaClass::getFullName))
                 .doesNotContain(
+                        "com.yoyuzh.admin.ApiRequestMetricsFilter",
                         "com.yoyuzh.auth.JwtTokenProvider",
                         "com.yoyuzh.auth.AuthTokenInvalidationService",
                         "com.yoyuzh.auth.NoOpAuthTokenInvalidationService",

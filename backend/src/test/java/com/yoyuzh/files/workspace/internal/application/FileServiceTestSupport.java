@@ -180,6 +180,16 @@ final class FileServiceTestSupport {
                 null,
                 FileListDirectoryCacheService.noOp()
         );
+        WorkspaceArchiveService workspaceArchiveService = new WorkspaceArchiveService(
+                storedFileRepository,
+                fileContentStorage,
+                contentBlobLifecycleApi,
+                workspaceNodeRulesService,
+                workspaceDirectoryApi,
+                externalImportRulesService,
+                workspaceFileIngressService,
+                workspaceFileActivityService
+        );
         return new FileService(
                 storedFileRepository,
                 fileContentStorage,
@@ -195,6 +205,7 @@ final class FileServiceTestSupport {
                 FileListDirectoryCacheService.noOp(),
                 workspaceFileIngressService,
                 workspaceFileActivityService,
+                workspaceArchiveService,
                 DistributedLockGateway.noOp(),
                 maxFileSize,
                 clock
