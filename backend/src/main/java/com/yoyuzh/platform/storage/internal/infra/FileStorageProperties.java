@@ -6,7 +6,10 @@ import org.springframework.stereotype.Component;
 
 import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
+import java.nio.ByteBuffer;
+import java.nio.CharBuffer;
 import java.nio.charset.StandardCharsets;
+import java.util.Arrays;
 
 @Component
 @ConfigurationProperties(prefix = "app.storage")
@@ -58,8 +61,7 @@ public class FileStorageProperties implements StorageRuntimeProperties {
         if (target == null) {
             throw new IllegalArgumentException("target properties must not be null");
         }
-        target.getS3().setApiAccessKey(s3.apiAccessKey);
-        target.getS3().setApiSecretKey(s3.apiSecretKey);
+        target.getS3().replaceApiCredentials(s3.copyApiAccessKey(), s3.copyApiSecretKey());
     }
 
     public static class Local implements StorageRuntimeProperties.Local {
@@ -76,8 +78,10 @@ public class FileStorageProperties implements StorageRuntimeProperties {
 
     public static class S3 implements StorageRuntimeProperties.S3 {
         private String apiBaseUrl = "https://api.dogecloud.com";
-        private String apiAccessKey;
-        private String apiSecretKey;
+        // Keep credentials in char[] so callers can explicitly zero them after use,
+        // which reduces their lifetime in memory and lowers heap-dump exposure risk.
+        private char[] apiAccessKey = new char[0];
+        private char[] apiSecretKey = new char[0];
         private String scope;
         private int ttlSeconds = 3600;
         private String region = "automatic";
@@ -95,11 +99,11 @@ public class FileStorageProperties implements StorageRuntimeProperties {
         }
 
         public void setApiAccessKey(String apiAccessKey) {
-            this.apiAccessKey = apiAccessKey;
+            this.apiAccessKey = replaceSecret(this.apiAccessKey, apiAccessKey);
         }
 
         public void setApiSecretKey(String apiSecretKey) {
-            this.apiSecretKey = apiSecretKey;
+            this.apiSecretKey = replaceSecret(this.apiSecretKey, apiSecretKey);
         }
 
         public String getScope() {
@@ -160,10 +164,7 @@ public class FileStorageProperties implements StorageRuntimeProperties {
 
         @Override
         public boolean hasApiCredentials() {
-            return apiAccessKey != null
-                    && !apiAccessKey.isBlank()
-                    && apiSecretKey != null
-                    && !apiSecretKey.isBlank();
+            return hasText(apiAccessKey) && hasText(apiSecretKey);
         }
 
         @Override
@@ -171,13 +172,27 @@ public class FileStorageProperties implements StorageRuntimeProperties {
             if (!hasApiCredentials()) {
                 throw new IllegalStateException("S3 API credentials are not configured");
             }
-            return "TOKEN " + apiAccessKey + ":" + hmacSha1Hex(apiSecretKey, signTarget);
+            return "TOKEN " + new String(apiAccessKey) + ":" + hmacSha1Hex(apiSecretKey, signTarget);
         }
 
-        private String hmacSha1Hex(String secret, String content) {
+        private void replaceApiCredentials(char[] accessKey, char[] secretKey) {
+            apiAccessKey = replaceSecret(apiAccessKey, accessKey);
+            apiSecretKey = replaceSecret(apiSecretKey, secretKey);
+        }
+
+        private char[] copyApiAccessKey() {
+            return Arrays.copyOf(apiAccessKey, apiAccessKey.length);
+        }
+
+        private char[] copyApiSecretKey() {
+            return Arrays.copyOf(apiSecretKey, apiSecretKey.length);
+        }
+
+        private String hmacSha1Hex(char[] secret, String content) {
+            byte[] secretBytes = toUtf8(secret);
             try {
                 Mac mac = Mac.getInstance("HmacSHA1");
-                mac.init(new SecretKeySpec(secret.getBytes(StandardCharsets.UTF_8), "HmacSHA1"));
+                mac.init(new SecretKeySpec(secretBytes, "HmacSHA1"));
                 byte[] digest = mac.doFinal(content.getBytes(StandardCharsets.UTF_8));
                 StringBuilder builder = new StringBuilder(digest.length * 2);
                 for (byte current : digest) {
@@ -186,7 +201,39 @@ public class FileStorageProperties implements StorageRuntimeProperties {
                 return builder.toString();
             } catch (Exception ex) {
                 throw new IllegalStateException("生成多吉云 API 签名失败", ex);
+            } finally {
+                Arrays.fill(secretBytes, (byte) 0);
             }
+        }
+
+        private static char[] replaceSecret(char[] current, String updated) {
+            return replaceSecret(current, updated == null ? new char[0] : updated.toCharArray());
+        }
+
+        private static char[] replaceSecret(char[] current, char[] updated) {
+            if (current != null) {
+                Arrays.fill(current, '\0');
+            }
+            return updated == null ? new char[0] : Arrays.copyOf(updated, updated.length);
+        }
+
+        private static boolean hasText(char[] value) {
+            if (value == null || value.length == 0) {
+                return false;
+            }
+            for (char current : value) {
+                if (!Character.isWhitespace(current)) {
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        private static byte[] toUtf8(char[] value) {
+            ByteBuffer encoded = StandardCharsets.UTF_8.encode(CharBuffer.wrap(value));
+            byte[] bytes = Arrays.copyOfRange(encoded.array(), encoded.position(), encoded.limit());
+            Arrays.fill(encoded.array(), (byte) 0);
+            return bytes;
         }
     }
 }

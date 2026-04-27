@@ -11,7 +11,8 @@ public enum ErrorCode {
     DUPLICATE_NAME(1007),
     SHARE_NOT_FOUND(1008),
     TASK_NOT_FOUND(1009),
-    STORAGE_POLICY_NOT_FOUND(1010);
+    STORAGE_POLICY_NOT_FOUND(1010),
+    ARCHIVE_READ_FAILED(1011);
 
     private final int code;
 

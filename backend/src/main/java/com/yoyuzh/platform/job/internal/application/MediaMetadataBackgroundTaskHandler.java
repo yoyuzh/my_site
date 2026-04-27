@@ -13,21 +13,19 @@ import com.yoyuzh.files.workspace.api.WorkspaceFileSnapshot;
 import com.yoyuzh.files.search.FileMetadata;
 import com.yoyuzh.files.search.FileMetadataRepository;
 import com.yoyuzh.files.storage.FileContentStorage;
-import org.springframework.transaction.annotation.Transactional;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 
 import javax.imageio.ImageIO;
 import java.awt.image.BufferedImage;
-import java.io.ByteArrayInputStream;
 import java.io.IOException;
+import java.io.InputStream;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Optional;
 
 @Component
-@Transactional
 public class MediaMetadataBackgroundTaskHandler implements BackgroundTaskHandler {
 
     private static final String MEDIA_CONTENT_TYPE = "media:contentType";
@@ -96,8 +94,6 @@ public class MediaMetadataBackgroundTaskHandler implements BackgroundTaskHandler
         String contentType = firstText(file.contentType(), blob.contentType());
         long size = firstLong(file.size(), blob.size());
         progressReporter.report(Map.of("metadataStage", "loading-content"));
-        byte[] content = Optional.ofNullable(fileContentStorage.readBlob(blob.objectKey()))
-                .orElseThrow(() -> new IllegalStateException("media metadata task requires blob content"));
 
         Map<String, Object> publicStatePatch = new LinkedHashMap<>();
         publicStatePatch.put("worker", "media-metadata");
@@ -108,9 +104,10 @@ public class MediaMetadataBackgroundTaskHandler implements BackgroundTaskHandler
         upsertMetadata(file, MEDIA_CONTENT_TYPE, contentType);
         upsertMetadata(file, MEDIA_SIZE, String.valueOf(size));
 
-        try {
+        try (InputStream contentStream = Optional.ofNullable(fileContentStorage.readBlobStream(blob.objectKey()))
+                .orElseThrow(() -> new IllegalStateException("media metadata task requires blob content"))) {
             progressReporter.report(Map.of("metadataStage", "reading-image"));
-            BufferedImage image = ImageIO.read(new ByteArrayInputStream(content));
+            BufferedImage image = ImageIO.read(contentStream);
             if (image != null) {
                 upsertMetadata(file, MEDIA_WIDTH, String.valueOf(image.getWidth()));
                 upsertMetadata(file, MEDIA_HEIGHT, String.valueOf(image.getHeight()));

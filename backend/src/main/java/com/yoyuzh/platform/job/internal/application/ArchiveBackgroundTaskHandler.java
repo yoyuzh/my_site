@@ -13,7 +13,6 @@ import com.yoyuzh.files.workspace.api.WorkspaceArchiveApi;
 import com.yoyuzh.files.workspace.api.WorkspaceArchiveSummary;
 import com.yoyuzh.files.workspace.api.WorkspaceBootstrapApi;
 import com.yoyuzh.files.workspace.api.WorkspaceUserContext;
-import org.springframework.transaction.annotation.Transactional;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 
@@ -21,7 +20,6 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 
 @Component
-@Transactional
 public class ArchiveBackgroundTaskHandler implements BackgroundTaskHandler {
 
     private final IdentityUserDirectoryApi identityUserDirectoryApi;

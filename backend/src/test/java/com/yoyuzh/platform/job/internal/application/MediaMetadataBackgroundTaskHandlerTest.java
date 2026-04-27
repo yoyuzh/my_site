@@ -20,10 +20,12 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.transaction.annotation.Transactional;
 
 import javax.imageio.ImageIO;
 import java.awt.Color;
 import java.awt.image.BufferedImage;
+import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.util.List;
 import java.util.Optional;
@@ -31,6 +33,7 @@ import java.util.Optional;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -69,7 +72,7 @@ class MediaMetadataBackgroundTaskHandlerTest {
         when(workspaceFileQueryApi.findOwnedActiveFile(7L, 11L)).thenReturn(Optional.of(file));
         when(contentBlobQueryApi.findBlobReferenceById(100L))
                 .thenReturn(Optional.of(new ContentBlobReference(100L, "blobs/photo.png", "image/png", 64L)));
-        when(fileContentStorage.readBlob("blobs/photo.png")).thenReturn(pngBytes);
+        when(fileContentStorage.readBlobStream("blobs/photo.png")).thenReturn(new ByteArrayInputStream(pngBytes));
         when(fileMetadataRepository.findByFileIdAndName(11L, "media:contentType")).thenReturn(Optional.empty());
         when(fileMetadataRepository.findByFileIdAndName(11L, "media:size")).thenReturn(Optional.empty());
         when(fileMetadataRepository.findByFileIdAndName(11L, "media:width")).thenReturn(Optional.empty());
@@ -84,7 +87,8 @@ class MediaMetadataBackgroundTaskHandlerTest {
         assertThat(result.publicStatePatch()).containsEntry("mediaSize", 64L);
         assertThat(result.publicStatePatch()).containsEntry("mediaWidth", 2);
         assertThat(result.publicStatePatch()).containsEntry("mediaHeight", 1);
-        verify(fileContentStorage).readBlob("blobs/photo.png");
+        verify(fileContentStorage).readBlobStream("blobs/photo.png");
+        verify(fileContentStorage, never()).readBlob("blobs/photo.png");
 
         ArgumentCaptor<FileMetadata> captor = ArgumentCaptor.forClass(FileMetadata.class);
         verify(fileMetadataRepository, times(4)).save(captor.capture());
@@ -103,7 +107,7 @@ class MediaMetadataBackgroundTaskHandlerTest {
         when(workspaceFileQueryApi.findOwnedActiveFile(7L, 12L)).thenReturn(Optional.of(file));
         when(contentBlobQueryApi.findBlobReferenceById(100L))
                 .thenReturn(Optional.of(new ContentBlobReference(100L, "blobs/movie.mp4", "video/mp4", 128L)));
-        when(fileContentStorage.readBlob("blobs/movie.mp4")).thenReturn(new byte[] {0, 1, 2});
+        when(fileContentStorage.readBlobStream("blobs/movie.mp4")).thenReturn(new ByteArrayInputStream(new byte[] {0, 1, 2}));
         when(fileMetadataRepository.findByFileIdAndName(12L, "media:contentType")).thenReturn(Optional.empty());
         when(fileMetadataRepository.findByFileIdAndName(12L, "media:size")).thenReturn(Optional.empty());
         when(fileMetadataRepository.save(any(FileMetadata.class))).thenAnswer(invocation -> invocation.getArgument(0));
@@ -116,6 +120,8 @@ class MediaMetadataBackgroundTaskHandlerTest {
         assertThat(result.publicStatePatch()).containsEntry("mediaSize", 128L);
         assertThat(result.publicStatePatch()).doesNotContainKeys("mediaWidth", "mediaHeight");
         verify(fileMetadataRepository, times(2)).save(any(FileMetadata.class));
+        verify(fileContentStorage).readBlobStream("blobs/movie.mp4");
+        verify(fileContentStorage, never()).readBlob("blobs/movie.mp4");
     }
 
     @Test
@@ -146,6 +152,11 @@ class MediaMetadataBackgroundTaskHandlerTest {
         assertThat(noop.supports(BackgroundTaskType.ARCHIVE)).isFalse();
         assertThat(noop.supports(BackgroundTaskType.EXTRACT)).isFalse();
         assertThat(noop.supports(BackgroundTaskType.MEDIA_META)).isFalse();
+    }
+
+    @Test
+    void shouldNotHoldClassLevelTransactionBoundary() {
+        assertThat(MediaMetadataBackgroundTaskHandler.class.isAnnotationPresent(Transactional.class)).isFalse();
     }
 
     private BackgroundTask createTask(Long fileId) {

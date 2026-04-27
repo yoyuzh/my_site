@@ -41,7 +41,8 @@ final class ExternalImportRulesService {
                         workspaceNodeRulesService.normalizeDirectoryPath(file.path()),
                         workspaceNodeRulesService.normalizeLeafName(file.filename()),
                         StringUtils.hasText(file.contentType()) ? file.contentType().trim() : "application/octet-stream",
-                        file.content() == null ? new byte[0] : file.content()
+                        file.size(),
+                        file::openStream
                 ))
                 .toList();
     }

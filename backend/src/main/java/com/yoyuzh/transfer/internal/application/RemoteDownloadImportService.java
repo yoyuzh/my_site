@@ -56,7 +56,8 @@ public class RemoteDownloadImportService {
                         normalizeDirectoryPath(task.getTargetPath()),
                         source.getFileName().toString(),
                         guessContentType(source.getFileName().toString()),
-                        readBytes(source)
+                        fileSize(source),
+                        () -> Files.newInputStream(source)
                 )),
                 source
         );
@@ -88,7 +89,8 @@ public class RemoteDownloadImportService {
                     StringUtils.hasText(parentRelativePath) ? joinPath(targetRoot, parentRelativePath) : targetRoot,
                     extractLeafName(relativePath),
                     guessContentType(relativePath),
-                    readBytes(source)
+                    fileSize(source),
+                    () -> Files.newInputStream(source)
             ));
         }
         return new ImportPlan(List.copyOf(directories), List.copyOf(files), null);
@@ -128,11 +130,11 @@ public class RemoteDownloadImportService {
         return path;
     }
 
-    private byte[] readBytes(Path source) {
+    private long fileSize(Path source) {
         try {
-            return Files.readAllBytes(source);
+            return Files.size(source);
         } catch (IOException ex) {
-            throw new UncheckedIOException("failed to read remote download source", ex);
+            throw new UncheckedIOException("failed to inspect remote download source", ex);
         }
     }
 

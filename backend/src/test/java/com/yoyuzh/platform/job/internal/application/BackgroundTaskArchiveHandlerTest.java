@@ -23,6 +23,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.io.ByteArrayInputStream;
 import java.nio.charset.StandardCharsets;
@@ -153,6 +154,11 @@ class BackgroundTaskArchiveHandlerTest {
 
         Map<String, String> entries = readZipEntries(archiveBytesCaptor.getValue());
         assertThat(entries).containsEntry("notes.txt", "hello");
+    }
+
+    @Test
+    void shouldNotHoldClassLevelTransactionBoundary() {
+        assertThat(ArchiveBackgroundTaskHandler.class.isAnnotationPresent(Transactional.class)).isFalse();
     }
 
     private BackgroundTask createArchiveTask(Long fileId, Long userId) {

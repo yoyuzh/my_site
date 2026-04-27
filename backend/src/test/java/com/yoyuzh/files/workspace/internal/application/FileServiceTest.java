@@ -10,6 +10,7 @@ import com.yoyuzh.files.content.internal.infra.*;
 import com.yoyuzh.ops.admin.internal.application.AdminMetricsService;
 import com.yoyuzh.identity.access.internal.domain.User;
 import com.yoyuzh.shared.kernel.BusinessException;
+import com.yoyuzh.shared.kernel.ErrorCode;
 import com.yoyuzh.shared.kernel.PageResponse;
 import com.yoyuzh.platform.storage.api.StoragePolicyCapabilities;
 import com.yoyuzh.platform.storage.api.StoragePolicyQuery;
@@ -43,6 +44,7 @@ import org.springframework.test.util.ReflectionTestUtils;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.io.InputStream;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.time.Clock;
@@ -1187,6 +1189,7 @@ class FileServiceTest {
 
         assertThatThrownBy(() -> fileService.readZipCompatibleArchive(archive))
                 .isInstanceOf(BusinessException.class)
+                .satisfies(ex -> assertThat(((BusinessException) ex).getErrorCode()).isEqualTo(ErrorCode.ARCHIVE_READ_FAILED))
                 .hasMessage("压缩包内容不合法");
     }
 
@@ -1210,6 +1213,7 @@ class FileServiceTest {
 
         assertThatThrownBy(() -> fileService.readZipCompatibleArchive(archive))
                 .isInstanceOf(BusinessException.class)
+                .satisfies(ex -> assertThat(((BusinessException) ex).getErrorCode()).isEqualTo(ErrorCode.ARCHIVE_READ_FAILED))
                 .hasMessage("压缩包读取失败");
     }
 
@@ -1233,7 +1237,78 @@ class FileServiceTest {
 
         assertThatThrownBy(() -> fileService.readZipCompatibleArchive(archive))
                 .isInstanceOf(BusinessException.class)
+                .satisfies(ex -> assertThat(((BusinessException) ex).getErrorCode()).isEqualTo(ErrorCode.ARCHIVE_READ_FAILED))
                 .hasMessage("压缩包内容不合法");
+    }
+
+    @Test
+    void shouldRejectZipCompatibleArchiveWhenSingleEntryExceedsEntryLimit() throws Exception {
+        User user = createUser(7L);
+        StoredFile archive = createFile(27L, user, "/docs", "entry-limit.zip", createBlob(27L, "blobs/blob-27", 1024L, "application/zip"));
+        when(fileContentStorage.readBlobStream("blobs/blob-27")).thenReturn(new ByteArrayInputStream(createZipArchiveBytes(Map.of(
+                "notes.txt", new byte[65 * 1024 * 1024]
+        ))));
+
+        assertThatThrownBy(() -> fileService.readZipCompatibleArchive(archive))
+                .isInstanceOf(BusinessException.class)
+                .satisfies(ex -> assertThat(((BusinessException) ex).getErrorCode()).isEqualTo(ErrorCode.ARCHIVE_READ_FAILED))
+                .hasMessage("压缩包内容不合法");
+    }
+
+    @Test
+    void shouldRejectZipCompatibleArchiveWhenEntryCountExceedsLimit() throws Exception {
+        User user = createUser(7L);
+        StoredFile archive = createFile(28L, user, "/docs", "too-many-entries.zip", createBlob(28L, "blobs/blob-28", 4096L, "application/zip"));
+        when(fileContentStorage.readBlobStream("blobs/blob-28")).thenReturn(new ByteArrayInputStream(
+                createZipArchiveWithIndexedFiles(10_001)
+        ));
+
+        assertThatThrownBy(() -> fileService.readZipCompatibleArchive(archive))
+                .isInstanceOf(BusinessException.class)
+                .satisfies(ex -> assertThat(((BusinessException) ex).getErrorCode()).isEqualTo(ErrorCode.ARCHIVE_READ_FAILED))
+                .hasMessage("压缩包内容不合法");
+    }
+
+    @Test
+    void shouldExtractZipCompatibleArchiveThroughStreamingBlobImport() throws Exception {
+        User user = createUser(7L);
+        byte[] archiveBytes = createZipArchive(Map.of(
+                "notes.txt", "hello"
+        ));
+        StoredFile archive = createFile(29L, user, "/docs", "notes.zip", createBlob(29L, "blobs/blob-29", (long) archiveBytes.length, "application/zip"));
+        archive.setSize((long) archiveBytes.length);
+        when(storedFileRepository.findDetailedById(29L)).thenReturn(Optional.of(archive));
+        when(storedFileRepository.existsByUserIdAndPathAndFilename(7L, "/docs", "notes.txt")).thenReturn(false);
+        when(storedFileRepository.findByUserIdAndPathAndFilename(7L, "/", "docs"))
+                .thenReturn(Optional.of(createDirectory(290L, user, "/", "docs")));
+        when(fileContentStorage.readBlobStream("blobs/blob-29"))
+                .thenReturn(new ByteArrayInputStream(archiveBytes), new ByteArrayInputStream(archiveBytes));
+        when(fileBlobRepository.save(any(FileBlob.class))).thenAnswer(invocation -> {
+            FileBlob blob = invocation.getArgument(0);
+            blob.setId(290L);
+            return blob;
+        });
+        when(storedFileRepository.save(any(StoredFile.class))).thenAnswer(invocation -> {
+            StoredFile file = invocation.getArgument(0);
+            file.setId(291L);
+            return file;
+        });
+
+        var result = fileService.extractZipCompatibleArchive(
+                FileServiceTestSupport.workspaceUser(user),
+                29L,
+                "/docs",
+                "notes.txt",
+                null
+        );
+
+        assertThat(result.extractedPath()).isEqualTo("/docs");
+        assertThat(result.extractedFileCount()).isEqualTo(1);
+        assertThat(result.extractedDirectoryCount()).isEqualTo(0);
+        verify(fileContentStorage, times(2)).readBlobStream("blobs/blob-29");
+        verify(fileContentStorage, never()).readBlob("blobs/blob-29");
+        verify(fileContentStorage).storeBlob(anyString(), eq("text/plain"), any(InputStream.class), eq(5L));
+        verify(fileContentStorage, never()).storeBlob(anyString(), eq("text/plain"), any(byte[].class));
     }
 
     @Test
@@ -1269,11 +1344,11 @@ class FileServiceTest {
                 .hasMessage("metadata save failed");
 
         var objectKeyCaptor = forClass(String.class);
-        verify(fileContentStorage, times(2)).storeBlob(objectKeyCaptor.capture(), eq("text/plain"), any(byte[].class));
+        verify(fileContentStorage, times(2)).storeBlob(objectKeyCaptor.capture(), eq("text/plain"), any(InputStream.class), anyLong());
         List<String> writtenKeys = objectKeyCaptor.getAllValues();
         assertThat(writtenKeys).hasSize(2);
-        verify(fileContentStorage).deleteBlob(writtenKeys.get(0));
-        verify(fileContentStorage).deleteBlob(writtenKeys.get(1));
+        verify(fileContentStorage, org.mockito.Mockito.atLeastOnce()).deleteBlob(writtenKeys.get(0));
+        verify(fileContentStorage, org.mockito.Mockito.atLeastOnce()).deleteBlob(writtenKeys.get(1));
     }
 
     @Test
@@ -1369,17 +1444,40 @@ class FileServiceTest {
     }
 
     private byte[] createZipArchive(Map<String, String> entries) throws IOException {
+        return createZipArchiveBytes(entries.entrySet().stream()
+                .collect(java.util.stream.Collectors.toMap(
+                        Map.Entry::getKey,
+                        entry -> entry.getValue().getBytes(StandardCharsets.UTF_8),
+                        (left, right) -> left,
+                        LinkedHashMap::new
+                )));
+    }
+
+    private byte[] createZipArchiveBytes(Map<String, byte[]> entries) throws IOException {
         try (ByteArrayOutputStream outputStream = new ByteArrayOutputStream();
              ZipOutputStream zipOutputStream = new ZipOutputStream(outputStream, StandardCharsets.UTF_8)) {
             Set<String> createdEntries = new java.util.LinkedHashSet<>();
-            for (Map.Entry<String, String> entry : entries.entrySet()) {
+            for (Map.Entry<String, byte[]> entry : entries.entrySet()) {
                 if (!createdEntries.add(entry.getKey())) {
                     continue;
                 }
                 zipOutputStream.putNextEntry(new ZipEntry(entry.getKey()));
                 if (!entry.getKey().endsWith("/")) {
-                    zipOutputStream.write(entry.getValue().getBytes(StandardCharsets.UTF_8));
+                    zipOutputStream.write(entry.getValue());
                 }
+                zipOutputStream.closeEntry();
+            }
+            zipOutputStream.finish();
+            return outputStream.toByteArray();
+        }
+    }
+
+    private byte[] createZipArchiveWithIndexedFiles(int fileCount) throws IOException {
+        try (ByteArrayOutputStream outputStream = new ByteArrayOutputStream();
+             ZipOutputStream zipOutputStream = new ZipOutputStream(outputStream, StandardCharsets.UTF_8)) {
+            for (int index = 0; index < fileCount; index++) {
+                zipOutputStream.putNextEntry(new ZipEntry("entry-" + index + ".txt"));
+                zipOutputStream.write('a');
                 zipOutputStream.closeEntry();
             }
             zipOutputStream.finish();

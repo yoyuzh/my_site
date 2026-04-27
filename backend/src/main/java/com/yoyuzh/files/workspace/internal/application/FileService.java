@@ -17,6 +17,7 @@ import com.yoyuzh.files.workspace.api.RecycleBinItemResponse;
 import com.yoyuzh.files.workspace.api.WorkspaceArchiveApi;
 import com.yoyuzh.files.workspace.api.WorkspaceArchiveBuildProgress;
 import com.yoyuzh.files.workspace.api.WorkspaceArchiveBuildProgressListener;
+import com.yoyuzh.files.workspace.api.WorkspaceArchiveExtractionResult;
 import com.yoyuzh.files.workspace.api.WorkspaceArchiveSummary;
 import com.yoyuzh.files.workspace.api.WorkspaceBootstrapApi;
 import com.yoyuzh.files.workspace.api.WorkspaceDownloadMetricsPort;
@@ -55,6 +56,7 @@ import org.springframework.web.multipart.MultipartFile;
 import java.io.BufferedInputStream;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
+import java.io.FilterInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.net.URLEncoder;
@@ -69,10 +71,11 @@ import java.util.Comparator;
 import java.util.HashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.Set;
-import java.util.Locale;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
 import java.util.zip.ZipOutputStream;
@@ -84,7 +87,9 @@ public class FileService implements WorkspaceBootstrapApi, WorkspaceArchiveApi {
     private static final List<String> DEFAULT_DIRECTORIES = List.of("下载", "文档", "图片");
     private static final long RECYCLE_BIN_RETENTION_DAYS = 10L;
     private static final long DEFAULT_MAX_ZIP_EXTRACT_BYTES = 500L * 1024 * 1024L;
+    private static final long DEFAULT_MAX_ZIP_ENTRY_BYTES = 64L * 1024 * 1024L;
     private static final long MAX_ZIP_INFLATION_RATIO = 100L;
+    private static final int MAX_ZIP_ENTRY_COUNT = 10_000;
     private static final int ZIP_READ_BUFFER_SIZE = 8192;
     private static final String SECURE_LINK_SIGNATURE_ALGORITHM = "HmacSHA256";
     private static final Map<String, String> CONTENT_TYPE_BY_EXTENSION = Map.ofEntries(
@@ -446,7 +451,7 @@ public class FileService implements WorkspaceBootstrapApi, WorkspaceArchiveApi {
                 normalizeWorkspaceUser(user),
                 directories,
                 files.stream()
-                        .map(file -> new ExternalFileImport(file.path(), file.filename(), file.contentType(), file.content()))
+                        .map(file -> new ExternalFileImport(file.path(), file.filename(), file.contentType(), file.size(), file::openStream))
                         .toList(),
                 progressListener == null
                         ? null
@@ -491,6 +496,32 @@ public class FileService implements WorkspaceBootstrapApi, WorkspaceArchiveApi {
                         .map(entry -> new WorkspaceZipArchiveEntry(entry.relativePath(), entry.directory(), entry.content()))
                         .toList(),
                 archive.commonRootDirectoryName()
+        );
+    }
+
+    @Override
+    @Transactional
+    public WorkspaceArchiveExtractionResult extractZipCompatibleArchive(WorkspaceUserContext user,
+                                                                       Long fileId,
+                                                                       String outputPath,
+                                                                       String outputDirectoryName,
+                                                                       WorkspaceExternalImportProgressListener progressListener) {
+        WorkspaceUserContext workspaceUser = normalizeWorkspaceUser(user);
+        StoredFile source = getOwnedActiveFile(workspaceUser, fileId, "解压");
+        ZipExtractionPlan plan = buildZipExtractionPlan(source, outputPath, outputDirectoryName);
+        extractZipCompatibleArchive(workspaceUser, source, plan,
+                progressListener == null
+                        ? null
+                        : progress -> progressListener.onProgress(new WorkspaceExternalImportProgress(
+                        progress.processedFileCount(),
+                        progress.totalFileCount(),
+                        progress.processedDirectoryCount(),
+                        progress.totalDirectoryCount()
+                )));
+        return new WorkspaceArchiveExtractionResult(
+                plan.extractedPath(),
+                plan.files().size(),
+                plan.directories().size()
         );
     }
 
@@ -743,6 +774,190 @@ public class FileService implements WorkspaceBootstrapApi, WorkspaceArchiveApi {
         }
     }
 
+    private void extractZipCompatibleArchive(WorkspaceUserContext recipient,
+                                             StoredFile source,
+                                             ZipExtractionPlan plan,
+                                             ExternalImportProgressListener progressListener) {
+        externalImportRulesService.validateBatch(
+                recipient,
+                plan.directories(),
+                plan.files().stream()
+                        .map(file -> new ExternalFileImport(
+                                file.targetPath(),
+                                file.filename(),
+                                file.contentType(),
+                                file.size(),
+                                InputStream::nullInputStream
+                        ))
+                        .toList()
+        );
+
+        List<String> writtenBlobObjectKeys = new ArrayList<>();
+        int totalDirectoryCount = plan.directories().size();
+        int totalFileCount = plan.files().size();
+        int processedDirectoryCount = 0;
+        int processedFileCount = 0;
+        Map<String, ZipExtractionTargetFile> fileTargets = new HashMap<>();
+        for (ZipExtractionTargetFile file : plan.files()) {
+            fileTargets.put(file.sourcePath(), file);
+        }
+
+        try {
+            for (String directory : plan.directories()) {
+                mkdir(recipient, directory);
+                processedDirectoryCount += 1;
+                reportExternalImportProgress(progressListener, processedFileCount, totalFileCount,
+                        processedDirectoryCount, totalDirectoryCount);
+            }
+
+            try (BufferedInputStream bufferedStream = new BufferedInputStream(
+                    requireZipCompatibleArchiveStream(source, "压缩包读取失败"));
+                 ZipInputStream zipInputStream = new ZipInputStream(bufferedStream, StandardCharsets.UTF_8)) {
+                ZipEntry entry = zipInputStream.getNextEntry();
+                while (entry != null) {
+                    String relativePath = normalizeZipCompatibleEntryPath(entry.getName());
+                    if (StringUtils.hasText(relativePath)) {
+                        String sourcePath = stripCommonRootDirectory(relativePath, plan.commonRootDirectoryName());
+                        ZipExtractionTargetFile targetFile = fileTargets.get(sourcePath);
+                        if (targetFile != null) {
+                            WorkspaceFileIngressService.CreatedFile createdFile = workspaceFileIngressService.importExternalFile(
+                                    recipient,
+                                    targetFile.targetPath(),
+                                    targetFile.filename(),
+                                    targetFile.contentType(),
+                                    targetFile.size(),
+                                    nonClosingZipEntryStream(zipInputStream),
+                                    writtenBlobObjectKeys
+                            );
+                            finalizeUploadedFile(recipient, createdFile.normalizedPath(), createdFile.file());
+                            processedFileCount += 1;
+                            reportExternalImportProgress(progressListener, processedFileCount, totalFileCount,
+                                    processedDirectoryCount, totalDirectoryCount);
+                        }
+                    }
+                    entry = zipInputStream.getNextEntry();
+                }
+            }
+        } catch (RuntimeException ex) {
+            workspaceFileIngressService.cleanupWrittenBlobs(writtenBlobObjectKeys, ex);
+            throw ex;
+        } catch (IOException ex) {
+            IllegalStateException failure = new IllegalStateException("extract task failed to import archive content", ex);
+            workspaceFileIngressService.cleanupWrittenBlobs(writtenBlobObjectKeys, failure);
+            throw failure;
+        }
+    }
+
+    private InputStream nonClosingZipEntryStream(ZipInputStream zipInputStream) {
+        return new FilterInputStream(zipInputStream) {
+            @Override
+            public void close() {
+                // Each entry shares the same ZipInputStream; closing the per-entry view would abort subsequent entries.
+            }
+        };
+    }
+
+    private ZipExtractionPlan buildZipExtractionPlan(StoredFile source,
+                                                     String outputPath,
+                                                     String outputDirectoryName) {
+        ZipArchiveMetadata archive = readZipCompatibleArchiveMetadata(source);
+        List<ZipItemMetadata> items = archive.entries().stream()
+                .map(entry -> toZipItemMetadata(entry, archive.commonRootDirectoryName()))
+                .filter(item -> StringUtils.hasText(item.path()))
+                .toList();
+        if (items.isEmpty()) {
+            throw new IllegalStateException("extract task archive is empty");
+        }
+
+        String normalizedOutputPath = normalizeDirectoryPath(outputPath);
+        String normalizedOutputDirectoryName = normalizeLeafName(outputDirectoryName);
+        if (shouldExtractSingleFileToParent(items, normalizedOutputDirectoryName)) {
+            ZipItemMetadata fileItem = items.get(0);
+            return new ZipExtractionPlan(
+                    archive.commonRootDirectoryName(),
+                    List.of(),
+                    List.of(new ZipExtractionTargetFile(
+                            fileItem.path(),
+                            normalizedOutputPath,
+                            normalizedOutputDirectoryName,
+                            fileItem.contentType(),
+                            fileItem.size()
+                    )),
+                    normalizedOutputPath
+            );
+        }
+
+        String rootPath = joinPath(normalizedOutputPath, normalizedOutputDirectoryName);
+        LinkedHashSet<String> directories = new LinkedHashSet<>();
+        directories.add(rootPath);
+        List<ZipExtractionTargetFile> files = new ArrayList<>();
+        for (ZipItemMetadata item : items) {
+            if (item.directory()) {
+                directories.add(joinPath(rootPath, trimTrailingSlash(item.path())));
+                continue;
+            }
+            String relativeParent = extractParentPath(item.path());
+            String targetParent = StringUtils.hasText(relativeParent) ? joinPath(rootPath, relativeParent) : rootPath;
+            collectParentDirectories(directories, rootPath, relativeParent);
+            files.add(new ZipExtractionTargetFile(
+                    item.path(),
+                    targetParent,
+                    extractLeafName(item.path()),
+                    item.contentType(),
+                    item.size()
+            ));
+        }
+        return new ZipExtractionPlan(archive.commonRootDirectoryName(), List.copyOf(directories), List.copyOf(files), rootPath);
+    }
+
+    private ZipArchiveMetadata readZipCompatibleArchiveMetadata(StoredFile source) {
+        byte[] signature = new byte[4];
+        long compressedSize = getRequiredBlob(source).size();
+        try (BufferedInputStream bufferedStream = new BufferedInputStream(
+                requireZipCompatibleArchiveStream(source, "压缩包读取失败"))) {
+            bufferedStream.mark(signature.length);
+            int signatureBytes = bufferedStream.read(signature, 0, signature.length);
+            bufferedStream.reset();
+            try (ZipInputStream zipInputStream = new ZipInputStream(bufferedStream, StandardCharsets.UTF_8)) {
+                List<ZipMetadataEntry> entries = new ArrayList<>();
+                Map<String, Boolean> seenEntries = new HashMap<>();
+                long totalUncompressedBytes = 0L;
+                long maxInflatedBytes = resolveMaxZipInflatedBytes(compressedSize);
+                long maxEntryBytes = resolveMaxZipEntryBytes();
+                int entryCount = 0;
+                ZipEntry entry = zipInputStream.getNextEntry();
+                while (entry != null) {
+                    String relativePath = normalizeZipCompatibleEntryPath(entry.getName());
+                    if (StringUtils.hasText(relativePath)) {
+                        entryCount += 1;
+                        if (entryCount > MAX_ZIP_ENTRY_COUNT) {
+                            throw new BusinessException(ErrorCode.ARCHIVE_READ_FAILED, "压缩包内容不合法");
+                        }
+                        boolean directory = entry.isDirectory() || entry.getName().endsWith("/");
+                        Boolean existingType = seenEntries.putIfAbsent(relativePath, directory);
+                        if (existingType != null) {
+                            throw new BusinessException(ErrorCode.ARCHIVE_READ_FAILED, "压缩包内容不合法");
+                        }
+                        long size = directory
+                                ? 0L
+                                : readZipEntryBytes(zipInputStream, maxInflatedBytes, maxEntryBytes, totalUncompressedBytes, null);
+                        totalUncompressedBytes += size;
+                        entries.add(new ZipMetadataEntry(relativePath, directory, size, guessContentType(relativePath)));
+                    }
+                    entry = zipInputStream.getNextEntry();
+                }
+                if (entries.isEmpty() && !hasZipCompatibleSignature(signature, signatureBytes)) {
+                    throw new BusinessException(ErrorCode.ARCHIVE_READ_FAILED, "压缩包读取失败");
+                }
+                return new ZipArchiveMetadata(entries, detectCommonRootDirectoryNameFromCandidates(entries));
+            }
+        } catch (BusinessException ex) {
+            throw ex;
+        } catch (IOException ex) {
+            throw new BusinessException(ErrorCode.ARCHIVE_READ_FAILED, "压缩包读取失败");
+        }
+    }
+
     private WorkspaceDownloadResult downloadDirectory(WorkspaceUserContext user, StoredFile directory) {
         String archiveName = directory.getFilename() + ".zip";
         byte[] archiveBytes = buildArchiveBytes(directory);
@@ -783,47 +998,58 @@ public class FileService implements WorkspaceBootstrapApi, WorkspaceArchiveApi {
         long compressedSize = source.getSize() == null ? 0L : Math.max(0L, source.getSize());
         byte[] signature = new byte[4];
         try (BufferedInputStream bufferedStream = new BufferedInputStream(
-                fileContentStorage.readBlobStream(getRequiredBlob(source).objectKey())
+                requireZipCompatibleArchiveStream(source, "压缩包读取失败")
         )) {
             bufferedStream.mark(signature.length);
             int signatureBytes = bufferedStream.read(signature, 0, signature.length);
             bufferedStream.reset();
             try (ZipInputStream zipInputStream = new ZipInputStream(bufferedStream, StandardCharsets.UTF_8)) {
-            List<ZipCompatibleArchiveEntry> entries = new ArrayList<>();
-            Map<String, Boolean> seenEntries = new HashMap<>();
-            long totalUncompressedBytes = 0L;
-            long maxInflatedBytes = resolveMaxZipInflatedBytes(compressedSize);
-            ZipEntry entry = zipInputStream.getNextEntry();
-            while (entry != null) {
-                String relativePath = normalizeZipCompatibleEntryPath(entry.getName());
-                if (StringUtils.hasText(relativePath)) {
-                    boolean directory = entry.isDirectory() || entry.getName().endsWith("/");
-                    Boolean existingType = seenEntries.putIfAbsent(relativePath, directory);
-                    if (existingType != null) {
-                        throw new BusinessException(ErrorCode.UNKNOWN, "压缩包内容不合法");
+                List<ZipCompatibleArchiveEntry> entries = new ArrayList<>();
+                Map<String, Boolean> seenEntries = new HashMap<>();
+                long totalUncompressedBytes = 0L;
+                long maxInflatedBytes = resolveMaxZipInflatedBytes(compressedSize);
+                long maxEntryBytes = resolveMaxZipEntryBytes();
+                int entryCount = 0;
+                ZipEntry entry = zipInputStream.getNextEntry();
+                while (entry != null) {
+                    String relativePath = normalizeZipCompatibleEntryPath(entry.getName());
+                    if (StringUtils.hasText(relativePath)) {
+                        entryCount += 1;
+                        if (entryCount > MAX_ZIP_ENTRY_COUNT) {
+                            throw new BusinessException(ErrorCode.ARCHIVE_READ_FAILED, "压缩包内容不合法");
+                        }
+                        boolean directory = entry.isDirectory() || entry.getName().endsWith("/");
+                        Boolean existingType = seenEntries.putIfAbsent(relativePath, directory);
+                        if (existingType != null) {
+                            throw new BusinessException(ErrorCode.ARCHIVE_READ_FAILED, "压缩包内容不合法");
+                        }
+                        byte[] content = directory
+                                ? new byte[0]
+                                : readZipEntryContent(zipInputStream, maxInflatedBytes, maxEntryBytes, totalUncompressedBytes);
+                        totalUncompressedBytes += content.length;
+                        entries.add(new ZipCompatibleArchiveEntry(
+                                relativePath,
+                                directory,
+                                content
+                        ));
                     }
-                    byte[] content = directory
-                            ? new byte[0]
-                            : readZipEntryContent(zipInputStream, maxInflatedBytes, totalUncompressedBytes);
-                    totalUncompressedBytes += content.length;
-                    entries.add(new ZipCompatibleArchiveEntry(
-                            relativePath,
-                            directory,
-                            content
-                    ));
+                    entry = zipInputStream.getNextEntry();
                 }
-                entry = zipInputStream.getNextEntry();
-            }
-            if (entries.isEmpty() && !hasZipCompatibleSignature(signature, signatureBytes)) {
-                throw new BusinessException(ErrorCode.UNKNOWN, "压缩包读取失败");
-            }
-            return new ZipCompatibleArchive(entries, detectCommonRootDirectoryName(entries));
+                if (entries.isEmpty() && !hasZipCompatibleSignature(signature, signatureBytes)) {
+                    throw new BusinessException(ErrorCode.ARCHIVE_READ_FAILED, "压缩包读取失败");
+                }
+                return new ZipCompatibleArchive(entries, detectCommonRootDirectoryName(entries));
             }
         } catch (BusinessException ex) {
             throw ex;
         } catch (IOException ex) {
-            throw new BusinessException(ErrorCode.UNKNOWN, "压缩包读取失败");
+            throw new BusinessException(ErrorCode.ARCHIVE_READ_FAILED, "压缩包读取失败");
         }
+    }
+
+    private InputStream requireZipCompatibleArchiveStream(StoredFile source, String failureMessage) {
+        return Optional.ofNullable(fileContentStorage.readBlobStream(getRequiredBlob(source).objectKey()))
+                .orElseThrow(() -> new BusinessException(ErrorCode.ARCHIVE_READ_FAILED, failureMessage));
     }
 
     private boolean shouldUsePublicPackageDownload(StoredFile storedFile) {
@@ -1205,7 +1431,7 @@ public class FileService implements WorkspaceBootstrapApi, WorkspaceArchiveApi {
             return "";
         }
         if (normalized.startsWith("/")) {
-            throw new BusinessException(ErrorCode.UNKNOWN, "压缩包内容不合法");
+            throw new BusinessException(ErrorCode.ARCHIVE_READ_FAILED, "压缩包内容不合法");
         }
         while (normalized.endsWith("/")) {
             normalized = normalized.substring(0, normalized.length() - 1);
@@ -1217,7 +1443,7 @@ public class FileService implements WorkspaceBootstrapApi, WorkspaceArchiveApi {
         StringBuilder sanitized = new StringBuilder();
         for (String segment : normalized.split("/")) {
             if (!StringUtils.hasText(segment) || ".".equals(segment) || "..".equals(segment)) {
-                throw new BusinessException(ErrorCode.UNKNOWN, "压缩包内容不合法");
+                throw new BusinessException(ErrorCode.ARCHIVE_READ_FAILED, "压缩包内容不合法");
             }
             if (sanitized.length() > 0) {
                 sanitized.append('/');
@@ -1228,10 +1454,16 @@ public class FileService implements WorkspaceBootstrapApi, WorkspaceArchiveApi {
     }
 
     private String detectCommonRootDirectoryName(List<ZipCompatibleArchiveEntry> entries) {
+        return detectCommonRootDirectoryNameFromCandidates(entries.stream()
+                .map(entry -> new ZipRootCandidate(entry.relativePath(), entry.directory()))
+                .toList());
+    }
+
+    private String detectCommonRootDirectoryNameFromCandidates(List<? extends ZipRootCandidateView> entries) {
         String candidate = null;
         boolean hasNestedEntry = false;
         boolean hasDirectoryCandidate = false;
-        for (ZipCompatibleArchiveEntry entry : entries) {
+        for (ZipRootCandidateView entry : entries) {
             String relativePath = entry.relativePath();
             int slashIndex = relativePath.indexOf('/');
             String topSegment = slashIndex >= 0 ? relativePath.substring(0, slashIndex) : relativePath;
@@ -1268,20 +1500,113 @@ public class FileService implements WorkspaceBootstrapApi, WorkspaceArchiveApi {
 
     private byte[] readZipEntryContent(ZipInputStream zipInputStream,
                                        long maxInflatedBytes,
+                                       long maxEntryBytes,
                                        long currentTotalBytes) throws IOException {
         try (ByteArrayOutputStream outputStream = new ByteArrayOutputStream()) {
-            byte[] buffer = new byte[ZIP_READ_BUFFER_SIZE];
-            int read;
-            long entryBytes = 0L;
-            while ((read = zipInputStream.read(buffer)) != -1) {
-                entryBytes += read;
-                if (currentTotalBytes + entryBytes > maxInflatedBytes) {
-                    throw new BusinessException(ErrorCode.UNKNOWN, "压缩包内容不合法");
-                }
-                outputStream.write(buffer, 0, read);
-            }
+            readZipEntryBytes(zipInputStream, maxInflatedBytes, maxEntryBytes, currentTotalBytes, outputStream);
             return outputStream.toByteArray();
         }
+    }
+
+    private long readZipEntryBytes(ZipInputStream zipInputStream,
+                                   long maxInflatedBytes,
+                                   long maxEntryBytes,
+                                   long currentTotalBytes,
+                                   ByteArrayOutputStream outputStream) throws IOException {
+        byte[] buffer = new byte[ZIP_READ_BUFFER_SIZE];
+        int read;
+        long entryBytes = 0L;
+        while ((read = zipInputStream.read(buffer)) != -1) {
+            entryBytes += read;
+            if (entryBytes > maxEntryBytes) {
+                throw new BusinessException(ErrorCode.ARCHIVE_READ_FAILED, "压缩包内容不合法");
+            }
+            if (currentTotalBytes + entryBytes > maxInflatedBytes) {
+                throw new BusinessException(ErrorCode.ARCHIVE_READ_FAILED, "压缩包内容不合法");
+            }
+            if (outputStream != null) {
+                outputStream.write(buffer, 0, read);
+            }
+        }
+        return entryBytes;
+    }
+
+    private ZipItemMetadata toZipItemMetadata(ZipMetadataEntry entry, String commonRootDirectoryName) {
+        String path = stripCommonRootDirectory(entry.relativePath(), commonRootDirectoryName);
+        return new ZipItemMetadata(path, entry.directory(), entry.size(), entry.contentType());
+    }
+
+    private String stripCommonRootDirectory(String relativePath, String commonRootDirectoryName) {
+        if (!StringUtils.hasText(relativePath) || !StringUtils.hasText(commonRootDirectoryName)) {
+            return relativePath;
+        }
+        String prefix = commonRootDirectoryName + "/";
+        if (relativePath.equals(commonRootDirectoryName)) {
+            return "";
+        }
+        if (relativePath.startsWith(prefix)) {
+            return relativePath.substring(prefix.length());
+        }
+        return relativePath;
+    }
+
+    private boolean shouldExtractSingleFileToParent(List<ZipItemMetadata> items, String outputDirectoryName) {
+        if (items.size() != 1) {
+            return false;
+        }
+        ZipItemMetadata item = items.get(0);
+        return !item.directory()
+                && !item.path().contains("/")
+                && outputDirectoryName.equals(item.path());
+    }
+
+    private void collectParentDirectories(LinkedHashSet<String> directories, String rootPath, String relativeParent) {
+        if (!StringUtils.hasText(relativeParent)) {
+            return;
+        }
+        String current = "";
+        for (String segment : relativeParent.split("/")) {
+            current = StringUtils.hasText(current) ? current + "/" + segment : segment;
+            directories.add(joinPath(rootPath, current));
+        }
+    }
+
+    private String joinPath(String parent, String leaf) {
+        return buildTargetLogicalPath(normalizeDirectoryPath(parent), trimSlashes(leaf));
+    }
+
+    private String trimSlashes(String value) {
+        if (!StringUtils.hasText(value)) {
+            return "";
+        }
+        String normalized = value.trim().replace('\\', '/');
+        while (normalized.startsWith("/")) {
+            normalized = normalized.substring(1);
+        }
+        while (normalized.endsWith("/")) {
+            normalized = normalized.substring(0, normalized.length() - 1);
+        }
+        return normalized;
+    }
+
+    private String trimTrailingSlash(String value) {
+        return StringUtils.hasLength(value) && value.endsWith("/")
+                ? value.substring(0, value.length() - 1)
+                : value;
+    }
+
+    private String guessContentType(String filename) {
+        String inferred = inferContentTypeFromFilename(filename);
+        if (StringUtils.hasText(inferred)) {
+            return inferred;
+        }
+        String guessed = java.net.URLConnection.guessContentTypeFromName(filename);
+        return StringUtils.hasText(guessed) ? guessed : MediaType.APPLICATION_OCTET_STREAM_VALUE;
+    }
+
+    private long resolveMaxZipEntryBytes() {
+        long configuredLimit = maxFileSize > 0 ? maxFileSize : DEFAULT_MAX_ZIP_EXTRACT_BYTES;
+        return Math.max(1L, Math.min(configuredLimit, DEFAULT_MAX_ZIP_ENTRY_BYTES));
     }
 
     private long resolveMaxZipInflatedBytes(long compressedSize) {
@@ -1403,9 +1728,25 @@ public class FileService implements WorkspaceBootstrapApi, WorkspaceArchiveApi {
     public static record ZipCompatibleArchiveEntry(String relativePath, boolean directory, byte[] content) {
     }
 
-    public static record ExternalFileImport(String path, String filename, String contentType, byte[] content) {
-        public long size() {
-            return content == null ? 0L : content.length;
+    public static record ExternalFileImport(String path,
+                                            String filename,
+                                            String contentType,
+                                            long size,
+                                            WorkspaceExternalFileImport.ContentStreamOpener contentStreamOpener) {
+        public ExternalFileImport(String path, String filename, String contentType, byte[] content) {
+            this(path, filename, contentType, content == null ? 0L : content.length, new WorkspaceExternalFileImport(path, filename, contentType, content)::openStream);
+        }
+
+        public InputStream openStream() throws IOException {
+            return contentStreamOpener == null ? InputStream.nullInputStream() : contentStreamOpener.open();
+        }
+
+        public byte[] content() {
+            try (InputStream inputStream = openStream()) {
+                return inputStream.readAllBytes();
+            } catch (IOException ex) {
+                throw new java.io.UncheckedIOException("failed to read external import content", ex);
+            }
         }
     }
 
@@ -1432,6 +1773,43 @@ public class FileService implements WorkspaceBootstrapApi, WorkspaceArchiveApi {
     @FunctionalInterface
     public interface ExternalImportProgressListener {
         void onProgress(ExternalImportProgress progress);
+    }
+
+    private interface ZipRootCandidateView {
+        String relativePath();
+
+        boolean directory();
+    }
+
+    private record ZipRootCandidate(String relativePath, boolean directory) implements ZipRootCandidateView {
+    }
+
+    private record ZipMetadataEntry(String relativePath,
+                                    boolean directory,
+                                    long size,
+                                    String contentType) implements ZipRootCandidateView {
+    }
+
+    private record ZipArchiveMetadata(List<ZipMetadataEntry> entries, String commonRootDirectoryName) {
+    }
+
+    private record ZipItemMetadata(String path,
+                                   boolean directory,
+                                   long size,
+                                   String contentType) {
+    }
+
+    private record ZipExtractionTargetFile(String sourcePath,
+                                           String targetPath,
+                                           String filename,
+                                           String contentType,
+                                           long size) {
+    }
+
+    private record ZipExtractionPlan(String commonRootDirectoryName,
+                                     List<String> directories,
+                                     List<ZipExtractionTargetFile> files,
+                                     String extractedPath) {
     }
 
     private static final class ArchiveBuildProgressState {

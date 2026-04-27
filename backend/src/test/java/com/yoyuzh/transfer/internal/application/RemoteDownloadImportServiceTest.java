@@ -52,7 +52,7 @@ class RemoteDownloadImportServiceTest {
                         && "/docs".equals(files.get(0).path())
                         && "demo.txt".equals(files.get(0).filename())
                         && "text/plain".equals(files.get(0).contentType())
-                        && "hello".equals(new String(files.get(0).content()))),
+                        && files.get(0).size() == 5L),
                 eq(null)
         );
         assertThat(Files.exists(downloadedFile)).isFalse();

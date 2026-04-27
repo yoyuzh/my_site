@@ -19,6 +19,8 @@ import com.yoyuzh.platform.storage.api.StoragePolicyCapabilities;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.io.ByteArrayInputStream;
+import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
@@ -129,13 +131,32 @@ public class WorkspaceFileIngressService {
                                           String contentType,
                                           long size,
                                           byte[] content) {
+        List<String> writtenBlobObjectKeys = new ArrayList<>();
+        try {
+            return importExternalFile(recipient, path, filename, contentType, size, new ByteArrayInputStream(content == null ? new byte[0] : content), writtenBlobObjectKeys);
+        } catch (IOException ex) {
+            cleanupWrittenBlobs(writtenBlobObjectKeys, new IllegalStateException("failed to import external file content", ex));
+            throw new IllegalStateException("failed to import external file content", ex);
+        }
+    }
+
+    CreatedFile importExternalFile(WorkspaceUserContext recipient,
+                                   String path,
+                                   String filename,
+                                   String contentType,
+                                   long size,
+                                   java.io.InputStream contentStream,
+                                   List<String> writtenBlobObjectKeys) throws IOException {
         String normalizedPath = normalizeDirectoryPath(path);
         String normalizedFilename = normalizeLeafName(filename);
         fileUploadRulesService.validateUpload(recipient, normalizedPath, normalizedFilename, size);
         ensureDirectoryHierarchy(recipient, normalizedPath);
         String objectKey = createBlobObjectKey();
+        if (writtenBlobObjectKeys != null) {
+            writtenBlobObjectKeys.add(objectKey);
+        }
         RegisteredContentFile savedFile = contentBlobLifecycleApi.executeAfterBlobStored(objectKey, () -> {
-            fileContentStorage.storeBlob(objectKey, contentType, content);
+            fileContentStorage.storeBlob(objectKey, contentType, contentStream, size);
             ContentBlobReference blob = contentBlobRegistrationApi.registerStoredBlob(objectKey, contentType, size);
             return registerBlob(recipient, normalizedPath, normalizedFilename, contentType, size, blob);
         });
@@ -147,21 +168,19 @@ public class WorkspaceFileIngressService {
                                                 List<String> writtenBlobObjectKeys) {
         List<CreatedFile> createdFiles = new ArrayList<>();
         for (FileService.ExternalFileImport file : files) {
-            fileUploadRulesService.validateUpload(recipient, file.path(), file.filename(), file.size());
-            ensureDirectoryHierarchy(recipient, file.path());
-            String objectKey = createBlobObjectKey();
-            writtenBlobObjectKeys.add(objectKey);
-            fileContentStorage.storeBlob(objectKey, file.contentType(), file.content());
-            ContentBlobReference blob = contentBlobRegistrationApi.registerStoredBlob(objectKey, file.contentType(), file.size());
-            RegisteredContentFile savedFile = registerBlob(
-                    recipient,
-                    file.path(),
-                    file.filename(),
-                    file.contentType(),
-                    file.size(),
-                    blob
-            );
-            createdFiles.add(new CreatedFile(file.path(), savedFile));
+            try (java.io.InputStream contentStream = file.openStream()) {
+                createdFiles.add(importExternalFile(
+                        recipient,
+                        file.path(),
+                        file.filename(),
+                        file.contentType(),
+                        file.size(),
+                        contentStream,
+                        writtenBlobObjectKeys
+                ));
+            } catch (IOException ex) {
+                throw new IllegalStateException("failed to import external file content", ex);
+            }
         }
         return createdFiles;
     }
