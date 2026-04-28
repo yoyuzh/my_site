@@ -82,10 +82,12 @@ public class FileService implements WorkspaceBootstrapApi, WorkspaceArchiveApi {
     private static final long RECYCLE_BIN_RETENTION_DAYS = 10L;
     private static final String SECURE_LINK_SIGNATURE_ALGORITHM = "HmacSHA256";
     private static final String FOLDER_COLOR_PATTERN = "^#[0-9A-Fa-f]{6}$";
+    private static final Set<String> INLINE_EDITABLE_EXTENSIONS = Set.of("txt", "md", "drawio", "excalidraw");
 
     private final StoredFileRepository storedFileRepository;
     private final FileContentStorage fileContentStorage;
     private final long maxFileSize;
+    private final String publicDownloadBaseUrl;
     private final String packageDownloadBaseUrl;
     private final String packageDownloadSecret;
     private final long packageDownloadTtlSeconds;
@@ -164,6 +166,9 @@ public class FileService implements WorkspaceBootstrapApi, WorkspaceArchiveApi {
         this.storedFileRepository = storedFileRepository;
         this.fileContentStorage = fileContentStorage;
         this.maxFileSize = maxFileSize;
+        this.publicDownloadBaseUrl = workspaceDownloadOptions != null && StringUtils.hasText(workspaceDownloadOptions.publicDownloadBaseUrl())
+                ? workspaceDownloadOptions.publicDownloadBaseUrl().trim()
+                : null;
         this.packageDownloadBaseUrl = workspaceDownloadOptions != null && StringUtils.hasText(workspaceDownloadOptions.packageDownloadBaseUrl())
                 ? workspaceDownloadOptions.packageDownloadBaseUrl().trim()
                 : null;
@@ -288,6 +293,60 @@ public class FileService implements WorkspaceBootstrapApi, WorkspaceArchiveApi {
                 this::resolveUploadedContentType
         );
         return finalizeUploadedFile(user, createdFile.normalizedPath(), createdFile.file());
+    }
+
+    @Transactional
+    public FileMetadataResponse updateContent(Long userId, Long fileId, MultipartFile multipartFile) {
+        return updateContent(toWorkspaceUser(userId), fileId, multipartFile);
+    }
+
+    @Transactional
+    public FileMetadataResponse updateContent(IdentityAuthenticatedUser user, Long fileId, MultipartFile multipartFile) {
+        return updateContent(toWorkspaceUser(user), fileId, multipartFile);
+    }
+
+    @Transactional
+    public FileMetadataResponse updateContent(WorkspaceUserContext user, Long fileId, MultipartFile multipartFile) {
+        WorkspaceUserContext workspaceUser = normalizeWorkspaceUser(user);
+        StoredFile storedFile = getOwnedActiveFile(workspaceUser, fileId, "编辑");
+        if (storedFile.isDirectory()) {
+            throw new BusinessException(ErrorCode.INVALID_INPUT, "目录不支持在线编辑");
+        }
+        if (!isInlineEditable(storedFile.getFilename())) {
+            throw new BusinessException(ErrorCode.INVALID_INPUT, "当前文件类型不支持在线编辑");
+        }
+        if (multipartFile == null) {
+            throw new BusinessException(ErrorCode.INVALID_INPUT, "文件内容不能为空");
+        }
+
+        String contentType = resolveUploadedContentType(storedFile.getFilename(), multipartFile.getContentType());
+        List<ContentBlobReference> oldBlobsToDelete = contentBlobLifecycleApi.collectBlobReferencesToDelete(
+                storedFile.getBlobId() == null ? List.of() : List.of(storedFile.getBlobId())
+        );
+        WorkspaceFileIngressService.ReplacementContent replacement;
+        try {
+            replacement = workspaceFileIngressService.replaceFileContent(
+                    workspaceUser,
+                    storedFile.getId(),
+                    contentType,
+                    multipartFile.getSize(),
+                    storedFile.getSize() == null ? 0L : storedFile.getSize(),
+                    multipartFile.getInputStream()
+            );
+        } catch (IOException ex) {
+            throw new IllegalStateException("failed to read replacement file content", ex);
+        }
+
+        storedFile.setBlobId(replacement.blobId());
+        storedFile.setPrimaryEntityId(replacement.primaryEntityId());
+        storedFile.setLegacyStorageName(replacement.objectKey());
+        storedFile.setContentType(contentType);
+        storedFile.setSize(multipartFile.getSize());
+        StoredFile savedFile = storedFileRepository.save(storedFile);
+        workspaceFileActivityService.touchDirectories(workspaceUser, savedFile.getPath());
+        workspaceFileActivityService.recordMutation(workspaceUser, FileEventType.UPDATED, savedFile, buildLogicalPath(savedFile), buildLogicalPath(savedFile));
+        contentBlobLifecycleApi.deleteBlobReferences(oldBlobsToDelete);
+        return toResponse(savedFile);
     }
 
     @Transactional
@@ -733,23 +792,42 @@ public class FileService implements WorkspaceBootstrapApi, WorkspaceArchiveApi {
     }
 
     public DownloadUrlResponse getDownloadUrl(WorkspaceUserContext user, Long fileId) {
+        return new DownloadUrlResponse(resolveDownloadUrl(user, fileId, false));
+    }
+
+    public DownloadUrlResponse getViewerSourceUrl(Long userId, Long fileId) {
+        return getViewerSourceUrl(toWorkspaceUser(userId), fileId);
+    }
+
+    public DownloadUrlResponse getViewerSourceUrl(WorkspaceUserContext user, Long fileId) {
+        return new DownloadUrlResponse(resolveDownloadUrl(user, fileId, true));
+    }
+
+    private String resolveDownloadUrl(WorkspaceUserContext user, Long fileId, boolean preferPublicViewerUrl) {
         StoredFile storedFile = getOwnedActiveFile(user, fileId, "下载");
         if (storedFile.isDirectory()) {
             throw new BusinessException(ErrorCode.UNKNOWN, "目录不支持下载");
         }
 
         if (shouldUsePublicPackageDownload(storedFile)) {
-            return new DownloadUrlResponse(buildPublicPackageDownloadUrl(storedFile));
+            return buildPublicPackageDownloadUrl(storedFile);
+        }
+
+        if (preferPublicViewerUrl) {
+            String viewerSourceUrl = buildPublicViewerSourceUrl(storedFile);
+            if (viewerSourceUrl != null) {
+                return viewerSourceUrl;
+            }
         }
 
         if (fileContentStorage.supportsDirectDownload()) {
-            return new DownloadUrlResponse(fileContentStorage.createBlobDownloadUrl(
+            return fileContentStorage.createBlobDownloadUrl(
                     getRequiredBlob(storedFile).objectKey(),
                     storedFile.getFilename()
-            ));
+            );
         }
 
-        return new DownloadUrlResponse("/api/files/download/" + storedFile.getId());
+        return "/api/files/download/" + storedFile.getId();
     }
 
     @Transactional
@@ -842,6 +920,17 @@ public class FileService implements WorkspaceBootstrapApi, WorkspaceArchiveApi {
                 && StringUtils.hasText(packageDownloadBaseUrl)
                 && StringUtils.hasText(packageDownloadSecret)
                 && isAppPackage(storedFile);
+    }
+
+    private String buildPublicViewerSourceUrl(StoredFile storedFile) {
+        if (!fileContentStorage.supportsDirectDownload() || !StringUtils.hasText(publicDownloadBaseUrl)) {
+            return null;
+        }
+        ContentBlobReference blob = getRequiredBlob(storedFile);
+        String base = publicDownloadBaseUrl.endsWith("/")
+                ? publicDownloadBaseUrl.substring(0, publicDownloadBaseUrl.length() - 1)
+                : publicDownloadBaseUrl;
+        return base + "/" + trimLeadingSlash(blob.objectKey());
     }
 
     private boolean isAppPackage(StoredFile storedFile) {
@@ -1089,6 +1178,17 @@ public class FileService implements WorkspaceBootstrapApi, WorkspaceArchiveApi {
 
     private String inferContentTypeFromFilename(String filename) {
         return WorkspaceContentTypeResolver.inferContentTypeFromFilename(filename);
+    }
+
+    private boolean isInlineEditable(String filename) {
+        if (!StringUtils.hasText(filename)) {
+            return false;
+        }
+        int extensionIndex = filename.lastIndexOf('.');
+        if (extensionIndex < 0 || extensionIndex == filename.length() - 1) {
+            return false;
+        }
+        return INLINE_EDITABLE_EXTENSIONS.contains(filename.substring(extensionIndex + 1).toLowerCase(Locale.ROOT));
     }
 
     private FileMetadataResponse toResponse(StoredFile storedFile) {

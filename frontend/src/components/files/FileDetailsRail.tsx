@@ -1,9 +1,10 @@
 import React, { useEffect, useState } from 'react';
 import { Box, IconButton, Paper, Typography, Chip, Divider, Stack, Skeleton } from '@mui/material';
-import { Close, Favorite, Share, InfoOutlined, AccessTime, FolderOutlined, InsertDriveFileOutlined } from '@mui/icons-material';
+import { Clock3, Heart, Share2, X } from 'lucide-react';
 import type { FileDetail } from '../../api/types';
 import { formatBytes, formatDateTime } from '../../lib/format';
 import { downloadFileBlob, getFileDownloadUrl } from '../../lib/files';
+import CloudreveFileTypeIcon from './CloudreveFileTypeIcon';
 
 function isExternalUrl(url: string) {
   return /^https?:\/\//i.test(url) || url.startsWith('//');
@@ -16,14 +17,14 @@ export interface FileDetailsRailProps {
   onClose: () => void;
 }
 
-const DetailItem = ({ label, value, icon: Icon }: { label: string; value: string | React.ReactNode; icon?: React.ElementType }) => (
+const DetailItem = ({ label, value, icon }: { label: string; value: string | React.ReactNode; icon?: React.ReactNode }) => (
   <Box sx={{ mb: 1.5 }}>
     <Typography
       variant="caption"
       color="text.secondary"
       sx={{ display: 'flex', alignItems: 'center', gap: 0.5, mb: 0, fontWeight: 500, textTransform: 'uppercase', letterSpacing: '0.05em' }}
     >
-      {Icon && <Icon sx={{ fontSize: 14 }} />}
+      {icon}
       {label}
     </Typography>
     <Typography variant="body2" sx={{ fontWeight: 500, color: 'text.primary', wordBreak: 'break-all', lineHeight: 1.4 }}>
@@ -106,7 +107,7 @@ const FileDetailsRail: React.FC<FileDetailsRailProps> = ({ detail, loading, erro
           </Typography>
         </Box>
         <IconButton size="small" onClick={onClose} sx={{ mt: -0.5, mr: -0.5 }}>
-          <Close fontSize="small" />
+          <X size={16} />
         </IconButton>
       </Box>
 
@@ -139,7 +140,7 @@ const FileDetailsRail: React.FC<FileDetailsRailProps> = ({ detail, loading, erro
                 sx={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain' }}
               />
             ) : (
-              <InsertDriveFileOutlined color="disabled" sx={{ fontSize: 32 }} />
+              <CloudreveFileTypeIcon file={detail} size={32} />
             )}
           </Box>
         </Box>
@@ -164,7 +165,7 @@ const FileDetailsRail: React.FC<FileDetailsRailProps> = ({ detail, loading, erro
               <Stack direction="row" spacing={1}>
                 {detail.favorite && (
                   <Chip
-                    icon={<Favorite sx={{ fontSize: '14px !important' }} />}
+                    icon={<Heart size={14} />}
                     label="已收藏"
                     size="small"
                     color="primary"
@@ -181,7 +182,7 @@ const FileDetailsRail: React.FC<FileDetailsRailProps> = ({ detail, loading, erro
                 )}
                 {detail.shared && (
                   <Chip
-                    icon={<Share sx={{ fontSize: '14px !important' }} />}
+                    icon={<Share2 size={14} />}
                     label="已共享"
                     size="small"
                     color="info"
@@ -206,7 +207,7 @@ const FileDetailsRail: React.FC<FileDetailsRailProps> = ({ detail, loading, erro
               <DetailItem
                 label="类型"
                 value={detail.directory ? '文件夹' : detail.contentType || '未知'}
-                icon={detail.directory ? FolderOutlined : InsertDriveFileOutlined}
+                icon={<CloudreveFileTypeIcon file={detail} size={14} />}
               />
               <DetailItem label="大小" value={detail.directory ? '--' : formatBytes(detail.size)} />
               <DetailItem label="路径" value={detail.path} />
@@ -216,8 +217,8 @@ const FileDetailsRail: React.FC<FileDetailsRailProps> = ({ detail, loading, erro
               时间戳
             </Typography>
             <Box sx={{ p: 1, borderRadius: 1.5, border: '1px solid', borderColor: 'divider' }}>
-              <DetailItem label="创建于" value={formatDateTime(detail.createdAt)} icon={AccessTime} />
-              <DetailItem label="最后修改" value={formatDateTime(detail.updatedAt)} icon={AccessTime} />
+              <DetailItem label="创建于" value={formatDateTime(detail.createdAt)} icon={<Clock3 size={14} />} />
+              <DetailItem label="最后修改" value={formatDateTime(detail.updatedAt)} icon={<Clock3 size={14} />} />
             </Box>
           </Stack>
         )}

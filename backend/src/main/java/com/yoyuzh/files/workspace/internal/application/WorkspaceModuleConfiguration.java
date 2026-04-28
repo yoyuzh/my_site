@@ -74,6 +74,7 @@ public class WorkspaceModuleConfiguration {
     @Bean
     WorkspaceDownloadOptions workspaceDownloadOptions(StorageRuntimeProperties storageRuntimeProperties) {
         return new WorkspaceDownloadOptions(
+                storageRuntimeProperties.getS3().getPublicDownloadBaseUrl(),
                 storageRuntimeProperties.getS3().getPackageDownloadBaseUrl(),
                 storageRuntimeProperties.getS3().getPackageDownloadSecret(),
                 Math.max(1, storageRuntimeProperties.getS3().getPackageDownloadTtlSeconds())

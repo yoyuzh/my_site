@@ -51,6 +51,15 @@ public class User {
     @Column(name = "preferred_language", nullable = false, length = 16)
     private String preferredLanguage;
 
+    @Column(name = "preferred_theme", nullable = false, length = 16)
+    private String preferredTheme;
+
+    @Column(name = "disable_view_sync", nullable = false)
+    private boolean disableViewSync;
+
+    @Column(name = "default_open_with_by_ext", columnDefinition = "TEXT")
+    private String defaultOpenWithByExtJson;
+
     @Column(name = "avatar_storage_name", length = 255)
     private String avatarStorageName;
 
@@ -95,6 +104,9 @@ public class User {
         }
         if (preferredLanguage == null || preferredLanguage.isBlank()) {
             preferredLanguage = "zh-CN";
+        }
+        if (preferredTheme == null || preferredTheme.isBlank()) {
+            preferredTheme = "system";
         }
         if (storageQuotaBytes == null || storageQuotaBytes <= 0) {
             storageQuotaBytes = DEFAULT_STORAGE_QUOTA_BYTES;
@@ -174,6 +186,30 @@ public class User {
 
     public void setPreferredLanguage(String preferredLanguage) {
         this.preferredLanguage = preferredLanguage;
+    }
+
+    public String getPreferredTheme() {
+        return preferredTheme;
+    }
+
+    public void setPreferredTheme(String preferredTheme) {
+        this.preferredTheme = preferredTheme;
+    }
+
+    public boolean isDisableViewSync() {
+        return disableViewSync;
+    }
+
+    public void setDisableViewSync(boolean disableViewSync) {
+        this.disableViewSync = disableViewSync;
+    }
+
+    public String getDefaultOpenWithByExtJson() {
+        return defaultOpenWithByExtJson;
+    }
+
+    public void setDefaultOpenWithByExtJson(String defaultOpenWithByExtJson) {
+        this.defaultOpenWithByExtJson = defaultOpenWithByExtJson;
     }
 
     public String getAvatarStorageName() {

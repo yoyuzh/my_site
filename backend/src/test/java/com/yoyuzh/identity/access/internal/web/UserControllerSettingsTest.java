@@ -1,8 +1,10 @@
 package com.yoyuzh.identity.access.internal.web;
 
 import com.yoyuzh.identity.access.internal.application.AvatarDownloadResult;
+import com.yoyuzh.identity.access.api.UpdateUserSettingsRequest;
 import com.yoyuzh.identity.access.api.UserCapacityResponse;
 import com.yoyuzh.identity.access.api.UserSettingsResponse;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.yoyuzh.identity.access.internal.application.AuthService;
 import org.hamcrest.Matchers;
 import org.junit.jupiter.api.BeforeEach;
@@ -21,11 +23,14 @@ import org.springframework.web.method.support.HandlerMethodArgumentResolver;
 import org.springframework.web.method.support.ModelAndViewContainer;
 
 import java.util.List;
+import java.util.Map;
 
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -35,6 +40,7 @@ class UserControllerSettingsTest {
 
     private AuthService authService;
     private MockMvc mockMvc;
+    private final ObjectMapper objectMapper = new ObjectMapper();
 
     @BeforeEach
     void setUp() {
@@ -60,14 +66,39 @@ class UserControllerSettingsTest {
     @Test
     void shouldExposeSettings() throws Exception {
         when(authService.getSettings("demo"))
-                .thenReturn(new UserSettingsResponse("demo", "zh-CN", "system", false));
+                .thenReturn(new UserSettingsResponse("demo", "zh-CN", "system", false, Map.of("md", "markdown")));
 
         mockMvc.perform(get("/api/user/settings").with(user(userDetails())))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.displayName").value("demo"))
                 .andExpect(jsonPath("$.data.preferredLanguage").value("zh-CN"))
                 .andExpect(jsonPath("$.data.preferredTheme").value("system"))
-                .andExpect(jsonPath("$.data.disableViewSync").value(false));
+                .andExpect(jsonPath("$.data.disableViewSync").value(false))
+                .andExpect(jsonPath("$.data.defaultOpenWithByExt.md").value("markdown"));
+    }
+
+    @Test
+    void shouldUpdateSettings() throws Exception {
+        UpdateUserSettingsRequest request = new UpdateUserSettingsRequest(
+                "en-US",
+                "dark",
+                true,
+                Map.of("md", "markdown")
+        );
+        when(authService.updateSettings("demo", request))
+                .thenReturn(new UserSettingsResponse("demo", "en-US", "dark", true, Map.of("md", "markdown")));
+
+        mockMvc.perform(put("/api/user/settings")
+                        .with(user(userDetails()))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsBytes(request)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.preferredLanguage").value("en-US"))
+                .andExpect(jsonPath("$.data.preferredTheme").value("dark"))
+                .andExpect(jsonPath("$.data.disableViewSync").value(true))
+                .andExpect(jsonPath("$.data.defaultOpenWithByExt.md").value("markdown"));
+
+        verify(authService).updateSettings("demo", request);
     }
 
     @Test

@@ -11,9 +11,10 @@ import {
   useTheme,
   CircularProgress,
 } from '@mui/material';
-import { Folder, InsertDriveFile, MoreHoriz, RadioButtonUnchecked, CheckCircle } from '@mui/icons-material';
+import { CheckCircle2, Circle, Ellipsis } from 'lucide-react';
 import type { FileItem, FileTag } from '../../api/types';
 import { formatBytes, formatDateTime } from '../../lib/format';
+import CloudreveFileTypeIcon from './CloudreveFileTypeIcon';
 import FileThumbnail from '../media/FileThumbnail';
 
 function FileIcon({ file, selected }: { file: FileItem; selected: boolean }) {
@@ -24,10 +25,7 @@ function FileIcon({ file, selected }: { file: FileItem; selected: boolean }) {
       </Box>
     );
   }
-  if (file.directory) {
-    return <Folder sx={{ color: selected ? 'primary.main' : (file.folderColor || '#E9A23B') }} />;
-  }
-  return <InsertDriveFile sx={{ color: selected ? 'primary.main' : 'text.secondary' }} />;
+  return <CloudreveFileTypeIcon file={file} size={20} selected={selected} />;
 }
 
 function getTypeLabel(file: FileItem) {
@@ -45,6 +43,7 @@ export interface FilesExplorerSurfaceProps {
   rows: FileItem[];
   viewMode: 'grid' | 'list';
   selectedById: Record<string, FileItem>;
+  focusedSelectionKey?: string;
   favoriteIds: Set<number>;
   allSelected: boolean;
   selectedCount: number;
@@ -75,6 +74,7 @@ export const FilesExplorerSurface: React.FC<FilesExplorerSurfaceProps> = ({
   rows,
   viewMode,
   selectedById,
+  focusedSelectionKey,
   favoriteIds,
   allSelected,
   selectedCount,
@@ -101,6 +101,11 @@ export const FilesExplorerSurface: React.FC<FilesExplorerSurfaceProps> = ({
   const sentinelRef = useRef<HTMLDivElement | null>(null);
   const folderRows = rows.filter((file) => file.directory);
   const fileRows = rows.filter((file) => !file.directory);
+  const rowIndexBySelectionKey = new Map(rows.map((file, index) => [getSelectionKey(file), index]));
+
+  function getRowIndex(file: FileItem, fallbackIndex: number) {
+    return rowIndexBySelectionKey.get(getSelectionKey(file)) ?? fallbackIndex;
+  }
 
   function renderFolderTags(file: FileItem, mode: 'grid' | 'list') {
     const tags = folderTagsMap[file.id] ?? [];
@@ -166,42 +171,52 @@ export const FilesExplorerSurface: React.FC<FilesExplorerSurfaceProps> = ({
 
   function renderFolderCard(file: FileItem, index: number) {
     const selected = Boolean(selectedById[getSelectionKey(file)]);
+    const focused = selected && focusedSelectionKey === getSelectionKey(file);
     const isDropActive = activeDropTarget === getLogicalPath(file);
+    const rowIndex = getRowIndex(file, index);
 
     return (
       <Paper
         key={`${file.id}-${index}`}
         elevation={0}
+        role="option"
+        aria-selected={selected}
+        data-file-selection-key={getSelectionKey(file)}
+        data-files-grid-card="true"
         ref={(el: HTMLDivElement | null) => registerDropTarget?.(el, getLogicalPath(file))}
         onMouseDown={(event) => onDragStart?.(file, event)}
         onClick={(event) => {
           event.stopPropagation();
-          onSelectFile(file, index, event);
+          onSelectFile(file, rowIndex, event);
         }}
         onDoubleClick={() => onOpenFile(file)}
         onContextMenu={(event) => {
           event.stopPropagation();
-          onContextMenu(file, index, event);
+          onContextMenu(file, rowIndex, event);
         }}
         sx={{
           p: 1,
           cursor: 'default',
           border: '1px solid',
-          borderColor: isDropActive ? 'primary.main' : (selected ? 'primary.main' : 'divider'),
+          borderColor: isDropActive ? 'primary.main' : (focused ? 'primary.dark' : (selected ? 'primary.main' : 'divider')),
           bgcolor: isDropActive 
             ? alpha(theme.palette.primary.main, 0.15) 
-            : (selected ? alpha(theme.palette.primary.main, 0.08) : 'background.paper'),
+            : (focused ? alpha(theme.palette.primary.main, 0.16) : (selected ? alpha(theme.palette.primary.main, 0.08) : 'background.paper')),
           boxShadow: isDropActive 
             ? `0 0 16px ${alpha(theme.palette.primary.main, 0.4)}` 
-            : (selected ? `0 0 12px ${alpha(theme.palette.primary.main, 0.25)}` : 'none'),
+            : (focused
+              ? `0 0 0 2px ${alpha(theme.palette.primary.main, 0.45)}, 0 0 24px ${alpha(theme.palette.primary.main, 0.48)}`
+              : (selected ? `0 0 14px ${alpha(theme.palette.primary.main, 0.32)}` : 'none')),
           transition: 'all 180ms ease',
           animation: 'fadeIn 300ms ease-out forwards',
           animationDelay: `${Math.min(index * 20, 300)}ms`,
           opacity: 0,
           '&:hover': {
-            bgcolor: selected ? alpha(theme.palette.primary.main, 0.12) : 'action.hover',
-            boxShadow: selected
-              ? `0 8px 20px ${alpha(theme.palette.primary.main, 0.15)}, 0 0 12px ${alpha(theme.palette.primary.main, 0.25)}`
+            bgcolor: focused ? alpha(theme.palette.primary.main, 0.18) : (selected ? alpha(theme.palette.primary.main, 0.12) : 'action.hover'),
+            boxShadow: focused
+              ? `0 10px 24px ${alpha(theme.palette.primary.main, 0.18)}, 0 0 0 2px ${alpha(theme.palette.primary.main, 0.52)}, 0 0 26px ${alpha(theme.palette.primary.main, 0.52)}`
+              : selected
+              ? `0 8px 20px ${alpha(theme.palette.primary.main, 0.15)}, 0 0 14px ${alpha(theme.palette.primary.main, 0.32)}`
               : (theme.palette.mode === 'dark' ? 'none' : '0 8px 20px rgba(0,0,0,0.06)'),
             transform: 'translateY(-2px)',
             borderColor: selected ? 'primary.main' : alpha(theme.palette.text.primary, 0.15),
@@ -222,32 +237,28 @@ export const FilesExplorerSurface: React.FC<FilesExplorerSurfaceProps> = ({
                 size="small"
                 onClick={(event) => {
                   event.stopPropagation();
-                  onToggleSelection(file, index);
+                  onToggleSelection(file, rowIndex);
                 }}
                 sx={{ p: 0, color: 'primary.main', '&.Mui-checked': { color: 'primary.main' } }}
-                icon={<RadioButtonUnchecked fontSize="small" />}
-                checkedIcon={<CheckCircle fontSize="small" />}
+                icon={<Circle size={16} />}
+                checkedIcon={<CheckCircle2 size={16} />}
               />
             ) : (
               <>
-                <Box className="grid-icon" sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                  {file.customEmoji ? (
-                    <Box sx={{ fontSize: 24, display: 'flex' }}>{file.customEmoji}</Box>
-                  ) : (
-                    <Folder sx={{ color: file.folderColor || '#E9A23B', fontSize: 24 }} />
-                  )}
-                </Box>
+                  <Box className="grid-icon" sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    {file.customEmoji ? <Box sx={{ fontSize: 24, display: 'flex' }}>{file.customEmoji}</Box> : <CloudreveFileTypeIcon file={file} size={24} />}
+                  </Box>
                 <Box className="grid-checkbox" sx={{ display: 'none', alignItems: 'center', justifyContent: 'center' }}>
                   <Checkbox
                     checked={false}
                     size="small"
                     onClick={(event) => {
                       event.stopPropagation();
-                      onToggleSelection(file, index);
+                      onToggleSelection(file, rowIndex);
                     }}
                     sx={{ p: 0 }}
-                    icon={<RadioButtonUnchecked fontSize="small" />}
-                    checkedIcon={<CheckCircle fontSize="small" />}
+                    icon={<Circle size={16} />}
+                    checkedIcon={<CheckCircle2 size={16} />}
                   />
                 </Box>
               </>
@@ -262,10 +273,10 @@ export const FilesExplorerSurface: React.FC<FilesExplorerSurfaceProps> = ({
             size="small"
             onClick={(event) => {
               event.stopPropagation();
-              onContextMenu(file, index, event);
+              onContextMenu(file, rowIndex, event);
             }}
           >
-            <MoreHoriz fontSize="small" />
+            <Ellipsis size={16} />
           </IconButton>
         </Stack>
       </Paper>
@@ -274,36 +285,46 @@ export const FilesExplorerSurface: React.FC<FilesExplorerSurfaceProps> = ({
 
   function renderFileCard(file: FileItem, index: number) {
     const selected = Boolean(selectedById[getSelectionKey(file)]);
+    const focused = selected && focusedSelectionKey === getSelectionKey(file);
+    const rowIndex = getRowIndex(file, index);
     return (
       <Paper
         key={`${file.id}-${index}`}
         elevation={0}
+        role="option"
+        aria-selected={selected}
+        data-file-selection-key={getSelectionKey(file)}
+        data-files-grid-card="true"
         onMouseDown={(event) => onDragStart?.(file, event)}
         onClick={(event) => {
           event.stopPropagation();
-          onSelectFile(file, index, event);
+          onSelectFile(file, rowIndex, event);
         }}
         onDoubleClick={() => onOpenFile(file)}
         onContextMenu={(event) => {
           event.stopPropagation();
-          onContextMenu(file, index, event);
+          onContextMenu(file, rowIndex, event);
         }}
         sx={{
           p: 1,
           alignSelf: 'start',
           cursor: 'default',
           border: '1px solid',
-          borderColor: selected ? 'primary.main' : 'divider',
-          bgcolor: selected ? alpha(theme.palette.primary.main, 0.08) : 'background.paper',
-          boxShadow: selected ? `0 0 12px ${alpha(theme.palette.primary.main, 0.25)}` : 'none',
+          borderColor: focused ? 'primary.dark' : (selected ? 'primary.main' : 'divider'),
+          bgcolor: focused ? alpha(theme.palette.primary.main, 0.16) : (selected ? alpha(theme.palette.primary.main, 0.08) : 'background.paper'),
+          boxShadow: focused
+            ? `0 0 0 2px ${alpha(theme.palette.primary.main, 0.45)}, 0 0 24px ${alpha(theme.palette.primary.main, 0.48)}`
+            : (selected ? `0 0 14px ${alpha(theme.palette.primary.main, 0.32)}` : 'none'),
           transition: 'all 180ms ease',
           animation: 'fadeIn 300ms ease-out forwards',
           animationDelay: `${Math.min(index * 20, 300)}ms`,
           opacity: 0,
           '&:hover': {
-            bgcolor: selected ? alpha(theme.palette.primary.main, 0.12) : 'action.hover',
-            boxShadow: selected
-              ? `0 8px 20px ${alpha(theme.palette.primary.main, 0.15)}, 0 0 12px ${alpha(theme.palette.primary.main, 0.25)}`
+            bgcolor: focused ? alpha(theme.palette.primary.main, 0.18) : (selected ? alpha(theme.palette.primary.main, 0.12) : 'action.hover'),
+            boxShadow: focused
+              ? `0 10px 24px ${alpha(theme.palette.primary.main, 0.18)}, 0 0 0 2px ${alpha(theme.palette.primary.main, 0.52)}, 0 0 26px ${alpha(theme.palette.primary.main, 0.52)}`
+              : selected
+              ? `0 8px 20px ${alpha(theme.palette.primary.main, 0.15)}, 0 0 14px ${alpha(theme.palette.primary.main, 0.32)}`
               : (theme.palette.mode === 'dark' ? 'none' : '0 8px 20px rgba(0,0,0,0.06)'),
             transform: 'translateY(-2px)',
             borderColor: selected ? 'primary.main' : alpha(theme.palette.text.primary, 0.15),
@@ -325,32 +346,28 @@ export const FilesExplorerSurface: React.FC<FilesExplorerSurfaceProps> = ({
                   size="small"
                   onClick={(event) => {
                     event.stopPropagation();
-                    onToggleSelection(file, index);
+                    onToggleSelection(file, rowIndex);
                   }}
                   sx={{ p: 0, color: 'primary.main', '&.Mui-checked': { color: 'primary.main' } }}
-                  icon={<RadioButtonUnchecked fontSize="small" />}
-                  checkedIcon={<CheckCircle fontSize="small" />}
+                  icon={<Circle size={16} />}
+                  checkedIcon={<CheckCircle2 size={16} />}
                 />
               ) : (
                 <>
                   <Box className="grid-icon" sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                    {file.customEmoji ? (
-                      <Box sx={{ fontSize: 20, display: 'flex' }}>{file.customEmoji}</Box>
-                    ) : (
-                      <InsertDriveFile sx={{ color: 'text.secondary', fontSize: 20 }} />
-                    )}
+                    {file.customEmoji ? <Box sx={{ fontSize: 20, display: 'flex' }}>{file.customEmoji}</Box> : <CloudreveFileTypeIcon file={file} size={20} />}
                   </Box>
-                  <Box className="grid-checkbox" sx={{ display: 'none', alignItems: 'center', justifyContent: 'center' }}>
-                    <Checkbox
+                <Box className="grid-checkbox" sx={{ display: 'none', alignItems: 'center', justifyContent: 'center' }}>
+                  <Checkbox
                       checked={false}
                       size="small"
                       onClick={(event) => {
                         event.stopPropagation();
-                        onToggleSelection(file, index);
+                        onToggleSelection(file, rowIndex);
                       }}
                       sx={{ p: 0 }}
-                      icon={<RadioButtonUnchecked fontSize="small" />}
-                      checkedIcon={<CheckCircle fontSize="small" />}
+                      icon={<Circle size={16} />}
+                      checkedIcon={<CheckCircle2 size={16} />}
                     />
                   </Box>
                 </>
@@ -364,30 +381,24 @@ export const FilesExplorerSurface: React.FC<FilesExplorerSurfaceProps> = ({
               size="small"
               onClick={(event) => {
                 event.stopPropagation();
-                onContextMenu(file, index, event);
+                onContextMenu(file, rowIndex, event);
               }}
             >
-              <MoreHoriz fontSize="small" />
+              <Ellipsis size={16} />
             </IconButton>
           </Stack>
           <Box
             sx={{
               height: 156,
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              bgcolor: 'action.hover',
-              borderRadius: 1,
+              bgcolor: alpha(theme.palette.primary.main, theme.palette.mode === 'dark' ? 0.08 : 0.04),
+              borderRadius: 2.5,
               overflow: 'hidden',
               position: 'relative',
-              p: 1,
               border: '1px solid',
-              borderColor: alpha(theme.palette.divider, 0.05),
+              borderColor: alpha(theme.palette.primary.main, theme.palette.mode === 'dark' ? 0.16 : 0.08),
             }}
           >
-            <Box sx={{ transform: 'scale(4.4)', transformOrigin: 'center center' }}>
-              <FileThumbnail file={file} />
-            </Box>
+            <FileThumbnail file={file} variant="card" />
           </Box>
         </Stack>
       </Paper>
@@ -396,24 +407,29 @@ export const FilesExplorerSurface: React.FC<FilesExplorerSurfaceProps> = ({
 
   function renderFileRow(file: FileItem, index: number) {
     const selected = Boolean(selectedById[getSelectionKey(file)]);
+    const focused = selected && focusedSelectionKey === getSelectionKey(file);
     const isDropActive = file.directory && activeDropTarget === getLogicalPath(file);
+    const rowIndex = getRowIndex(file, index);
 
     return (
       <Box
         key={`${file.id}-${index}`}
         role="row"
+        aria-selected={selected}
+        data-file-selection-key={getSelectionKey(file)}
+        data-files-list-row="true"
         ref={(el: HTMLDivElement | null) => {
           if (file.directory) registerDropTarget?.(el, getLogicalPath(file));
         }}
         onMouseDown={(event) => onDragStart?.(file, event)}
         onClick={(event) => {
           event.stopPropagation();
-          onSelectFile(file, index, event);
+          onSelectFile(file, rowIndex, event);
         }}
         onDoubleClick={() => onOpenFile(file)}
         onContextMenu={(event) => {
           event.stopPropagation();
-          onContextMenu(file, index, event);
+          onContextMenu(file, rowIndex, event);
         }}
         sx={{
           display: 'grid',
@@ -425,8 +441,10 @@ export const FilesExplorerSurface: React.FC<FilesExplorerSurfaceProps> = ({
           borderColor: 'divider',
           bgcolor: isDropActive 
             ? alpha(theme.palette.primary.main, 0.15) 
-            : (selected ? alpha(theme.palette.primary.main, 0.08) : 'transparent'),
-          boxShadow: isDropActive ? `inset 0 0 0 2px ${theme.palette.primary.main}` : 'none',
+            : (focused ? alpha(theme.palette.primary.main, 0.16) : (selected ? alpha(theme.palette.primary.main, 0.08) : 'transparent')),
+          boxShadow: isDropActive
+            ? `inset 0 0 0 2px ${theme.palette.primary.main}`
+            : (focused ? `inset 0 0 0 2px ${alpha(theme.palette.primary.main, 0.58)}, 0 0 18px ${alpha(theme.palette.primary.main, 0.4)}` : 'none'),
           transition: 'all 180ms ease',
           animation: 'fadeIn 300ms ease-out forwards',
           animationDelay: `${Math.min(index * 20, 300)}ms`,
@@ -435,7 +453,7 @@ export const FilesExplorerSurface: React.FC<FilesExplorerSurfaceProps> = ({
           '&:hover': {
             bgcolor: isDropActive 
               ? alpha(theme.palette.primary.main, 0.2) 
-              : (selected ? alpha(theme.palette.primary.main, 0.12) : 'action.hover'),
+              : (focused ? alpha(theme.palette.primary.main, 0.18) : (selected ? alpha(theme.palette.primary.main, 0.12) : 'action.hover')),
             '& .list-icon': { display: 'none' },
             '& .list-checkbox': { display: 'flex' },
           },
@@ -453,11 +471,11 @@ export const FilesExplorerSurface: React.FC<FilesExplorerSurfaceProps> = ({
                 size="small"
                 onClick={(event) => {
                   event.stopPropagation();
-                  onToggleSelection(file, index);
+                  onToggleSelection(file, rowIndex);
                 }}
                 sx={{ p: 0, color: 'primary.main', '&.Mui-checked': { color: 'primary.main' } }}
-                icon={<RadioButtonUnchecked fontSize="small" />}
-                checkedIcon={<CheckCircle fontSize="small" />}
+                icon={<Circle size={16} />}
+                checkedIcon={<CheckCircle2 size={16} />}
               />
             ) : (
               <>
@@ -470,11 +488,11 @@ export const FilesExplorerSurface: React.FC<FilesExplorerSurfaceProps> = ({
                     size="small"
                     onClick={(event) => {
                       event.stopPropagation();
-                      onToggleSelection(file, index);
+                      onToggleSelection(file, rowIndex);
                     }}
                     sx={{ p: 0 }}
-                    icon={<RadioButtonUnchecked fontSize="small" />}
-                    checkedIcon={<CheckCircle fontSize="small" />}
+                    icon={<Circle size={16} />}
+                    checkedIcon={<CheckCircle2 size={16} />}
                   />
                 </Box>
               </>
@@ -519,10 +537,10 @@ export const FilesExplorerSurface: React.FC<FilesExplorerSurfaceProps> = ({
           size="small"
           onClick={(event) => {
             event.stopPropagation();
-            onContextMenu(file, index, event);
+            onContextMenu(file, rowIndex, event);
           }}
         >
-          <MoreHoriz fontSize="small" />
+          <Ellipsis size={16} />
         </IconButton>
       </Box>
     );
@@ -554,7 +572,7 @@ export const FilesExplorerSurface: React.FC<FilesExplorerSurfaceProps> = ({
         </Stack>
       ) : rows.length === 0 ? (
         <Stack alignItems="center" justifyContent="center" spacing={1} sx={{ minHeight: 360 }}>
-          <Folder color="disabled" sx={{ fontSize: 56 }} />
+          <CloudreveFileTypeIcon file={{ filename: 'folder', directory: true, contentType: '', folderColor: '#cbd5e1' }} size={56} />
           <Typography color="text.secondary">当前目录暂无文件</Typography>
         </Stack>
       ) : (

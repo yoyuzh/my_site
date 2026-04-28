@@ -9,6 +9,7 @@ import com.yoyuzh.files.upload.InitiateUploadResponse;
 import com.yoyuzh.files.workspace.api.BatchFileOperationRequest;
 import com.yoyuzh.files.workspace.api.DownloadUrlResponse;
 import com.yoyuzh.files.workspace.api.FavoriteFileResponse;
+import com.yoyuzh.files.workspace.api.FileViewerConfigResponse;
 import com.yoyuzh.files.workspace.api.FileDeleteMode;
 import com.yoyuzh.files.workspace.api.FileDetailResponse;
 import com.yoyuzh.files.workspace.api.FileMetadataResponse;
@@ -17,6 +18,7 @@ import com.yoyuzh.files.workspace.api.WorkspaceTagResponse;
 import com.yoyuzh.files.workspace.api.WorkspaceDownloadResult;
 import com.yoyuzh.files.workspace.api.WorkspaceMoveResult;
 import com.yoyuzh.files.workspace.internal.application.FileService;
+import com.yoyuzh.files.workspace.internal.application.FileViewerConfigService;
 import com.yoyuzh.files.workspace.internal.application.WorkspaceTagService;
 import io.swagger.v3.oas.annotations.Operation;
 import jakarta.validation.Valid;
@@ -50,6 +52,13 @@ public class FileController {
     private final FileService fileService;
     private final CustomUserDetailsService userDetailsService;
     private final WorkspaceTagService workspaceTagService;
+    private final FileViewerConfigService fileViewerConfigService;
+
+    @Operation(summary = "获取文件打开方式配置")
+    @GetMapping("/viewers/config")
+    public ApiResponse<FileViewerConfigResponse> viewerConfig() {
+        return ApiResponse.success(fileViewerConfigService.defaultConfig());
+    }
 
     @Operation(summary = "上传文件")
     @PostMapping("/upload")
@@ -76,6 +85,18 @@ public class FileController {
         return ApiResponse.success(fileService.completeUpload(
                 userDetailsService.loadAuthenticatedUser(userDetails.getUsername()),
                 request
+        ));
+    }
+
+    @Operation(summary = "替换文件内容")
+    @PatchMapping(value = "/{fileId}/content", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    public ApiResponse<FileMetadataResponse> updateContent(@AuthenticationPrincipal UserDetails userDetails,
+                                                           @PathVariable Long fileId,
+                                                           @RequestPart("file") MultipartFile file) {
+        return ApiResponse.success(fileService.updateContent(
+                userDetailsService.loadAuthenticatedUser(userDetails.getUsername()),
+                fileId,
+                file
         ));
     }
 
@@ -274,7 +295,14 @@ public class FileController {
     @Operation(summary = "获取下载链接")
     @GetMapping("/download/{fileId}/url")
     public ApiResponse<DownloadUrlResponse> downloadUrl(@AuthenticationPrincipal UserDetails userDetails,
-                                                        @PathVariable Long fileId) {
+                                                        @PathVariable Long fileId,
+                                                        @RequestParam(name = "viewer", defaultValue = "false") boolean viewer) {
+        if (viewer) {
+            return ApiResponse.success(fileService.getViewerSourceUrl(
+                    currentUserId(userDetails),
+                    fileId
+            ));
+        }
         return ApiResponse.success(fileService.getDownloadUrl(
                 currentUserId(userDetails),
                 fileId

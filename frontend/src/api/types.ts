@@ -44,6 +44,43 @@ export interface UserSettings {
   preferredLanguage: string;
   preferredTheme: 'system' | 'light' | 'dark';
   disableViewSync: boolean;
+  defaultOpenWithByExt: Record<string, string>;
+}
+
+export interface UpdateUserSettingsPayload {
+  preferredLanguage?: string;
+  preferredTheme?: 'system' | 'light' | 'dark';
+  disableViewSync?: boolean;
+  defaultOpenWithByExt?: Record<string, string>;
+}
+
+export type FileViewerType = 'builtin' | 'custom' | 'wopi';
+
+export interface FileViewerTemplate {
+  viewerId: string;
+  extension: string;
+  displayName: string;
+  filename: string;
+  content: string;
+  contentType: string;
+}
+
+export interface FileViewerDefinition {
+  id: string;
+  type: FileViewerType;
+  displayName: string;
+  icon: string;
+  extensions: string[];
+  maxSizeBytes: number | null;
+  openInNew: boolean;
+  recommended: boolean;
+  templates: FileViewerTemplate[];
+  props: Record<string, unknown>;
+}
+
+export interface FileViewerConfig {
+  fileViewers: FileViewerDefinition[];
+  defaultViewerMapping: Record<string, string>;
 }
 
 export interface FileItem {

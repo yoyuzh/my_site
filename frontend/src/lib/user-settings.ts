@@ -1,5 +1,5 @@
 import { apiRequest } from '../api/client';
-import type { UserCapacity, UserSettings } from '../api/types';
+import type { UpdateUserSettingsPayload, UserCapacity, UserSettings } from '../api/types';
 export { formatBytes } from './format';
 
 export function getUserCapacity(signal?: AbortSignal) {
@@ -15,5 +15,13 @@ export function getUserSettings(signal?: AbortSignal) {
     url: '/user/settings',
     method: 'GET',
     signal,
+  });
+}
+
+export function updateUserSettings(payload: UpdateUserSettingsPayload) {
+  return apiRequest<UserSettings>({
+    url: '/user/settings',
+    method: 'PUT',
+    data: payload,
   });
 }

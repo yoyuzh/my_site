@@ -1,5 +1,5 @@
-import React, { useEffect, useRef, useState } from 'react';
-import { useMutation } from '@tanstack/react-query';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { 
   User, 
   Mail, 
@@ -16,6 +16,10 @@ import {
 import DashboardLayout from '../components/DashboardLayout';
 import { getSession } from '../lib/session';
 import { changePassword, getProfile, logout, updateProfile, uploadAvatar, type UpdateProfilePayload, type ChangePasswordPayload } from '../lib/auth';
+import { getFileViewerConfig } from '../lib/files';
+import { getUserSettings, updateUserSettings } from '../lib/user-settings';
+import { clearDefaultViewerPreference, setDefaultViewerPreference } from '../lib/file-open-preferences';
+import { getViewersForExtension } from '../lib/file-viewers';
 import { useNavigate } from 'react-router-dom';
 import clsx from 'clsx';
 
@@ -23,6 +27,7 @@ const AccountSettings: React.FC = () => {
   const session = getSession();
   const user = session?.user;
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [profileData, setProfileData] = useState<UpdateProfilePayload>({
@@ -40,6 +45,39 @@ const AccountSettings: React.FC = () => {
   });
 
   const [message, setMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null);
+  const [selectedOpenWithExtension, setSelectedOpenWithExtension] = useState('md');
+
+  const { data: accountSettings } = useQuery({
+    queryKey: ['userSettings'],
+    queryFn: () => getUserSettings(),
+  });
+
+  const { data: viewerConfig } = useQuery({
+    queryKey: ['fileViewerConfig'],
+    queryFn: getFileViewerConfig,
+  });
+
+  const supportedOpenWithExtensions = useMemo(() => {
+    return Object.keys(viewerConfig?.defaultViewerMapping ?? {}).sort((a, b) => a.localeCompare(b));
+  }, [viewerConfig]);
+
+  const selectedExtensionViewers = useMemo(() => {
+    if (!viewerConfig) {
+      return [];
+    }
+    return getViewersForExtension(viewerConfig, selectedOpenWithExtension);
+  }, [selectedOpenWithExtension, viewerConfig]);
+
+  const fileDefaultRows = useMemo(() => {
+    const defaults = accountSettings?.defaultOpenWithByExt ?? {};
+    return Object.entries(defaults)
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([extension, viewerId]) => ({
+        extension,
+        viewerId,
+        viewerName: viewerConfig?.fileViewers.find((viewer) => viewer.id === viewerId)?.displayName ?? viewerId,
+      }));
+  }, [accountSettings, viewerConfig]);
 
   useEffect(() => {
     getProfile()
@@ -91,6 +129,18 @@ const AccountSettings: React.FC = () => {
     }
   });
 
+  const fileSettingsMutation = useMutation({
+    mutationFn: updateUserSettings,
+    onSuccess: (settings) => {
+      queryClient.setQueryData(['userSettings'], settings);
+      setMessage({ type: 'success', text: '文件打开方式已更新' });
+      setTimeout(() => setMessage(null), 3000);
+    },
+    onError: (error: any) => {
+      setMessage({ type: 'error', text: error.message || '更新打开方式失败' });
+    }
+  });
+
   const handleProfileSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     profileMutation.mutate(profileData);
@@ -129,6 +179,26 @@ const AccountSettings: React.FC = () => {
   const handleLogout = () => {
     logout();
     navigate('/login');
+  };
+
+  const handleSetOpenWithDefault = (viewerId: string) => {
+    fileSettingsMutation.mutate({
+      defaultOpenWithByExt: setDefaultViewerPreference(
+        accountSettings?.defaultOpenWithByExt,
+        selectedOpenWithExtension,
+        viewerId,
+      ),
+    });
+  };
+
+  const handleClearOpenWithDefault = (extension: string) => {
+    fileSettingsMutation.mutate({
+      defaultOpenWithByExt: clearDefaultViewerPreference(accountSettings?.defaultOpenWithByExt, extension),
+    });
+  };
+
+  const handleClearAllOpenWithDefaults = () => {
+    fileSettingsMutation.mutate({ defaultOpenWithByExt: {} });
   };
 
   if (!user) return null;
@@ -341,6 +411,81 @@ const AccountSettings: React.FC = () => {
                 </button>
               </div>
             </form>
+          </section>
+
+          {/* File Defaults */}
+          <section className="rounded-3xl border border-white/50 bg-white/80 p-8 shadow-sm dark:border-white/5 dark:bg-[#161922]/80">
+            <div className="mb-6 flex items-center gap-3">
+              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-cyan-500/10 text-cyan-600">
+                <BookOpen size={20} />
+              </div>
+              <h3 className="text-lg font-bold text-slate-900 dark:text-white">文件</h3>
+            </div>
+
+            <div className="grid gap-4 md:grid-cols-[1fr_1fr_auto]">
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-slate-700 dark:text-slate-300">文件扩展名</label>
+                <select
+                  value={selectedOpenWithExtension}
+                  onChange={e => setSelectedOpenWithExtension(e.target.value)}
+                  className="w-full appearance-none rounded-2xl border border-slate-200 bg-white px-4 py-3 text-slate-900 focus:border-blue-500 focus:outline-none dark:border-slate-800 dark:bg-slate-900 dark:text-white"
+                >
+                  {(supportedOpenWithExtensions.length > 0 ? supportedOpenWithExtensions : ['md', 'txt', 'drawio', 'excalidraw']).map((extension) => (
+                    <option key={extension} value={extension}>.{extension}</option>
+                  ))}
+                </select>
+              </div>
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-slate-700 dark:text-slate-300">默认打开方式</label>
+                <select
+                  value={accountSettings?.defaultOpenWithByExt?.[selectedOpenWithExtension] ?? ''}
+                  onChange={e => handleSetOpenWithDefault(e.target.value)}
+                  disabled={selectedExtensionViewers.length === 0 || fileSettingsMutation.isPending}
+                  className="w-full appearance-none rounded-2xl border border-slate-200 bg-white px-4 py-3 text-slate-900 focus:border-blue-500 focus:outline-none disabled:opacity-50 dark:border-slate-800 dark:bg-slate-900 dark:text-white"
+                >
+                  <option value="" disabled>选择打开方式</option>
+                  {selectedExtensionViewers.map((viewer) => (
+                    <option key={viewer.id} value={viewer.id}>{viewer.displayName}</option>
+                  ))}
+                </select>
+              </div>
+              <div className="flex items-end">
+                <button
+                  type="button"
+                  disabled={fileDefaultRows.length === 0 || fileSettingsMutation.isPending}
+                  onClick={handleClearAllOpenWithDefaults}
+                  className="w-full rounded-2xl border border-slate-200 px-5 py-3 text-sm font-semibold text-slate-700 transition-colors hover:bg-slate-50 disabled:opacity-50 dark:border-slate-800 dark:text-slate-300 dark:hover:bg-slate-900"
+                >
+                  清除全部
+                </button>
+              </div>
+            </div>
+
+            <div className="mt-5 overflow-hidden rounded-2xl border border-slate-200 dark:border-slate-800">
+              {fileDefaultRows.length === 0 ? (
+                <div className="px-4 py-5 text-sm text-slate-500 dark:text-slate-400">暂无已保存的默认打开方式。</div>
+              ) : (
+                fileDefaultRows.map((row) => (
+                  <div
+                    key={row.extension}
+                    className="flex items-center justify-between gap-4 border-b border-slate-200 px-4 py-3 last:border-b-0 dark:border-slate-800"
+                  >
+                    <div>
+                      <p className="text-sm font-semibold text-slate-900 dark:text-white">.{row.extension}</p>
+                      <p className="text-xs text-slate-500 dark:text-slate-400">{row.viewerName}</p>
+                    </div>
+                    <button
+                      type="button"
+                      disabled={fileSettingsMutation.isPending}
+                      onClick={() => handleClearOpenWithDefault(row.extension)}
+                      className="rounded-xl px-3 py-2 text-sm font-semibold text-red-600 transition-colors hover:bg-red-500/10 disabled:opacity-50 dark:text-red-400"
+                    >
+                      清除
+                    </button>
+                  </div>
+                ))
+              )}
+            </div>
           </section>
 
           {/* Dangerous Zone */}

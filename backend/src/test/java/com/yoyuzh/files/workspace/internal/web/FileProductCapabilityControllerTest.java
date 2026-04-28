@@ -1,8 +1,10 @@
 package com.yoyuzh.files.workspace.internal.web;
 
 import com.yoyuzh.boot.security.CustomUserDetailsService;
+import com.yoyuzh.files.workspace.api.DownloadUrlResponse;
 import com.yoyuzh.files.workspace.api.FileDetailResponse;
 import com.yoyuzh.files.workspace.api.FavoriteFileResponse;
+import com.yoyuzh.files.workspace.internal.application.FileViewerConfigService;
 import com.yoyuzh.files.workspace.internal.application.WorkspaceTagService;
 import com.yoyuzh.files.workspace.internal.application.FileService;
 import org.junit.jupiter.api.BeforeEach;
@@ -39,6 +41,7 @@ class FileProductCapabilityControllerTest {
     private FileService fileService;
     private CustomUserDetailsService userDetailsService;
     private WorkspaceTagService workspaceTagService;
+    private FileViewerConfigService fileViewerConfigService;
     private MockMvc mockMvc;
 
     @BeforeEach
@@ -46,11 +49,40 @@ class FileProductCapabilityControllerTest {
         fileService = mock(FileService.class);
         userDetailsService = mock(CustomUserDetailsService.class);
         workspaceTagService = mock(WorkspaceTagService.class);
+        fileViewerConfigService = new FileViewerConfigService();
         when(userDetailsService.loadUserId("alice")).thenReturn(7L);
         when(workspaceTagService.listFileTags(eq(7L), eq(1L))).thenReturn(List.of());
-        mockMvc = MockMvcBuilders.standaloneSetup(new FileController(fileService, userDetailsService, workspaceTagService))
+        mockMvc = MockMvcBuilders.standaloneSetup(new FileController(
+                        fileService,
+                        userDetailsService,
+                        workspaceTagService,
+                        fileViewerConfigService
+                ))
                 .setCustomArgumentResolvers(authenticationPrincipalResolver())
                 .build();
+    }
+
+    @Test
+    void shouldExposeViewerConfig() throws Exception {
+        mockMvc.perform(get("/api/files/viewers/config").with(user(userDetails())))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.fileViewers[?(@.id == 'markdown')]").exists())
+                .andExpect(jsonPath("$.data.fileViewers[?(@.id == 'microsoft-office')]").exists())
+                .andExpect(jsonPath("$.data.defaultViewerMapping.md").value("markdown"))
+                .andExpect(jsonPath("$.data.defaultViewerMapping.docx").value("microsoft-office"));
+    }
+
+    @Test
+    void shouldUseViewerSourceUrlWhenViewerQueryIsEnabled() throws Exception {
+        when(fileService.getViewerSourceUrl(eq(7L), eq(1L))).thenReturn(new DownloadUrlResponse("https://cdn.yoyuzh.xyz/files/blob-1"));
+
+        mockMvc.perform(get("/api/files/download/{fileId}/url", 1L)
+                        .param("viewer", "true")
+                        .with(user(userDetails())))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.url").value("https://cdn.yoyuzh.xyz/files/blob-1"));
+
+        verify(fileService).getViewerSourceUrl(eq(7L), eq(1L));
     }
 
     @Test

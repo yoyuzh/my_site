@@ -61,7 +61,7 @@ class FileServiceEdgeCaseTest {
                 fileBlobRepository,
                 fileContentStorage,
                 adminMetricsService,
-                new WorkspaceDownloadOptions(null, null, 300L),
+                new WorkspaceDownloadOptions(null, null, null, 300L),
                 properties.getMaxFileSize()
         );
         lenient().when(fileBlobRepository.findById(any(Long.class))).thenAnswer(invocation -> {

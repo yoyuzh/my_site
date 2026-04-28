@@ -7,6 +7,7 @@ import type {
   FileDetail,
   FileItem,
   FileTag,
+  FileViewerConfig,
   MediaCategory,
   MoveConflictStrategy,
   MoveResponse,
@@ -204,9 +205,30 @@ export async function uploadFile(path: string, file: File) {
   });
 }
 
-export async function getFileDownloadUrl(fileId: number) {
+export async function updateFileContent(fileId: number, file: File) {
+  const formData = new FormData();
+  formData.append('file', file);
+  return apiRequest<FileItem>({
+    url: `/files/${fileId}/content`,
+    method: 'PATCH',
+    data: formData,
+  });
+}
+
+export async function getFileDownloadUrl(fileId: number, options?: { viewer?: boolean }) {
+  const params = new URLSearchParams();
+  if (options?.viewer) {
+    params.set('viewer', 'true');
+  }
   return apiRequest<DownloadUrlResponse>({
-    url: `/files/download/${fileId}/url`,
+    url: `/files/download/${fileId}/url${params.size ? `?${params.toString()}` : ''}`,
+    method: 'GET',
+  });
+}
+
+export async function getFileViewerConfig() {
+  return apiRequest<FileViewerConfig>({
+    url: '/files/viewers/config',
     method: 'GET',
   });
 }

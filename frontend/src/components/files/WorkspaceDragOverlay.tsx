@@ -1,6 +1,6 @@
 import React from 'react';
 import { Box, Paper, Typography, Badge, alpha } from '@mui/material';
-import { Folder, InsertDriveFile } from '@mui/icons-material';
+import { FileText, Folder } from 'lucide-react';
 import { DragState } from '../../hooks/useWorkspaceDragMove';
 
 interface WorkspaceDragOverlayProps {
@@ -65,9 +65,9 @@ const WorkspaceDragOverlay: React.FC<WorkspaceDragOverlayProps> = ({ dragState }
               {mainItem.customEmoji ? (
                 <span>{mainItem.customEmoji}</span>
               ) : mainItem.directory ? (
-                <Folder sx={{ color: mainItem.folderColor || '#E9A23B', fontSize: 28 }} />
+                <Folder size={28} color={mainItem.folderColor || '#E9A23B'} />
               ) : (
-                <InsertDriveFile sx={{ color: 'text.secondary', fontSize: 28 }} />
+                <FileText size={28} color="var(--mui-palette-text-secondary)" />
               )}
             </Box>
           </Badge>

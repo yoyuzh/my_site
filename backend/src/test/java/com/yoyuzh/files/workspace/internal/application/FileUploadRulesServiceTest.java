@@ -10,6 +10,7 @@ import com.yoyuzh.files.content.internal.infra.*;
 
 import com.yoyuzh.identity.access.internal.domain.User;
 import com.yoyuzh.shared.kernel.BusinessException;
+import com.yoyuzh.files.workspace.api.WorkspaceUserContext;
 import com.yoyuzh.platform.storage.api.StoragePolicyCapabilities;
 import com.yoyuzh.platform.storage.api.StoragePolicyQuery;
 import com.yoyuzh.platform.storage.api.UploadConstraintPolicy;
@@ -96,6 +97,23 @@ class FileUploadRulesServiceTest {
         when(storedFileRepository.sumFileSizeByUserId(7L)).thenReturn(500L);
 
         assertThatCode(() -> service.validateUpload(FileServiceTestSupport.workspaceUser(user), "/docs", "a.txt", 200L))
+                .doesNotThrowAnyException();
+    }
+
+    @Test
+    void shouldTreatNonPositiveUserMaxUploadSizeAsSystemLimit() {
+        RuntimeWorkspacePathPolicy workspacePathPolicy = new RuntimeWorkspacePathPolicy(storedFileRepository, fileContentStorage);
+        FileUploadRulesService service = new FileUploadRulesService(
+                storedFileRepository,
+                null,
+                null,
+                new WorkspaceNodeRulesService(workspacePathPolicy, workspacePathPolicy),
+                2_000L
+        );
+        WorkspaceUserContext user = new WorkspaceUserContext(7L, 10_000L, 0L);
+        when(storedFileRepository.sumFileSizeByUserId(7L)).thenReturn(500L);
+
+        assertThatCode(() -> service.validateReplacement(user, 100L, 1_500L))
                 .doesNotThrowAnyException();
     }
 

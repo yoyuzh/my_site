@@ -1033,6 +1033,32 @@ class FileServiceTest {
     }
 
     @Test
+    void shouldUseConfiguredPublicViewerSourceUrlWhenAvailable() {
+        FileStorageProperties properties = new FileStorageProperties();
+        properties.setMaxFileSize(500L * 1024 * 1024);
+        properties.getS3().setPublicDownloadBaseUrl("https://cdn.yoyuzh.xyz/files/");
+        fileService = FileServiceTestSupport.create(
+                storedFileRepository,
+                fileBlobRepository,
+                fileContentStorage,
+                adminMetricsService,
+                toDownloadOptions(properties),
+                properties.getMaxFileSize(),
+                Clock.fixed(Instant.parse("2026-04-04T04:30:00Z"), ZoneOffset.UTC)
+        );
+
+        User user = createUser(7L);
+        StoredFile file = createFile(22L, user, "/docs", "notes.txt");
+        when(storedFileRepository.findDetailedById(22L)).thenReturn(Optional.of(file));
+        when(fileContentStorage.supportsDirectDownload()).thenReturn(true);
+
+        DownloadUrlResponse response = fileService.getViewerSourceUrl(FileServiceTestSupport.workspaceUser(user), 22L);
+
+        assertThat(response.url()).isEqualTo("https://cdn.yoyuzh.xyz/files/blobs/blob-22");
+        verify(fileContentStorage, never()).createBlobDownloadUrl(any(), any());
+    }
+
+    @Test
     void shouldPersistLegacyStorageNameWhenCreatingDefaultDirectories() {
         User user = createUser(7L);
         when(storedFileRepository.existsByUserIdAndPathAndFilename(anyLong(), anyString(), anyString())).thenReturn(false);
@@ -1626,6 +1652,7 @@ class FileServiceTest {
 
     private WorkspaceDownloadOptions toDownloadOptions(FileStorageProperties properties) {
         return new WorkspaceDownloadOptions(
+                properties.getS3().getPublicDownloadBaseUrl(),
                 properties.getS3().getPackageDownloadBaseUrl(),
                 properties.getS3().getPackageDownloadSecret(),
                 properties.getS3().getPackageDownloadTtlSeconds()

@@ -4,6 +4,8 @@ import com.yoyuzh.files.content.api.ContentAssetApi;
 import com.yoyuzh.files.content.api.ContentBlobLifecycleApi;
 import com.yoyuzh.files.content.api.ContentBlobReference;
 import com.yoyuzh.files.content.api.ContentBlobRegistrationApi;
+import com.yoyuzh.files.content.api.ContentPrimaryEntity;
+import com.yoyuzh.files.content.api.ContentPrimaryEntityRelationCommand;
 import com.yoyuzh.files.content.api.ContentRegistrationApi;
 import com.yoyuzh.files.content.api.ContentRegistrationCommand;
 import com.yoyuzh.files.content.api.RegisteredContentFile;
@@ -185,6 +187,30 @@ public class WorkspaceFileIngressService {
         return createdFiles;
     }
 
+    public ReplacementContent replaceFileContent(WorkspaceUserContext user,
+                                                 Long fileId,
+                                                 String contentType,
+                                                 long size,
+                                                 long previousSize,
+                                                 java.io.InputStream contentStream) {
+        fileUploadRulesService.validateReplacement(user, previousSize, size);
+        String objectKey = createBlobObjectKey();
+        try {
+            return contentBlobLifecycleApi.executeAfterBlobStored(objectKey, () -> {
+                fileContentStorage.storeBlob(objectKey, contentType, contentStream, size);
+                ContentBlobReference blob = contentBlobRegistrationApi.registerStoredBlob(objectKey, contentType, size);
+                ContentPrimaryEntity primaryEntity = contentAssetApi.createOrReferencePrimaryEntity(user.userId(), blob);
+                contentAssetApi.savePrimaryEntityRelation(new ContentPrimaryEntityRelationCommand(fileId, primaryEntity.entityId()));
+                return new ReplacementContent(blob.blobId(), blob.objectKey(), primaryEntity.entityId());
+            });
+        } finally {
+            try {
+                contentStream.close();
+            } catch (IOException ignored) {
+            }
+        }
+    }
+
     public void cleanupWrittenBlobs(List<String> writtenBlobObjectKeys, RuntimeException ex) {
         contentBlobLifecycleApi.cleanupWrittenBlobs(writtenBlobObjectKeys, ex);
     }
@@ -241,5 +267,8 @@ public class WorkspaceFileIngressService {
     }
 
     public record CreatedFile(String normalizedPath, RegisteredContentFile file) {
+    }
+
+    public record ReplacementContent(Long blobId, String objectKey, Long primaryEntityId) {
     }
 }

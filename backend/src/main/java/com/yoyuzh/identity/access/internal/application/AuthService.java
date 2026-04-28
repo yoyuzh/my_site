@@ -1,5 +1,8 @@
 package com.yoyuzh.identity.access.internal.application;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.yoyuzh.identity.access.api.AuthResponse;
 import com.yoyuzh.identity.access.api.DevLoginRoleResolver;
 import com.yoyuzh.identity.access.api.IdentityClientType;
@@ -20,6 +23,7 @@ import com.yoyuzh.identity.access.api.RegisterRequest;
 import com.yoyuzh.identity.access.api.UpdateUserAvatarRequest;
 import com.yoyuzh.identity.access.api.UpdateUserPasswordRequest;
 import com.yoyuzh.identity.access.api.UpdateUserProfileRequest;
+import com.yoyuzh.identity.access.api.UpdateUserSettingsRequest;
 import com.yoyuzh.identity.access.api.UserCapacityResponse;
 import com.yoyuzh.identity.access.api.UserProfileResponse;
 import com.yoyuzh.identity.access.api.UserSettingsResponse;
@@ -37,6 +41,10 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.util.LinkedHashMap;
+import java.util.Map;
+import java.util.TreeMap;
+
 @Service
 @RequiredArgsConstructor
 public class AuthService {
@@ -51,6 +59,10 @@ public class AuthService {
     private final PasswordChangePolicy passwordChangePolicy;
     private final IdentityCredentialIssuer identityCredentialIssuer;
     private final IdentityStorageUsageQuery identityStorageUsageQuery;
+    private final ObjectMapper objectMapper;
+
+    private static final TypeReference<Map<String, String>> STRING_MAP_TYPE = new TypeReference<>() {
+    };
 
     @Transactional
     public AuthResponse register(RegisterRequest request) {
@@ -155,9 +167,28 @@ public class AuthService {
         return new UserSettingsResponse(
                 user.getDisplayName(),
                 user.getPreferredLanguage(),
-                "system",
-                false
+                normalizePreferredTheme(user.getPreferredTheme()),
+                user.isDisableViewSync(),
+                readOpenWithPreferences(user)
         );
+    }
+
+    @Transactional
+    public UserSettingsResponse updateSettings(String username, UpdateUserSettingsRequest request) {
+        User user = findUserByUsername(username);
+        if (request.preferredLanguage() != null) {
+            user.setPreferredLanguage(normalizePreferredLanguage(request.preferredLanguage()));
+        }
+        if (request.preferredTheme() != null) {
+            user.setPreferredTheme(normalizePreferredTheme(request.preferredTheme()));
+        }
+        if (request.disableViewSync() != null) {
+            user.setDisableViewSync(request.disableViewSync());
+        }
+        if (request.defaultOpenWithByExt() != null) {
+            user.setDefaultOpenWithByExtJson(writeOpenWithPreferences(normalizeOpenWithPreferences(request.defaultOpenWithByExt())));
+        }
+        return getSettings(userRepository.save(user).getUsername());
     }
 
     @Transactional
@@ -280,6 +311,63 @@ public class AuthService {
             return "zh-CN";
         }
         return preferredLanguage.trim();
+    }
+
+    private String normalizePreferredTheme(String preferredTheme) {
+        if (preferredTheme == null || preferredTheme.trim().isEmpty()) {
+            return "system";
+        }
+        String normalized = preferredTheme.trim();
+        if (!normalized.equals("light") && !normalized.equals("dark") && !normalized.equals("system")) {
+            return "system";
+        }
+        return normalized;
+    }
+
+    private Map<String, String> readOpenWithPreferences(User user) {
+        String raw = user.getDefaultOpenWithByExtJson();
+        if (raw == null || raw.isBlank()) {
+            return Map.of();
+        }
+        try {
+            return normalizeOpenWithPreferences(objectMapper.readValue(raw, STRING_MAP_TYPE));
+        } catch (JsonProcessingException ignored) {
+            return Map.of();
+        }
+    }
+
+    private String writeOpenWithPreferences(Map<String, String> preferences) {
+        try {
+            return objectMapper.writeValueAsString(preferences);
+        } catch (JsonProcessingException ex) {
+            throw new BusinessException(ErrorCode.UNKNOWN, "保存打开方式设置失败");
+        }
+    }
+
+    private Map<String, String> normalizeOpenWithPreferences(Map<String, String> preferences) {
+        if (preferences == null || preferences.isEmpty()) {
+            return Map.of();
+        }
+        Map<String, String> normalized = new TreeMap<>();
+        preferences.forEach((extension, viewerId) -> {
+            String ext = normalizeExtension(extension);
+            String viewer = viewerId == null ? "" : viewerId.trim();
+            if (!ext.isEmpty() && !viewer.isEmpty()) {
+                normalized.put(ext, viewer);
+            }
+        });
+        return normalized.isEmpty() ? Map.of() : new LinkedHashMap<>(normalized);
+    }
+
+    private String normalizeExtension(String extension) {
+        if (extension == null) {
+            return "";
+        }
+        String ext = extension.trim().toLowerCase();
+        while (ext.startsWith(".")) {
+            ext = ext.substring(1);
+        }
+        return ext;
     }
 
     private WorkspaceUserContext workspaceUser(User user) {

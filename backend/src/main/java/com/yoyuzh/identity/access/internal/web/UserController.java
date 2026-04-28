@@ -5,6 +5,7 @@ import com.yoyuzh.identity.access.internal.application.AuthService;
 import com.yoyuzh.identity.access.api.UpdateUserAvatarRequest;
 import com.yoyuzh.identity.access.api.UpdateUserPasswordRequest;
 import com.yoyuzh.identity.access.api.UpdateUserProfileRequest;
+import com.yoyuzh.identity.access.api.UpdateUserSettingsRequest;
 import com.yoyuzh.shared.kernel.ApiResponse;
 import io.swagger.v3.oas.annotations.Operation;
 import jakarta.validation.Valid;
@@ -50,6 +51,13 @@ public class UserController {
     @GetMapping("/settings")
     public ApiResponse<?> settings(@AuthenticationPrincipal UserDetails userDetails) {
         return ApiResponse.success(authService.getSettings(userDetails.getUsername()));
+    }
+
+    @Operation(summary = "更新当前用户设置")
+    @PutMapping("/settings")
+    public ApiResponse<?> updateSettings(@AuthenticationPrincipal UserDetails userDetails,
+                                         @Valid @RequestBody UpdateUserSettingsRequest request) {
+        return ApiResponse.success(authService.updateSettings(userDetails.getUsername(), request));
     }
 
     @Operation(summary = "更新用户资料")

@@ -42,7 +42,7 @@ class FileServiceBlobKeySecurityTest {
                 fileBlobRepository,
                 fileContentStorage,
                 com.yoyuzh.files.workspace.api.WorkspaceDownloadMetricsPort.noOp(),
-                new WorkspaceDownloadOptions(null, null, 300L),
+                new WorkspaceDownloadOptions(null, null, null, 300L),
                 500L * 1024 * 1024L
         );
         workspaceFileIngressService = (WorkspaceFileIngressService) ReflectionTestUtils.getField(

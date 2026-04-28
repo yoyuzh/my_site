@@ -3,32 +3,29 @@ import { Box, Divider, Menu, MenuItem, Stack, Typography, ListItemIcon, ListItem
 import type { MenuProps } from '@mui/material';
 import {
   Check,
-  Close,
-  ContentCopy,
-  CreateNewFolder,
-  DeleteOutline,
-  Description,
-  Download,
-  DriveFileMove,
-  Edit,
-  InfoOutlined,
-  OpenInFull,
-  Refresh,
-  Share,
-  Star,
-  StarBorder,
-  UploadFile,
-  Visibility,
-  FolderZip,
-  ContentPaste,
-  CloudDownload,
-  Link as LinkIcon,
-  Label,
   ChevronRight,
-  MoreVert,
-  InsertDriveFile,
   Circle,
-} from '@mui/icons-material';
+  ClipboardPaste,
+  CloudDownload,
+  Copy,
+  Eye,
+  FileText,
+  FolderInput,
+  FolderOpen,
+  FolderPlus,
+  Info,
+  Link2,
+  PanelsTopLeft,
+  Pencil,
+  RefreshCw,
+  Share2,
+  Tags,
+  Trash2,
+  Download,
+  Upload,
+  Archive,
+  X,
+} from 'lucide-react';
 import { ThemeProvider as MuiThemeProvider, createTheme } from '@mui/material/styles';
 import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query';
 import { bindFocus, bindHover } from 'material-ui-popup-state';
@@ -38,7 +35,8 @@ import { useSearchParams } from 'react-router-dom';
 import DashboardLayout from '../components/DashboardLayout';
 import FileDetailsRail from '../components/files/FileDetailsRail';
 import { FilesExplorerSurface } from '../components/files/FilesExplorerSurface';
-import { FilesPreviewDialog } from '../components/files/FilesPreviewDialog';
+import { FileViewerHost } from '../components/files/FileViewerHost';
+import { OpenWithDialog } from '../components/files/OpenWithDialog';
 import { FileTagsManagerDialog } from '../components/files/FileTagsManagerDialog';
 import { FilesTopBar } from '../components/files/FilesTopBar';
 import AppearanceDialog from '../components/files/AppearanceDialog';
@@ -48,7 +46,7 @@ import WorkspaceDragOverlay from '../components/files/WorkspaceDragOverlay';
 import CreateShareDialog from '../components/files/CreateShareDialog';
 import CreateRemoteDownloadDialog from '../components/files/CreateRemoteDownloadDialog';
 import { useFavoriteFiles, useFiles } from '../api/queries';
-import type { FileDeleteMode, FileDetail, FileItem, FileTag, MediaCategory, MoveResponse } from '../api/types';
+import type { FileDeleteMode, FileDetail, FileItem, FileTag, FileViewerDefinition, MediaCategory, MoveResponse } from '../api/types';
 import {
   addFileTag,
   batchDeleteFiles,
@@ -59,6 +57,7 @@ import {
   downloadFileBlob,
   getFileDetail,
   getFileDownloadUrl,
+  getFileViewerConfig,
   listFileTags,
   moveFile,
   renameFile,
@@ -66,6 +65,14 @@ import {
   setFileFavorite,
   uploadFile,
 } from '../lib/files';
+import { getUserSettings, updateUserSettings } from '../lib/user-settings';
+import {
+  getAllFileViewers,
+  getAvailableViewersForFile,
+  getFileExtension,
+  getRecommendedViewersForFile,
+} from '../lib/file-viewers';
+import { setDefaultViewerPreference } from '../lib/file-open-preferences';
 import { useTheme as useAppTheme } from '../hooks/useTheme';
 import { useWorkspaceDragMove } from '../hooks/useWorkspaceDragMove';
 import {
@@ -183,7 +190,7 @@ function CascadingSubmenu({
       >
         <ListItemIcon>{icon}</ListItemIcon>
         <ListItemText>{title}</ListItemText>
-        <ChevronRight fontSize="small" sx={{ ml: 'auto', opacity: 0.5 }} />
+        <ChevronRight size={16} style={{ marginLeft: 'auto', opacity: 0.5 }} />
       </MenuItem>
       <CascadingMenu
         popupState={popupState}
@@ -232,6 +239,16 @@ const CLIPBOARD_EXTENSION_BY_MIME_TYPE: Record<string, string> = {
 
 function joinDirectoryPath(parentPath: string, filename: string) {
   return parentPath === '/' ? `/${filename}` : `${parentPath}/${filename}`;
+}
+
+function getParentDirectoryPath(path: string) {
+  const normalizedPath = normalizeWorkspaceFolderPath(path);
+  if (normalizedPath === '/') {
+    return '/';
+  }
+  const segments = normalizedPath.split('/').filter(Boolean);
+  segments.pop();
+  return segments.length === 0 ? '/' : `/${segments.join('/')}`;
 }
 
 function getLogicalPath(file: Pick<FileItem, 'directory' | 'filename' | 'path'>) {
@@ -496,6 +513,7 @@ const Files: React.FC<FilesProps> = ({ mediaCategory }) => {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const folderInputRef = useRef<HTMLInputElement | null>(null);
   const lastSelectedIndexRef = useRef(0);
+  const keyboardSelectionAnchorRef = useRef<number | null>(null);
   const [search, setSearch] = useState('');
   const [currentPath, setCurrentPath] = useState(requestedPath);
   const [page, setPage] = useState(1);
@@ -516,6 +534,14 @@ const Files: React.FC<FilesProps> = ({ mediaCategory }) => {
   const [selectedById, setSelectedById] = useState<SelectedFileMap>({});
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
   const [previewFile, setPreviewFile] = useState<FileItem | null>(null);
+  const [activeViewer, setActiveViewer] = useState<FileViewerDefinition | null>(null);
+  const [openWithState, setOpenWithState] = useState<{
+    file: FileItem;
+    extension: string;
+    recommendedViewers: FileViewerDefinition[];
+    allViewers: FileViewerDefinition[];
+    availableViewerIds: string[];
+  } | null>(null);
   const [detailFileId, setDetailFileId] = useState<number | null>(null);
   const [detail, setDetail] = useState<FileDetail | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
@@ -525,6 +551,13 @@ const Files: React.FC<FilesProps> = ({ mediaCategory }) => {
   const [shareDialogOpen, setShareDialogOpen] = useState(false);
   const [shareFileItem, setShareFileItem] = useState<FileItem | null>(null);
   const [remoteDownloadDialogOpen, setRemoteDownloadDialogOpen] = useState(false);
+  const [deleteDialogState, setDeleteDialogState] = useState<{
+    open: boolean;
+    files: FileItem[];
+  }>({
+    open: false,
+    files: [],
+  });
   const [moveDialogState, setMoveDialogState] = useState<{
     open: boolean;
     items: FileItem[];
@@ -564,10 +597,32 @@ const Files: React.FC<FilesProps> = ({ mediaCategory }) => {
     { category: mediaCategory },
   );
   const { data: favoriteFiles, refetch: refetchFavorites } = useFavoriteFiles();
+  const { data: viewerConfig } = useQuery({
+    queryKey: ['fileViewerConfig'],
+    queryFn: getFileViewerConfig,
+  });
+  const { data: userSettings } = useQuery({
+    queryKey: ['userSettings'],
+    queryFn: () => getUserSettings(),
+  });
   const browsingScopeKey = useMemo(
     () => `${mediaCategory ?? 'directory'}::${currentPath}::${search.trim()}::${sortBy}::${sortOrder}`,
     [currentPath, mediaCategory, search, sortBy, sortOrder],
   );
+  const activeMenuFileExtension =
+    activeMenuFile && !activeMenuFile.directory ? getFileExtension(activeMenuFile) : '';
+  const activeMenuFileAllViewers =
+    activeMenuFile && !activeMenuFile.directory && viewerConfig
+      ? getAllFileViewers(viewerConfig)
+      : [];
+  const activeMenuFileAvailableViewers =
+    activeMenuFile && !activeMenuFile.directory && viewerConfig
+      ? getAvailableViewersForFile(viewerConfig, activeMenuFile, activeMenuFileExtension)
+      : [];
+  const activeMenuFileRecommendedViewers =
+    activeMenuFile && !activeMenuFile.directory && viewerConfig
+      ? getRecommendedViewersForFile(viewerConfig, activeMenuFile, activeMenuFileExtension)
+      : [];
   const visibleFolders = useMemo(() => allRows.filter((file) => file.directory), [allRows]);
 
   function closeSubmenus() {
@@ -671,6 +726,324 @@ const Files: React.FC<FilesProps> = ({ mediaCategory }) => {
   const selectedFolderCount = useMemo(() => selectedFiles.filter((file) => file.directory).length, [selectedFiles]);
   const selectedFileCount = selectedCount - selectedFolderCount;
   const allSelected = allRows.length > 0 && allRows.every((file) => selectedById[getSelectionKey(file)]);
+  const keyboardNavigationBlocked =
+    contextMenuPopupState.isOpen ||
+    previewFile != null ||
+    openWithState != null ||
+    tagManagerOpen ||
+    shareDialogOpen ||
+    remoteDownloadDialogOpen ||
+    moveDialogState.open ||
+    appearanceFile != null ||
+    deleteDialogState.open;
+
+  function clampRowIndex(index: number) {
+    return Math.max(0, Math.min(index, sortedRows.length - 1));
+  }
+
+  function getSelectedKeyboardIndex() {
+    if (sortedRows.length === 0) {
+      return -1;
+    }
+
+    if (selectedFiles.length === 0) {
+      return -1;
+    }
+
+    if (selectedFiles.length === 1) {
+      const selectedKey = getSelectionKey(selectedFiles[0]);
+      const selectedIndex = sortedRows.findIndex((file) => getSelectionKey(file) === selectedKey);
+      if (selectedIndex >= 0) {
+        return selectedIndex;
+      }
+    }
+
+    return clampRowIndex(lastSelectedIndexRef.current);
+  }
+
+  function selectKeyboardRow(index: number) {
+    if (sortedRows.length === 0) {
+      return;
+    }
+    const nextIndex = clampRowIndex(index);
+    const nextFile = sortedRows[nextIndex];
+    lastSelectedIndexRef.current = nextIndex;
+    keyboardSelectionAnchorRef.current = nextIndex;
+    setSelectedById({ [getSelectionKey(nextFile)]: nextFile });
+  }
+
+  function selectAllRows() {
+    if (allRows.length === 0) {
+      return;
+    }
+
+    const next: SelectedFileMap = {};
+    allRows.forEach((file) => {
+      next[getSelectionKey(file)] = file;
+    });
+    lastSelectedIndexRef.current = clampRowIndex(lastSelectedIndexRef.current);
+    keyboardSelectionAnchorRef.current = lastSelectedIndexRef.current;
+    setSelectedById(next);
+  }
+
+  function openMoveDialog(items: FileItem[]) {
+    if (items.length === 0) {
+      return;
+    }
+
+    setMoveDialogState({
+      open: true,
+      items,
+      targetPath: currentPath,
+      initialConflictResult: null,
+    });
+    closeContextMenus();
+  }
+
+  function getGridSectionInfo(index: number) {
+    const clampedIndex = clampRowIndex(index);
+    const file = sortedRows[clampedIndex];
+    if (!file) {
+      return null;
+    }
+
+    const startIndex = sortedRows.findIndex((candidate) => candidate.directory === file.directory);
+    let endIndex = startIndex;
+    while (endIndex + 1 < sortedRows.length && sortedRows[endIndex + 1].directory === file.directory) {
+      endIndex += 1;
+    }
+
+    return {
+      startIndex,
+      endIndex,
+      localIndex: clampedIndex - startIndex,
+      totalItems: endIndex - startIndex + 1,
+    };
+  }
+
+  function getSiblingGridSection(section: NonNullable<ReturnType<typeof getGridSectionInfo>>, direction: -1 | 1) {
+    const siblingIndex = direction < 0 ? section.startIndex - 1 : section.endIndex + 1;
+    if (siblingIndex < 0 || siblingIndex >= sortedRows.length) {
+      return null;
+    }
+    return getGridSectionInfo(siblingIndex);
+  }
+
+  function getGridNavigationTargetIndex(currentIndex: number, direction: 'up' | 'down' | 'left' | 'right', gridColumnCount: number) {
+    const section = getGridSectionInfo(currentIndex);
+    if (!section) {
+      return -1;
+    }
+
+    const columnCount = Math.max(gridColumnCount, 1);
+    const row = Math.floor(section.localIndex / columnCount);
+    const column = section.localIndex % columnCount;
+    const lastRow = Math.floor((section.totalItems - 1) / columnCount);
+    const lastColumnInLastRow = (section.totalItems - 1) % columnCount;
+
+    if (direction === 'left') {
+      if (column === 0) {
+        return section.startIndex + section.localIndex;
+      }
+      return section.startIndex + section.localIndex - 1;
+    }
+
+    if (direction === 'right') {
+      const isLastRealItem = section.localIndex === section.totalItems - 1;
+      const isAtVisualRowEnd = column === columnCount - 1;
+      if (isLastRealItem || isAtVisualRowEnd) {
+        return section.startIndex + section.localIndex;
+      }
+      return section.startIndex + section.localIndex + 1;
+    }
+
+    if (direction === 'up') {
+      if (row > 0) {
+        return section.startIndex + Math.max(0, section.localIndex - columnCount);
+      }
+
+      const previousSection = getSiblingGridSection(section, -1);
+      if (!previousSection) {
+        return section.startIndex + section.localIndex;
+      }
+
+      const previousLastRow = Math.floor((previousSection.totalItems - 1) / columnCount);
+      const previousLastColumn = (previousSection.totalItems - 1) % columnCount;
+      const targetColumn = Math.min(column, previousLastColumn);
+      return previousSection.startIndex + previousLastRow * columnCount + targetColumn;
+    }
+
+    const targetLocalIndex = section.localIndex + columnCount;
+    if (targetLocalIndex < section.totalItems) {
+      return section.startIndex + targetLocalIndex;
+    }
+
+    if (row < lastRow) {
+      return section.startIndex + lastRow * columnCount + Math.min(column, lastColumnInLastRow);
+    }
+
+    const nextSection = getSiblingGridSection(section, 1);
+    if (!nextSection) {
+      return section.startIndex + section.localIndex;
+    }
+
+    return nextSection.startIndex + Math.min(column, nextSection.totalItems - 1);
+  }
+
+  function addGridSectionRangeSelection(
+    next: SelectedFileMap,
+    sectionStartIndex: number,
+    sectionTotalItems: number,
+    fromLocalIndex: number,
+    toLocalIndex: number,
+    gridColumnCount: number,
+  ) {
+    const columnCount = Math.max(gridColumnCount, 1);
+    const clampedFromLocalIndex = Math.max(0, Math.min(fromLocalIndex, sectionTotalItems - 1));
+    const clampedToLocalIndex = Math.max(0, Math.min(toLocalIndex, sectionTotalItems - 1));
+    const minRow = Math.min(
+      Math.floor(clampedFromLocalIndex / columnCount),
+      Math.floor(clampedToLocalIndex / columnCount),
+    );
+    const maxRow = Math.max(
+      Math.floor(clampedFromLocalIndex / columnCount),
+      Math.floor(clampedToLocalIndex / columnCount),
+    );
+    const minColumn = Math.min(clampedFromLocalIndex % columnCount, clampedToLocalIndex % columnCount);
+    const maxColumn = Math.max(clampedFromLocalIndex % columnCount, clampedToLocalIndex % columnCount);
+
+    for (let row = minRow; row <= maxRow; row += 1) {
+      for (let column = minColumn; column <= maxColumn; column += 1) {
+        const localIndex = row * columnCount + column;
+        if (localIndex >= sectionTotalItems) {
+          continue;
+        }
+        const file = sortedRows[sectionStartIndex + localIndex];
+        if (file) {
+          next[getSelectionKey(file)] = file;
+        }
+      }
+    }
+  }
+
+  function selectKeyboardRange(anchorIndex: number, targetIndex: number, mode: ViewMode, gridColumnCount: number) {
+    const clampedAnchorIndex = clampRowIndex(anchorIndex);
+    const clampedTargetIndex = clampRowIndex(targetIndex);
+    const next: SelectedFileMap = {};
+
+    if (mode === 'grid') {
+      const anchorSection = getGridSectionInfo(clampedAnchorIndex);
+      const targetSection = getGridSectionInfo(clampedTargetIndex);
+
+      if (!anchorSection || !targetSection) {
+        return;
+      }
+
+      if (anchorSection.startIndex === targetSection.startIndex) {
+        addGridSectionRangeSelection(
+          next,
+          anchorSection.startIndex,
+          anchorSection.totalItems,
+          anchorSection.localIndex,
+          targetSection.localIndex,
+          gridColumnCount,
+        );
+      } else if (clampedAnchorIndex < clampedTargetIndex) {
+        addGridSectionRangeSelection(
+          next,
+          anchorSection.startIndex,
+          anchorSection.totalItems,
+          anchorSection.localIndex,
+          anchorSection.totalItems - 1,
+          gridColumnCount,
+        );
+        addGridSectionRangeSelection(
+          next,
+          targetSection.startIndex,
+          targetSection.totalItems,
+          0,
+          targetSection.localIndex,
+          gridColumnCount,
+        );
+      } else {
+        addGridSectionRangeSelection(
+          next,
+          anchorSection.startIndex,
+          anchorSection.totalItems,
+          anchorSection.localIndex,
+          0,
+          gridColumnCount,
+        );
+        addGridSectionRangeSelection(
+          next,
+          targetSection.startIndex,
+          targetSection.totalItems,
+          targetSection.totalItems - 1,
+          targetSection.localIndex,
+          gridColumnCount,
+        );
+      }
+    } else {
+      const startIndex = Math.min(clampedAnchorIndex, clampedTargetIndex);
+      const endIndex = Math.max(clampedAnchorIndex, clampedTargetIndex);
+      for (let index = startIndex; index <= endIndex; index += 1) {
+        const file = sortedRows[index];
+        if (file) {
+          next[getSelectionKey(file)] = file;
+        }
+      }
+    }
+
+    lastSelectedIndexRef.current = clampedTargetIndex;
+    setSelectedById(next);
+  }
+
+  function getSelectedGridColumnCount(file: FileItem) {
+    const selectedElement = document.querySelector<HTMLElement>(
+      `[data-file-selection-key="${getSelectionKey(file)}"][data-files-grid-card="true"]`,
+    );
+    const gridElement = selectedElement?.parentElement;
+    if (!gridElement) {
+      return 1;
+    }
+
+    const columns = window
+      .getComputedStyle(gridElement)
+      .gridTemplateColumns
+      .split(' ')
+      .filter((column) => column.trim() && column !== 'none');
+    return Math.max(columns.length, 1);
+  }
+
+  function moveKeyboardSelection(delta: number) {
+    const currentIndex = getSelectedKeyboardIndex();
+    selectKeyboardRow(currentIndex < 0 ? 0 : currentIndex + delta);
+  }
+
+  function moveGridKeyboardSelection(direction: 'up' | 'down' | 'left' | 'right', gridColumnCount: number) {
+    const currentIndex = getSelectedKeyboardIndex();
+    if (currentIndex < 0) {
+      selectKeyboardRow(0);
+      return;
+    }
+    selectKeyboardRow(getGridNavigationTargetIndex(currentIndex, direction, gridColumnCount));
+  }
+
+  function extendKeyboardSelection(delta: number, mode: ViewMode, gridColumnCount: number) {
+    const currentIndex = getSelectedKeyboardIndex();
+    const anchorIndex = keyboardSelectionAnchorRef.current ?? (currentIndex < 0 ? 0 : currentIndex);
+    const targetIndex = currentIndex < 0 ? 0 : currentIndex + delta;
+    keyboardSelectionAnchorRef.current = clampRowIndex(anchorIndex);
+    selectKeyboardRange(anchorIndex, targetIndex, mode, gridColumnCount);
+  }
+
+  function extendGridKeyboardSelection(direction: 'up' | 'down' | 'left' | 'right', gridColumnCount: number) {
+    const currentIndex = getSelectedKeyboardIndex();
+    const anchorIndex = keyboardSelectionAnchorRef.current ?? (currentIndex < 0 ? 0 : currentIndex);
+    const targetIndex = currentIndex < 0 ? 0 : getGridNavigationTargetIndex(currentIndex, direction, gridColumnCount);
+    keyboardSelectionAnchorRef.current = clampRowIndex(anchorIndex);
+    selectKeyboardRange(anchorIndex, targetIndex, 'grid', gridColumnCount);
+  }
 
   useEffect(() => {
     if (data?.items) {
@@ -850,13 +1223,26 @@ const Files: React.FC<FilesProps> = ({ mediaCategory }) => {
     },
   });
 
-  const [deleteDialogState, setDeleteDialogState] = useState<{
-    open: boolean;
-    files: FileItem[];
-  }>({
-    open: false,
-    files: [],
+  const openWithPreferenceMutation = useMutation({
+    mutationFn: ({ extension, viewerId }: { extension: string; viewerId: string }) =>
+      updateUserSettings({
+        defaultOpenWithByExt: setDefaultViewerPreference(userSettings?.defaultOpenWithByExt, extension, viewerId),
+      }),
+    onSuccess: (settings) => {
+      queryClient.setQueryData(['userSettings'], settings);
+    },
   });
+
+  function handleOpenWithSelect(viewer: FileViewerDefinition, alwaysUse: boolean) {
+    if (!openWithState) {
+      return;
+    }
+    const { file, extension } = openWithState;
+    openFileWithViewer(file, viewer);
+    if (alwaysUse && extension) {
+      openWithPreferenceMutation.mutate({ extension, viewerId: viewer.id });
+    }
+  }
 
   function shareFile(file: FileItem) {
     setShareFileItem(file);
@@ -963,6 +1349,30 @@ const Files: React.FC<FilesProps> = ({ mediaCategory }) => {
   }, []);
 
   useEffect(() => {
+    if (sortedRows.length === 0) {
+      return;
+    }
+
+    const focusFile = sortedRows[clampRowIndex(lastSelectedIndexRef.current)];
+    if (!focusFile) {
+      return;
+    }
+
+    const selectedKey = getSelectionKey(focusFile);
+    if (!selectedById[selectedKey]) {
+      return;
+    }
+
+    const frameId = window.requestAnimationFrame(() => {
+      document
+        .querySelector<HTMLElement>(`[data-file-selection-key="${selectedKey}"]`)
+        ?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+    });
+
+    return () => window.cancelAnimationFrame(frameId);
+  }, [selectedById, sortedRows]);
+
+  useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
       if (isInputTarget(event.target)) {
         return;
@@ -971,7 +1381,125 @@ const Files: React.FC<FilesProps> = ({ mediaCategory }) => {
       if (event.key === 'Escape') {
         setSelectedById({});
         setContextMenu(null);
+        keyboardSelectionAnchorRef.current = null;
         return;
+      }
+
+      if (!keyboardNavigationBlocked) {
+        const isKeyboardMultiSelect = event.metaKey || event.ctrlKey;
+        const isPrimaryShortcut = (event.metaKey || event.ctrlKey) && !event.altKey && !event.shiftKey;
+        const shortcutKey = event.key.toLowerCase();
+
+        if (isPrimaryShortcut && shortcutKey === 'a') {
+          event.preventDefault();
+          selectAllRows();
+          return;
+        }
+
+        if (isPrimaryShortcut && shortcutKey === 'c' && selectedFiles.length > 0) {
+          event.preventDefault();
+          openMoveDialog(selectedFiles);
+          return;
+        }
+
+        if (event.key === 'Enter') {
+          const selectedIndex = getSelectedKeyboardIndex();
+          const selectedFile = selectedIndex >= 0 ? sortedRows[selectedIndex] : null;
+          if (selectedFile) {
+            event.preventDefault();
+            openFile(selectedFile);
+          }
+          return;
+        }
+
+        if (event.key === 'ArrowUp' || event.key === 'ArrowDown') {
+          event.preventDefault();
+
+          if (viewMode === 'grid') {
+            const selectedIndex = getSelectedKeyboardIndex();
+            if (selectedIndex < 0) {
+              selectKeyboardRow(0);
+              return;
+            }
+
+            const selectedFile = sortedRows[selectedIndex];
+            const gridColumnCount = getSelectedGridColumnCount(selectedFile);
+            const direction = event.key === 'ArrowUp' ? 'up' : 'down';
+            if (isKeyboardMultiSelect) {
+              extendGridKeyboardSelection(direction, gridColumnCount);
+            } else {
+              moveGridKeyboardSelection(direction, gridColumnCount);
+            }
+            return;
+          }
+
+          const delta = event.key === 'ArrowUp' ? -1 : 1;
+          if (isKeyboardMultiSelect) {
+            extendKeyboardSelection(delta, 'list', 1);
+          } else {
+            moveKeyboardSelection(delta);
+          }
+          return;
+        }
+
+        if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') {
+          event.preventDefault();
+
+          if (viewMode === 'grid') {
+            const selectedIndex = getSelectedKeyboardIndex();
+            if (selectedIndex < 0) {
+              selectKeyboardRow(0);
+              return;
+            }
+
+            const selectedFile = sortedRows[selectedIndex];
+            const gridColumnCount = getSelectedGridColumnCount(selectedFile);
+            const direction = event.key === 'ArrowLeft' ? 'left' : 'right';
+            if (isKeyboardMultiSelect) {
+              extendGridKeyboardSelection(direction, gridColumnCount);
+            } else {
+              moveGridKeyboardSelection(direction, gridColumnCount);
+            }
+            return;
+          }
+
+          if (isKeyboardMultiSelect) {
+            extendKeyboardSelection(event.key === 'ArrowLeft' ? -1 : 1, 'list', 1);
+            return;
+          }
+
+          if (event.key === 'ArrowLeft') {
+            if (!isCategoryMode && currentPath !== '/') {
+              handlePathChange(getParentDirectoryPath(currentPath));
+            }
+            return;
+          }
+
+          const selectedIndex = getSelectedKeyboardIndex();
+          if (selectedIndex < 0) {
+            selectKeyboardRow(0);
+            return;
+          }
+          const selectedFile = selectedIndex >= 0 ? sortedRows[selectedIndex] : null;
+          if (selectedFile?.directory) {
+            openDirectory(selectedFile);
+          }
+          return;
+        }
+
+        if (
+          event.key === 'Backspace' &&
+          viewMode === 'grid' &&
+          !event.metaKey &&
+          !event.ctrlKey &&
+          !event.altKey &&
+          !isCategoryMode &&
+          currentPath !== '/'
+        ) {
+          event.preventDefault();
+          handlePathChange(getParentDirectoryPath(currentPath));
+          return;
+        }
       }
 
       const shouldDelete =
@@ -986,7 +1514,16 @@ const Files: React.FC<FilesProps> = ({ mediaCategory }) => {
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [deleteFiles, isMacPlatform, selectedFiles]);
+  }, [
+    currentPath,
+    deleteFiles,
+    isCategoryMode,
+    isMacPlatform,
+    keyboardNavigationBlocked,
+    selectedFiles,
+    sortedRows,
+    viewMode,
+  ]);
 
   useEffect(() => {
     if (detailFileId == null) {
@@ -1040,10 +1577,13 @@ const Files: React.FC<FilesProps> = ({ mediaCategory }) => {
     setSelectedById({});
     setContextMenu(null);
     setPreviewFile(null);
+    setActiveViewer(null);
+    setOpenWithState(null);
     setDetailFileId(null);
     setDetail(null);
     setDetailError(null);
     lastSelectedIndexRef.current = 0;
+    keyboardSelectionAnchorRef.current = null;
     setAllRows([]);
     setPage(1);
   }
@@ -1087,13 +1627,53 @@ const Files: React.FC<FilesProps> = ({ mediaCategory }) => {
     setContextMenu(null);
   }
 
-  function openFile(file: FileItem) {
+  function openFileWithViewer(file: FileItem, viewer: FileViewerDefinition) {
+    closeContextMenus();
+    setOpenWithState(null);
+    setActiveViewer(viewer);
+    setPreviewFile(file);
+  }
+
+  function openFile(file: FileItem, options?: { forcePicker?: boolean; viewerId?: string }) {
     closeContextMenus();
     if (file.directory) {
       openDirectory(file);
       return;
     }
-    setPreviewFile(file);
+
+    if (!viewerConfig) {
+      alert('打开方式配置仍在加载，请稍后再试');
+      return;
+    }
+
+    const extension = getFileExtension(file);
+    const allViewers = getAllFileViewers(viewerConfig);
+    const availableViewers = getAvailableViewersForFile(viewerConfig, file, extension);
+
+    if (options?.viewerId) {
+      const requestedViewer = availableViewers.find((viewer) => viewer.id === options.viewerId);
+      if (requestedViewer) {
+        openFileWithViewer(file, requestedViewer);
+        return;
+      }
+    }
+
+    if (!options?.forcePicker) {
+      const preferredViewerId = extension ? userSettings?.defaultOpenWithByExt?.[extension] : null;
+      const preferredViewer = preferredViewerId ? availableViewers.find((viewer) => viewer.id === preferredViewerId) : null;
+      if (preferredViewer) {
+        openFileWithViewer(file, preferredViewer);
+        return;
+      }
+    }
+
+    setOpenWithState({
+      file,
+      extension,
+      recommendedViewers: getRecommendedViewersForFile(viewerConfig, file, extension),
+      allViewers,
+      availableViewerIds: availableViewers.map((viewer) => viewer.id),
+    });
   }
 
   function selectFile(file: FileItem, index: number, event?: React.MouseEvent<HTMLElement>) {
@@ -1106,11 +1686,13 @@ const Files: React.FC<FilesProps> = ({ mediaCategory }) => {
     }
 
     lastSelectedIndexRef.current = index;
+    keyboardSelectionAnchorRef.current = index;
     setSelectedById({ [getSelectionKey(file)]: file });
   }
 
   function toggleFileSelection(file: FileItem, index: number) {
     lastSelectedIndexRef.current = index;
+    keyboardSelectionAnchorRef.current = index;
     setSelectedById((current) => {
       const next = { ...current };
       const key = getSelectionKey(file);
@@ -1128,6 +1710,7 @@ const Files: React.FC<FilesProps> = ({ mediaCategory }) => {
     event.stopPropagation();
     if (!selectedById[getSelectionKey(file)]) {
       lastSelectedIndexRef.current = index;
+      keyboardSelectionAnchorRef.current = index;
       setSelectedById({ [getSelectionKey(file)]: file });
     }
     closeSubmenus();
@@ -1197,13 +1780,7 @@ const Files: React.FC<FilesProps> = ({ mediaCategory }) => {
   }
 
   function moveFileAction(file: FileItem) {
-    setMoveDialogState({
-      open: true,
-      items: resolveActionItems(file),
-      targetPath: currentPath,
-      initialConflictResult: null,
-    });
-    closeContextMenus();
+    openMoveDialog(resolveActionItems(file));
   }
 
   function openAppearanceDialog(file: FileItem) {
@@ -1262,6 +1839,13 @@ const Files: React.FC<FilesProps> = ({ mediaCategory }) => {
     closeContextMenus();
   }
 
+  function getNewDocumentViewerId(type: 'md' | 'drawio' | 'txt' | 'excalidraw') {
+    if (type === 'md') return 'markdown';
+    if (type === 'drawio') return 'drawio';
+    if (type === 'excalidraw') return 'excalidraw';
+    return 'code-monaco';
+  }
+
   function createNewDocument(type: 'md' | 'drawio' | 'txt' | 'excalidraw') {
     let defaultName = 'Untitled.txt';
     let content = '';
@@ -1298,7 +1882,12 @@ const Files: React.FC<FilesProps> = ({ mediaCategory }) => {
     }
 
     const file = new File([content], filename.trim(), { type: mimeType });
-    uploadMutation.mutate({ files: [file] });
+    void uploadMutation.mutateAsync({ files: [file] }).then((uploaded) => {
+      const created = uploaded[0];
+      if (created) {
+        openFile(created, { viewerId: getNewDocumentViewerId(type) });
+      }
+    });
     closeContextMenus();
   }
 
@@ -1307,11 +1896,7 @@ const Files: React.FC<FilesProps> = ({ mediaCategory }) => {
       setSelectedById({});
       return;
     }
-    const next: SelectedFileMap = {};
-    allRows.forEach((file) => {
-      next[getSelectionKey(file)] = file;
-    });
-    setSelectedById(next);
+    selectAllRows();
   }
 
   const menuMode = useMemo(() => {
@@ -1447,6 +2032,7 @@ const Files: React.FC<FilesProps> = ({ mediaCategory }) => {
                 rows={sortedRows}
                 viewMode={viewMode}
                 selectedById={selectedById}
+                focusedSelectionKey={sortedRows.length > 0 ? getSelectionKey(sortedRows[clampRowIndex(lastSelectedIndexRef.current)]) : undefined}
                 favoriteIds={favoriteIds}
                 allSelected={allSelected}
                 selectedCount={selectedCount}
@@ -1527,51 +2113,51 @@ const Files: React.FC<FilesProps> = ({ mediaCategory }) => {
           {menuMode === 'empty' && (
             <Box>
               <MenuItem onClick={() => { setContextMenu(null); fileInputRef.current?.click(); }}>
-                <ListItemIcon><UploadFile fontSize="small" /></ListItemIcon>
+                <ListItemIcon><Upload size={16} /></ListItemIcon>
                 <ListItemText>上传文件</ListItemText>
               </MenuItem>
               <MenuItem onClick={() => { setContextMenu(null); folderInputRef.current?.click(); }}>
-                <ListItemIcon><FolderZip fontSize="small" /></ListItemIcon>
+                <ListItemIcon><Archive size={16} /></ListItemIcon>
                 <ListItemText>上传文件夹</ListItemText>
               </MenuItem>
               <MenuItem onClick={uploadFromClipboard}>
-                <ListItemIcon><ContentPaste fontSize="small" /></ListItemIcon>
+                <ListItemIcon><ClipboardPaste size={16} /></ListItemIcon>
                 <ListItemText>从剪贴板上传</ListItemText>
               </MenuItem>
               <MenuItem onClick={() => { setRemoteDownloadDialogOpen(true); setContextMenu(null); }}>
-                <ListItemIcon><CloudDownload fontSize="small" /></ListItemIcon>
+                <ListItemIcon><CloudDownload size={16} /></ListItemIcon>
                 <ListItemText>离线下载</ListItemText>
               </MenuItem>
               <Divider />
               <MenuItem onClick={createFolder}>
-                <ListItemIcon><CreateNewFolder fontSize="small" /></ListItemIcon>
+                <ListItemIcon><FolderPlus size={16} /></ListItemIcon>
                 <ListItemText>创建文件夹</ListItemText>
               </MenuItem>
               <MenuItem onClick={() => createNewDocument('txt')}>
-                <ListItemIcon><InsertDriveFile fontSize="small" /></ListItemIcon>
+                <ListItemIcon><FileText size={16} /></ListItemIcon>
                 <ListItemText>创建文件</ListItemText>
               </MenuItem>
               <Divider />
               <MenuItem onClick={() => createNewDocument('md')}>
-                <ListItemIcon><Description fontSize="small" /></ListItemIcon>
+                <ListItemIcon><FileText size={16} /></ListItemIcon>
                 <ListItemText>Markdown (.md)</ListItemText>
               </MenuItem>
               <MenuItem onClick={() => createNewDocument('drawio')}>
-                <ListItemIcon><Description fontSize="small" /></ListItemIcon>
+                <ListItemIcon><FileText size={16} /></ListItemIcon>
                 <ListItemText>draw.io</ListItemText>
-                <ChevronRight fontSize="small" sx={{ ml: 'auto', opacity: 0.5 }} />
+                <ChevronRight size={16} style={{ marginLeft: 'auto', opacity: 0.5 }} />
               </MenuItem>
               <MenuItem onClick={() => createNewDocument('txt')}>
-                <ListItemIcon><Description fontSize="small" /></ListItemIcon>
+                <ListItemIcon><FileText size={16} /></ListItemIcon>
                 <ListItemText>Text (.txt)</ListItemText>
               </MenuItem>
               <MenuItem onClick={() => createNewDocument('excalidraw')}>
-                <ListItemIcon><Description fontSize="small" /></ListItemIcon>
+                <ListItemIcon><FileText size={16} /></ListItemIcon>
                 <ListItemText>Excalidraw (.excalidraw)</ListItemText>
               </MenuItem>
               <Divider />
               <MenuItem onClick={() => { setPage(1); void refetch(); setContextMenu(null); }}>
-                <ListItemIcon><Refresh fontSize="small" /></ListItemIcon>
+                <ListItemIcon><RefreshCw size={16} /></ListItemIcon>
                 <ListItemText>刷新</ListItemText>
               </MenuItem>
             </Box>
@@ -1587,16 +2173,10 @@ const Files: React.FC<FilesProps> = ({ mediaCategory }) => {
               <Divider sx={{ my: 0.5 }} />
               <MenuItem
                 onClick={() => {
-                  setMoveDialogState({
-                    open: true,
-                    items: selectedFiles,
-                    targetPath: currentPath,
-                    initialConflictResult: null,
-                  });
-                  closeContextMenus();
+                  openMoveDialog(selectedFiles);
                 }}
               >
-                <ListItemIcon><DriveFileMove fontSize="small" /></ListItemIcon>
+                <ListItemIcon><FolderInput size={16} /></ListItemIcon>
                 <ListItemText>移动到</ListItemText>
               </MenuItem>
               <MenuItem
@@ -1605,11 +2185,11 @@ const Files: React.FC<FilesProps> = ({ mediaCategory }) => {
                   setContextMenu(null);
                 }}
               >
-                <ListItemIcon><Close fontSize="small" /></ListItemIcon>
+                <ListItemIcon><X size={16} /></ListItemIcon>
                 <ListItemText>取消选择</ListItemText>
               </MenuItem>
               <MenuItem sx={{ color: 'error.main' }} onClick={() => deleteFiles(selectedFiles)}>
-                <ListItemIcon><DeleteOutline fontSize="small" color="inherit" /></ListItemIcon>
+                <ListItemIcon><Trash2 size={16} /></ListItemIcon>
                 <ListItemText>批量删除</ListItemText>
               </MenuItem>
             </Box>
@@ -1624,32 +2204,32 @@ const Files: React.FC<FilesProps> = ({ mediaCategory }) => {
             >
             <Box>
               <MenuItem onClick={() => openFile(activeMenuFile)}>
-                <ListItemIcon><OpenInFull fontSize="small" /></ListItemIcon>
+                <ListItemIcon><FolderOpen size={16} /></ListItemIcon>
                 <ListItemText>进入</ListItemText>
               </MenuItem>
               <MenuItem onClick={() => downloadFile(activeMenuFile)}>
-                <ListItemIcon><Download fontSize="small" /></ListItemIcon>
+                <ListItemIcon><Download size={16} /></ListItemIcon>
                 <ListItemText>下载</ListItemText>
               </MenuItem>
               <Divider />
               <MenuItem onClick={() => shareFile(activeMenuFile)}>
-                <ListItemIcon><Share fontSize="small" /></ListItemIcon>
+                <ListItemIcon><Share2 size={16} /></ListItemIcon>
                 <ListItemText>分享</ListItemText>
               </MenuItem>
               <MenuItem onClick={() => renameFileAction(activeMenuFile)}>
-                <ListItemIcon><Edit fontSize="small" /></ListItemIcon>
+                <ListItemIcon><Pencil size={16} /></ListItemIcon>
                 <ListItemText>重命名</ListItemText>
               </MenuItem>
               <MenuItem onClick={() => copyFileAction(activeMenuFile)}>
-                <ListItemIcon><ContentCopy fontSize="small" /></ListItemIcon>
+                <ListItemIcon><Copy size={16} /></ListItemIcon>
                 <ListItemText>复制</ListItemText>
               </MenuItem>
               <MenuItem onClick={() => getDirectLink(activeMenuFile)}>
-                <ListItemIcon><LinkIcon fontSize="small" /></ListItemIcon>
+                <ListItemIcon><Link2 size={16} /></ListItemIcon>
                 <ListItemText>获取直链</ListItemText>
               </MenuItem>
               <Divider />
-              <CascadingSubmenu title="标签" popupId="files-tag-submenu" icon={<Label fontSize="small" />}>
+              <CascadingSubmenu title="标签" popupId="files-tag-submenu" icon={<Tags size={16} />}>
                 <CascadingMenuItem
                   onClick={() => {
                     setTagFile(activeMenuFile || null);
@@ -1657,7 +2237,7 @@ const Files: React.FC<FilesProps> = ({ mediaCategory }) => {
                     setTagManagerOpen(true);
                   }}
                 >
-                  <ListItemIcon><Label fontSize="small" /></ListItemIcon>
+                  <ListItemIcon><Tags size={16} /></ListItemIcon>
                   <ListItemText>管理标签</ListItemText>
                 </CascadingMenuItem>
                 <Divider />
@@ -1676,7 +2256,7 @@ const Files: React.FC<FilesProps> = ({ mediaCategory }) => {
                       }}
                     >
                       <ListItemIcon sx={{ minWidth: 26 }}>
-                        {assigned ? <Check fontSize="small" /> : null}
+                        {assigned ? <Check size={14} /> : null}
                       </ListItemIcon>
                       <Box
                         component="span"
@@ -1701,24 +2281,24 @@ const Files: React.FC<FilesProps> = ({ mediaCategory }) => {
                   );
                 })}
               </CascadingSubmenu>
-              <CascadingSubmenu title="整理" popupId="files-arrange-submenu" icon={<DriveFileMove fontSize="small" />}>
+              <CascadingSubmenu title="整理" popupId="files-arrange-submenu" icon={<FolderInput size={16} />}>
                 <CascadingMenuItem onClick={() => moveFileAction(activeMenuFile)}>
-                  <ListItemIcon><DriveFileMove fontSize="small" /></ListItemIcon>
+                  <ListItemIcon><FolderInput size={16} /></ListItemIcon>
                   <ListItemText>移动到</ListItemText>
                 </CascadingMenuItem>
                 <CascadingMenuItem onClick={() => openAppearanceDialog(activeMenuFile)}>
-                  <ListItemIcon><Circle fontSize="small" /></ListItemIcon>
+                  <ListItemIcon><Circle size={14} /></ListItemIcon>
                   <ListItemText>自定义图标</ListItemText>
                 </CascadingMenuItem>
               </CascadingSubmenu>
               <Divider />
               <MenuItem onClick={() => openDetail(activeMenuFile)}>
-                <ListItemIcon><InfoOutlined fontSize="small" /></ListItemIcon>
+                <ListItemIcon><Info size={16} /></ListItemIcon>
                 <ListItemText>详情</ListItemText>
               </MenuItem>
               <Divider />
               <MenuItem sx={{ color: 'error.main' }} onClick={() => deleteFiles([activeMenuFile])}>
-                <ListItemIcon><DeleteOutline fontSize="small" color="inherit" /></ListItemIcon>
+                <ListItemIcon><Trash2 size={16} /></ListItemIcon>
                 <ListItemText>删除</ListItemText>
               </MenuItem>
             </Box>
@@ -1734,54 +2314,69 @@ const Files: React.FC<FilesProps> = ({ mediaCategory }) => {
             >
             <Box>
               <MenuItem onClick={() => openFile(activeMenuFile)}>
-                <ListItemIcon><OpenInFull fontSize="small" /></ListItemIcon>
+                <ListItemIcon><FolderOpen size={16} /></ListItemIcon>
                 <ListItemText>打开</ListItemText>
               </MenuItem>
-              <MenuItem onClick={() => { setContextMenu(null); setPreviewFile(activeMenuFile); }}>
-                <ListItemIcon><Visibility fontSize="small" /></ListItemIcon>
-                <ListItemText>打开方式</ListItemText>
-                <ChevronRight fontSize="small" sx={{ ml: 'auto', opacity: 0.5 }} />
-              </MenuItem>
+              {activeMenuFileAllViewers.length > 0 || activeMenuFileAvailableViewers.length > 0 ? (
+                <CascadingSubmenu title="打开方式" popupId="files-open-with-submenu" icon={<Eye size={16} />}>
+                  {activeMenuFileRecommendedViewers.map((viewer) => (
+                    <CascadingMenuItem key={viewer.id} onClick={() => openFile(activeMenuFile, { viewerId: viewer.id })}>
+                      <ListItemIcon><FileText size={16} /></ListItemIcon>
+                      <ListItemText>{viewer.displayName}</ListItemText>
+                    </CascadingMenuItem>
+                  ))}
+                  {activeMenuFileRecommendedViewers.length > 0 ? <Divider /> : null}
+                  <CascadingMenuItem onClick={() => openFile(activeMenuFile, { forcePicker: true })}>
+                    <ListItemIcon><PanelsTopLeft size={16} /></ListItemIcon>
+                    <ListItemText>所有打开方式</ListItemText>
+                  </CascadingMenuItem>
+                </CascadingSubmenu>
+              ) : (
+                <MenuItem onClick={() => openFile(activeMenuFile, { forcePicker: true })}>
+                  <ListItemIcon><Eye size={16} /></ListItemIcon>
+                  <ListItemText>打开方式</ListItemText>
+                </MenuItem>
+              )}
               <MenuItem onClick={() => downloadFile(activeMenuFile)}>
-                <ListItemIcon><Download fontSize="small" /></ListItemIcon>
+                <ListItemIcon><Download size={16} /></ListItemIcon>
                 <ListItemText>下载</ListItemText>
               </MenuItem>
               <Divider />
               <MenuItem onClick={() => shareFile(activeMenuFile)}>
-                <ListItemIcon><Share fontSize="small" /></ListItemIcon>
+                <ListItemIcon><Share2 size={16} /></ListItemIcon>
                 <ListItemText>分享</ListItemText>
               </MenuItem>
               <MenuItem onClick={() => renameFileAction(activeMenuFile)}>
-                <ListItemIcon><Edit fontSize="small" /></ListItemIcon>
+                <ListItemIcon><Pencil size={16} /></ListItemIcon>
                 <ListItemText>重命名</ListItemText>
               </MenuItem>
               <MenuItem onClick={() => copyFileAction(activeMenuFile)}>
-                <ListItemIcon><ContentCopy fontSize="small" /></ListItemIcon>
+                <ListItemIcon><Copy size={16} /></ListItemIcon>
                 <ListItemText>复制</ListItemText>
               </MenuItem>
               <MenuItem onClick={() => getDirectLink(activeMenuFile)}>
-                <ListItemIcon><LinkIcon fontSize="small" /></ListItemIcon>
+                <ListItemIcon><Link2 size={16} /></ListItemIcon>
                 <ListItemText>获取直链</ListItemText>
               </MenuItem>
               <Divider />
-              <CascadingSubmenu title="整理" popupId="files-arrange-submenu" icon={<DriveFileMove fontSize="small" />}>
+              <CascadingSubmenu title="整理" popupId="files-arrange-submenu" icon={<FolderInput size={16} />}>
                 <CascadingMenuItem onClick={() => moveFileAction(activeMenuFile)}>
-                  <ListItemIcon><DriveFileMove fontSize="small" /></ListItemIcon>
+                  <ListItemIcon><FolderInput size={16} /></ListItemIcon>
                   <ListItemText>移动到</ListItemText>
                 </CascadingMenuItem>
                 <CascadingMenuItem onClick={() => openAppearanceDialog(activeMenuFile)}>
-                  <ListItemIcon><Circle fontSize="small" /></ListItemIcon>
+                  <ListItemIcon><Circle size={14} /></ListItemIcon>
                   <ListItemText>自定义图标</ListItemText>
                 </CascadingMenuItem>
               </CascadingSubmenu>
               <Divider />
               <MenuItem onClick={() => openDetail(activeMenuFile)}>
-                <ListItemIcon><InfoOutlined fontSize="small" /></ListItemIcon>
+                <ListItemIcon><Info size={16} /></ListItemIcon>
                 <ListItemText>详情</ListItemText>
               </MenuItem>
               <Divider />
               <MenuItem sx={{ color: 'error.main' }} onClick={() => deleteFiles([activeMenuFile])}>
-                <ListItemIcon><DeleteOutline fontSize="small" color="inherit" /></ListItemIcon>
+                <ListItemIcon><Trash2 size={16} /></ListItemIcon>
                 <ListItemText>删除</ListItemText>
               </MenuItem>
             </Box>
@@ -1789,7 +2384,35 @@ const Files: React.FC<FilesProps> = ({ mediaCategory }) => {
           )}
         </Menu>
 
-        <FilesPreviewDialog file={previewFile} onClose={() => setPreviewFile(null)} />
+        <OpenWithDialog
+          open={openWithState != null}
+          file={openWithState?.file ?? null}
+          extension={openWithState?.extension ?? ''}
+          recommendedViewers={openWithState?.recommendedViewers ?? []}
+          allViewers={openWithState?.allViewers ?? []}
+          availableViewerIds={openWithState?.availableViewerIds ?? []}
+          onClose={() => setOpenWithState(null)}
+          onSelect={handleOpenWithSelect}
+        />
+        <FileViewerHost
+          file={previewFile}
+          viewer={activeViewer}
+          onClose={() => {
+            setPreviewFile(null);
+            setActiveViewer(null);
+          }}
+          onSaved={(updatedFile) => {
+            setAllRows((prev) => prev.map((row) => (row.id === updatedFile.id ? updatedFile : row)));
+            setSelectedById((prev) => {
+              const key = getSelectionKey(updatedFile);
+              if (!prev[key]) {
+                return prev;
+              }
+              return { ...prev, [key]: updatedFile };
+            });
+            void refetch();
+          }}
+        />
         <FileTagsManagerDialog
           open={tagManagerOpen}
           onClose={() => {

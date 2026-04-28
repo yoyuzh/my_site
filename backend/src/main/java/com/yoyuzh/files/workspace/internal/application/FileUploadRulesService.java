@@ -36,6 +36,14 @@ public final class FileUploadRulesService {
         ensureWithinStorageQuota(user, size);
     }
 
+    public void validateReplacement(WorkspaceUserContext user, long previousSize, long nextSize) {
+        long effectiveMaxUploadSize = resolveEffectiveMaxUploadSize(user);
+        if (nextSize > effectiveMaxUploadSize) {
+            throw new BusinessException(ErrorCode.QUOTA_EXCEEDED, "文件大小超出限制");
+        }
+        ensureWithinStorageQuota(user, Math.max(0L, nextSize - Math.max(previousSize, 0L)));
+    }
+
     public void ensureWithinStorageQuota(WorkspaceUserContext user, long additionalBytes) {
         if (additionalBytes <= 0) {
             return;
@@ -49,7 +57,10 @@ public final class FileUploadRulesService {
     }
 
     private long resolveEffectiveMaxUploadSize(WorkspaceUserContext user) {
-        long effectiveMaxUploadSize = Math.min(maxFileSize, user.maxUploadSizeBytes());
+        long effectiveMaxUploadSize = maxFileSize;
+        if (user.maxUploadSizeBytes() != null && user.maxUploadSizeBytes() > 0) {
+            effectiveMaxUploadSize = Math.min(effectiveMaxUploadSize, user.maxUploadSizeBytes());
+        }
         long policyMaxSizeBytes = 0L;
         StoragePolicyCapabilities capabilities = null;
         if (storagePolicyQuery != null) {
@@ -60,7 +71,7 @@ public final class FileUploadRulesService {
         if (uploadConstraintPolicy != null) {
             return uploadConstraintPolicy.resolveEffectiveMaxUploadSize(
                     maxFileSize,
-                    user.maxUploadSizeBytes(),
+                    user.maxUploadSizeBytes() == null || user.maxUploadSizeBytes() <= 0 ? maxFileSize : user.maxUploadSizeBytes(),
                     policyMaxSizeBytes,
                     capabilities == null ? 0L : capabilities.maxObjectSize()
             );
