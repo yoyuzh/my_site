@@ -40,6 +40,7 @@ import {
   ViewList,
 } from '@mui/icons-material';
 import type { FileItem } from '../../api/types';
+import type { FolderDownloadMode } from '../../lib/folder-downloads';
 import type { SortBy, SortOrder } from '../../pages/Files';
 
 function parentDirectoryPath(path: string) {
@@ -85,7 +86,7 @@ export interface FilesTopBarProps {
   onClearSelection: () => void;
   onOpen: (file: FileItem) => void;
   onDetail: (file: FileItem) => void;
-  onDownload: (file: FileItem) => void;
+  onDownload: (file: FileItem, mode?: FolderDownloadMode) => void;
   onShare: (file: FileItem) => void;
   onDelete: (files: FileItem[]) => void;
   onUploadFolderClick?: () => void;
@@ -129,7 +130,9 @@ export const FilesTopBar: React.FC<FilesTopBarProps> = ({
 }) => {
   const searchInputRef = useRef<HTMLInputElement | null>(null);
   const [sortAnchorEl, setSortAnchorEl] = React.useState<null | HTMLElement>(null);
+  const [folderDownloadAnchorEl, setFolderDownloadAnchorEl] = React.useState<null | HTMLElement>(null);
   const openSortMenu = Boolean(sortAnchorEl);
+  const openFolderDownloadMenu = Boolean(folderDownloadAnchorEl);
   const breadcrumbs = pathSegments(currentPath);
   const isSelected = selectedCount > 0;
   const singleFile = selectedCount === 1 ? selectedFiles[0] : null;
@@ -181,26 +184,50 @@ export const FilesTopBar: React.FC<FilesTopBarProps> = ({
                     >
                       详情
                     </Button>
-                    {!singleFile.directory && (
+                    {singleFile.directory ? (
                       <>
                         <Button
                           size="small"
                           startIcon={<Download />}
-                          onClick={() => onDownload(singleFile)}
+                          onClick={(event) => setFolderDownloadAnchorEl(event.currentTarget)}
                           sx={{ textTransform: 'none' }}
                         >
                           下载
                         </Button>
-                        <Button
-                          size="small"
-                          startIcon={<Share />}
-                          onClick={() => onShare(singleFile)}
-                          sx={{ textTransform: 'none' }}
+                        <Menu
+                          anchorEl={folderDownloadAnchorEl}
+                          open={openFolderDownloadMenu}
+                          onClose={() => setFolderDownloadAnchorEl(null)}
                         >
-                          分享
-                        </Button>
+                          <MenuItem onClick={() => { setFolderDownloadAnchorEl(null); onDownload(singleFile, 'server-archive'); }}>
+                            服务器端打包
+                          </MenuItem>
+                          <MenuItem onClick={() => { setFolderDownloadAnchorEl(null); onDownload(singleFile, 'browser-archive'); }}>
+                            浏览器打包
+                          </MenuItem>
+                          <MenuItem onClick={() => { setFolderDownloadAnchorEl(null); onDownload(singleFile, 'individual-files'); }}>
+                            逐一文件下载
+                          </MenuItem>
+                        </Menu>
                       </>
+                    ) : (
+                      <Button
+                        size="small"
+                        startIcon={<Download />}
+                        onClick={() => onDownload(singleFile)}
+                        sx={{ textTransform: 'none' }}
+                      >
+                        下载
+                      </Button>
                     )}
+                    <Button
+                      size="small"
+                      startIcon={<Share />}
+                      onClick={() => onShare(singleFile)}
+                      sx={{ textTransform: 'none' }}
+                    >
+                      分享
+                    </Button>
                   </>
                 ) : (
                   <Button

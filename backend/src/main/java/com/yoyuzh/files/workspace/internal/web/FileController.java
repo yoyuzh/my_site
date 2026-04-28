@@ -324,7 +324,7 @@ public class FileController {
                                                  @PathVariable Long fileId,
                                                  @Valid @RequestBody MoveFileRequest request) {
         return ApiResponse.success(
-                fileService.move(currentUserId(userDetails), fileId, request.targetPath(), request.conflictStrategy()));
+                fileService.move(currentUserId(userDetails), fileId, request.resolvedTargetPath(), request.conflictStrategy()));
     }
 
     @Operation(summary = "批量移动文件")

@@ -81,6 +81,8 @@ Important:
 
 ## Role routing
 
+- Main server note: the primary deployment server is `8v8g` (`103.236.97.248:43471`, `root`).
+
 - `orchestrator`: default coordinator. It decides which specialist agent should work next, keeps cross-directory work aligned, and writes the final handoff. It should stay read-only.
 - `planner`: planning only. It produces file-level plans, command plans, and sequencing. It should stay read-only.
 - `explorer`: investigation only. It maps code paths, current behavior, and relevant configs/tests. It should stay read-only.

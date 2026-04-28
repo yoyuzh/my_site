@@ -67,6 +67,14 @@ import {
 } from '../lib/files';
 import { getUserSettings, updateUserSettings } from '../lib/user-settings';
 import {
+  buildBrowserFolderArchive,
+  collectFolderDownloadEntries,
+  type FolderDownloadMode,
+} from '../lib/folder-downloads';
+import { useUploadQueue } from '../hooks/useUploadQueue';
+import { useUploadPanelStore } from '../hooks/useUploadPanelStore';
+import { showToast, updateToast, removeToast } from '../components/files/WorkspaceActionToastHost';
+import {
   getAllFileViewers,
   getAvailableViewersForFile,
   getFileExtension,
@@ -99,6 +107,11 @@ const FILES_PAGE_SIZE = 30;
 const VIEW_MODE_STORAGE_KEY = 'cloudreve-files-view-mode';
 const SORT_BY_STORAGE_KEY = 'cloudreve-files-sort-by';
 const SORT_ORDER_STORAGE_KEY = 'cloudreve-files-sort-order';
+const FOLDER_DOWNLOAD_MODE_LABELS: Record<FolderDownloadMode, string> = {
+  'server-archive': '服务器端打包',
+  'browser-archive': '浏览器打包',
+  'individual-files': '逐一文件下载',
+};
 
 const HoverMenu = React.forwardRef<HTMLDivElement, MenuProps>(function HoverMenu(props, ref) {
   const { PaperProps, style, ...rest } = props;
@@ -249,6 +262,10 @@ function getParentDirectoryPath(path: string) {
   const segments = normalizedPath.split('/').filter(Boolean);
   segments.pop();
   return segments.length === 0 ? '/' : `/${segments.join('/')}`;
+}
+
+function isTimeoutError(error: unknown) {
+  return error instanceof Error && /timeout/i.test(error.message);
 }
 
 function getLogicalPath(file: Pick<FileItem, 'directory' | 'filename' | 'path'>) {
@@ -436,6 +453,8 @@ const Files: React.FC<FilesProps> = ({ mediaCategory }) => {
   const [searchParams, setSearchParams] = useSearchParams();
   const queryClient = useQueryClient();
   const { theme } = useAppTheme();
+  const { addTasks: addUploadTasks } = useUploadQueue();
+  const { set: setUploadPanelOpen } = useUploadPanelStore();
   const requestedPath = mediaCategory ? '/' : getWorkspaceFolderPathFromSearchParams(searchParams);
   const categoryMeta = mediaCategory ? MEDIA_CATEGORY_META[mediaCategory] : null;
   const isCategoryMode = mediaCategory != null;
@@ -1166,8 +1185,14 @@ const Files: React.FC<FilesProps> = ({ mediaCategory }) => {
       }
       return batchMoveFiles(items.map((item) => item.id), targetPath);
     },
-    onSuccess: (result, variables) => {
+    onMutate: () => {
+      return { toastId: showToast({ message: '正在移动...', severity: 'info', loading: true, duration: null }) };
+    },
+    onSuccess: (result, variables, context) => {
       if (result.status === 'CONFLICT') {
+        if (context?.toastId) {
+          removeToast(context.toastId);
+        }
         setMoveDialogState({
           open: true,
           items: variables.items,
@@ -1177,16 +1202,86 @@ const Files: React.FC<FilesProps> = ({ mediaCategory }) => {
         return;
       }
       if (result.status === 'INVALID_TARGET') {
-        alert(result.message || '目标位置不可用');
+        if (context?.toastId) {
+          updateToast(context.toastId, {
+            message: result.message || '目标位置不可用',
+            severity: 'error',
+            loading: false,
+            duration: 5000,
+          });
+        }
         return;
       }
+      
       applyMoveResult(result, variables.items);
-      if (result.items.some((item) => item.renamed || item.skipped)) {
-        alert(summarizeMoveResult(result));
+      
+      const targetPath = variables.targetPath;
+      if (context?.toastId) {
+        updateToast(context.toastId, { 
+          message: '任务成功', 
+          severity: 'success',
+          loading: false,
+          duration: 6000,
+          actions: [
+            {
+              label: '查看',
+              icon: <Eye size={14} />,
+              onClick: () => {
+                if (targetPath !== currentPath) {
+                  handlePathChange(targetPath);
+                } else {
+                  refreshCurrentListing();
+                }
+              },
+            },
+            {
+              label: '恢复',
+              icon: <RefreshCw size={14} />,
+              onClick: async () => {
+                const itemsToRestore = result.items.filter((item) => !item.skipped && item.fromPath);
+                if (itemsToRestore.length === 0) {
+                  return;
+                }
+
+                const restoreToastId = showToast({ message: '正在移动...', severity: 'info', loading: true, duration: null });
+                try {
+                  for (const item of itemsToRestore) {
+                    const restoreResult = await moveFile(item.fileId, getWorkspaceFolderParentPath(item.fromPath!));
+                    if (restoreResult.status !== 'SUCCESS') {
+                      throw new Error(restoreResult.message || '恢复失败');
+                    }
+                  }
+
+                  updateToast(restoreToastId, {
+                    message: '任务成功',
+                    severity: 'success',
+                    loading: false,
+                    duration: 5000,
+                  });
+                  refreshCurrentListing();
+                } catch (error) {
+                  updateToast(restoreToastId, {
+                    message: isTimeoutError(error) ? '任务超时' : (error instanceof Error ? error.message : '恢复失败'),
+                    severity: 'error',
+                    loading: false,
+                    duration: 5000,
+                  });
+                }
+              },
+            },
+          ],
+        });
       }
     },
-    onError: (error) => {
-      alert(error instanceof Error ? error.message : '移动失败');
+    onError: (error, variables, context) => {
+      if (context?.toastId) {
+        updateToast(context.toastId, {
+          message: isTimeoutError(error) ? '任务超时' : (error instanceof Error ? error.message : '移动失败'),
+          severity: 'error',
+          loading: false,
+          duration: 5000,
+        });
+      }
     },
   });
 
@@ -1206,20 +1301,16 @@ const Files: React.FC<FilesProps> = ({ mediaCategory }) => {
 
   const uploadMutation = useMutation({
     mutationFn: async ({ files, folderPath }: { files: File[]; folderPath?: string }) => {
-      const uploaded = [];
-      for (const file of files) {
-        setUploadStatus(`正在上传：${file.name}`);
-        const targetPath = folderPath ? joinDirectoryPath(currentPath, folderPath) : currentPath;
-        uploaded.push(await uploadFile(targetPath, file));
-      }
-      return uploaded;
+      const targetPath = folderPath ? joinDirectoryPath(currentPath, folderPath) : currentPath;
+      addUploadTasks(files, targetPath);
+      setUploadPanelOpen(true);
+      return files.length;
     },
-    onSuccess: (result) => {
-      setUploadStatus(`已上传 ${result.length} 个文件`);
-      refreshCurrentListing();
+    onSuccess: (count) => {
+      setUploadStatus(`已加入队列 ${count} 个文件`);
     },
     onError: (error) => {
-      setUploadStatus(error instanceof Error ? error.message : '上传失败');
+      showToast({ message: error instanceof Error ? error.message : '上传失败', severity: 'error' });
     },
   });
 
@@ -1252,7 +1343,19 @@ const Files: React.FC<FilesProps> = ({ mediaCategory }) => {
   const deleteMutation = useMutation({
     mutationFn: ({ fileIds, mode }: { fileIds: number[]; mode: FileDeleteMode }) => 
       batchDeleteFiles(fileIds, mode),
-    onSuccess: (_, variables) => {
+    onMutate: () => {
+      return { toastId: showToast({ message: '正在删除...', severity: 'info', loading: true, duration: null }) };
+    },
+    onSuccess: (_, variables, context) => {
+      if (context?.toastId) {
+        updateToast(context.toastId, {
+          message: '任务成功',
+          severity: 'success',
+          loading: false,
+          duration: 5000,
+        });
+      }
+
       const { fileIds } = variables;
       emitWorkspaceFolderTreeRefresh(
         Array.from(
@@ -1272,6 +1375,16 @@ const Files: React.FC<FilesProps> = ({ mediaCategory }) => {
       refreshCurrentListing();
       void refetchFavorites();
     },
+    onError: (error, variables, context) => {
+      if (context?.toastId) {
+        updateToast(context.toastId, {
+          message: isTimeoutError(error) ? '任务超时' : (error instanceof Error ? error.message : '删除失败'),
+          severity: 'error',
+          loading: false,
+          duration: 5000,
+        });
+      }
+    },
   });
 
   const favoriteMutation = useMutation({
@@ -1283,6 +1396,20 @@ const Files: React.FC<FilesProps> = ({ mediaCategory }) => {
       void refetchFavorites();
     },
   });
+
+  useEffect(() => {
+    const handleUploadSuccess = (event: Event) => {
+      const detail = (event as CustomEvent<{ path: string }>).detail;
+      if (detail.path === currentPath) {
+        refreshCurrentListing();
+      }
+    };
+
+    window.addEventListener('upload-success', handleUploadSuccess);
+    return () => {
+      window.removeEventListener('upload-success', handleUploadSuccess);
+    };
+  }, [currentPath, refreshCurrentListing]);
 
   const downloadMutation = useMutation({
     mutationFn: async (file: FileItem) => {
@@ -1300,6 +1427,63 @@ const Files: React.FC<FilesProps> = ({ mediaCategory }) => {
       if (blob) {
         triggerBlobDownload(blob, file.filename);
       }
+    },
+  });
+
+  const folderDownloadMutation = useMutation({
+    mutationFn: async ({ file, mode }: { file: FileItem; mode: FolderDownloadMode }) => {
+      if (mode === 'server-archive') {
+        return {
+          mode,
+          file,
+          archiveBlob: await downloadFileBlob(file.id),
+          downloadedFiles: [],
+        };
+      }
+
+      if (mode === 'browser-archive') {
+        return {
+          mode,
+          file,
+          archiveBlob: await buildBrowserFolderArchive(file),
+          downloadedFiles: [],
+        };
+      }
+
+      const entries = await collectFolderDownloadEntries(file);
+      const downloadedFiles = await Promise.all(
+        entries.files.map(async (entry) => ({
+          filename: entry.file.filename,
+          blob: await downloadFileBlob(entry.file.id),
+        })),
+      );
+      return {
+        mode,
+        file,
+        archiveBlob: null,
+        downloadedFiles,
+      };
+    },
+    onSuccess: ({ file, archiveBlob, downloadedFiles }) => {
+      if (archiveBlob) {
+        triggerBlobDownload(archiveBlob, `${file.filename}.zip`);
+        return;
+      }
+
+      if (downloadedFiles.length === 0) {
+        showToast({ message: '该文件夹没有可下载的文件', severity: 'warning' });
+        return;
+      }
+
+      downloadedFiles.forEach((downloadedFile, index) => {
+        window.setTimeout(() => {
+          triggerBlobDownload(downloadedFile.blob, downloadedFile.filename);
+        }, index * 250);
+      });
+    },
+    onError: (error, variables) => {
+      const modeLabel = FOLDER_DOWNLOAD_MODE_LABELS[variables.mode];
+      showToast({ message: error instanceof Error ? error.message : `${modeLabel}失败`, severity: 'error' });
     },
   });
 
@@ -1642,7 +1826,7 @@ const Files: React.FC<FilesProps> = ({ mediaCategory }) => {
     }
 
     if (!viewerConfig) {
-      alert('打开方式配置仍在加载，请稍后再试');
+      showToast({ message: '打开方式配置仍在加载，请稍后再试', severity: 'warning' });
       return;
     }
 
@@ -1746,10 +1930,10 @@ const Files: React.FC<FilesProps> = ({ mediaCategory }) => {
     setDeleteDialogState({ open: true, files });
   }
 
-  function downloadFile(file: FileItem) {
+  function downloadFile(file: FileItem, mode: FolderDownloadMode = 'server-archive') {
     if (file.directory) {
-      alert('暂未接入文件夹下载');
       closeContextMenus();
+      folderDownloadMutation.mutate({ file, mode });
       return;
     }
     closeContextMenus();
@@ -1800,9 +1984,9 @@ const Files: React.FC<FilesProps> = ({ mediaCategory }) => {
     try {
       const result = await getFileDownloadUrl(file.id);
       await navigator.clipboard.writeText(result.url);
-      alert('直链已复制到剪贴板');
+      showToast({ message: '直链已复制到剪贴板', severity: 'success' });
     } catch (e) {
-      alert('获取直链失败');
+      showToast({ message: '获取直链失败', severity: 'error' });
     }
     closeContextMenus();
   }
@@ -1831,10 +2015,10 @@ const Files: React.FC<FilesProps> = ({ mediaCategory }) => {
       if (files.length > 0) {
         uploadMutation.mutate({ files });
       } else {
-        alert('剪贴板中没有可上传的文件');
+        showToast({ message: '剪贴板中没有可上传的文件', severity: 'warning' });
       }
     } catch (e) {
-      alert('无法访问剪贴板或剪贴板为空');
+      showToast({ message: '无法访问剪贴板或剪贴板为空', severity: 'error' });
     }
     closeContextMenus();
   }
@@ -1882,12 +2066,7 @@ const Files: React.FC<FilesProps> = ({ mediaCategory }) => {
     }
 
     const file = new File([content], filename.trim(), { type: mimeType });
-    void uploadMutation.mutateAsync({ files: [file] }).then((uploaded) => {
-      const created = uploaded[0];
-      if (created) {
-        openFile(created, { viewerId: getNewDocumentViewerId(type) });
-      }
-    });
+    uploadMutation.mutate({ files: [file] });
     closeContextMenus();
   }
 
@@ -2207,10 +2386,20 @@ const Files: React.FC<FilesProps> = ({ mediaCategory }) => {
                 <ListItemIcon><FolderOpen size={16} /></ListItemIcon>
                 <ListItemText>进入</ListItemText>
               </MenuItem>
-              <MenuItem onClick={() => downloadFile(activeMenuFile)}>
-                <ListItemIcon><Download size={16} /></ListItemIcon>
-                <ListItemText>下载</ListItemText>
-              </MenuItem>
+              <CascadingSubmenu title="下载" popupId="files-folder-download-submenu" icon={<Download size={16} />}>
+                <CascadingMenuItem onClick={() => downloadFile(activeMenuFile, 'server-archive')}>
+                  <ListItemIcon><Archive size={16} /></ListItemIcon>
+                  <ListItemText>服务器端打包</ListItemText>
+                </CascadingMenuItem>
+                <CascadingMenuItem onClick={() => downloadFile(activeMenuFile, 'browser-archive')}>
+                  <ListItemIcon><Archive size={16} /></ListItemIcon>
+                  <ListItemText>浏览器打包</ListItemText>
+                </CascadingMenuItem>
+                <CascadingMenuItem onClick={() => downloadFile(activeMenuFile, 'individual-files')}>
+                  <ListItemIcon><Download size={16} /></ListItemIcon>
+                  <ListItemText>逐一文件下载</ListItemText>
+                </CascadingMenuItem>
+              </CascadingSubmenu>
               <Divider />
               <MenuItem onClick={() => shareFile(activeMenuFile)}>
                 <ListItemIcon><Share2 size={16} /></ListItemIcon>
@@ -2453,7 +2642,7 @@ const Files: React.FC<FilesProps> = ({ mediaCategory }) => {
           onSuccess={(result) => {
             applyMoveResult(result, moveDialogState.items);
             if (result.items.some((item) => item.renamed || item.skipped)) {
-              alert(summarizeMoveResult(result));
+              showToast({ message: summarizeMoveResult(result), severity: 'info' });
             }
             setMoveDialogState({
               open: false,

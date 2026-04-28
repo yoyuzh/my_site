@@ -6,6 +6,8 @@ import { useTheme } from '../hooks/useTheme';
 import { canAccessAdmin, getSession, type PortalSession } from '../lib/session';
 import { logout } from '../lib/auth';
 import BrandMark from './BrandMark';
+import UploadTaskTrigger from './files/UploadTaskTrigger';
+import { useUploadPanelStore } from '../hooks/useUploadPanelStore';
 
 interface TopbarProps {
   meta?: string;
@@ -18,6 +20,7 @@ const Topbar: React.FC<TopbarProps> = ({ meta }) => {
   const [session, setSessionState] = useState<PortalSession | null>(() => getSession());
   const menuRef = useRef<HTMLDivElement>(null);
   const user = session?.user;
+  const { open: panelOpen, toggle: togglePanel } = useUploadPanelStore();
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -64,6 +67,11 @@ const Topbar: React.FC<TopbarProps> = ({ meta }) => {
               {meta}
             </span>
           )}
+
+          <UploadTaskTrigger 
+            onClick={togglePanel} 
+            active={panelOpen} 
+          />
 
           <button
             type="button"

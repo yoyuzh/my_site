@@ -15,6 +15,7 @@ import RecycleBin from './pages/RecycleBin';
 import TransferSend from './pages/TransferSend';
 import TransferReceive from './pages/TransferReceive';
 import AccountSettings from './pages/AccountSettings';
+import OfflineDownloads from './pages/OfflineDownloads';
 import DashboardUnderConstruction from './pages/DashboardUnderConstruction';
 
 // Admin Pages
@@ -99,7 +100,7 @@ function App() {
             <Route path="shares" element={<RequireAuth><Shares /></RequireAuth>} />
             <Route path="recycle-bin" element={<RequireAuth><RecycleBin /></RequireAuth>} />
             <Route path="connections" element={<RequireAuth><DashboardUnderConstruction /></RequireAuth>} />
-            <Route path="offline-downloads" element={<RequireAuth><DashboardUnderConstruction /></RequireAuth>} />
+            <Route path="offline-downloads" element={<RequireAuth><OfflineDownloads /></RequireAuth>} />
             <Route path="transfer-send" element={<RequireAuth><TransferSend /></RequireAuth>} />
             <Route path="settings" element={<RequireAuth><AccountSettings /></RequireAuth>} />
           </Route>

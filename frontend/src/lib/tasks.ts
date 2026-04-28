@@ -146,6 +146,101 @@ export function getRemoteDownloadStatusLabel(status: string) {
   return statusMap[status] || status;
 }
 
+const REMOTE_DOWNLOAD_TERMINAL_STATUSES = new Set(['COMPLETED', 'FAILED', 'CANCELED']);
+
+function normalizeRemoteDownloadStatus(value: string | null | undefined): string {
+  if (!value) {
+    return '';
+  }
+
+  const upperValue = value.toUpperCase();
+  if (upperValue === 'CANCELLED') {
+    return 'CANCELED';
+  }
+  if (upperValue === 'RUNNING') {
+    return 'DOWNLOADING';
+  }
+  if (upperValue === 'QUEUED') {
+    return 'PENDING';
+  }
+  if (upperValue === 'FETCHING-METADATA') {
+    return 'FETCHING_METADATA';
+  }
+
+  const phaseToStatus: Record<string, string> = {
+    pending: 'PENDING',
+    queued: 'PENDING',
+    'fetching-metadata': 'FETCHING_METADATA',
+    downloading: 'DOWNLOADING',
+    importing: 'IMPORTING',
+    completed: 'COMPLETED',
+    failed: 'FAILED',
+    cancelled: 'CANCELED',
+  };
+
+  return phaseToStatus[value] || upperValue;
+}
+
+export function isRemoteDownloadTerminalStatus(status: string | null | undefined) {
+  return REMOTE_DOWNLOAD_TERMINAL_STATUSES.has(normalizeRemoteDownloadStatus(status));
+}
+
+export function resolveRemoteDownloadStatus(params: {
+  remoteStatus?: string | null;
+  progressStatus?: string | null;
+  taskStatus?: string | null;
+  phase?: string | null;
+}) {
+  const remoteStatus = normalizeRemoteDownloadStatus(params.remoteStatus);
+  const progressStatus = normalizeRemoteDownloadStatus(params.progressStatus);
+  const taskStatus = normalizeRemoteDownloadStatus(params.taskStatus);
+  const phaseStatus = normalizeRemoteDownloadStatus(params.phase);
+
+  if (isRemoteDownloadTerminalStatus(remoteStatus)) {
+    return remoteStatus;
+  }
+
+  const downstreamTerminalStatus = [progressStatus, taskStatus, phaseStatus].find((status) =>
+    isRemoteDownloadTerminalStatus(status),
+  );
+  if (downstreamTerminalStatus) {
+    return downstreamTerminalStatus;
+  }
+
+  return remoteStatus || progressStatus || taskStatus || phaseStatus || '';
+}
+
+export function resolveRemoteDownloadPhase(params: {
+  phase?: string | null;
+  status?: string | null;
+}) {
+  const normalizedStatus = normalizeRemoteDownloadStatus(params.status);
+  if (isRemoteDownloadTerminalStatus(normalizedStatus)) {
+    if (normalizedStatus === 'CANCELED') {
+      return 'cancelled';
+    }
+    return normalizedStatus.toLowerCase();
+  }
+
+  if (params.phase) {
+    return params.phase;
+  }
+
+  const statusToPhase: Record<string, string> = {
+    PENDING: 'pending',
+    SUBMITTED: 'queued',
+    FETCHING_METADATA: 'fetching-metadata',
+    AWAITING_FILE_SELECTION: 'fetching-metadata',
+    DOWNLOADING: 'downloading',
+    IMPORTING: 'importing',
+    COMPLETED: 'completed',
+    FAILED: 'failed',
+    CANCELED: 'cancelled',
+  };
+
+  return statusToPhase[normalizedStatus] || '';
+}
+
 function readCount(value: unknown) {
   if (typeof value === 'number' && Number.isFinite(value)) {
     return value;

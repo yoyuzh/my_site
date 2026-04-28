@@ -194,7 +194,7 @@ export async function createDirectory(path: string) {
   });
 }
 
-export async function uploadFile(path: string, file: File) {
+export async function uploadFile(path: string, file: File, signal?: AbortSignal) {
   const params = new URLSearchParams({ path });
   const formData = new FormData();
   formData.append('file', file);
@@ -202,16 +202,18 @@ export async function uploadFile(path: string, file: File) {
     url: `/files/upload?${params.toString()}`,
     method: 'POST',
     data: formData,
+    signal,
   });
 }
 
-export async function updateFileContent(fileId: number, file: File) {
+export async function updateFileContent(fileId: number, file: File, signal?: AbortSignal) {
   const formData = new FormData();
   formData.append('file', file);
   return apiRequest<FileItem>({
     url: `/files/${fileId}/content`,
     method: 'PATCH',
     data: formData,
+    signal,
   });
 }
 

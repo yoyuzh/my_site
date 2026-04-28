@@ -4,6 +4,9 @@ import Topbar from './Topbar';
 import BackgroundEffects from './BackgroundEffects';
 import WorkspaceHeader from './workspace/WorkspaceHeader';
 import WorkspaceSidebar from './workspace/WorkspaceSidebar';
+import UploadTaskPanel from './files/UploadTaskPanel';
+import WorkspaceActionToastHost from './files/WorkspaceActionToastHost';
+import { useUploadPanelStore } from '../hooks/useUploadPanelStore';
 
 interface DashboardLayoutProps {
   children: React.ReactNode;
@@ -21,6 +24,7 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({
   activeDropTarget,
 }) => {
   const [mobileOpen, setMobileOpen] = React.useState(false);
+  const { open: panelOpen, set: setPanelOpen } = useUploadPanelStore();
 
   return (
     <div className="flex h-screen flex-col bg-bg-light dark:bg-bg-dark overflow-hidden">
@@ -70,6 +74,9 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({
           </main>
         </div>
       </div>
+
+      {panelOpen && <UploadTaskPanel onClose={() => setPanelOpen(false)} />}
+      <WorkspaceActionToastHost />
 
       {mobileOpen ? (
         <div

@@ -162,7 +162,7 @@ class FileShareControllerIntegrationTest {
                                 {
                                   "path": "/下载"
                                 }
-                                """))
+                """))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.filename").value("notes.txt"))
                 .andExpect(jsonPath("$.data.path").value("/下载"));
@@ -294,8 +294,9 @@ class FileShareControllerIntegrationTest {
                                 }
                                 """))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.filename").value("notes.txt"))
-                .andExpect(jsonPath("$.data.path").value("/下载"));
+                .andExpect(jsonPath("$.data.status").value("SUCCESS"))
+                .andExpect(jsonPath("$.data.items[0].filename").value("notes.txt"))
+                .andExpect(jsonPath("$.data.items[0].toPath").value("/下载/notes.txt"));
 
         mockMvc.perform(get("/api/files/list")
                         .with(user("alice"))
