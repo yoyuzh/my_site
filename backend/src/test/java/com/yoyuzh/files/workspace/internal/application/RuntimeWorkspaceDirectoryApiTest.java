@@ -3,7 +3,7 @@ package com.yoyuzh.files.workspace.internal.application;
 import com.yoyuzh.shared.kernel.PageResponse;
 import com.yoyuzh.files.workspace.internal.domain.StoredFile;
 import com.yoyuzh.files.workspace.internal.infra.StoredFileRepository;
-import com.yoyuzh.files.storage.FileContentStorage;
+import com.yoyuzh.files.content.api.FileContentStorage;
 import com.yoyuzh.files.workspace.api.FileMetadataResponse;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;

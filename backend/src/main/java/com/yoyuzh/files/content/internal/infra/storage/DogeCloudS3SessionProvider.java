@@ -1,4 +1,4 @@
-package com.yoyuzh.files.storage;
+package com.yoyuzh.files.content.internal.infra.storage;
 
 import com.yoyuzh.platform.storage.api.StorageRuntimeProperties;
 import software.amazon.awssdk.auth.credentials.AwsSessionCredentials;

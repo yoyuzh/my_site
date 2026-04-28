@@ -11,7 +11,7 @@ import com.yoyuzh.ops.admin.internal.application.AdminMetricsService;
 import com.yoyuzh.identity.access.internal.domain.User;
 import com.yoyuzh.files.workspace.api.WorkspaceDownloadOptions;
 import com.yoyuzh.platform.storage.internal.infra.FileStorageProperties;
-import com.yoyuzh.files.storage.FileContentStorage;
+import com.yoyuzh.files.content.api.FileContentStorage;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;

@@ -2,7 +2,7 @@ package com.yoyuzh.files.workspace.internal.application;
 
 import com.yoyuzh.files.content.api.ContentBlobQueryApi;
 import com.yoyuzh.files.content.api.ContentDuplicationApi;
-import com.yoyuzh.files.storage.FileContentStorage;
+import com.yoyuzh.files.content.api.FileContentStorage;
 import com.yoyuzh.files.workspace.api.WorkspaceDirectoryApi;
 import com.yoyuzh.files.workspace.api.WorkspaceDownloadOptions;
 import com.yoyuzh.files.workspace.api.WorkspaceLifecycleApi;

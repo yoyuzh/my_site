@@ -5,7 +5,7 @@ import com.yoyuzh.files.content.api.ContentRegistrationApi;
 import com.yoyuzh.files.content.api.ContentBlobReference;
 import com.yoyuzh.files.content.api.ContentRegistrationCommand;
 import com.yoyuzh.files.content.api.RegisteredContentFile;
-import com.yoyuzh.files.storage.FileContentStorage;
+import com.yoyuzh.files.content.api.FileContentStorage;
 import com.yoyuzh.files.upload.api.UploadCompletionApi;
 import com.yoyuzh.files.upload.api.UploadCompletionCommand;
 import com.yoyuzh.files.workspace.api.WorkspacePathPolicy;

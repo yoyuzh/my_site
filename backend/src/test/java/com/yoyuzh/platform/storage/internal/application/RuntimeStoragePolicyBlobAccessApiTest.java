@@ -1,6 +1,6 @@
 package com.yoyuzh.platform.storage.internal.application;
 
-import com.yoyuzh.files.storage.FileContentStorage;
+import com.yoyuzh.files.content.api.FileContentStorage;
 import com.yoyuzh.platform.storage.api.StoragePolicyCredentialMode;
 import com.yoyuzh.platform.storage.api.StoragePolicyDescriptor;
 import com.yoyuzh.platform.storage.api.StoragePolicyType;
@@ -153,13 +153,13 @@ class RuntimeStoragePolicyBlobAccessApiTest {
             this.closed = true;
         }
 
-        @Override public com.yoyuzh.files.storage.PreparedUpload prepareUpload(Long userId, String path, String storageName, String contentType, long size) { throw new UnsupportedOperationException(); }
+        @Override public com.yoyuzh.files.content.api.PreparedUpload prepareUpload(Long userId, String path, String storageName, String contentType, long size) { throw new UnsupportedOperationException(); }
         @Override public void upload(Long userId, String path, String storageName, org.springframework.web.multipart.MultipartFile file) { throw new UnsupportedOperationException(); }
         @Override public void completeUpload(Long userId, String path, String storageName, String contentType, long size) { throw new UnsupportedOperationException(); }
         @Override public byte[] readFile(Long userId, String path, String storageName) { throw new UnsupportedOperationException(); }
         @Override public void deleteFile(Long userId, String path, String storageName) { throw new UnsupportedOperationException(); }
         @Override public String createDownloadUrl(Long userId, String path, String storageName, String filename) { throw new UnsupportedOperationException(); }
-        @Override public com.yoyuzh.files.storage.PreparedUpload prepareBlobUpload(String path, String filename, String objectKey, String contentType, long size) { throw new UnsupportedOperationException(); }
+        @Override public com.yoyuzh.files.content.api.PreparedUpload prepareBlobUpload(String path, String filename, String objectKey, String contentType, long size) { throw new UnsupportedOperationException(); }
         @Override public void uploadBlob(String objectKey, org.springframework.web.multipart.MultipartFile file) { throw new UnsupportedOperationException(); }
         @Override public void completeBlobUpload(String objectKey, String contentType, long size) { throw new UnsupportedOperationException(); }
         @Override public void storeBlob(String objectKey, String contentType, byte[] content) { }

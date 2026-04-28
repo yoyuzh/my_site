@@ -9,7 +9,7 @@ import static org.mockito.Mockito.when;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.yoyuzh.app.android.api.AndroidReleaseQueryApi;
 import com.yoyuzh.app.android.internal.infra.AndroidReleaseProperties;
-import com.yoyuzh.files.storage.FileContentStorage;
+import com.yoyuzh.files.content.api.FileContentStorage;
 import com.yoyuzh.infra.cache.RedisCacheNames;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;

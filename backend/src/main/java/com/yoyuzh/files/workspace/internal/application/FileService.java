@@ -5,7 +5,7 @@ import com.yoyuzh.files.content.api.ContentBlobReference;
 import com.yoyuzh.files.content.api.ContentBlobQueryApi;
 import com.yoyuzh.files.content.api.RegisteredContentFile;
 import com.yoyuzh.files.search.api.FileEventType;
-import com.yoyuzh.files.storage.FileContentStorage;
+import com.yoyuzh.files.content.api.FileContentStorage;
 import com.yoyuzh.files.upload.CompleteUploadRequest;
 import com.yoyuzh.files.upload.InitiateUploadRequest;
 import com.yoyuzh.files.upload.InitiateUploadResponse;

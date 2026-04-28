@@ -1,4 +1,4 @@
-package com.yoyuzh.files.storage;
+package com.yoyuzh.files.content.api;
 
 public record MultipartCompletedPart(
         int partNumber,

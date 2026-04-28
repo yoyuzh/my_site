@@ -7,7 +7,7 @@ import com.yoyuzh.files.content.internal.infra.FileBlobRepository;
 import com.yoyuzh.files.workspace.api.WorkspaceContentBindingApi;
 import com.yoyuzh.shared.kernel.BusinessException;
 import com.yoyuzh.shared.kernel.ErrorCode;
-import com.yoyuzh.files.storage.FileContentStorage;
+import com.yoyuzh.files.content.api.FileContentStorage;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;

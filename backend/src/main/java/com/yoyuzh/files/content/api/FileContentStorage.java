@@ -1,4 +1,4 @@
-package com.yoyuzh.files.storage;
+package com.yoyuzh.files.content.api;
 
 import org.springframework.web.multipart.MultipartFile;
 

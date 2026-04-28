@@ -10,7 +10,7 @@ import com.yoyuzh.files.content.api.RegisteredContentFile;
 import com.yoyuzh.files.content.internal.domain.FileBlob;
 import com.yoyuzh.files.workspace.internal.domain.StoredFile;
 import com.yoyuzh.files.workspace.internal.infra.StoredFileRepository;
-import com.yoyuzh.files.storage.FileContentStorage;
+import com.yoyuzh.files.content.api.FileContentStorage;
 import com.yoyuzh.files.workspace.api.WorkspaceLifecycleResult;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;

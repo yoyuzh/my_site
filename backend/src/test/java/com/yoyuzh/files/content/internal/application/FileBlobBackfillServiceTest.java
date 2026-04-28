@@ -2,7 +2,7 @@ package com.yoyuzh.files.content.internal.application;
 
 import com.yoyuzh.files.content.internal.domain.FileBlob;
 import com.yoyuzh.files.content.internal.infra.FileBlobRepository;
-import com.yoyuzh.files.storage.FileContentStorage;
+import com.yoyuzh.files.content.api.FileContentStorage;
 import com.yoyuzh.files.workspace.api.WorkspaceContentBindingApi;
 import com.yoyuzh.files.workspace.api.WorkspaceContentBindingFile;
 import org.junit.jupiter.api.BeforeEach;

@@ -96,7 +96,81 @@ public interface StoredFileRepository extends JpaRepository<StoredFile, Long> {
             where f.userId = :userId
               and f.deletedAt is null
               and (:name is null or :name = '' or lower(f.filename) like lower(concat('%', :name, '%')))
-              and (:category is null or :category = '' or f.searchCategory = :category)
+              and (
+                    :category is null
+                    or :category = ''
+                    or f.searchCategory = :category
+                    or (
+                        f.searchCategory is null
+                        and (
+                            (
+                                :category = 'image'
+                                and (
+                                    lower(coalesce(f.contentType, '')) like 'image/%'
+                                    or lower(f.filename) like '%.png'
+                                    or lower(f.filename) like '%.jpg'
+                                    or lower(f.filename) like '%.jpeg'
+                                    or lower(f.filename) like '%.gif'
+                                    or lower(f.filename) like '%.webp'
+                                    or lower(f.filename) like '%.bmp'
+                                    or lower(f.filename) like '%.svg'
+                                    or lower(f.filename) like '%.heic'
+                                    or lower(f.filename) like '%.heif'
+                                    or lower(f.filename) like '%.avif'
+                                )
+                            )
+                            or (
+                                :category = 'video'
+                                and (
+                                    lower(coalesce(f.contentType, '')) like 'video/%'
+                                    or lower(f.filename) like '%.mp4'
+                                    or lower(f.filename) like '%.mov'
+                                    or lower(f.filename) like '%.m4v'
+                                    or lower(f.filename) like '%.mkv'
+                                    or lower(f.filename) like '%.avi'
+                                    or lower(f.filename) like '%.webm'
+                                )
+                            )
+                            or (
+                                :category = 'audio'
+                                and (
+                                    lower(coalesce(f.contentType, '')) like 'audio/%'
+                                    or lower(f.filename) like '%.mp3'
+                                    or lower(f.filename) like '%.wav'
+                                    or lower(f.filename) like '%.flac'
+                                    or lower(f.filename) like '%.aac'
+                                    or lower(f.filename) like '%.m4a'
+                                    or lower(f.filename) like '%.ogg'
+                                )
+                            )
+                            or (
+                                :category = 'document'
+                                and (
+                                    lower(coalesce(f.contentType, '')) in (
+                                        'application/pdf',
+                                        'application/msword',
+                                        'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+                                        'application/vnd.ms-excel',
+                                        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                                        'application/vnd.ms-powerpoint',
+                                        'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+                                        'text/plain',
+                                        'text/markdown'
+                                    )
+                                    or lower(f.filename) like '%.pdf'
+                                    or lower(f.filename) like '%.doc'
+                                    or lower(f.filename) like '%.docx'
+                                    or lower(f.filename) like '%.xls'
+                                    or lower(f.filename) like '%.xlsx'
+                                    or lower(f.filename) like '%.ppt'
+                                    or lower(f.filename) like '%.pptx'
+                                    or lower(f.filename) like '%.txt'
+                                    or lower(f.filename) like '%.md'
+                                )
+                            )
+                        )
+                    )
+              )
               and (:directory is null or f.directory = :directory)
               and (:sizeGte is null or f.size >= :sizeGte)
               and (:sizeLte is null or f.size <= :sizeLte)

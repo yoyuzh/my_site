@@ -4,7 +4,7 @@ import com.yoyuzh.shared.kernel.BusinessException;
 import com.yoyuzh.shared.kernel.ErrorCode;
 import com.yoyuzh.files.workspace.internal.domain.StoredFile;
 import com.yoyuzh.files.workspace.internal.infra.StoredFileRepository;
-import com.yoyuzh.files.storage.FileContentStorage;
+import com.yoyuzh.files.content.api.FileContentStorage;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;

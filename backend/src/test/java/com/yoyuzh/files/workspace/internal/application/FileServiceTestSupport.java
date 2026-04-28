@@ -12,7 +12,7 @@ import com.yoyuzh.files.content.internal.application.RuntimeContentBlobRegistrat
 import com.yoyuzh.files.content.internal.infra.FileBlobRepository;
 import com.yoyuzh.files.content.internal.infra.FileEntityRepository;
 import com.yoyuzh.files.content.internal.infra.StoredFileEntityRepository;
-import com.yoyuzh.files.storage.FileContentStorage;
+import com.yoyuzh.files.content.api.FileContentStorage;
 import com.yoyuzh.files.upload.api.UploadCompletionApi;
 import com.yoyuzh.files.upload.internal.application.RuntimeUploadCompletionApi;
 import com.yoyuzh.files.workspace.api.WorkspaceDirectoryApi;

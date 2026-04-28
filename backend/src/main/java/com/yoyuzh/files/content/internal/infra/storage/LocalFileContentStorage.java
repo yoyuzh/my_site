@@ -1,5 +1,7 @@
-package com.yoyuzh.files.storage;
+package com.yoyuzh.files.content.internal.infra.storage;
 
+import com.yoyuzh.files.content.api.FileContentStorage;
+import com.yoyuzh.files.content.api.PreparedUpload;
 import com.yoyuzh.shared.kernel.BusinessException;
 import com.yoyuzh.shared.kernel.ErrorCode;
 import com.yoyuzh.platform.storage.api.StorageRuntimeProperties;

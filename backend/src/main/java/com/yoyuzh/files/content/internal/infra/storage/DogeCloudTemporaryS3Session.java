@@ -1,4 +1,4 @@
-package com.yoyuzh.files.storage;
+package com.yoyuzh.files.content.internal.infra.storage;
 
 import java.time.Instant;
 

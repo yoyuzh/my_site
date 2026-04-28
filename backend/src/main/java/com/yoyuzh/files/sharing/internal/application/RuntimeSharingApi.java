@@ -24,7 +24,7 @@ import com.yoyuzh.files.sharing.internal.domain.FileShareLink;
 import com.yoyuzh.files.sharing.internal.domain.SavedShareShortcut;
 import com.yoyuzh.files.sharing.internal.infra.FileShareLinkRepository;
 import com.yoyuzh.files.sharing.internal.infra.SavedShareShortcutRepository;
-import com.yoyuzh.files.storage.FileContentStorage;
+import com.yoyuzh.files.content.api.FileContentStorage;
 import com.yoyuzh.files.upload.api.UploadTargetPolicy;
 import com.yoyuzh.files.upload.api.ValidatedUploadTarget;
 import com.yoyuzh.files.workspace.api.FileMetadataResponse;

@@ -43,7 +43,7 @@ class Task4DWorkspaceRulesArchitectureTest {
                 .haveFullyQualifiedName("com.yoyuzh.files.workspace.internal.application.WorkspaceNodeRulesService")
                 .should()
                 .dependOnClassesThat()
-                .haveFullyQualifiedName("com.yoyuzh.files.storage.FileContentStorage");
+                .haveFullyQualifiedName("com.yoyuzh.files.content.api.FileContentStorage");
 
         pathPolicyRule.check(classes);
         runtimePolicyRule.check(classes);

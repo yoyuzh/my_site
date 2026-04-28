@@ -3,7 +3,7 @@ package com.yoyuzh.files.workspace.internal.application;
 import com.yoyuzh.files.content.api.ContentBlobLifecycleApi;
 import com.yoyuzh.files.content.api.ContentBlobReference;
 import com.yoyuzh.files.content.api.RegisteredContentFile;
-import com.yoyuzh.files.storage.FileContentStorage;
+import com.yoyuzh.files.content.api.FileContentStorage;
 import com.yoyuzh.files.workspace.api.WorkspaceArchiveBuildProgress;
 import com.yoyuzh.files.workspace.api.WorkspaceArchiveBuildProgressListener;
 import com.yoyuzh.files.workspace.api.WorkspaceArchiveExtractionResult;

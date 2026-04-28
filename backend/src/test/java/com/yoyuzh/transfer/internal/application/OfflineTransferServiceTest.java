@@ -1,6 +1,6 @@
 package com.yoyuzh.transfer.internal.application;
 
-import com.yoyuzh.files.storage.FileContentStorage;
+import com.yoyuzh.files.content.api.FileContentStorage;
 import com.yoyuzh.platform.storage.api.StorageRuntimeProperties;
 import com.yoyuzh.platform.storage.internal.infra.FileStorageProperties;
 import com.yoyuzh.shared.kernel.BusinessException;

@@ -1,4 +1,4 @@
-package com.yoyuzh.files.storage;
+package com.yoyuzh.files.content.internal.infra.storage;
 
 import com.yoyuzh.platform.storage.internal.infra.FileStorageProperties;
 import org.junit.jupiter.api.Test;

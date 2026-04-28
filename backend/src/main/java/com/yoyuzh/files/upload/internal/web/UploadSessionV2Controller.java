@@ -9,7 +9,7 @@ import com.yoyuzh.files.upload.UploadSessionCreateCommand;
 import com.yoyuzh.files.upload.UploadSessionUploadMode;
 import com.yoyuzh.files.upload.UploadSessionPartCommand;
 import com.yoyuzh.files.upload.UploadSessionService;
-import com.yoyuzh.files.storage.PreparedUpload;
+import com.yoyuzh.files.content.api.PreparedUpload;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;

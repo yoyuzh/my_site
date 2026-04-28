@@ -17,7 +17,7 @@ import com.yoyuzh.files.content.internal.domain.FileBlob;
 import com.yoyuzh.files.content.internal.infra.FileBlobRepository;
 import com.yoyuzh.files.workspace.internal.domain.StoredFile;
 import com.yoyuzh.files.workspace.internal.infra.StoredFileRepository;
-import com.yoyuzh.files.storage.FileContentStorage;
+import com.yoyuzh.files.content.api.FileContentStorage;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;

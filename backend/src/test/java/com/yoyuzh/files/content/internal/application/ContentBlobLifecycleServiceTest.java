@@ -4,7 +4,7 @@ import com.yoyuzh.files.content.internal.domain.FileBlob;
 import com.yoyuzh.files.content.internal.infra.FileBlobRepository;
 import com.yoyuzh.files.workspace.api.WorkspaceContentBindingApi;
 import com.yoyuzh.shared.kernel.BusinessException;
-import com.yoyuzh.files.storage.FileContentStorage;
+import com.yoyuzh.files.content.api.FileContentStorage;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;

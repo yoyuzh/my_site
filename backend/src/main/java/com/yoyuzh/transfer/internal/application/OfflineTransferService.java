@@ -3,7 +3,7 @@ package com.yoyuzh.transfer.internal.application;
 import com.yoyuzh.shared.kernel.BusinessException;
 import com.yoyuzh.shared.kernel.ErrorCode;
 import com.yoyuzh.platform.storage.api.StorageRuntimeProperties;
-import com.yoyuzh.files.storage.FileContentStorage;
+import com.yoyuzh.files.content.api.FileContentStorage;
 import com.yoyuzh.transfer.api.CreateTransferSessionCommand;
 import com.yoyuzh.transfer.api.LookupTransferSessionResponse;
 import com.yoyuzh.transfer.api.OfflineDownloadResult;

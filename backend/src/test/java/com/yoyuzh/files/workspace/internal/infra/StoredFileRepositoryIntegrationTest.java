@@ -1,6 +1,7 @@
 package com.yoyuzh.files.workspace.internal.infra;
 
 import com.yoyuzh.files.workspace.internal.domain.StoredFile;
+import jakarta.persistence.EntityManager;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.orm.jpa.DataJpaTest;
@@ -18,6 +19,9 @@ class StoredFileRepositoryIntegrationTest {
 
     @Autowired
     private StoredFileRepository storedFileRepository;
+
+    @Autowired
+    private EntityManager entityManager;
 
     @Test
     void shouldReturnDirectoryLogicalPathsThatContainChildDirectories() {
@@ -115,6 +119,49 @@ class StoredFileRepositoryIntegrationTest {
         StoredFile updated = storedFileRepository.saveAndFlush(storedFile);
 
         assertThat(updated.getSearchCategory()).isEqualTo("video");
+    }
+
+    @Test
+    void shouldFilterLegacyFilesWhenSearchCategoryIsMissing() {
+        StoredFile imageFile = storedFileRepository.saveAndFlush(file(7L, "/photos", "cover.png", "image/png"));
+        StoredFile videoFile = storedFileRepository.saveAndFlush(file(7L, "/videos", "clip.mp4", "video/mp4"));
+        StoredFile audioFile = storedFileRepository.saveAndFlush(file(7L, "/music", "theme.mp3", "audio/mpeg"));
+        StoredFile documentFile = storedFileRepository.saveAndFlush(file(7L, "/docs", "report.pdf", "application/pdf"));
+
+        clearSearchCategory(imageFile.getId());
+        clearSearchCategory(videoFile.getId());
+        clearSearchCategory(audioFile.getId());
+        clearSearchCategory(documentFile.getId());
+
+        assertThat(searchByCategory("image")).extracting(StoredFile::getFilename).containsExactly("cover.png");
+        assertThat(searchByCategory("video")).extracting(StoredFile::getFilename).containsExactly("clip.mp4");
+        assertThat(searchByCategory("audio")).extracting(StoredFile::getFilename).containsExactly("theme.mp3");
+        assertThat(searchByCategory("document")).extracting(StoredFile::getFilename).containsExactly("report.pdf");
+    }
+
+    private List<StoredFile> searchByCategory(String category) {
+        Page<StoredFile> result = storedFileRepository.searchUserFiles(
+                7L,
+                null,
+                category,
+                false,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                PageRequest.of(0, 20)
+        );
+        return result.getContent();
+    }
+
+    private void clearSearchCategory(Long fileId) {
+        entityManager.createNativeQuery("update portal_file set search_category = null where id = :id")
+                .setParameter("id", fileId)
+                .executeUpdate();
+        entityManager.flush();
+        entityManager.clear();
     }
 
     private StoredFile directory(Long userId, String path, String filename) {

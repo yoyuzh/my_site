@@ -1,6 +1,6 @@
 package com.yoyuzh.identity.access.internal.application;
 
-import com.yoyuzh.files.storage.FileContentStorage;
+import com.yoyuzh.files.content.api.FileContentStorage;
 import com.yoyuzh.files.upload.InitiateUploadResponse;
 import com.yoyuzh.identity.access.api.IdentityUserSnapshot;
 import com.yoyuzh.identity.access.api.UpdateUserAvatarRequest;

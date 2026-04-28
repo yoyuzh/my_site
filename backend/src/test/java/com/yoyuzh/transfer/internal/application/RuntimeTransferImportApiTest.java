@@ -13,7 +13,7 @@ import com.yoyuzh.files.content.api.RegisteredContentFile;
 import com.yoyuzh.platform.storage.internal.domain.StoragePolicy;
 import com.yoyuzh.platform.storage.api.StoragePolicyCapabilities;
 import com.yoyuzh.platform.storage.api.StoragePolicyType;
-import com.yoyuzh.files.storage.FileContentStorage;
+import com.yoyuzh.files.content.api.FileContentStorage;
 import com.yoyuzh.files.workspace.api.FileMetadataResponse;
 import com.yoyuzh.files.workspace.api.WorkspacePathPolicy;
 import com.yoyuzh.platform.storage.api.DefaultStoragePolicySnapshot;

@@ -13,7 +13,7 @@ import com.yoyuzh.files.workspace.api.WorkspaceFileQueryApi;
 import com.yoyuzh.files.workspace.api.WorkspaceFileSnapshot;
 import com.yoyuzh.files.search.FileMetadata;
 import com.yoyuzh.files.search.FileMetadataRepository;
-import com.yoyuzh.files.storage.FileContentStorage;
+import com.yoyuzh.files.content.api.FileContentStorage;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;

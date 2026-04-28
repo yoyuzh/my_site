@@ -1,4 +1,4 @@
-package com.yoyuzh.files.storage;
+package com.yoyuzh.files.content.internal.infra.storage;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.yoyuzh.platform.storage.internal.infra.FileStorageProperties;

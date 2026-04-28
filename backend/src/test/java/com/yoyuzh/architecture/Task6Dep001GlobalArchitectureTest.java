@@ -50,6 +50,27 @@ class Task6Dep001GlobalArchitectureTest {
     }
 
     @Test
+    void legacyFilesStoragePackageMustStayRemoved() {
+        ArchRule rule = noClasses()
+                .should()
+                .resideInAPackage("com.yoyuzh.files.storage..");
+
+        rule.check(classes);
+    }
+
+    @Test
+    void contentStorageAdaptersMustStayPrivateToContentModule() {
+        ArchRule rule = noClasses()
+                .that()
+                .resideOutsideOfPackage("com.yoyuzh.files.content..")
+                .should()
+                .dependOnClassesThat()
+                .resideInAnyPackage("com.yoyuzh.files.content.internal.infra.storage..");
+
+        rule.check(classes);
+    }
+
+    @Test
     void productionTransactionalBoundariesMustUseSpringTransactionalAnnotation() {
         ArchRule rule = noClasses()
                 .that()

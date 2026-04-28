@@ -11,7 +11,7 @@ import com.yoyuzh.files.content.internal.infra.StoredFileEntityRepository;
 import com.yoyuzh.files.workspace.internal.infra.StoredFileRepository;
 import com.yoyuzh.files.search.api.FileEventType;
 import com.yoyuzh.files.search.internal.domain.FileEvent;
-import com.yoyuzh.files.storage.FileContentStorage;
+import com.yoyuzh.files.content.api.FileContentStorage;
 import com.yoyuzh.files.workspace.api.FileMetadataResponse;
 import com.yoyuzh.files.workspace.api.WorkspaceUserContext;
 import com.yoyuzh.platform.storage.internal.application.StoragePolicyService;

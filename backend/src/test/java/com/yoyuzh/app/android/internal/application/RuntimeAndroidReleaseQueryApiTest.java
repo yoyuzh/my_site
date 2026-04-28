@@ -7,7 +7,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.yoyuzh.app.android.api.AndroidReleaseDownload;
 import com.yoyuzh.app.android.api.AndroidReleaseResponse;
 import com.yoyuzh.app.android.internal.infra.AndroidReleaseProperties;
-import com.yoyuzh.files.storage.FileContentStorage;
+import com.yoyuzh.files.content.api.FileContentStorage;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;

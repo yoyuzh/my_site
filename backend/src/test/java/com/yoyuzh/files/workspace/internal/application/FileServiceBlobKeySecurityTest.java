@@ -1,7 +1,7 @@
 package com.yoyuzh.files.workspace.internal.application;
 
 import com.yoyuzh.files.content.internal.infra.FileBlobRepository;
-import com.yoyuzh.files.storage.FileContentStorage;
+import com.yoyuzh.files.content.api.FileContentStorage;
 import com.yoyuzh.files.workspace.api.WorkspaceDownloadOptions;
 import com.yoyuzh.files.workspace.internal.infra.StoredFileRepository;
 import com.yoyuzh.shared.kernel.BusinessException;

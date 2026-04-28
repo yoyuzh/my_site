@@ -10,7 +10,7 @@ import com.yoyuzh.files.content.api.RegisteredContentFile;
 import com.yoyuzh.files.workspace.internal.domain.StoredFile;
 import com.yoyuzh.files.workspace.internal.domain.WorkspaceRecycleLifecycle;
 import com.yoyuzh.files.workspace.internal.infra.StoredFileRepository;
-import com.yoyuzh.files.storage.FileContentStorage;
+import com.yoyuzh.files.content.api.FileContentStorage;
 import com.yoyuzh.files.workspace.api.FileMetadataResponse;
 import com.yoyuzh.files.workspace.api.WorkspaceLifecycleApi;
 import com.yoyuzh.files.workspace.api.WorkspaceLifecycleResult;

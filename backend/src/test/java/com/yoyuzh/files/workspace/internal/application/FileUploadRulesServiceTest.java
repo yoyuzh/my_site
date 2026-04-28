@@ -13,7 +13,7 @@ import com.yoyuzh.shared.kernel.BusinessException;
 import com.yoyuzh.platform.storage.api.StoragePolicyCapabilities;
 import com.yoyuzh.platform.storage.api.StoragePolicyQuery;
 import com.yoyuzh.platform.storage.api.UploadConstraintPolicy;
-import com.yoyuzh.files.storage.FileContentStorage;
+import com.yoyuzh.files.content.api.FileContentStorage;
 import com.yoyuzh.platform.storage.api.DefaultStoragePolicySnapshot;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;

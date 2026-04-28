@@ -152,7 +152,7 @@ class UploadSessionV2ControllerTest {
     void shouldPrepareSingleUploadWithV2Envelope() throws Exception {
         when(userDetailsService.loadUserId("alice")).thenReturn(7L);
         when(uploadSessionService.prepareOwnedUpload(7L, "session-1"))
-                .thenReturn(new com.yoyuzh.files.storage.PreparedUpload(
+                .thenReturn(new com.yoyuzh.files.content.api.PreparedUpload(
                         true,
                         "https://upload.example.com/session-1",
                         "PUT",
@@ -233,7 +233,7 @@ class UploadSessionV2ControllerTest {
     void shouldPrepareMultipartPartUploadWithV2Envelope() throws Exception {
         when(userDetailsService.loadUserId("alice")).thenReturn(7L);
         when(uploadSessionService.prepareOwnedPartUpload(7L, "session-1", 1))
-                .thenReturn(new com.yoyuzh.files.storage.PreparedUpload(
+                .thenReturn(new com.yoyuzh.files.content.api.PreparedUpload(
                         true,
                         "https://upload.example.com/session-1/part-2",
                         "PUT",

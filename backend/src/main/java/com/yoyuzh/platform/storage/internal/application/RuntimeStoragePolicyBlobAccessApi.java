@@ -1,8 +1,7 @@
 package com.yoyuzh.platform.storage.internal.application;
 
-import com.yoyuzh.files.storage.FileContentStorage;
-import com.yoyuzh.files.storage.LocalFileContentStorage;
-import com.yoyuzh.files.storage.S3FileContentStorage;
+import com.yoyuzh.files.content.api.ContentStorageFactory;
+import com.yoyuzh.files.content.api.FileContentStorage;
 import com.yoyuzh.platform.storage.api.StoragePolicyBlobAccessApi;
 import com.yoyuzh.platform.storage.api.StoragePolicyCredentialMode;
 import com.yoyuzh.platform.storage.api.StoragePolicyDescriptor;
@@ -19,7 +18,6 @@ import java.io.InputStream;
 import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.Map;
-import java.util.function.Function;
 
 @Service
 public class RuntimeStoragePolicyBlobAccessApi implements StoragePolicyBlobAccessApi {
@@ -28,24 +26,20 @@ public class RuntimeStoragePolicyBlobAccessApi implements StoragePolicyBlobAcces
 
     private final FileStorageProperties globalProperties;
     private final Map<StorageBackendKey, FileContentStorage> storageCache = new LinkedHashMap<>(16, 0.75f, true);
-    private final Function<StoragePolicyDescriptor, FileContentStorage> storageFactory;
+    private final ContentStorageFactory storageFactory;
     private final int maxCacheEntries;
 
     @Autowired
-    public RuntimeStoragePolicyBlobAccessApi(FileStorageProperties globalProperties) {
-        this(globalProperties, null, DEFAULT_MAX_CACHE_ENTRIES);
-    }
-
-    RuntimeStoragePolicyBlobAccessApi(FileStorageProperties globalProperties,
-                                      Function<StoragePolicyDescriptor, FileContentStorage> storageFactory) {
+    public RuntimeStoragePolicyBlobAccessApi(FileStorageProperties globalProperties,
+                                             ContentStorageFactory storageFactory) {
         this(globalProperties, storageFactory, DEFAULT_MAX_CACHE_ENTRIES);
     }
 
     RuntimeStoragePolicyBlobAccessApi(FileStorageProperties globalProperties,
-                                      Function<StoragePolicyDescriptor, FileContentStorage> storageFactory,
+                                      ContentStorageFactory storageFactory,
                                       int maxCacheEntries) {
         this.globalProperties = globalProperties;
-        this.storageFactory = storageFactory != null ? storageFactory : this::createStorage;
+        this.storageFactory = storageFactory;
         this.maxCacheEntries = Math.max(1, maxCacheEntries);
     }
 
@@ -98,7 +92,7 @@ public class RuntimeStoragePolicyBlobAccessApi implements StoragePolicyBlobAcces
             if (existing != null) {
                 return existing;
             }
-            FileContentStorage created = storageFactory.apply(policy);
+            FileContentStorage created = storageFactory.create(storageProperties(policy));
             storageCache.put(key, created);
             evictIfNeeded();
             return created;
@@ -146,10 +140,10 @@ public class RuntimeStoragePolicyBlobAccessApi implements StoragePolicyBlobAcces
         return properties;
     }
 
-    private FileContentStorage createStorage(StoragePolicyDescriptor policy) {
+    private FileStorageProperties storageProperties(StoragePolicyDescriptor policy) {
         return switch (policy.type()) {
-            case LOCAL -> new LocalFileContentStorage(localProperties(policy));
-            case S3_COMPATIBLE -> new S3FileContentStorage(s3Properties(policy));
+            case LOCAL -> localProperties(policy);
+            case S3_COMPATIBLE -> s3Properties(policy);
         };
     }
 

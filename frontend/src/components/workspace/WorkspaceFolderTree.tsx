@@ -15,6 +15,7 @@ import WorkspaceFolderTreeNode, { type WorkspaceFolderTreeNodeState } from './Wo
 
 const ROOT_PATH = '/';
 const TREE_PAGE_SIZE = 200;
+let cachedNodes: Record<string, WorkspaceFolderTreeNodeState> | null = null;
 
 function createTreeNode(path: string): WorkspaceFolderTreeNodeState {
   return {
@@ -67,11 +68,17 @@ const WorkspaceFolderTree: React.FC<{ onNavigate?: () => void }> = ({ onNavigate
   const location = useLocation();
   const navigate = useNavigate();
   const nodesRef = useRef<Record<string, WorkspaceFolderTreeNodeState>>({});
-  const [nodes, setNodes] = useState<Record<string, WorkspaceFolderTreeNodeState>>({
-    [ROOT_PATH]: {
-      ...createTreeNode(ROOT_PATH),
-      childrenStatus: 'loading',
-    },
+  const [nodes, setNodes] = useState<Record<string, WorkspaceFolderTreeNodeState>>(() => {
+    if (cachedNodes) {
+      return cachedNodes;
+    }
+
+    return {
+      [ROOT_PATH]: {
+        ...createTreeNode(ROOT_PATH),
+        childrenStatus: 'loading',
+      },
+    };
   });
   const [expandedPaths, setExpandedPaths] = useState<string[]>(restoreExpandedPaths);
   const searchParams = new URLSearchParams(location.search);
@@ -82,6 +89,7 @@ const WorkspaceFolderTree: React.FC<{ onNavigate?: () => void }> = ({ onNavigate
 
   useEffect(() => {
     nodesRef.current = nodes;
+    cachedNodes = nodes;
   }, [nodes]);
 
   useEffect(() => {
@@ -187,8 +195,16 @@ const WorkspaceFolderTree: React.FC<{ onNavigate?: () => void }> = ({ onNavigate
   }
 
   useEffect(() => {
+    if (rootNode?.childPaths !== null) {
+      return;
+    }
+
+    if (rootNode?.childrenStatus === 'loading' && cachedNodes?.[ROOT_PATH]?.childPaths !== null) {
+      return;
+    }
+
     void loadFolderChildren(ROOT_PATH);
-  }, []);
+  }, [rootNode?.childPaths, rootNode?.childrenStatus]);
 
   useEffect(() => {
     if (!currentPath) {

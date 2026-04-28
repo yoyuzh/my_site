@@ -6,7 +6,7 @@ import com.yoyuzh.app.android.api.AndroidReleaseDownload;
 import com.yoyuzh.app.android.api.AndroidReleaseResponse;
 import com.yoyuzh.app.android.internal.domain.AndroidReleaseMetadata;
 import com.yoyuzh.app.android.internal.infra.AndroidReleaseProperties;
-import com.yoyuzh.files.storage.FileContentStorage;
+import com.yoyuzh.files.content.api.FileContentStorage;
 import com.yoyuzh.infra.cache.RedisCacheNames;
 import com.yoyuzh.shared.kernel.BusinessException;
 import com.yoyuzh.shared.kernel.ErrorCode;
