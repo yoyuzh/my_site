@@ -220,6 +220,8 @@ public class RedisFileListDirectoryCacheService implements FileListDirectoryCach
                                 item.directory(),
                                 item.createdAt(),
                                 item.createdAt(),
+                                item.customEmoji(),
+                                item.folderColor(),
                                 item.hasChildDirectory()
                         );
                     })

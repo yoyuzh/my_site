@@ -25,6 +25,9 @@ import com.yoyuzh.files.workspace.api.FavoriteFileResponse;
 import com.yoyuzh.files.workspace.api.FileDetailResponse;
 import com.yoyuzh.files.workspace.api.DownloadUrlResponse;
 import com.yoyuzh.files.workspace.api.FileMetadataResponse;
+import com.yoyuzh.files.workspace.api.FileDeleteMode;
+import com.yoyuzh.files.workspace.api.WorkspaceMoveConflictStrategy;
+import com.yoyuzh.files.workspace.api.WorkspaceMoveOutcomeStatus;
 import com.yoyuzh.files.workspace.api.WorkspaceDownloadOptions;
 import com.yoyuzh.files.workspace.api.WorkspaceDownloadResult;
 import com.yoyuzh.files.workspace.api.WorkspaceZipArchive;
@@ -538,9 +541,10 @@ class FileServiceTest {
         when(storedFileRepository.existsByUserIdAndPathAndFilename(7L, "/下载", "notes.txt")).thenReturn(false);
         when(storedFileRepository.save(any(StoredFile.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
-        FileMetadataResponse response = fileService.move(FileServiceTestSupport.workspaceUser(user), 10L, "/下载");
+        var response = fileService.move(FileServiceTestSupport.workspaceUser(user), 10L, "/下载", null);
 
-        assertThat(response.path()).isEqualTo("/下载");
+        assertThat(response.status()).isEqualTo(WorkspaceMoveOutcomeStatus.SUCCESS);
+        assertThat(response.items().get(0).toPath()).isEqualTo("/下载/notes.txt");
         assertThat(file.getPath()).isEqualTo("/下载");
         verify(fileContentStorage, never()).moveFile(any(), any(), any(), any());
     }
@@ -558,12 +562,37 @@ class FileServiceTest {
         when(storedFileRepository.save(any(StoredFile.class))).thenAnswer(invocation -> invocation.getArgument(0));
         when(storedFileRepository.saveAll(List.of(childFile))).thenReturn(List.of(childFile));
 
-        FileMetadataResponse response = fileService.move(FileServiceTestSupport.workspaceUser(user), 10L, "/图片");
+        var response = fileService.move(FileServiceTestSupport.workspaceUser(user), 10L, "/图片", null);
 
-        assertThat(response.path()).isEqualTo("/图片/archive");
+        assertThat(response.status()).isEqualTo(WorkspaceMoveOutcomeStatus.SUCCESS);
+        assertThat(response.items().get(0).toPath()).isEqualTo("/图片/archive");
         assertThat(directory.getPath()).isEqualTo("/图片");
         assertThat(childFile.getPath()).isEqualTo("/图片/archive");
         verify(fileContentStorage, never()).renameDirectory(any(), any(), any(), any());
+    }
+
+    @Test
+    void shouldInvalidateMovedDirectoryListingsAndParentDirectories() {
+        User user = createUser(7L);
+        StoredFile directory = createDirectory(10L, user, "/docs", "archive");
+        StoredFile targetDirectory = createDirectory(11L, user, "/", "图片");
+        StoredFile childFile = createFile(12L, user, "/docs/archive", "nested.txt");
+        FileListDirectoryCacheService cacheService = org.mockito.Mockito.mock(FileListDirectoryCacheService.class);
+        Object activityService = ReflectionTestUtils.getField(fileService, "workspaceFileActivityService");
+        ReflectionTestUtils.setField(activityService, "fileListDirectoryCacheService", cacheService);
+        when(storedFileRepository.findDetailedById(10L)).thenReturn(Optional.of(directory));
+        when(storedFileRepository.findByUserIdAndPathAndFilename(7L, "/", "图片")).thenReturn(Optional.of(targetDirectory));
+        when(storedFileRepository.existsByUserIdAndPathAndFilename(7L, "/图片", "archive")).thenReturn(false);
+        when(storedFileRepository.findByUserIdAndPathEqualsOrDescendant(7L, "/docs/archive")).thenReturn(List.of(childFile));
+        when(storedFileRepository.save(any(StoredFile.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(storedFileRepository.saveAll(List.of(childFile))).thenReturn(List.of(childFile));
+
+        var response = fileService.move(FileServiceTestSupport.workspaceUser(user), 10L, "/图片", null);
+
+        assertThat(response.status()).isEqualTo(WorkspaceMoveOutcomeStatus.SUCCESS);
+        ArgumentCaptor<java.util.Collection<String>> touchedPaths = forClass(java.util.Collection.class);
+        verify(cacheService).touchDirectories(eq(7L), touchedPaths.capture());
+        assertThat(touchedPaths.getValue()).containsExactlyInAnyOrder("/docs", "/图片", "/docs/archive", "/图片/archive");
     }
 
     @Test
@@ -581,9 +610,49 @@ class FileServiceTest {
         when(storedFileRepository.findByUserIdAndPathAndFilename(7L, "/docs/archive", "nested"))
                 .thenReturn(Optional.of(descendantDirectory));
 
-        assertThatThrownBy(() -> fileService.move(FileServiceTestSupport.workspaceUser(user), 10L, "/docs/archive/nested"))
-                .isInstanceOf(BusinessException.class)
-                .hasMessageContaining("不能移动到当前目录或其子目录");
+        var result = fileService.move(FileServiceTestSupport.workspaceUser(user), 10L, "/docs/archive/nested", null);
+
+        assertThat(result.status()).isEqualTo(WorkspaceMoveOutcomeStatus.INVALID_TARGET);
+        assertThat(result.message()).contains("不能移动到当前目录或其子目录");
+    }
+
+    @Test
+    void shouldBatchMoveMultipleFilesIntoTargetDirectory() {
+        User user = createUser(7L);
+        StoredFile first = createFile(120L, user, "/docs", "first.txt");
+        StoredFile second = createFile(121L, user, "/docs", "second.txt");
+        StoredFile targetDirectory = createDirectory(11L, user, "/", "下载");
+        when(storedFileRepository.findDetailedById(120L)).thenReturn(Optional.of(first));
+        when(storedFileRepository.findDetailedById(121L)).thenReturn(Optional.of(second));
+        when(storedFileRepository.findByUserIdAndPathAndFilename(7L, "/", "下载")).thenReturn(Optional.of(targetDirectory));
+        when(storedFileRepository.existsByUserIdAndPathAndFilename(7L, "/下载", "first.txt")).thenReturn(false);
+        when(storedFileRepository.existsByUserIdAndPathAndFilename(7L, "/下载", "second.txt")).thenReturn(false);
+        when(storedFileRepository.save(any(StoredFile.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        var result = fileService.batchMove(FileServiceTestSupport.workspaceUser(user), List.of(120L, 121L), "/下载", null);
+
+        assertThat(result.status()).isEqualTo(WorkspaceMoveOutcomeStatus.SUCCESS);
+        assertThat(result.items()).hasSize(2);
+        assertThat(result.items()).extracting(item -> item.toPath())
+                .containsExactly("/下载/first.txt", "/下载/second.txt");
+    }
+
+    @Test
+    void shouldPersistFolderAppearance() {
+        User user = createUser(7L);
+        StoredFile folder = createDirectory(130L, user, "/docs", "archive");
+        when(storedFileRepository.findDetailedById(130L)).thenReturn(Optional.of(folder));
+        when(storedFileRepository.save(any(StoredFile.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        FileMetadataResponse result = fileService.updateAppearance(
+                FileServiceTestSupport.workspaceUser(user),
+                130L,
+                "📦",
+                "#E9A23B"
+        );
+
+        assertThat(result.customEmoji()).isEqualTo("📦");
+        assertThat(result.folderColor()).isEqualTo("#E9A23B");
     }
 
     @Test
@@ -730,6 +799,50 @@ class FileServiceTest {
     }
 
     @Test
+    void shouldPermanentlyDeleteActiveFileWhenDeleteModeIsPermanent() {
+        User user = createUser(7L);
+        FileBlob blob = createBlob(72L, "blobs/blob-permanent", 5L, "text/plain");
+        StoredFile storedFile = createFile(17L, user, "/docs", "permanent.txt", blob);
+        when(storedFileRepository.findDetailedById(17L)).thenReturn(Optional.of(storedFile));
+        when(storedFileRepository.countByBlobId(72L)).thenReturn(1L);
+        when(fileBlobRepository.findById(72L)).thenReturn(Optional.of(blob));
+
+        fileService.delete(FileServiceTestSupport.workspaceUser(user), 17L, FileDeleteMode.PERMANENT);
+
+        verify(storedFileRepository).deleteAll(List.of(storedFile));
+        verify(fileContentStorage).deleteBlob("blobs/blob-permanent");
+        verify(fileBlobRepository).delete(blob);
+    }
+
+    @Test
+    void shouldPermanentlyDeleteRecycleGroupItems() {
+        User user = createUser(7L);
+        StoredFile recycleRoot = createDirectory(18L, user, "/.recycle/group-1/docs", "archive");
+        recycleRoot.setDeletedAt(LocalDateTime.now().minusDays(1));
+        recycleRoot.setRecycleRoot(true);
+        recycleRoot.setRecycleGroupId("group-1");
+        recycleRoot.setRecycleOriginalPath("/docs");
+
+        FileBlob blob = createBlob(73L, "blobs/blob-recycle-group", 5L, "text/plain");
+        StoredFile childFile = createFile(19L, user, "/.recycle/group-1/docs/archive", "notes.txt", blob);
+        childFile.setDeletedAt(recycleRoot.getDeletedAt());
+        childFile.setRecycleRoot(false);
+        childFile.setRecycleGroupId("group-1");
+        childFile.setRecycleOriginalPath("/docs/archive");
+
+        when(storedFileRepository.findDetailedById(18L)).thenReturn(Optional.of(recycleRoot));
+        when(storedFileRepository.findByRecycleGroupId("group-1")).thenReturn(List.of(recycleRoot, childFile));
+        when(storedFileRepository.countByBlobId(73L)).thenReturn(1L);
+        when(fileBlobRepository.findById(73L)).thenReturn(Optional.of(blob));
+
+        fileService.permanentlyDeleteRecycleBinItem(FileServiceTestSupport.workspaceUser(user), 18L);
+
+        verify(storedFileRepository).deleteAll(List.of(recycleRoot, childFile));
+        verify(fileContentStorage).deleteBlob("blobs/blob-recycle-group");
+        verify(fileBlobRepository).delete(blob);
+    }
+
+    @Test
     void shouldDeleteExpiredRecycleBinBlobWhenLastReferenceIsRemoved() {
         User user = createUser(7L);
         FileBlob blob = createBlob(71L, "blobs/blob-last", 5L, "text/plain");
@@ -785,6 +898,8 @@ class FileServiceTest {
                         true,
                         timestamp,
                         timestamp,
+                        null,
+                        null,
                         false
                 )),
                 1,
@@ -862,6 +977,28 @@ class FileServiceTest {
 
         assertThat(first.getDeletedAt()).isNotNull();
         assertThat(second.getDeletedAt()).isNotNull();
+    }
+
+    @Test
+    void shouldBatchDeleteEachFileIdPermanentlyWhenDeleteModeIsPermanent() {
+        User user = createUser(7L);
+        FileBlob firstBlob = createBlob(120L, "blobs/blob-120", 5L, "text/plain");
+        FileBlob secondBlob = createBlob(121L, "blobs/blob-121", 5L, "text/plain");
+        StoredFile first = createFile(120L, user, "/docs", "notes.txt", firstBlob);
+        StoredFile second = createFile(121L, user, "/docs", "todo.txt", secondBlob);
+        when(storedFileRepository.findDetailedById(120L)).thenReturn(Optional.of(first));
+        when(storedFileRepository.findDetailedById(121L)).thenReturn(Optional.of(second));
+        when(storedFileRepository.countByBlobId(120L)).thenReturn(1L);
+        when(storedFileRepository.countByBlobId(121L)).thenReturn(1L);
+        when(fileBlobRepository.findById(120L)).thenReturn(Optional.of(firstBlob));
+        when(fileBlobRepository.findById(121L)).thenReturn(Optional.of(secondBlob));
+
+        fileService.batchDelete(FileServiceTestSupport.workspaceUser(user), List.of(120L, 121L), FileDeleteMode.PERMANENT);
+
+        verify(storedFileRepository).deleteAll(List.of(first));
+        verify(storedFileRepository).deleteAll(List.of(second));
+        verify(fileContentStorage).deleteBlob("blobs/blob-120");
+        verify(fileContentStorage).deleteBlob("blobs/blob-121");
     }
 
     @Test

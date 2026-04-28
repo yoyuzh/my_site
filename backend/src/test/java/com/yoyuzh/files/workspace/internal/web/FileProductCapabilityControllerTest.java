@@ -66,6 +66,8 @@ class FileProductCapabilityControllerTest {
                 false,
                 LocalDateTime.of(2026, 4, 21, 10, 0),
                 LocalDateTime.of(2026, 4, 21, 11, 0),
+                null,
+                null,
                 List.of()
         ));
 

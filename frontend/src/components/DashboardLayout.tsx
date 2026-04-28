@@ -9,9 +9,17 @@ interface DashboardLayoutProps {
   children: React.ReactNode;
   title: string;
   hideHeader?: boolean;
+  registerDropTarget?: (el: HTMLElement | null, path: string) => void;
+  activeDropTarget?: string | null;
 }
 
-const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children, title, hideHeader }) => {
+const DashboardLayout: React.FC<DashboardLayoutProps> = ({ 
+  children, 
+  title, 
+  hideHeader,
+  registerDropTarget,
+  activeDropTarget,
+}) => {
   const [mobileOpen, setMobileOpen] = React.useState(false);
 
   return (
@@ -22,7 +30,10 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children, title, hide
       <div className="flex-1 px-4 pb-6 pt-[88px] lg:px-6 overflow-hidden">
         <div className="mx-auto flex h-full max-w-[1600px] gap-6">
           <div className="hidden h-full lg:block">
-            <WorkspaceSidebar />
+            <WorkspaceSidebar 
+               registerDropTarget={registerDropTarget}
+               activeDropTarget={activeDropTarget}
+            />
           </div>
           <main className="flex h-full min-w-0 flex-1 flex-col page-enter">
             {!hideHeader && (
@@ -76,7 +87,11 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children, title, hide
                 <X size={18} />
               </button>
             </div>
-            <WorkspaceSidebar onNavigate={() => setMobileOpen(false)} />
+            <WorkspaceSidebar 
+              onNavigate={() => setMobileOpen(false)} 
+              registerDropTarget={registerDropTarget}
+              activeDropTarget={activeDropTarget}
+            />
           </div>
         </div>
       ) : null}

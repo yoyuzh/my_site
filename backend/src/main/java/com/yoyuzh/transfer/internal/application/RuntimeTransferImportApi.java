@@ -95,6 +95,8 @@ public class RuntimeTransferImportApi implements TransferImportApi {
                     storedFile.directory(),
                     storedFile.createdAt(),
                     storedFile.createdAt(),
+                    null,
+                    null,
                     false
             );
         } catch (IOException ex) {

@@ -9,11 +9,13 @@ import com.yoyuzh.files.upload.InitiateUploadResponse;
 import com.yoyuzh.files.workspace.api.BatchFileOperationRequest;
 import com.yoyuzh.files.workspace.api.DownloadUrlResponse;
 import com.yoyuzh.files.workspace.api.FavoriteFileResponse;
+import com.yoyuzh.files.workspace.api.FileDeleteMode;
 import com.yoyuzh.files.workspace.api.FileDetailResponse;
 import com.yoyuzh.files.workspace.api.FileMetadataResponse;
 import com.yoyuzh.files.workspace.api.RecycleBinItemResponse;
 import com.yoyuzh.files.workspace.api.WorkspaceTagResponse;
 import com.yoyuzh.files.workspace.api.WorkspaceDownloadResult;
+import com.yoyuzh.files.workspace.api.WorkspaceMoveResult;
 import com.yoyuzh.files.workspace.internal.application.FileService;
 import com.yoyuzh.files.workspace.internal.application.WorkspaceTagService;
 import io.swagger.v3.oas.annotations.Operation;
@@ -194,10 +196,18 @@ public class FileController {
     @PostMapping("/batch/delete")
     public ApiResponse<Void> batchDelete(@AuthenticationPrincipal UserDetails userDetails,
                                          @Valid @RequestBody BatchFileOperationRequest request) {
-        fileService.batchDelete(
-                currentUserId(userDetails),
-                request.fileIds()
-        );
+        if (request.mode() == null) {
+            fileService.batchDelete(
+                    currentUserId(userDetails),
+                    request.fileIds()
+            );
+        } else {
+            fileService.batchDelete(
+                    currentUserId(userDetails),
+                    request.fileIds(),
+                    request.mode()
+            );
+        }
         return ApiResponse.success();
     }
 
@@ -282,11 +292,38 @@ public class FileController {
 
     @Operation(summary = "移动文件")
     @PatchMapping("/{fileId}/move")
-    public ApiResponse<FileMetadataResponse> move(@AuthenticationPrincipal UserDetails userDetails,
-                                                  @PathVariable Long fileId,
-                                                  @Valid @RequestBody MoveFileRequest request) {
+    public ApiResponse<WorkspaceMoveResult> move(@AuthenticationPrincipal UserDetails userDetails,
+                                                 @PathVariable Long fileId,
+                                                 @Valid @RequestBody MoveFileRequest request) {
         return ApiResponse.success(
-                fileService.move(currentUserId(userDetails), fileId, request.path()));
+                fileService.move(currentUserId(userDetails), fileId, request.targetPath(), request.conflictStrategy()));
+    }
+
+    @Operation(summary = "批量移动文件")
+    @PostMapping("/batch/move")
+    public ApiResponse<WorkspaceMoveResult> batchMove(@AuthenticationPrincipal UserDetails userDetails,
+                                                      @Valid @RequestBody BatchMoveFileRequest request) {
+        return ApiResponse.success(
+                fileService.batchMove(
+                        currentUserId(userDetails),
+                        request.fileIds(),
+                        request.targetPath(),
+                        request.conflictStrategy()
+                ));
+    }
+
+    @Operation(summary = "更新文件外观")
+    @PatchMapping("/{fileId}/appearance")
+    public ApiResponse<FileMetadataResponse> updateAppearance(@AuthenticationPrincipal UserDetails userDetails,
+                                                              @PathVariable Long fileId,
+                                                              @RequestBody UpdateWorkspaceAppearanceRequest request) {
+        return ApiResponse.success(
+                fileService.updateAppearance(
+                        currentUserId(userDetails),
+                        fileId,
+                        request.customEmoji(),
+                        request.folderColor()
+                ));
     }
 
     @Operation(summary = "复制文件")
@@ -301,8 +338,9 @@ public class FileController {
     @Operation(summary = "删除文件")
     @DeleteMapping("/{fileId}")
     public ApiResponse<Void> delete(@AuthenticationPrincipal UserDetails userDetails,
-                                    @PathVariable Long fileId) {
-        fileService.delete(currentUserId(userDetails), fileId);
+                                    @PathVariable Long fileId,
+                                    @RequestParam(defaultValue = "RECYCLE") FileDeleteMode mode) {
+        fileService.delete(currentUserId(userDetails), fileId, mode);
         return ApiResponse.success();
     }
 
@@ -314,6 +352,14 @@ public class FileController {
                 currentUserId(userDetails),
                 fileId
         ));
+    }
+
+    @Operation(summary = "从回收站永久删除文件")
+    @DeleteMapping("/recycle-bin/{fileId}")
+    public ApiResponse<Void> permanentlyDeleteRecycleBinItem(@AuthenticationPrincipal UserDetails userDetails,
+                                                             @PathVariable Long fileId) {
+        fileService.permanentlyDeleteRecycleBinItem(currentUserId(userDetails), fileId);
+        return ApiResponse.success();
     }
 
     private Long currentUserId(UserDetails userDetails) {

@@ -68,6 +68,8 @@ export interface FilesTopBarProps {
   onPathChange: (path: string) => void;
   rootLabel?: string;
   pathNavigationEnabled?: boolean;
+  registerDropTarget?: (el: HTMLElement | null, path: string) => void;
+  activeDropTarget?: string | null;
   search: string;
   onSearchChange: (search: string) => void;
   onRefresh: () => void;
@@ -101,6 +103,8 @@ export const FilesTopBar: React.FC<FilesTopBarProps> = ({
   onPathChange,
   rootLabel = '根目录',
   pathNavigationEnabled = true,
+  registerDropTarget,
+  activeDropTarget,
   search,
   onSearchChange,
   onRefresh,
@@ -258,14 +262,23 @@ export const FilesTopBar: React.FC<FilesTopBarProps> = ({
                 }}
               >
                 <Button
+                  ref={(el: HTMLButtonElement | null) => registerDropTarget?.(el, '/')}
                   size="small"
                   variant="text"
                   sx={{
                     minWidth: 'auto',
                     px: 0.5,
-                    color: currentPath === '/' || !pathNavigationEnabled ? 'primary.main' : 'text.secondary',
-                    fontWeight: currentPath === '/' || !pathNavigationEnabled ? 600 : 400,
+                    borderRadius: 0.5,
+                    color: activeDropTarget === '/'
+                      ? 'primary.contrastText'
+                      : (currentPath === '/' || !pathNavigationEnabled ? 'primary.main' : 'text.secondary'),
+                    fontWeight: currentPath === '/' || activeDropTarget === '/' || !pathNavigationEnabled ? 600 : 400,
                     textTransform: 'none',
+                    bgcolor: activeDropTarget === '/' ? 'primary.main' : undefined,
+                    boxShadow: activeDropTarget === '/' ? 2 : undefined,
+                    '&:hover': activeDropTarget === '/'
+                      ? { bgcolor: 'primary.dark' }
+                      : undefined,
                   }}
                   onClick={() => pathNavigationEnabled && onPathChange('/')}
                   disabled={!pathNavigationEnabled}
@@ -278,15 +291,24 @@ export const FilesTopBar: React.FC<FilesTopBarProps> = ({
                     <React.Fragment key={targetPath}>
                       <ChevronRight sx={{ fontSize: 16, color: 'text.disabled', mx: -0.25 }} />
                       <Button
+                        ref={(el: HTMLButtonElement | null) => registerDropTarget?.(el, targetPath)}
                         size="small"
                         variant="text"
                         sx={{
                           minWidth: 'auto',
                           px: 0.5,
-                          color: targetPath === currentPath ? 'primary.main' : 'text.secondary',
-                          fontWeight: targetPath === currentPath ? 600 : 400,
+                          borderRadius: 0.5,
+                          color: activeDropTarget === targetPath
+                            ? 'primary.contrastText'
+                            : (targetPath === currentPath ? 'primary.main' : 'text.secondary'),
+                          fontWeight: targetPath === currentPath || activeDropTarget === targetPath ? 600 : 400,
                           textTransform: 'none',
                           whiteSpace: 'nowrap',
+                          bgcolor: activeDropTarget === targetPath ? 'primary.main' : undefined,
+                          boxShadow: activeDropTarget === targetPath ? 2 : undefined,
+                          '&:hover': activeDropTarget === targetPath
+                            ? { bgcolor: 'primary.dark' }
+                            : undefined,
                         }}
                         onClick={() => onPathChange(targetPath)}
                       >

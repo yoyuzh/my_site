@@ -6,6 +6,7 @@ public record WorkspaceMutationResult(
         FileMetadataResponse file,
         String fromPath,
         String toPath,
-        List<String> affectedPaths
+        List<String> affectedPaths,
+        boolean renamed
 ) {
 }

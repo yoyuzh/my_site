@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { Loader2, RefreshCw } from 'lucide-react';
 import { listFiles } from '../../lib/files';
+import { getSession } from '../../lib/session';
 import {
   buildWorkspaceFilesHref,
   getWorkspaceFolderAncestorPaths,
@@ -16,6 +17,7 @@ import WorkspaceFolderTreeNode, { type WorkspaceFolderTreeNodeState } from './Wo
 const ROOT_PATH = '/';
 const TREE_PAGE_SIZE = 200;
 let cachedNodes: Record<string, WorkspaceFolderTreeNodeState> | null = null;
+let cachedTreeUserId: number | null = null;
 
 function createTreeNode(path: string): WorkspaceFolderTreeNodeState {
   return {
@@ -24,6 +26,29 @@ function createTreeNode(path: string): WorkspaceFolderTreeNodeState {
     childPaths: null,
     childrenStatus: 'unknown',
   };
+}
+
+function getCurrentTreeUserId() {
+  return getSession()?.user.id ?? null;
+}
+
+function createRootLoadingNodes() {
+  return {
+    [ROOT_PATH]: {
+      ...createTreeNode(ROOT_PATH),
+      childrenStatus: 'loading' as const,
+    },
+  };
+}
+
+function getInitialCachedNodes() {
+  const currentUserId = getCurrentTreeUserId();
+  if (cachedTreeUserId !== currentUserId) {
+    cachedNodes = null;
+    cachedTreeUserId = currentUserId;
+  }
+
+  return cachedNodes ?? createRootLoadingNodes();
 }
 
 function getLogicalPath(path: string, filename: string) {
@@ -64,22 +89,15 @@ function restoreExpandedPaths() {
   }
 }
 
-const WorkspaceFolderTree: React.FC<{ onNavigate?: () => void }> = ({ onNavigate }) => {
+const WorkspaceFolderTree: React.FC<{ 
+  onNavigate?: () => void;
+  registerDropTarget?: (el: HTMLElement | null, path: string) => void;
+  activeDropTarget?: string | null;
+}> = ({ onNavigate, registerDropTarget, activeDropTarget }) => {
   const location = useLocation();
   const navigate = useNavigate();
   const nodesRef = useRef<Record<string, WorkspaceFolderTreeNodeState>>({});
-  const [nodes, setNodes] = useState<Record<string, WorkspaceFolderTreeNodeState>>(() => {
-    if (cachedNodes) {
-      return cachedNodes;
-    }
-
-    return {
-      [ROOT_PATH]: {
-        ...createTreeNode(ROOT_PATH),
-        childrenStatus: 'loading',
-      },
-    };
-  });
+  const [nodes, setNodes] = useState<Record<string, WorkspaceFolderTreeNodeState>>(() => getInitialCachedNodes());
   const [expandedPaths, setExpandedPaths] = useState<string[]>(restoreExpandedPaths);
   const searchParams = new URLSearchParams(location.search);
   const currentPath = location.pathname === '/dashboard/files'
@@ -90,7 +108,28 @@ const WorkspaceFolderTree: React.FC<{ onNavigate?: () => void }> = ({ onNavigate
   useEffect(() => {
     nodesRef.current = nodes;
     cachedNodes = nodes;
+    cachedTreeUserId = getCurrentTreeUserId();
   }, [nodes]);
+
+  useEffect(() => {
+    const handleSessionChanged = () => {
+      const nextUserId = getCurrentTreeUserId();
+      if (cachedTreeUserId === nextUserId) {
+        return;
+      }
+
+      cachedNodes = null;
+      cachedTreeUserId = nextUserId;
+      const rootNodes = createRootLoadingNodes();
+      nodesRef.current = rootNodes;
+      setNodes(rootNodes);
+    };
+
+    window.addEventListener('portal-session-changed', handleSessionChanged as EventListener);
+    return () => {
+      window.removeEventListener('portal-session-changed', handleSessionChanged as EventListener);
+    };
+  }, []);
 
   useEffect(() => {
     if (typeof window === 'undefined') {
@@ -128,6 +167,8 @@ const WorkspaceFolderTree: React.FC<{ onNavigate?: () => void }> = ({ onNavigate
             path: normalizeWorkspaceFolderPath(getLogicalPath(item.path, item.filename)),
             name: item.filename,
             hasChildDirectory: item.hasChildDirectory,
+            customEmoji: item.customEmoji,
+            folderColor: item.folderColor,
           };
         });
 
@@ -144,6 +185,8 @@ const WorkspaceFolderTree: React.FC<{ onNavigate?: () => void }> = ({ onNavigate
             ...(next[folder.path] ?? createTreeNode(folder.path)),
             name: folder.name,
             childrenStatus: folder.hasChildDirectory ? 'has-folders' : 'empty',
+            customEmoji: folder.customEmoji,
+            folderColor: folder.folderColor,
           };
         }
 
@@ -226,6 +269,19 @@ const WorkspaceFolderTree: React.FC<{ onNavigate?: () => void }> = ({ onNavigate
     return () => window.removeEventListener(WORKSPACE_FOLDER_TREE_REFRESH_EVENT, handleRefresh as EventListener);
   }, []);
 
+  useEffect(() => {
+    const handleAutoExpand = (event: Event) => {
+      const detail = (event as CustomEvent<{ path: string }>).detail;
+      const path = detail?.path;
+      if (path && !expandedPaths.includes(path)) {
+        handleToggle(path);
+      }
+    };
+
+    window.addEventListener('workspace-tree-auto-expand', handleAutoExpand as EventListener);
+    return () => window.removeEventListener('workspace-tree-auto-expand', handleAutoExpand as EventListener);
+  }, [expandedPaths]);
+
   function handleSelect(path: string) {
     navigate(buildWorkspaceFilesHref(path));
     onNavigate?.();
@@ -269,6 +325,8 @@ const WorkspaceFolderTree: React.FC<{ onNavigate?: () => void }> = ({ onNavigate
         onRetry={(retryPath) => {
           void refreshFolderPath(retryPath);
         }}
+        registerDropTarget={registerDropTarget}
+        activeDropTarget={activeDropTarget}
       >
         {expanded && node.childPaths?.length
           ? (

@@ -10,7 +10,10 @@ export default defineConfig({
     allowedHosts: ['localhost', '127.0.0.1', 'host.docker.internal'],
     proxy: {
       '/api': {
-        target: process.env.VITE_BACKEND_URL ?? 'http://localhost:8080',
+        // The backend binds to 127.0.0.1 in local dev. Using localhost here can
+        // resolve to a different loopback target on some machines and proxy to
+        // the wrong service.
+        target: process.env.VITE_BACKEND_URL ?? 'http://127.0.0.1:8080',
         changeOrigin: true,
       },
     },

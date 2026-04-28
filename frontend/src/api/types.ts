@@ -56,6 +56,28 @@ export interface FileItem {
   createdAt: string;
   updatedAt: string | null;
   hasChildDirectory: boolean;
+  customEmoji: string | null;
+  folderColor: string | null;
+}
+
+export type MoveConflictStrategy = 'AUTO_RENAME' | 'SKIP';
+
+export interface MoveResultItem {
+  fileId: number;
+  filename: string;
+  fromPath: string | null;
+  toPath: string | null;
+  renamed: boolean;
+  skipped: boolean;
+  customEmoji: string | null;
+  folderColor: string | null;
+}
+
+export interface MoveResponse {
+  status: 'SUCCESS' | 'CONFLICT' | 'INVALID_TARGET';
+  items: MoveResultItem[];
+  conflicts: MoveResultItem[];
+  message: string | null;
 }
 
 export interface FileTag {
@@ -91,6 +113,13 @@ export interface DownloadUrlResponse {
 export interface RecycleBinItem extends FileItem {
   deletedAt: string;
   expiresAt: string;
+}
+
+export type FileDeleteMode = 'RECYCLE' | 'PERMANENT';
+
+export interface FileBatchDeletePayload {
+  fileIds: number[];
+  mode: FileDeleteMode;
 }
 
 export interface ShareItem {

@@ -7,6 +7,9 @@ import com.yoyuzh.files.workspace.internal.infra.StoredFileRepository;
 import com.yoyuzh.files.content.api.FileContentStorage;
 import com.yoyuzh.files.workspace.api.WorkspaceMutationApi;
 import com.yoyuzh.files.workspace.api.FileMetadataResponse;
+import com.yoyuzh.files.workspace.api.WorkspaceMoveConflictStrategy;
+import com.yoyuzh.files.workspace.api.WorkspaceMoveItemResult;
+import com.yoyuzh.files.workspace.api.WorkspaceMoveResult;
 import com.yoyuzh.files.workspace.api.WorkspaceMutationResult;
 import com.yoyuzh.files.workspace.api.WorkspacePathPolicy;
 
@@ -33,7 +36,7 @@ public final class RuntimeWorkspaceMutationApi implements WorkspaceMutationApi {
         StoredFile storedFile = getOwnedActiveFile(userId, fileId, "重命名");
         String fromPath = buildLogicalPath(storedFile);
         if (sanitizedFilename.equals(storedFile.getFilename())) {
-            return new WorkspaceMutationResult(toMutationResponse(storedFile), fromPath, fromPath, List.of());
+            return new WorkspaceMutationResult(toMutationResponse(storedFile), fromPath, fromPath, List.of(), false);
         }
         workspacePathPolicy.ensureNodeNameAvailable(userId, storedFile.getPath(), sanitizedFilename, "同目录下文件已存在");
 
@@ -58,33 +61,55 @@ public final class RuntimeWorkspaceMutationApi implements WorkspaceMutationApi {
                 toMutationResponse(savedFile),
                 fromPath,
                 buildLogicalPath(savedFile),
-                List.of(savedFile.getPath())
+                List.of(savedFile.getPath()),
+                true
         );
     }
 
     @Override
-    public WorkspaceMutationResult move(Long userId, Long fileId, String normalizedTargetPath) {
+    public WorkspaceMoveResult move(Long userId,
+                                    Long fileId,
+                                    String normalizedTargetPath,
+                                    WorkspaceMoveConflictStrategy conflictStrategy) {
         StoredFile storedFile = getOwnedActiveFile(userId, fileId, "移动");
         String fromPath = buildLogicalPath(storedFile);
         if (normalizedTargetPath.equals(storedFile.getPath())) {
-            return new WorkspaceMutationResult(toMutationResponse(storedFile), fromPath, fromPath, List.of());
+            return WorkspaceMoveResult.success(List.of(toMoveItemResult(storedFile, fromPath, fromPath, false, false)));
         }
 
         workspacePathPolicy.ensureExistingDirectoryPath(userId, normalizedTargetPath);
-        workspacePathPolicy.ensureNodeNameAvailable(userId, normalizedTargetPath, storedFile.getFilename(), "目标目录已存在同名文件");
+        if (storedFile.isDirectory()) {
+            String candidateLogicalPath = workspacePathPolicy.buildTargetLogicalPath(normalizedTargetPath, storedFile.getFilename());
+            if (candidateLogicalPath.equals(fromPath) || candidateLogicalPath.startsWith(fromPath + "/")) {
+                return WorkspaceMoveResult.invalidTarget(
+                        "不能移动到当前目录或其子目录",
+                        List.of(toMoveItemResult(storedFile, fromPath, null, false, false))
+                );
+            }
+        }
+
+        String resolvedFilename = storedFile.getFilename();
+        boolean renamed = false;
+        if (workspacePathPolicy.existsNodeName(userId, normalizedTargetPath, storedFile.getFilename())) {
+            if (conflictStrategy == null) {
+                return WorkspaceMoveResult.conflict(List.of(toConflictItemResult(
+                        storedFile,
+                        fromPath,
+                        workspacePathPolicy.buildTargetLogicalPath(normalizedTargetPath, storedFile.getFilename())
+                )));
+            }
+            if (conflictStrategy == WorkspaceMoveConflictStrategy.SKIP) {
+                return WorkspaceMoveResult.success(List.of(toMoveItemResult(storedFile, fromPath, null, false, true)));
+            }
+            resolvedFilename = workspacePathPolicy.resolveAvailableNodeName(userId, normalizedTargetPath, storedFile.getFilename());
+            renamed = !resolvedFilename.equals(storedFile.getFilename());
+        }
 
         if (storedFile.isDirectory()) {
-            String oldLogicalPath = buildLogicalPath(storedFile);
-            String newLogicalPath = "/".equals(normalizedTargetPath)
-                    ? "/" + storedFile.getFilename()
-                    : normalizedTargetPath + "/" + storedFile.getFilename();
-            if (newLogicalPath.equals(oldLogicalPath) || newLogicalPath.startsWith(oldLogicalPath + "/")) {
-                throw new BusinessException(ErrorCode.UNKNOWN, "不能移动到当前目录或其子目录");
-            }
-
-            List<StoredFile> descendants = storedFileRepository.findByUserIdAndPathEqualsOrDescendant(userId, oldLogicalPath);
+            String newLogicalPath = workspacePathPolicy.buildTargetLogicalPath(normalizedTargetPath, resolvedFilename);
+            List<StoredFile> descendants = storedFileRepository.findByUserIdAndPathEqualsOrDescendant(userId, fromPath);
             for (StoredFile descendant : descendants) {
-                descendant.relocateForAncestorMove(oldLogicalPath, newLogicalPath);
+                descendant.relocateForAncestorMove(fromPath, newLogicalPath);
             }
             if (!descendants.isEmpty()) {
                 storedFileRepository.saveAll(descendants);
@@ -92,14 +117,14 @@ public final class RuntimeWorkspaceMutationApi implements WorkspaceMutationApi {
         }
 
         String previousParentPath = storedFile.getPath();
+        if (renamed) {
+            storedFile.renameTo(resolvedFilename);
+        }
         storedFile.moveTo(normalizedTargetPath);
         StoredFile savedFile = storedFileRepository.save(storedFile);
-        return new WorkspaceMutationResult(
-                toMutationResponse(savedFile),
-                fromPath,
-                buildLogicalPath(savedFile),
-                List.of(previousParentPath, normalizedTargetPath)
-        );
+        return WorkspaceMoveResult.success(List.of(
+                toMoveItemResult(savedFile, fromPath, buildLogicalPath(savedFile), renamed, false)
+        ));
     }
 
     private StoredFile getOwnedActiveFile(Long userId, Long fileId, String action) {
@@ -128,6 +153,8 @@ public final class RuntimeWorkspaceMutationApi implements WorkspaceMutationApi {
                 storedFile.isDirectory(),
                 storedFile.getCreatedAt(),
                 storedFile.getUpdatedAt() != null ? storedFile.getUpdatedAt() : storedFile.getCreatedAt(),
+                storedFile.getCustomEmoji(),
+                storedFile.getFolderColor(),
                 false
         );
     }
@@ -145,7 +172,39 @@ public final class RuntimeWorkspaceMutationApi implements WorkspaceMutationApi {
                 true,
                 storedFile.getCreatedAt(),
                 storedFile.getUpdatedAt() != null ? storedFile.getUpdatedAt() : storedFile.getCreatedAt(),
+                storedFile.getCustomEmoji(),
+                storedFile.getFolderColor(),
                 false
+        );
+    }
+
+    private WorkspaceMoveItemResult toMoveItemResult(StoredFile storedFile,
+                                                     String fromPath,
+                                                     String toPath,
+                                                     boolean renamed,
+                                                     boolean skipped) {
+        return new WorkspaceMoveItemResult(
+                storedFile.getId(),
+                storedFile.getFilename(),
+                fromPath,
+                toPath,
+                renamed,
+                skipped,
+                storedFile.getCustomEmoji(),
+                storedFile.getFolderColor()
+        );
+    }
+
+    private WorkspaceMoveItemResult toConflictItemResult(StoredFile storedFile, String fromPath, String toPath) {
+        return new WorkspaceMoveItemResult(
+                storedFile.getId(),
+                storedFile.getFilename(),
+                fromPath,
+                toPath,
+                false,
+                false,
+                storedFile.getCustomEmoji(),
+                storedFile.getFolderColor()
         );
     }
 }

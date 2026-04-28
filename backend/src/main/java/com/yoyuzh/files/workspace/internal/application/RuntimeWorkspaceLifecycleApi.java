@@ -294,6 +294,8 @@ public final class RuntimeWorkspaceLifecycleApi implements WorkspaceLifecycleApi
                 storedFile.directory(),
                 storedFile.createdAt(),
                 storedFile.createdAt(),
+                null,
+                null,
                 false
         );
     }
@@ -309,6 +311,8 @@ public final class RuntimeWorkspaceLifecycleApi implements WorkspaceLifecycleApi
                 storedFile.isDirectory(),
                 storedFile.getCreatedAt(),
                 storedFile.getUpdatedAt() != null ? storedFile.getUpdatedAt() : storedFile.getCreatedAt(),
+                storedFile.getCustomEmoji(),
+                storedFile.getFolderColor(),
                 false
         );
     }

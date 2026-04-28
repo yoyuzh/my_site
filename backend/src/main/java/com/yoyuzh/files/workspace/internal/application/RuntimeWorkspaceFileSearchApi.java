@@ -51,6 +51,8 @@ public class RuntimeWorkspaceFileSearchApi implements WorkspaceFileSearchApi {
                 storedFile.isDirectory(),
                 storedFile.getCreatedAt(),
                 storedFile.getUpdatedAt() != null ? storedFile.getUpdatedAt() : storedFile.getCreatedAt(),
+                storedFile.getCustomEmoji(),
+                storedFile.getFolderColor(),
                 false
         );
     }

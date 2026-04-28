@@ -176,4 +176,70 @@ class RecycleBinControllerIntegrationTest {
         assertThat(restoredFile.getRecycleGroupId()).isNull();
         assertThat(restoredFile.getRecycleOriginalPath()).isNull();
     }
+
+    @Test
+    void shouldPermanentlyDeleteActiveFileWhenDeleteModeIsPermanent() throws Exception {
+        mockMvc.perform(delete("/api/files/{fileId}", deletedFileId)
+                        .with(user("alice"))
+                        .param("mode", "PERMANENT"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(0));
+
+        mockMvc.perform(get("/api/files/list")
+                        .with(user("alice"))
+                        .param("path", "/docs")
+                        .param("page", "0")
+                        .param("size", "20"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.items").isEmpty());
+
+        mockMvc.perform(get("/api/files/recycle-bin")
+                        .with(user("alice"))
+                        .param("page", "0")
+                        .param("size", "20"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.items").isEmpty());
+
+        assertThat(storedFileRepository.findById(deletedFileId)).isEmpty();
+        assertThat(Files.exists(STORAGE_ROOT.resolve("blobs").resolve("recycle-notes"))).isFalse();
+    }
+
+    @Test
+    void shouldPermanentlyDeleteRecycleBinItemThroughApi() throws Exception {
+        String recycleResponse = mockMvc.perform(delete("/api/files/{fileId}", deletedFileId)
+                        .with(user("alice")))
+                .andExpect(status().isOk())
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+
+        assertThat(recycleResponse).isNotEmpty();
+
+        String listResponse = mockMvc.perform(get("/api/files/recycle-bin")
+                        .with(user("alice"))
+                        .param("page", "0")
+                        .param("size", "20"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.items[0].filename").value("notes.txt"))
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+
+        Number recycleRootId = JsonPath.read(listResponse, "$.data.items[0].id");
+
+        mockMvc.perform(delete("/api/files/recycle-bin/{fileId}", recycleRootId)
+                        .with(user("alice")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(0));
+
+        mockMvc.perform(get("/api/files/recycle-bin")
+                        .with(user("alice"))
+                        .param("page", "0")
+                        .param("size", "20"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.items").isEmpty());
+
+        assertThat(storedFileRepository.findById(deletedFileId)).isEmpty();
+        assertThat(Files.exists(STORAGE_ROOT.resolve("blobs").resolve("recycle-notes"))).isFalse();
+    }
 }

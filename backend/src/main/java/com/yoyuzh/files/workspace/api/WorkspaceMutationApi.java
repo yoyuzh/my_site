@@ -4,5 +4,5 @@ public interface WorkspaceMutationApi {
 
     WorkspaceMutationResult rename(Long userId, Long fileId, String sanitizedFilename);
 
-    WorkspaceMutationResult move(Long userId, Long fileId, String normalizedTargetPath);
+    WorkspaceMoveResult move(Long userId, Long fileId, String normalizedTargetPath, WorkspaceMoveConflictStrategy conflictStrategy);
 }

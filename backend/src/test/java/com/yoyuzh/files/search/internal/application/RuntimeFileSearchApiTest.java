@@ -52,6 +52,8 @@ class RuntimeFileSearchApiTest {
                         false,
                         createdGte,
                         createdGte,
+                        null,
+                        null,
                         false
                 )),
                 1,

@@ -11,6 +11,8 @@ public record FileMetadataResponse(
         boolean directory,
         LocalDateTime createdAt,
         LocalDateTime updatedAt,
+        String customEmoji,
+        String folderColor,
         boolean hasChildDirectory
 ) {
 }

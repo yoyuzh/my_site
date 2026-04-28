@@ -77,6 +77,8 @@ class BackgroundTaskArchiveHandlerTest {
                 false,
                 null,
                 null,
+                null,
+                null,
                 false
         );
 
@@ -128,6 +130,8 @@ class BackgroundTaskArchiveHandlerTest {
                 12L,
                 "application/zip",
                 false,
+                null,
+                null,
                 null,
                 null,
                 false

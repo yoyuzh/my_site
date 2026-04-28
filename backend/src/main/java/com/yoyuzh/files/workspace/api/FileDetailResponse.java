@@ -14,6 +14,8 @@ public record FileDetailResponse(
         boolean shared,
         LocalDateTime createdAt,
         LocalDateTime updatedAt,
+        String customEmoji,
+        String folderColor,
         List<WorkspaceTagResponse> tags
 ) {
     public FileDetailResponse withTags(List<WorkspaceTagResponse> updatedTags) {
@@ -28,6 +30,8 @@ public record FileDetailResponse(
                 shared,
                 createdAt,
                 updatedAt,
+                customEmoji,
+                folderColor,
                 updatedTags
         );
     }

@@ -17,8 +17,15 @@ import { formatBytes, formatDateTime } from '../../lib/format';
 import FileThumbnail from '../media/FileThumbnail';
 
 function FileIcon({ file, selected }: { file: FileItem; selected: boolean }) {
+  if (file.customEmoji) {
+    return (
+      <Box sx={{ fontSize: 20, display: 'flex', alignItems: 'center', justifyContent: 'center', width: 24, height: 24 }}>
+        {file.customEmoji}
+      </Box>
+    );
+  }
   if (file.directory) {
-    return <Folder sx={{ color: selected ? 'primary.main' : '#E9A23B' }} />;
+    return <Folder sx={{ color: selected ? 'primary.main' : (file.folderColor || '#E9A23B') }} />;
   }
   return <InsertDriveFile sx={{ color: selected ? 'primary.main' : 'text.secondary' }} />;
 }
@@ -56,6 +63,10 @@ export interface FilesExplorerSurfaceProps {
   hasNextPage?: boolean;
   isFetchingNextPage?: boolean;
   onLoadMore?: () => void;
+  // DnD props
+  onDragStart?: (file: FileItem, event: React.MouseEvent) => void;
+  registerDropTarget?: (el: HTMLElement | null, path: string) => void;
+  activeDropTarget?: string | null;
 }
 
 export const FilesExplorerSurface: React.FC<FilesExplorerSurfaceProps> = ({
@@ -82,6 +93,9 @@ export const FilesExplorerSurface: React.FC<FilesExplorerSurfaceProps> = ({
   hasNextPage,
   isFetchingNextPage,
   onLoadMore,
+  onDragStart,
+  registerDropTarget,
+  activeDropTarget,
 }) => {
   const theme = useTheme();
   const sentinelRef = useRef<HTMLDivElement | null>(null);
@@ -152,10 +166,14 @@ export const FilesExplorerSurface: React.FC<FilesExplorerSurfaceProps> = ({
 
   function renderFolderCard(file: FileItem, index: number) {
     const selected = Boolean(selectedById[getSelectionKey(file)]);
+    const isDropActive = activeDropTarget === getLogicalPath(file);
+
     return (
       <Paper
         key={`${file.id}-${index}`}
         elevation={0}
+        ref={(el: HTMLDivElement | null) => registerDropTarget?.(el, getLogicalPath(file))}
+        onMouseDown={(event) => onDragStart?.(file, event)}
         onClick={(event) => {
           event.stopPropagation();
           onSelectFile(file, index, event);
@@ -169,9 +187,13 @@ export const FilesExplorerSurface: React.FC<FilesExplorerSurfaceProps> = ({
           p: 1,
           cursor: 'default',
           border: '1px solid',
-          borderColor: selected ? 'primary.main' : 'divider',
-          bgcolor: selected ? alpha(theme.palette.primary.main, 0.08) : 'background.paper',
-          boxShadow: selected ? `0 0 12px ${alpha(theme.palette.primary.main, 0.25)}` : 'none',
+          borderColor: isDropActive ? 'primary.main' : (selected ? 'primary.main' : 'divider'),
+          bgcolor: isDropActive 
+            ? alpha(theme.palette.primary.main, 0.15) 
+            : (selected ? alpha(theme.palette.primary.main, 0.08) : 'background.paper'),
+          boxShadow: isDropActive 
+            ? `0 0 16px ${alpha(theme.palette.primary.main, 0.4)}` 
+            : (selected ? `0 0 12px ${alpha(theme.palette.primary.main, 0.25)}` : 'none'),
           transition: 'all 180ms ease',
           animation: 'fadeIn 300ms ease-out forwards',
           animationDelay: `${Math.min(index * 20, 300)}ms`,
@@ -209,7 +231,11 @@ export const FilesExplorerSurface: React.FC<FilesExplorerSurfaceProps> = ({
             ) : (
               <>
                 <Box className="grid-icon" sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                  <Folder sx={{ color: '#E9A23B', fontSize: 24 }} />
+                  {file.customEmoji ? (
+                    <Box sx={{ fontSize: 24, display: 'flex' }}>{file.customEmoji}</Box>
+                  ) : (
+                    <Folder sx={{ color: file.folderColor || '#E9A23B', fontSize: 24 }} />
+                  )}
                 </Box>
                 <Box className="grid-checkbox" sx={{ display: 'none', alignItems: 'center', justifyContent: 'center' }}>
                   <Checkbox
@@ -252,6 +278,7 @@ export const FilesExplorerSurface: React.FC<FilesExplorerSurfaceProps> = ({
       <Paper
         key={`${file.id}-${index}`}
         elevation={0}
+        onMouseDown={(event) => onDragStart?.(file, event)}
         onClick={(event) => {
           event.stopPropagation();
           onSelectFile(file, index, event);
@@ -307,7 +334,11 @@ export const FilesExplorerSurface: React.FC<FilesExplorerSurfaceProps> = ({
               ) : (
                 <>
                   <Box className="grid-icon" sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                    <InsertDriveFile sx={{ color: 'text.secondary', fontSize: 20 }} />
+                    {file.customEmoji ? (
+                      <Box sx={{ fontSize: 20, display: 'flex' }}>{file.customEmoji}</Box>
+                    ) : (
+                      <InsertDriveFile sx={{ color: 'text.secondary', fontSize: 20 }} />
+                    )}
                   </Box>
                   <Box className="grid-checkbox" sx={{ display: 'none', alignItems: 'center', justifyContent: 'center' }}>
                     <Checkbox
@@ -365,10 +396,16 @@ export const FilesExplorerSurface: React.FC<FilesExplorerSurfaceProps> = ({
 
   function renderFileRow(file: FileItem, index: number) {
     const selected = Boolean(selectedById[getSelectionKey(file)]);
+    const isDropActive = file.directory && activeDropTarget === getLogicalPath(file);
+
     return (
       <Box
         key={`${file.id}-${index}`}
         role="row"
+        ref={(el: HTMLDivElement | null) => {
+          if (file.directory) registerDropTarget?.(el, getLogicalPath(file));
+        }}
+        onMouseDown={(event) => onDragStart?.(file, event)}
         onClick={(event) => {
           event.stopPropagation();
           onSelectFile(file, index, event);
@@ -380,22 +417,27 @@ export const FilesExplorerSurface: React.FC<FilesExplorerSurfaceProps> = ({
         }}
         sx={{
           display: 'grid',
-          gridTemplateColumns: showSelectionControls
-            ? '44px minmax(220px,1fr) 100px 100px 170px 58px'
-            : 'minmax(220px,1fr) 100px 100px 170px 58px',
+          gridTemplateColumns: 'minmax(220px,1fr) 100px 100px 170px 58px',
           alignItems: 'center',
           minHeight: 54,
           px: 1,
           borderBottom: '1px solid',
           borderColor: 'divider',
-          bgcolor: selected ? alpha(theme.palette.primary.main, 0.08) : 'transparent',
-          transition: 'background-color 180ms ease',
+          bgcolor: isDropActive 
+            ? alpha(theme.palette.primary.main, 0.15) 
+            : (selected ? alpha(theme.palette.primary.main, 0.08) : 'transparent'),
+          boxShadow: isDropActive ? `inset 0 0 0 2px ${theme.palette.primary.main}` : 'none',
+          transition: 'all 180ms ease',
           animation: 'fadeIn 300ms ease-out forwards',
           animationDelay: `${Math.min(index * 20, 300)}ms`,
           opacity: 0,
           cursor: 'pointer',
           '&:hover': {
-            bgcolor: selected ? alpha(theme.palette.primary.main, 0.12) : 'action.hover',
+            bgcolor: isDropActive 
+              ? alpha(theme.palette.primary.main, 0.2) 
+              : (selected ? alpha(theme.palette.primary.main, 0.12) : 'action.hover'),
+            '& .list-icon': { display: 'none' },
+            '& .list-checkbox': { display: 'flex' },
           },
           '@keyframes fadeIn': {
             from: { opacity: 0, transform: 'translateY(4px)' },
@@ -403,18 +445,41 @@ export const FilesExplorerSurface: React.FC<FilesExplorerSurfaceProps> = ({
           },
         }}
       >
-        {showSelectionControls && (
-          <Checkbox
-            checked={selected}
-            size="small"
-            onClick={(event) => {
-              event.stopPropagation();
-              onToggleSelection(file, index);
-            }}
-          />
-        )}
         <Stack direction="row" alignItems="center" spacing={1.5} sx={{ minWidth: 0 }}>
-          <FileIcon file={file} selected={selected} />
+          <Box sx={{ width: 24, height: 24, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+            {selected ? (
+              <Checkbox
+                checked={true}
+                size="small"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  onToggleSelection(file, index);
+                }}
+                sx={{ p: 0, color: 'primary.main', '&.Mui-checked': { color: 'primary.main' } }}
+                icon={<RadioButtonUnchecked fontSize="small" />}
+                checkedIcon={<CheckCircle fontSize="small" />}
+              />
+            ) : (
+              <>
+                <Box className="list-icon" sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <FileIcon file={file} selected={selected} />
+                </Box>
+                <Box className="list-checkbox" sx={{ display: 'none', alignItems: 'center', justifyContent: 'center' }}>
+                  <Checkbox
+                    checked={false}
+                    size="small"
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      onToggleSelection(file, index);
+                    }}
+                    sx={{ p: 0 }}
+                    icon={<RadioButtonUnchecked fontSize="small" />}
+                    checkedIcon={<CheckCircle fontSize="small" />}
+                  />
+                </Box>
+              </>
+            )}
+          </Box>
           <Box sx={{ minWidth: 0 }}>
             <Stack direction="row" alignItems="center" spacing={1} useFlexGap flexWrap="wrap" sx={{ minWidth: 0 }}>
               <Typography noWrap fontWeight={600} title={file.filename} sx={{ maxWidth: file.directory ? '100%' : undefined }}>
@@ -535,9 +600,7 @@ export const FilesExplorerSurface: React.FC<FilesExplorerSurfaceProps> = ({
               <Box
                 sx={{
                   display: 'grid',
-                  gridTemplateColumns: showSelectionControls
-                    ? '44px minmax(220px,1fr) 100px 100px 170px 58px'
-                    : 'minmax(220px,1fr) 100px 100px 170px 58px',
+                  gridTemplateColumns: 'minmax(220px,1fr) 100px 100px 170px 58px',
                   alignItems: 'center',
                   minHeight: 42,
                   px: 1,
@@ -546,14 +609,6 @@ export const FilesExplorerSurface: React.FC<FilesExplorerSurfaceProps> = ({
                   bgcolor: 'action.hover',
                 }}
               >
-                {showSelectionControls && (
-                  <Checkbox
-                    size="small"
-                    checked={allSelected}
-                    indeterminate={selectedCount > 0 && !allSelected}
-                    onChange={onSelectAll}
-                  />
-                )}
                 <Typography variant="caption" fontWeight={700} color="text.secondary">
                   名称
                 </Typography>

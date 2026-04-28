@@ -17,6 +17,19 @@ export function normalizeWorkspaceFolderPath(path?: string | null) {
   return normalized.replace(/\/{2,}/g, '/').replace(/\/+$/, '') || '/';
 }
 
+export function getWorkspaceItemLogicalPath(item: { filename: string; path: string }) {
+  const normalizedPath = normalizeWorkspaceFolderPath(item.path);
+  const suffix = `/${item.filename}`;
+
+  if (normalizedPath === '/') {
+    return `/${item.filename}`;
+  }
+
+  return normalizedPath.endsWith(suffix)
+    ? normalizedPath
+    : `${normalizedPath}${suffix}`;
+}
+
 export function getWorkspaceFolderName(path: string) {
   const normalized = normalizeWorkspaceFolderPath(path);
   if (normalized === '/') {

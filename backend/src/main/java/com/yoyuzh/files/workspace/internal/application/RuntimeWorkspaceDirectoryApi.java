@@ -79,6 +79,8 @@ public final class RuntimeWorkspaceDirectoryApi implements WorkspaceDirectoryApi
                 storedFile.isDirectory(),
                 storedFile.getCreatedAt(),
                 storedFile.getUpdatedAt() != null ? storedFile.getUpdatedAt() : storedFile.getCreatedAt(),
+                storedFile.getCustomEmoji(),
+                storedFile.getFolderColor(),
                 hasChildDirectory
         );
     }

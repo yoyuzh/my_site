@@ -595,6 +595,8 @@ public class RuntimeSharingApi implements SharingApi {
                 file.directory(),
                 file.createdAt(),
                 file.createdAt(),
+                null,
+                null,
                 false
         );
     }
@@ -648,6 +650,8 @@ public class RuntimeSharingApi implements SharingApi {
                 storedFile.directory(),
                 storedFile.createdAt(),
                 storedFile.createdAt(),
+                null,
+                null,
                 false
         );
     }

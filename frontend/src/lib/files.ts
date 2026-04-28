@@ -3,10 +3,13 @@ import { apiRequest } from '../api/client';
 import type {
   DownloadUrlResponse,
   FavoriteFileResponse,
+  FileDeleteMode,
   FileDetail,
   FileItem,
   FileTag,
   MediaCategory,
+  MoveConflictStrategy,
+  MoveResponse,
   QueryPage,
   RecycleBinItem,
   ThumbnailResponse,
@@ -99,13 +102,21 @@ export async function getFileDetail(fileId: number) {
   });
 }
 
-export async function batchDeleteFiles(fileIds: number[]) {
+export async function batchDeleteFiles(fileIds: number[], mode: FileDeleteMode = 'RECYCLE') {
   return apiRequest<void>({
     url: '/files/batch/delete',
     method: 'POST',
     data: {
       fileIds,
+      mode,
     },
+  });
+}
+
+export async function deleteRecycleBinItem(fileId: number) {
+  return apiRequest<void>({
+    url: `/files/recycle-bin/${fileId}`,
+    method: 'DELETE',
   });
 }
 
@@ -131,11 +142,38 @@ export async function renameFile(fileId: number, filename: string) {
   });
 }
 
-export async function moveFile(fileId: number, path: string) {
-  return apiRequest<FileItem>({
+export async function moveFile(
+  fileId: number,
+  targetPath: string,
+  conflictStrategy?: MoveConflictStrategy
+) {
+  return apiRequest<MoveResponse>({
     url: `/files/${fileId}/move`,
     method: 'PATCH',
-    data: { path },
+    data: { targetPath, conflictStrategy },
+  });
+}
+
+export async function batchMoveFiles(
+  fileIds: number[],
+  targetPath: string,
+  conflictStrategy?: MoveConflictStrategy
+) {
+  return apiRequest<MoveResponse>({
+    url: '/files/batch/move',
+    method: 'POST',
+    data: { fileIds, targetPath, conflictStrategy },
+  });
+}
+
+export async function updateAppearance(
+  fileId: number,
+  payload: { customEmoji: string | null; folderColor: string | null }
+) {
+  return apiRequest<FileItem>({
+    url: `/files/${fileId}/appearance`,
+    method: 'PATCH',
+    data: payload,
   });
 }
 

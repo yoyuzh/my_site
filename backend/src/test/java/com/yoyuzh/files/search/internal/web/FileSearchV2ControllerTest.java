@@ -60,6 +60,8 @@ class FileSearchV2ControllerTest {
                         false,
                         LocalDateTime.of(2026, 4, 8, 10, 0),
                         LocalDateTime.of(2026, 4, 8, 10, 0),
+                        null,
+                        null,
                         false
                 )),
                 1,

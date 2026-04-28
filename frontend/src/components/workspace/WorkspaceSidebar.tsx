@@ -46,7 +46,11 @@ function restoreFilesSectionCollapsed() {
   return window.localStorage.getItem(WORKSPACE_FOLDER_TREE_SECTION_STORAGE_KEY) === 'true';
 }
 
-const WorkspaceSidebar: React.FC<{ onNavigate?: () => void }> = ({ onNavigate }) => {
+const WorkspaceSidebar: React.FC<{ 
+  onNavigate?: () => void;
+  registerDropTarget?: (el: HTMLElement | null, path: string) => void;
+  activeDropTarget?: string | null;
+}> = ({ onNavigate, registerDropTarget, activeDropTarget }) => {
   const location = useLocation();
   const { data: capacity, isLoading, isError } = useUserCapacity();
   const [filesSectionCollapsed, setFilesSectionCollapsed] = useState(restoreFilesSectionCollapsed);
@@ -77,11 +81,15 @@ const WorkspaceSidebar: React.FC<{ onNavigate?: () => void }> = ({ onNavigate })
                   {isFilesItem ? (
                     <>
                       <div
+                        ref={(el) => registerDropTarget?.(el, '/')}
                         className={
-                          active
+                          activeDropTarget === '/'
+                            ? 'sidebar-nav-item-active gap-2 ring-2 ring-primary-500 ring-inset opacity-90'
+                            : active
                             ? 'sidebar-nav-item-active gap-2'
                             : 'sidebar-nav-item gap-2'
                         }
+                        style={activeDropTarget === '/' ? { transition: 'all 150ms ease' } : undefined}
                       >
                         <Link
                           to={item.path}
@@ -106,7 +114,13 @@ const WorkspaceSidebar: React.FC<{ onNavigate?: () => void }> = ({ onNavigate })
                           {filesSectionCollapsed ? <ChevronRight size={14} /> : <ChevronDown size={14} />}
                         </button>
                       </div>
-                      {filesSectionCollapsed ? null : <WorkspaceFolderTree onNavigate={onNavigate} />}
+                      {filesSectionCollapsed ? null : (
+                        <WorkspaceFolderTree 
+                          onNavigate={onNavigate} 
+                          registerDropTarget={registerDropTarget}
+                          activeDropTarget={activeDropTarget}
+                        />
+                      )}
                     </>
                   ) : (
                     <Link

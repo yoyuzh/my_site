@@ -50,6 +50,39 @@ export function formatDate(value: string | null | undefined) {
   }).format(date);
 }
 
+export function formatTimeUntil(value: string | null | undefined, now = new Date()) {
+  if (!value) {
+    return '-';
+  }
+
+  const target = new Date(value);
+  if (Number.isNaN(target.getTime())) {
+    return value;
+  }
+
+  const diffMs = target.getTime() - now.getTime();
+  if (diffMs <= 0) {
+    return '已到期';
+  }
+
+  const minuteMs = 60 * 1000;
+  const hourMs = 60 * minuteMs;
+  const dayMs = 24 * hourMs;
+
+  if (diffMs < hourMs) {
+    const minutes = Math.max(1, Math.ceil(diffMs / minuteMs));
+    return `${minutes} 分钟后`;
+  }
+
+  if (diffMs < dayMs) {
+    const hours = Math.ceil(diffMs / hourMs);
+    return `${hours} 小时后`;
+  }
+
+  const days = Math.ceil(diffMs / dayMs);
+  return `${days} 天后`;
+}
+
 export function formatPercent(value: number, total: number) {
   if (!Number.isFinite(value) || !Number.isFinite(total) || total <= 0) {
     return '0%';

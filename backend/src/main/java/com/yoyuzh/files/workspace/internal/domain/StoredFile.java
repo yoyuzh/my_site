@@ -105,6 +105,12 @@ public class StoredFile {
     @Column(nullable = false)
     private boolean favorite;
 
+    @Column(name = "custom_emoji", length = 32)
+    private String customEmoji;
+
+    @Column(name = "folder_color", length = 16)
+    private String folderColor;
+
     public static StoredFile directory(Long userId, String parentPath, String directoryName) {
         StoredFile storedFile = new StoredFile();
         storedFile.setUserId(userId);
@@ -298,6 +304,22 @@ public class StoredFile {
         this.favorite = favorite;
     }
 
+    public String getCustomEmoji() {
+        return customEmoji;
+    }
+
+    public void setCustomEmoji(String customEmoji) {
+        this.customEmoji = customEmoji;
+    }
+
+    public String getFolderColor() {
+        return folderColor;
+    }
+
+    public void setFolderColor(String folderColor) {
+        this.folderColor = folderColor;
+    }
+
     public String logicalPath() {
         return "/".equals(path) ? "/" + filename : path + "/" + filename;
     }
@@ -320,6 +342,11 @@ public class StoredFile {
 
     public void markFavorite(boolean favorite) {
         this.favorite = favorite;
+    }
+
+    public void updateAppearance(String customEmoji, String folderColor) {
+        this.customEmoji = customEmoji;
+        this.folderColor = directory ? folderColor : null;
     }
 
     public void recycleTo(String recyclePath,
@@ -351,6 +378,8 @@ public class StoredFile {
         copiedFile.setSize(size);
         copiedFile.setDirectory(directory);
         copiedFile.setBlobId(blobId);
+        copiedFile.setCustomEmoji(customEmoji);
+        copiedFile.setFolderColor(directory ? folderColor : null);
         return copiedFile;
     }
 

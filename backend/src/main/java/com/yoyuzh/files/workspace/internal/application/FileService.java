@@ -11,6 +11,7 @@ import com.yoyuzh.files.upload.InitiateUploadRequest;
 import com.yoyuzh.files.upload.InitiateUploadResponse;
 import com.yoyuzh.files.workspace.api.DownloadUrlResponse;
 import com.yoyuzh.files.workspace.api.FavoriteFileResponse;
+import com.yoyuzh.files.workspace.api.FileDeleteMode;
 import com.yoyuzh.files.workspace.api.FileDetailResponse;
 import com.yoyuzh.files.workspace.api.FileMetadataResponse;
 import com.yoyuzh.files.workspace.api.RecycleBinItemResponse;
@@ -28,6 +29,10 @@ import com.yoyuzh.files.workspace.api.WorkspaceExternalImportProgress;
 import com.yoyuzh.files.workspace.api.WorkspaceExternalImportProgressListener;
 import com.yoyuzh.files.workspace.api.WorkspaceLifecycleApi;
 import com.yoyuzh.files.workspace.api.WorkspaceLifecycleResult;
+import com.yoyuzh.files.workspace.api.WorkspaceMoveConflictStrategy;
+import com.yoyuzh.files.workspace.api.WorkspaceMoveItemResult;
+import com.yoyuzh.files.workspace.api.WorkspaceMoveOutcomeStatus;
+import com.yoyuzh.files.workspace.api.WorkspaceMoveResult;
 import com.yoyuzh.files.workspace.api.WorkspaceMutationApi;
 import com.yoyuzh.files.workspace.api.WorkspaceMutationResult;
 import com.yoyuzh.files.workspace.api.WorkspacePathPolicy;
@@ -62,6 +67,7 @@ import java.time.Instant;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Base64;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -75,6 +81,7 @@ public class FileService implements WorkspaceBootstrapApi, WorkspaceArchiveApi {
     private static final List<String> DEFAULT_DIRECTORIES = List.of("下载", "文档", "图片");
     private static final long RECYCLE_BIN_RETENTION_DAYS = 10L;
     private static final String SECURE_LINK_SIGNATURE_ALGORITHM = "HmacSHA256";
+    private static final String FOLDER_COLOR_PATTERN = "^#[0-9A-Fa-f]{6}$";
 
     private final StoredFileRepository storedFileRepository;
     private final FileContentStorage fileContentStorage;
@@ -336,13 +343,24 @@ public class FileService implements WorkspaceBootstrapApi, WorkspaceArchiveApi {
 
     @Transactional
     public void batchDelete(Long userId, List<Long> fileIds) {
-        batchDelete(toWorkspaceUser(userId), fileIds);
+        batchDelete(toWorkspaceUser(userId), fileIds, FileDeleteMode.RECYCLE);
     }
 
     @Transactional
     public void batchDelete(WorkspaceUserContext user, List<Long> fileIds) {
+        batchDelete(user, fileIds, FileDeleteMode.RECYCLE);
+    }
+
+    @Transactional
+    public void batchDelete(Long userId, List<Long> fileIds, FileDeleteMode mode) {
+        batchDelete(toWorkspaceUser(userId), fileIds, mode);
+    }
+
+    @Transactional
+    public void batchDelete(WorkspaceUserContext user, List<Long> fileIds, FileDeleteMode mode) {
+        FileDeleteMode deleteMode = normalizeDeleteMode(mode);
         for (Long fileId : fileIds) {
-            delete(user, fileId);
+            delete(user, fileId, deleteMode);
         }
     }
 
@@ -489,11 +507,26 @@ public class FileService implements WorkspaceBootstrapApi, WorkspaceArchiveApi {
 
     @Transactional
     public void delete(Long userId, Long fileId) {
-        delete(toWorkspaceUser(userId), fileId);
+        delete(toWorkspaceUser(userId), fileId, FileDeleteMode.RECYCLE);
     }
 
     @Transactional
     public void delete(WorkspaceUserContext user, Long fileId) {
+        delete(user, fileId, FileDeleteMode.RECYCLE);
+    }
+
+    @Transactional
+    public void delete(Long userId, Long fileId, FileDeleteMode mode) {
+        delete(toWorkspaceUser(userId), fileId, mode);
+    }
+
+    @Transactional
+    public void delete(WorkspaceUserContext user, Long fileId, FileDeleteMode mode) {
+        FileDeleteMode deleteMode = normalizeDeleteMode(mode);
+        if (deleteMode == FileDeleteMode.PERMANENT) {
+            permanentlyDeleteActiveFile(normalizeWorkspaceUser(user), fileId);
+            return;
+        }
         WorkspaceLifecycleResult result = workspaceLifecycleApi.recycle(user.userId(), fileId);
         if (!result.affectedPaths().isEmpty()) {
             workspaceFileActivityService.touchDirectories(user, result.affectedPaths().toArray(String[]::new));
@@ -532,15 +565,18 @@ public class FileService implements WorkspaceBootstrapApi, WorkspaceArchiveApi {
         if (expiredItems.isEmpty()) {
             return;
         }
+        deleteStoredFilesPermanently(expiredItems);
+    }
 
-        List<ContentBlobReference> blobsToDelete = contentBlobLifecycleApi.collectBlobReferencesToDelete(
-                expiredItems.stream()
-                        .map(StoredFile::getBlobId)
-                        .filter(Objects::nonNull)
-                        .toList()
-        );
-        storedFileRepository.deleteAll(expiredItems);
-        contentBlobLifecycleApi.deleteBlobReferences(blobsToDelete);
+    @Transactional
+    public void permanentlyDeleteRecycleBinItem(Long userId, Long fileId) {
+        permanentlyDeleteRecycleBinItem(toWorkspaceUser(userId), fileId);
+    }
+
+    @Transactional
+    public void permanentlyDeleteRecycleBinItem(WorkspaceUserContext user, Long fileId) {
+        StoredFile recycleRoot = getOwnedRecycleRootFile(normalizeWorkspaceUser(user), fileId);
+        deleteStoredFilesPermanently(loadRecycleGroupItems(recycleRoot));
     }
 
     @Transactional
@@ -562,21 +598,83 @@ public class FileService implements WorkspaceBootstrapApi, WorkspaceArchiveApi {
     }
 
     @Transactional
-    public FileMetadataResponse move(Long userId, Long fileId, String nextPath) {
-        return move(toWorkspaceUser(userId), fileId, nextPath);
+    public WorkspaceMoveResult move(Long userId, Long fileId, String nextPath, WorkspaceMoveConflictStrategy conflictStrategy) {
+        return move(toWorkspaceUser(userId), fileId, nextPath, conflictStrategy);
     }
 
     @Transactional
-    public FileMetadataResponse move(WorkspaceUserContext user, Long fileId, String nextPath) {
+    public WorkspaceMoveResult move(WorkspaceUserContext user,
+                                    Long fileId,
+                                    String nextPath,
+                                    WorkspaceMoveConflictStrategy conflictStrategy) {
         String normalizedTargetPath = normalizeDirectoryPath(nextPath);
-        WorkspaceMutationResult result = workspaceMutationApi.move(user.userId(), fileId, normalizedTargetPath);
-        if (!result.affectedPaths().isEmpty()) {
-            workspaceFileActivityService.touchDirectories(user, result.affectedPaths().toArray(String[]::new));
+        WorkspaceMoveResult result = workspaceMutationApi.move(user.userId(), fileId, normalizedTargetPath, conflictStrategy);
+        applyMoveSideEffects(user, result);
+        return result;
+    }
+
+    @Transactional
+    public WorkspaceMoveResult batchMove(Long userId,
+                                         List<Long> fileIds,
+                                         String nextPath,
+                                         WorkspaceMoveConflictStrategy conflictStrategy) {
+        return batchMove(toWorkspaceUser(userId), fileIds, nextPath, conflictStrategy);
+    }
+
+    @Transactional
+    public WorkspaceMoveResult batchMove(WorkspaceUserContext user,
+                                         List<Long> fileIds,
+                                         String nextPath,
+                                         WorkspaceMoveConflictStrategy conflictStrategy) {
+        String normalizedTargetPath = normalizeDirectoryPath(nextPath);
+        workspaceNodeRulesService.ensureExistingDirectoryPath(user.userId(), normalizedTargetPath);
+        List<StoredFile> files = fileIds.stream()
+                .distinct()
+                .map(fileId -> getOwnedActiveFile(user, fileId, "移动"))
+                .toList();
+        WorkspaceMoveResult preflight = inspectBatchMove(user.userId(), files, normalizedTargetPath, conflictStrategy);
+        if (preflight != null) {
+            return preflight;
         }
-        if (!result.fromPath().equals(result.toPath())) {
-            workspaceFileActivityService.recordMutation(user, FileEventType.MOVED, result.file(), result.fromPath(), result.toPath());
+
+        List<WorkspaceMoveItemResult> items = new ArrayList<>();
+        for (StoredFile file : files) {
+            WorkspaceMoveResult moveResult = workspaceMutationApi.move(
+                    user.userId(),
+                    file.getId(),
+                    normalizedTargetPath,
+                    conflictStrategy
+            );
+            if (moveResult.status() != WorkspaceMoveOutcomeStatus.SUCCESS) {
+                return moveResult;
+            }
+            items.addAll(moveResult.items());
         }
-        return result.file();
+
+        WorkspaceMoveResult result = WorkspaceMoveResult.success(items);
+        applyMoveSideEffects(user, result);
+        return result;
+    }
+
+    @Transactional
+    public FileMetadataResponse updateAppearance(Long userId, Long fileId, String customEmoji, String folderColor) {
+        return updateAppearance(toWorkspaceUser(userId), fileId, customEmoji, folderColor);
+    }
+
+    @Transactional
+    public FileMetadataResponse updateAppearance(WorkspaceUserContext user,
+                                                Long fileId,
+                                                String customEmoji,
+                                                String folderColor) {
+        StoredFile storedFile = getOwnedActiveFile(user, fileId, "更新外观");
+        String normalizedEmoji = normalizeCustomEmoji(customEmoji);
+        String normalizedFolderColor = normalizeFolderColor(folderColor);
+        if (!storedFile.isDirectory() && normalizedFolderColor != null) {
+            throw new BusinessException(ErrorCode.INVALID_INPUT, "只有文件夹可以设置颜色");
+        }
+        storedFile.updateAppearance(normalizedEmoji, normalizedFolderColor);
+        StoredFile savedFile = storedFileRepository.save(storedFile);
+        return toResponse(savedFile);
     }
 
     @Transactional
@@ -889,6 +987,8 @@ public class FileService implements WorkspaceBootstrapApi, WorkspaceArchiveApi {
                 shared,
                 file.getCreatedAt(),
                 file.getUpdatedAt(),
+                file.getCustomEmoji(),
+                file.getFolderColor(),
                 List.of()
         );
     }
@@ -915,6 +1015,57 @@ public class FileService implements WorkspaceBootstrapApi, WorkspaceArchiveApi {
             throw new BusinessException(ErrorCode.FILE_NOT_FOUND, "回收站文件不存在");
         }
         return storedFile.getRecycleOriginalPath();
+    }
+
+    private FileDeleteMode normalizeDeleteMode(FileDeleteMode mode) {
+        return mode == null ? FileDeleteMode.RECYCLE : mode;
+    }
+
+    private void permanentlyDeleteActiveFile(WorkspaceUserContext user, Long fileId) {
+        StoredFile storedFile = getOwnedActiveFile(user, fileId, "直接删除");
+        String fromPath = buildLogicalPath(storedFile);
+        deleteStoredFilesPermanently(loadActiveDeletionItems(user.userId(), storedFile));
+        workspaceFileActivityService.touchDirectories(user, workspaceNodeRulesService.extractParentPath(fromPath));
+        workspaceFileActivityService.recordMutation(user, FileEventType.DELETED, storedFile, fromPath, null);
+    }
+
+    private List<StoredFile> loadActiveDeletionItems(Long userId, StoredFile storedFile) {
+        List<StoredFile> filesToDelete = new ArrayList<>();
+        filesToDelete.add(storedFile);
+        if (storedFile.isDirectory()) {
+            filesToDelete.addAll(storedFileRepository.findByUserIdAndPathEqualsOrDescendant(userId, buildLogicalPath(storedFile)));
+        }
+        return filesToDelete;
+    }
+
+    private List<StoredFile> loadRecycleGroupItems(StoredFile recycleRoot) {
+        if (!StringUtils.hasText(recycleRoot.getRecycleGroupId())) {
+            throw new BusinessException(ErrorCode.FILE_NOT_FOUND, "回收站文件不存在");
+        }
+        List<StoredFile> items = storedFileRepository.findByRecycleGroupId(recycleRoot.getRecycleGroupId());
+        if (items.isEmpty()) {
+            throw new BusinessException(ErrorCode.FILE_NOT_FOUND, "回收站文件不存在");
+        }
+        return items;
+    }
+
+    private StoredFile getOwnedRecycleRootFile(WorkspaceUserContext user, Long fileId) {
+        StoredFile storedFile = getOwnedFile(user, fileId, "永久删除");
+        if (storedFile.getDeletedAt() == null || !storedFile.isRecycleRoot()) {
+            throw new BusinessException(ErrorCode.FILE_NOT_FOUND, "回收站文件不存在");
+        }
+        return storedFile;
+    }
+
+    private void deleteStoredFilesPermanently(List<StoredFile> storedFiles) {
+        List<ContentBlobReference> blobsToDelete = contentBlobLifecycleApi.collectBlobReferencesToDelete(
+                storedFiles.stream()
+                        .map(StoredFile::getBlobId)
+                        .filter(Objects::nonNull)
+                        .toList()
+        );
+        storedFileRepository.deleteAll(storedFiles);
+        contentBlobLifecycleApi.deleteBlobReferences(blobsToDelete);
     }
 
     private String resolveUploadedContentType(String filename, String reportedContentType) {
@@ -951,6 +1102,8 @@ public class FileService implements WorkspaceBootstrapApi, WorkspaceArchiveApi {
                 storedFile.isDirectory(),
                 storedFile.getCreatedAt(),
                 storedFile.getUpdatedAt() != null ? storedFile.getUpdatedAt() : storedFile.getCreatedAt(),
+                storedFile.getCustomEmoji(),
+                storedFile.getFolderColor(),
                 false);
     }
 
@@ -964,6 +1117,8 @@ public class FileService implements WorkspaceBootstrapApi, WorkspaceArchiveApi {
                 storedFile.directory(),
                 storedFile.createdAt(),
                 storedFile.createdAt(),
+                null,
+                null,
                 false
         );
     }
@@ -1001,8 +1156,110 @@ public class FileService implements WorkspaceBootstrapApi, WorkspaceArchiveApi {
                 true,
                 item.createdAt(),
                 item.updatedAt(),
+                item.customEmoji(),
+                item.folderColor(),
                 hasChildDirectory
         );
+    }
+
+    private void applyMoveSideEffects(WorkspaceUserContext user, WorkspaceMoveResult result) {
+        if (result.status() != WorkspaceMoveOutcomeStatus.SUCCESS || result.items().isEmpty()) {
+            return;
+        }
+        Set<String> affectedPaths = new LinkedHashSet<>();
+        for (WorkspaceMoveItemResult item : result.items()) {
+            if (item.skipped() || item.toPath() == null || item.fromPath() == null || item.fromPath().equals(item.toPath())) {
+                continue;
+            }
+            affectedPaths.add(extractParentPath(item.fromPath()));
+            affectedPaths.add(extractParentPath(item.toPath()));
+            StoredFile movedFile = getOwnedActiveFile(user, item.fileId(), "读取移动结果");
+            if (movedFile.isDirectory()) {
+                affectedPaths.add(item.fromPath());
+                affectedPaths.add(item.toPath());
+            }
+            workspaceFileActivityService.recordMutation(
+                    user,
+                    FileEventType.MOVED,
+                    toResponse(movedFile),
+                    item.fromPath(),
+                    item.toPath()
+            );
+        }
+        if (!affectedPaths.isEmpty()) {
+            workspaceFileActivityService.touchDirectories(user, affectedPaths.toArray(String[]::new));
+        }
+    }
+
+    private WorkspaceMoveResult inspectBatchMove(Long userId,
+                                                 List<StoredFile> files,
+                                                 String normalizedTargetPath,
+                                                 WorkspaceMoveConflictStrategy conflictStrategy) {
+        List<WorkspaceMoveItemResult> invalidItems = new ArrayList<>();
+        List<WorkspaceMoveItemResult> conflicts = new ArrayList<>();
+        Set<String> reservedNames = new LinkedHashSet<>();
+
+        for (StoredFile file : files) {
+            String fromPath = buildLogicalPath(file);
+            String desiredPath = buildLogicalPath(normalizedTargetPath, file.getFilename());
+            if (file.isDirectory() && (desiredPath.equals(fromPath) || desiredPath.startsWith(fromPath + "/"))) {
+                invalidItems.add(toMoveItemResult(file, fromPath, null, false, false));
+                continue;
+            }
+
+            boolean duplicateInTarget = workspaceNodeRulesService.existsNodeName(userId, normalizedTargetPath, file.getFilename());
+            boolean duplicateInBatch = !reservedNames.add(file.getFilename());
+            if (conflictStrategy == null && (duplicateInTarget || duplicateInBatch)) {
+                conflicts.add(toMoveItemResult(file, fromPath, desiredPath, false, false));
+            }
+        }
+
+        if (!invalidItems.isEmpty()) {
+            return WorkspaceMoveResult.invalidTarget("不能移动到当前目录或其子目录", invalidItems);
+        }
+        if (!conflicts.isEmpty()) {
+            return WorkspaceMoveResult.conflict(conflicts);
+        }
+        return null;
+    }
+
+    private WorkspaceMoveItemResult toMoveItemResult(StoredFile file,
+                                                     String fromPath,
+                                                     String toPath,
+                                                     boolean renamed,
+                                                     boolean skipped) {
+        return new WorkspaceMoveItemResult(
+                file.getId(),
+                file.getFilename(),
+                fromPath,
+                toPath,
+                renamed,
+                skipped,
+                file.getCustomEmoji(),
+                file.getFolderColor()
+        );
+    }
+
+    private String normalizeCustomEmoji(String customEmoji) {
+        if (!StringUtils.hasText(customEmoji)) {
+            return null;
+        }
+        String normalized = customEmoji.trim();
+        if (normalized.codePointCount(0, normalized.length()) > 8) {
+            throw new BusinessException(ErrorCode.INVALID_INPUT, "自定义图标长度不合法");
+        }
+        return normalized;
+    }
+
+    private String normalizeFolderColor(String folderColor) {
+        if (!StringUtils.hasText(folderColor)) {
+            return null;
+        }
+        String normalized = folderColor.trim();
+        if (!normalized.matches(FOLDER_COLOR_PATTERN)) {
+            throw new BusinessException(ErrorCode.INVALID_INPUT, "文件夹颜色格式不合法");
+        }
+        return normalized;
     }
 
     private String normalizeDirectoryPath(String path) {
