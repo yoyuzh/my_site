@@ -28,6 +28,7 @@ frontend-dev.err.log
 !.codex/agents/
 .codex/agents/*
 !.codex/agents/*.toml
+.worktrees/
 
 .DS_Store
 *.swp
