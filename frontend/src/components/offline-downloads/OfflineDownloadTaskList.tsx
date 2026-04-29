@@ -7,6 +7,9 @@ import {
   resolveRemoteDownloadStatus,
 } from '../../lib/tasks';
 import type { BackgroundTask, RemoteDownloadListItem } from '../../api/types';
+import { Box, Typography, alpha, Collapse } from '@mui/material';
+import { ChevronDown, ChevronUp, Clock, FileText, Hash } from 'lucide-react';
+import { useTheme } from '../../hooks/useTheme';
 
 interface OfflineDownloadTaskListProps {
   remoteDownloads: RemoteDownloadListItem[];
@@ -30,6 +33,8 @@ const OfflineDownloadTaskList: React.FC<OfflineDownloadTaskListProps> = ({
   selectedRemoteDownloadId,
   onSelectTask,
 }) => {
+  const { theme } = useTheme();
+  const isDark = theme === 'dark';
   const [historyExpanded, setHistoryExpanded] = useState(false);
 
   const getEffectiveStatus = (task: RemoteDownloadListItem) => {
@@ -67,78 +72,150 @@ const OfflineDownloadTaskList: React.FC<OfflineDownloadTaskListProps> = ({
     const isSelected = selectedRemoteDownloadId === task.id;
 
     return (
-      <div
+      <Box
         key={task.id}
         onClick={() => onSelectTask(task.id)}
-        className={`group relative flex cursor-pointer flex-col gap-1 border-b border-[#D4DEEC] p-4 transition-colors last:border-b-0 dark:border-white/8 ${
-          isSelected ? 'bg-brand-light/8 dark:bg-brand-dark/12' : 'hover:bg-white/35 dark:hover:bg-white/[0.04]'
-        }`}
+        sx={{
+          position: 'relative',
+          cursor: 'pointer',
+          p: 2,
+          borderBottom: '1px solid',
+          borderColor: 'divider',
+          transition: 'all 0.2s ease',
+          bgcolor: isSelected 
+            ? (isDark ? 'rgba(79,124,255,0.15)' : 'rgba(79,124,255,0.06)')
+            : 'transparent',
+          '&:hover': {
+            bgcolor: isSelected 
+              ? (isDark ? 'rgba(79,124,255,0.2)' : 'rgba(79,124,255,0.08)')
+              : (isDark ? 'rgba(255,255,255,0.03)' : 'rgba(15,23,42,0.02)'),
+          },
+          '&:last-child': {
+            borderBottom: 'none',
+          },
+        }}
       >
-        {isSelected ? <div className="absolute inset-y-0 left-0 w-1 bg-brand-light dark:bg-brand-dark" /> : null}
-        <div className="flex items-center justify-between">
-          <span className="text-xs font-bold text-brand-light dark:text-brand-dark">#{task.id}</span>
-          <span className="text-[10px] text-text-muted-light dark:text-text-muted-dark">
-            {formatDateTime(task.createdAt)}
-          </span>
-        </div>
-        <h4
-          className={`truncate text-sm font-bold ${
-            isSelected ? 'text-brand-light dark:text-brand-dark' : 'text-text-primary-light dark:text-white'
-          }`}
+        {isSelected && (
+          <Box
+            sx={{
+              position: 'absolute',
+              left: 0,
+              top: 0,
+              bottom: 0,
+              width: 3,
+              bgcolor: '#4F7CFF',
+              borderRadius: '0 2px 2px 0',
+            }}
+          />
+        )}
+        
+        <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 0.5 }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+            <Hash size={10} className={isSelected ? 'text-[#4F7CFF]' : 'text-text-muted-light dark:text-text-muted-dark'} />
+            <Typography 
+              variant="caption" 
+              fontWeight={700} 
+              sx={{ color: isSelected ? '#4F7CFF' : 'text.secondary' }}
+            >
+              {task.id}
+            </Typography>
+          </Box>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+            <Clock size={10} className="text-text-muted-light dark:text-text-muted-dark" />
+            <Typography variant="caption" color="text.secondary" sx={{ fontSize: '10px' }}>
+              {formatDateTime(task.createdAt)}
+            </Typography>
+          </Box>
+        </Box>
+
+        <Typography
+          variant="body2"
+          fontWeight={700}
+          noWrap
+          sx={{ 
+            mb: 0.5,
+            color: isSelected ? '#4F7CFF' : 'text.primary'
+          }}
         >
           {getRemoteDownloadStatusLabel(effectiveStatus)}
-        </h4>
-        <p className="truncate text-xs text-text-secondary-light dark:text-text-secondary-dark">
-          {task.targetPath} · {getRemoteDownloadSourceLabel(task.sourceType)}
-        </p>
-        <p className="truncate text-[11px] text-text-muted-light dark:text-text-muted-dark">
-          {backgroundTask?.errorMessage || backgroundTask?.correlationId || '等待更多任务信息'}
-        </p>
-      </div>
+        </Typography>
+
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 0.25 }}>
+          <Typography variant="caption" color="text.secondary" noWrap sx={{ maxWidth: '100%' }}>
+            {task.targetPath}
+          </Typography>
+        </Box>
+        
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+          <Typography variant="caption" color="text.disabled" sx={{ fontSize: '11px' }} noWrap>
+            {getRemoteDownloadSourceLabel(task.sourceType)} · {backgroundTask?.errorMessage || backgroundTask?.correlationId || '等待更多任务信息'}
+          </Typography>
+        </Box>
+      </Box>
     );
   };
 
   return (
-    <div className="flex h-full flex-col bg-transparent">
-      <div className="flex-1 overflow-y-auto">
-        <div className="border-b border-[#D4DEEC] bg-white/30 px-4 py-2 dark:border-white/8 dark:bg-white/[0.03]">
-          <h3 className="text-xs font-bold uppercase tracking-wider text-text-secondary-light dark:text-text-secondary-dark">
+    <Box sx={{ height: '100%', display: 'flex', flexDirection: 'column', bgcolor: 'transparent' }}>
+      <Box sx={{ flex: 1, overflowY: 'auto' }}>
+        <Box 
+          sx={{ 
+            px: 2, 
+            py: 1, 
+            bgcolor: isDark ? 'rgba(255,255,255,0.02)' : 'rgba(15,23,42,0.02)',
+            borderBottom: '1px solid',
+            borderColor: 'divider',
+            display: 'flex',
+            alignItems: 'center',
+            gap: 1
+          }}
+        >
+          <Typography variant="caption" fontWeight={700} color="text.secondary" sx={{ textTransform: 'uppercase', letterSpacing: '0.05em' }}>
             活跃任务 ({activeTasks.length})
-          </h3>
-        </div>
+          </Typography>
+        </Box>
         {activeTasks.length > 0 ? (
-          <div className="divide-y divide-[#D4DEEC] dark:divide-white/8">{activeTasks.map(renderTaskItem)}</div>
+          <Box>{activeTasks.map(renderTaskItem)}</Box>
         ) : (
-          <div className="p-8 text-center text-sm text-text-muted-light dark:text-text-muted-dark">暂无活跃任务</div>
+          <Box sx={{ py: 4, textAlign: 'center' }}>
+            <Typography variant="caption" color="text.disabled">暂无活跃任务</Typography>
+          </Box>
         )}
 
-        <div
-          className="flex cursor-pointer items-center justify-between border-y border-[#D4DEEC] bg-white/30 px-4 py-2 transition-colors hover:bg-white/40 dark:border-white/8 dark:bg-white/[0.03] dark:hover:bg-white/[0.05]"
+        <Box
           onClick={() => setHistoryExpanded((current) => !current)}
+          sx={{
+            px: 2,
+            py: 1,
+            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            bgcolor: isDark ? 'rgba(255,255,255,0.02)' : 'rgba(15,23,42,0.02)',
+            borderY: '1px solid',
+            borderColor: 'divider',
+            transition: 'all 0.2s ease',
+            '&:hover': {
+              bgcolor: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(15,23,42,0.04)',
+            }
+          }}
         >
-          <h3 className="text-xs font-bold uppercase tracking-wider text-text-secondary-light dark:text-text-secondary-dark">
+          <Typography variant="caption" fontWeight={700} color="text.secondary" sx={{ textTransform: 'uppercase', letterSpacing: '0.05em' }}>
             历史记录 ({historyTasks.length})
-          </h3>
-          <svg
-            className={`h-4 w-4 text-text-muted-light transition-transform dark:text-text-muted-dark ${
-              historyExpanded ? 'rotate-180' : ''
-            }`}
-            fill="none"
-            viewBox="0 0 24 24"
-            stroke="currentColor"
-          >
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-          </svg>
-        </div>
-        {historyExpanded ? (
-          historyTasks.length > 0 ? (
-            <div className="divide-y divide-[#D4DEEC] dark:divide-white/8">{historyTasks.map(renderTaskItem)}</div>
+          </Typography>
+          {historyExpanded ? <ChevronUp size={14} className="text-text-muted-light dark:text-text-muted-dark" /> : <ChevronDown size={14} className="text-text-muted-light dark:text-text-muted-dark" />}
+        </Box>
+        <Collapse in={historyExpanded}>
+          {historyTasks.length > 0 ? (
+            <Box>{historyTasks.map(renderTaskItem)}</Box>
           ) : (
-            <div className="p-8 text-center text-sm text-text-muted-light dark:text-text-muted-dark">暂无历史记录</div>
-          )
-        ) : null}
-      </div>
-    </div>
+            <Box sx={{ py: 4, textAlign: 'center' }}>
+              <Typography variant="caption" color="text.disabled">暂无历史记录</Typography>
+            </Box>
+          )}
+        </Collapse>
+      </Box>
+    </Box>
   );
 };
 

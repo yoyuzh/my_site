@@ -127,6 +127,7 @@ class AdminRuntimeSettingsServiceIntegrationTest {
     @Test
     void shouldReadLatestPersistedStateWithoutProcessLocalCache() {
         AdminRuntimeSettingsService.State defaultState = adminRuntimeSettingsService.snapshot();
+        adminRuntimeSettingsService.reset();
         AdminRuntimeSettingsState state = adminRuntimeSettingsStateRepository.findById(1L).orElseThrow();
         state.setRegistrationInviteCodeRequired(false);
         state.setRegistrationManagementRoles("ADMIN");
@@ -142,6 +143,7 @@ class AdminRuntimeSettingsServiceIntegrationTest {
     @Test
     void shouldFallbackToDefaultsForLegacyBlankOrZeroRuntimeSettingsValues() {
         AdminRuntimeSettingsService.State defaultState = adminRuntimeSettingsService.snapshot();
+        adminRuntimeSettingsService.reset();
         AdminRuntimeSettingsState state = adminRuntimeSettingsStateRepository.findById(1L).orElseThrow();
         state.setRegistrationManagementRoles(" ");
         state.setUserSessionAccessExpirationSeconds(0L);

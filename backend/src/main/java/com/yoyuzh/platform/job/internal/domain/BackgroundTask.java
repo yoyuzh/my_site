@@ -44,10 +44,10 @@ public class BackgroundTask {
     @Column(name = "user_id", nullable = false)
     private Long userId;
 
-    @Column(name = "public_state_json", nullable = false, length = 8192)
+    @Column(name = "public_state_json", nullable = false, columnDefinition = "TEXT")
     private String publicStateJson;
 
-    @Column(name = "private_state_json", nullable = false, length = 8192)
+    @Column(name = "private_state_json", nullable = false, columnDefinition = "TEXT")
     private String privateStateJson;
 
     @Column(name = "correlation_id", length = 128)

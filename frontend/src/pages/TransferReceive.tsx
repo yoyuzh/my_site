@@ -7,6 +7,10 @@ import { P2pReceiver, type P2pTransferProgress, type ReceivedP2pFile } from '../
 import { formatBytes, formatDateTime } from '../lib/format';
 import type { TransferSessionResponse } from '../api/types';
 
+function normalizePickupCode(value: string) {
+  return value.replace(/[^a-zA-Z0-9]/g, '').toUpperCase().slice(0, 8);
+}
+
 function formatPercent(progress: P2pTransferProgress | null) {
   if (!progress || progress.totalBytes <= 0) {
     return 0;
@@ -16,7 +20,7 @@ function formatPercent(progress: P2pTransferProgress | null) {
 
 export const TransferReceivePanel: React.FC<{ embedded?: boolean }> = ({ embedded = false }) => {
   const [searchParams] = useSearchParams();
-  const initialCode = searchParams.get('code') ?? '';
+  const initialCode = normalizePickupCode(searchParams.get('code') ?? '');
   const receiverRef = useRef<P2pReceiver | null>(null);
   const receivedFilesRef = useRef<ReceivedP2pFile[]>([]);
   const [pickupCode, setPickupCode] = useState(initialCode);
@@ -42,9 +46,9 @@ export const TransferReceivePanel: React.FC<{ embedded?: boolean }> = ({ embedde
   }
 
   async function startReceive() {
-    const code = pickupCode.replace(/\D/g, '');
-    if (code.length !== 6) {
-      setError('请输入 6 位数字取件码');
+    const code = normalizePickupCode(pickupCode);
+    if (code.length !== 8) {
+      setError('请输入 8 位英数字取件码');
       return;
     }
 
@@ -95,19 +99,22 @@ export const TransferReceivePanel: React.FC<{ embedded?: boolean }> = ({ embedde
               <p className="text-sm font-semibold text-brand-light dark:text-brand-dark mb-2">在线快传</p>
               <h1 className="text-3xl font-bold text-text-primary-light dark:text-white">接收 P2P 文件</h1>
               <p className="mt-3 text-text-secondary-light dark:text-text-secondary-dark">
-                输入发送方给你的 6 位取件码，浏览器会通过 WebRTC DataChannel 直连接收文件。文件内容不会经过服务器。
+                输入发送方给你的 8 位英数字取件码，浏览器会通过 WebRTC DataChannel 直连接收文件。文件内容不会经过服务器。
               </p>
             </div>
 
             <div className="flex flex-col sm:flex-row gap-3">
               <input
                 type="text"
-                inputMode="numeric"
-                maxLength={6}
+                inputMode="text"
+                autoCapitalize="characters"
+                autoCorrect="off"
+                spellCheck={false}
+                maxLength={8}
                 className="input-field flex-1 tracking-[0.25em] text-xl font-bold"
                 placeholder="取件码"
                 value={pickupCode}
-                onChange={(event) => setPickupCode(event.target.value.replace(/\D/g, '').slice(0, 6))}
+                onChange={(event) => setPickupCode(normalizePickupCode(event.target.value))}
                 onKeyDown={(event) => {
                   if (event.key === 'Enter') {
                     void startReceive();
@@ -125,7 +132,12 @@ export const TransferReceivePanel: React.FC<{ embedded?: boolean }> = ({ embedde
 
             {sessionInfo && (
               <div className="mt-6 rounded-xl bg-[#F8FBFF] dark:bg-black/20 p-4 text-sm text-text-secondary-light dark:text-text-secondary-dark">
-                <p>取件码：<span className="font-bold text-brand-light dark:text-brand-dark tracking-[0.2em]">{sessionInfo.pickupCode}</span></p>
+                <p>
+                  取件码：
+                  <span className="break-all font-bold tracking-[0.08em] text-brand-light dark:text-brand-dark">
+                    {sessionInfo.pickupCode}
+                  </span>
+                </p>
                 <p className="mt-1">过期时间：{formatDateTime(sessionInfo.expiresAt)}</p>
               </div>
             )}

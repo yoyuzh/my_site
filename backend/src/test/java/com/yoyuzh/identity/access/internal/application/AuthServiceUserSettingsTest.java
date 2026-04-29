@@ -89,6 +89,7 @@ class AuthServiceUserSettingsTest {
         var response = authService.getSettings("alice");
 
         assertThat(response.defaultOpenWithByExt()).isEmpty();
+        assertThat(response.uploadConcurrency()).isEqualTo(2);
     }
 
     @Test
@@ -103,7 +104,8 @@ class AuthServiceUserSettingsTest {
                         "en-US",
                         "dark",
                         true,
-                        Map.of("md", "markdown", "txt", "code-monaco")
+                        Map.of("md", "markdown", "txt", "code-monaco"),
+                        4
                 )
         );
 
@@ -112,6 +114,7 @@ class AuthServiceUserSettingsTest {
         assertThat(response.disableViewSync()).isTrue();
         assertThat(response.defaultOpenWithByExt()).containsEntry("md", "markdown");
         assertThat(response.defaultOpenWithByExt()).containsEntry("txt", "code-monaco");
+        assertThat(response.uploadConcurrency()).isEqualTo(4);
         verify(userRepository).save(user);
     }
 
@@ -124,11 +127,12 @@ class AuthServiceUserSettingsTest {
 
         var response = authService.updateSettings(
                 "alice",
-                new UpdateUserSettingsRequest("zh-CN", "system", false, Map.of())
+                new UpdateUserSettingsRequest("zh-CN", "system", false, Map.of(), 99)
         );
 
         assertThat(response.defaultOpenWithByExt()).isEmpty();
         assertThat(user.getDefaultOpenWithByExtJson()).isEqualTo("{}");
+        assertThat(response.uploadConcurrency()).isEqualTo(8);
     }
 
     private User user(String username) {

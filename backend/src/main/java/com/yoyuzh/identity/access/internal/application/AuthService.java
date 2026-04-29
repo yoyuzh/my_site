@@ -48,6 +48,9 @@ import java.util.TreeMap;
 @Service
 @RequiredArgsConstructor
 public class AuthService {
+    private static final int MIN_UPLOAD_CONCURRENCY = 1;
+    private static final int MAX_UPLOAD_CONCURRENCY = 8;
+
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
     private final WorkspaceBootstrapApi workspaceBootstrapApi;
@@ -169,7 +172,8 @@ public class AuthService {
                 user.getPreferredLanguage(),
                 normalizePreferredTheme(user.getPreferredTheme()),
                 user.isDisableViewSync(),
-                readOpenWithPreferences(user)
+                readOpenWithPreferences(user),
+                normalizeUploadConcurrency(user.getUploadConcurrency())
         );
     }
 
@@ -187,6 +191,9 @@ public class AuthService {
         }
         if (request.defaultOpenWithByExt() != null) {
             user.setDefaultOpenWithByExtJson(writeOpenWithPreferences(normalizeOpenWithPreferences(request.defaultOpenWithByExt())));
+        }
+        if (request.uploadConcurrency() != null) {
+            user.setUploadConcurrency(normalizeUploadConcurrency(request.uploadConcurrency()));
         }
         return getSettings(userRepository.save(user).getUsername());
     }
@@ -368,6 +375,16 @@ public class AuthService {
             ext = ext.substring(1);
         }
         return ext;
+    }
+
+    private int normalizeUploadConcurrency(int uploadConcurrency) {
+        if (uploadConcurrency < MIN_UPLOAD_CONCURRENCY) {
+            return MIN_UPLOAD_CONCURRENCY;
+        }
+        if (uploadConcurrency > MAX_UPLOAD_CONCURRENCY) {
+            return MAX_UPLOAD_CONCURRENCY;
+        }
+        return uploadConcurrency;
     }
 
     private WorkspaceUserContext workspaceUser(User user) {

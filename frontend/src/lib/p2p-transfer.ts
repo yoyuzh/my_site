@@ -4,11 +4,35 @@ import { pollTransferSignals, postTransferSignal } from './transfer';
 const SIGNAL_POLL_INTERVAL_MS = 900;
 const CHUNK_SIZE = 64 * 1024;
 const MAX_BUFFERED_AMOUNT = 4 * 1024 * 1024;
+const CONNECTION_TIMEOUT_MS = 15000;
 
-const ICE_SERVERS: RTCIceServer[] = [
+const DEFAULT_ICE_SERVERS: RTCIceServer[] = [
   { urls: 'stun:stun.l.google.com:19302' },
   { urls: 'stun:global.stun.twilio.com:3478' },
 ];
+
+function loadIceServers(): RTCIceServer[] {
+  const raw = (import.meta as ImportMeta & { env?: Record<string, string | undefined> }).env?.VITE_WEBRTC_ICE_SERVERS;
+  if (!raw || typeof raw !== 'string') {
+    return DEFAULT_ICE_SERVERS;
+  }
+
+  try {
+    const parsed = JSON.parse(raw);
+    if (
+      Array.isArray(parsed) &&
+      parsed.every((item) => item && typeof item === 'object' && 'urls' in item)
+    ) {
+      return parsed as RTCIceServer[];
+    }
+  } catch (error) {
+    console.warn('Failed to parse VITE_WEBRTC_ICE_SERVERS, falling back to default STUN servers.', error);
+  }
+
+  return DEFAULT_ICE_SERVERS;
+}
+
+const ICE_SERVERS = loadIceServers();
 
 type TransferRole = 'sender' | 'receiver';
 type SignalType = 'webrtc-offer' | 'webrtc-answer' | 'webrtc-ice-candidate';
@@ -52,6 +76,8 @@ type TransferControlMessage =
   | { kind: 'file-end'; id: string }
   | { kind: 'transfer-complete' };
 
+type EndOfCandidatesSignal = { candidate: '' };
+
 function assertWebRtcSupported() {
   if (!window.RTCPeerConnection) {
     throw new Error('当前浏览器不支持 WebRTC，无法使用在线 P2P 快传');
@@ -68,6 +94,10 @@ function safeJsonParse<T>(value: string): T | null {
   } catch {
     return null;
   }
+}
+
+function isEndOfCandidatesSignal(value: unknown): value is EndOfCandidatesSignal {
+  return value != null && typeof value === 'object' && 'candidate' in value && (value as { candidate?: unknown }).candidate === '';
 }
 
 function createId() {
@@ -129,8 +159,8 @@ async function waitForBufferedAmount(channel: RTCDataChannel) {
 
 async function addCandidateOrQueue(
   peer: RTCPeerConnection,
-  candidate: RTCIceCandidateInit,
-  pendingCandidates: RTCIceCandidateInit[],
+  candidate: RTCIceCandidateInit | null,
+  pendingCandidates: Array<RTCIceCandidateInit | null>,
 ) {
   if (!peer.remoteDescription) {
     pendingCandidates.push(candidate);
@@ -139,12 +169,10 @@ async function addCandidateOrQueue(
   await peer.addIceCandidate(candidate);
 }
 
-async function flushCandidates(peer: RTCPeerConnection, pendingCandidates: RTCIceCandidateInit[]) {
+async function flushCandidates(peer: RTCPeerConnection, pendingCandidates: Array<RTCIceCandidateInit | null>) {
   while (peer.remoteDescription && pendingCandidates.length > 0) {
     const candidate = pendingCandidates.shift();
-    if (candidate) {
-      await peer.addIceCandidate(candidate);
-    }
+    await peer.addIceCandidate(candidate ?? null);
   }
 }
 
@@ -168,7 +196,9 @@ async function pollSignals(
 class P2pTransferBase {
   protected stopped = false;
   protected peer: RTCPeerConnection | null = null;
-  protected pendingCandidates: RTCIceCandidateInit[] = [];
+  protected pendingCandidates: Array<RTCIceCandidateInit | null> = [];
+  private connectionTimeoutId: number | null = null;
+  private connectionEstablished = false;
 
   constructor(
     protected readonly sessionId: string,
@@ -178,6 +208,7 @@ class P2pTransferBase {
 
   stop() {
     this.stopped = true;
+    this.clearConnectionTimeout();
     this.peer?.close();
     this.peer = null;
   }
@@ -185,6 +216,7 @@ class P2pTransferBase {
   protected isStopped = () => this.stopped;
 
   protected reportError(error: unknown) {
+    this.clearConnectionTimeout();
     this.callbacks.onError?.(error instanceof Error ? error.message : 'P2P 快传失败');
   }
 
@@ -196,17 +228,39 @@ class P2pTransferBase {
     peer.onicecandidate = (event) => {
       if (event.candidate) {
         void this.postSignal('webrtc-ice-candidate', event.candidate.toJSON()).catch((error) => this.reportError(error));
+        return;
       }
+      void this.postSignal('webrtc-ice-candidate', { candidate: '' }).catch((error) => this.reportError(error));
     };
     peer.onconnectionstatechange = () => {
       if (peer.connectionState === 'connected') {
+        this.connectionEstablished = true;
+        this.clearConnectionTimeout();
         this.callbacks.onStatus?.('P2P 连接已建立');
       } else if (peer.connectionState === 'failed') {
-        this.callbacks.onError?.('P2P 连接失败，当前网络可能需要 TURN 中继');
+        this.reportError('P2P 连接失败，当前网络可能需要 TURN 中继');
       } else if (peer.connectionState === 'disconnected') {
         this.callbacks.onStatus?.('P2P 连接已断开');
       }
     };
+  }
+
+  protected startConnectionTimeout() {
+    this.clearConnectionTimeout();
+    this.connectionEstablished = false;
+    this.connectionTimeoutId = window.setTimeout(() => {
+      if (this.stopped || this.connectionEstablished) {
+        return;
+      }
+      this.callbacks.onError?.('P2P 连接超时，当前环境可能无法直连。请改用“稍后接收”或为前端配置 TURN 中继。');
+    }, CONNECTION_TIMEOUT_MS);
+  }
+
+  protected clearConnectionTimeout() {
+    if (this.connectionTimeoutId != null) {
+      window.clearTimeout(this.connectionTimeoutId);
+      this.connectionTimeoutId = null;
+    }
   }
 }
 
@@ -228,6 +282,7 @@ export class P2pSender extends P2pTransferBase {
     const peer = createPeerConnection();
     this.peer = peer;
     this.configurePeer(peer);
+    this.startConnectionTimeout();
 
     const channel = peer.createDataChannel('yoyuzh-online-transfer', { ordered: true });
     this.channel = channel;
@@ -268,9 +323,13 @@ export class P2pSender extends P2pTransferBase {
       return;
     }
     if (signal.type === 'webrtc-ice-candidate') {
-      const candidate = safeJsonParse<RTCIceCandidateInit>(signal.payload);
-      if (candidate) {
-        await addCandidateOrQueue(this.peer, candidate, this.pendingCandidates);
+      const candidatePayload = safeJsonParse<RTCIceCandidateInit | EndOfCandidatesSignal>(signal.payload);
+      if (candidatePayload) {
+        await addCandidateOrQueue(
+          this.peer,
+          isEndOfCandidatesSignal(candidatePayload) ? null : candidatePayload,
+          this.pendingCandidates,
+        );
       }
     }
   }
@@ -331,6 +390,7 @@ export class P2pReceiver extends P2pTransferBase {
     const peer = createPeerConnection();
     this.peer = peer;
     this.configurePeer(peer);
+    this.startConnectionTimeout();
 
     peer.ondatachannel = (event) => {
       const channel = event.channel;
@@ -367,9 +427,13 @@ export class P2pReceiver extends P2pTransferBase {
       return;
     }
     if (signal.type === 'webrtc-ice-candidate') {
-      const candidate = safeJsonParse<RTCIceCandidateInit>(signal.payload);
-      if (candidate) {
-        await addCandidateOrQueue(this.peer, candidate, this.pendingCandidates);
+      const candidatePayload = safeJsonParse<RTCIceCandidateInit | EndOfCandidatesSignal>(signal.payload);
+      if (candidatePayload) {
+        await addCandidateOrQueue(
+          this.peer,
+          isEndOfCandidatesSignal(candidatePayload) ? null : candidatePayload,
+          this.pendingCandidates,
+        );
       }
     }
   }

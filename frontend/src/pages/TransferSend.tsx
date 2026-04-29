@@ -361,21 +361,30 @@ const TransferSend: React.FC = () => {
                         <p className="text-sm font-bold text-brand-light mb-3 flex items-center gap-2">
                           <Info size={14} /> 把取件码告诉对方
                         </p>
-                        <div className="flex items-center justify-between gap-4">
-                          <div className="text-4xl font-black text-brand-light tracking-[0.3em] font-mono leading-none">
-                            {createdSession.pickupCode}
+                        <button
+                          type="button"
+                          className={clsx(
+                            "w-full min-w-0 rounded-2xl border px-5 py-4 text-left transition-all",
+                            copyFeedback === 'code'
+                              ? "border-emerald-500 bg-emerald-500/10"
+                              : "border-brand-light/10 bg-white/60 hover:border-brand-light/30 hover:bg-white/80 dark:bg-black/10 dark:hover:bg-black/20"
+                          )}
+                          onClick={() => void copyText(createdSession.pickupCode, 'code')}
+                        >
+                          <div className="grid grid-cols-4 gap-2 sm:grid-cols-8">
+                            {createdSession.pickupCode.split('').map((char, index) => (
+                              <span
+                                key={`${char}-${index}`}
+                                className="flex min-w-0 items-center justify-center rounded-xl bg-white/85 px-0 py-3 text-center font-mono text-[clamp(1.35rem,5vw,2.1rem)] font-black leading-none text-brand-light shadow-sm dark:bg-white/5"
+                              >
+                                {char}
+                              </span>
+                            ))}
                           </div>
-                          <button
-                            className={clsx(
-                              "flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold transition-all",
-                              copyFeedback === 'code' ? "bg-emerald-500 text-white" : "bg-brand-light text-white hover:bg-brand-dark shadow-lg shadow-brand-light/20"
-                            )}
-                            onClick={() => void copyText(createdSession.pickupCode, 'code')}
-                          >
-                            {copyFeedback === 'code' ? <Check size={16} /> : <Copy size={16} />}
-                            {copyFeedback === 'code' ? '已复制' : '复制'}
-                          </button>
-                        </div>
+                          <p className="mt-3 text-xs font-semibold text-text-secondary-light dark:text-text-secondary-dark">
+                            {copyFeedback === 'code' ? '已复制取件码' : '点击取件码即可复制'}
+                          </p>
+                        </button>
                       </div>
 
                       <div className="p-6 bg-[#F8FBFF] dark:bg-white/5 rounded-2xl border border-[#D9E3F2] dark:border-[#222233]">
@@ -503,17 +512,6 @@ const TransferSend: React.FC = () => {
                 </div>
               )}
 
-              <div className="card-container p-6 flex items-start gap-4">
-                <div className="w-10 h-10 rounded-xl bg-brand-light/10 text-brand-light flex items-center justify-center shrink-0">
-                  <Info size={20} />
-                </div>
-                <div>
-                  <h3 className="font-bold text-text-primary-light dark:text-white mb-1">如何接收？</h3>
-                  <p className="text-sm text-text-secondary-light dark:text-text-secondary-dark leading-relaxed">
-                    将取件码或链接发给接收方。对方只需在本站“快传”页面切到“接收”标签，输入取件码即可开始下载。
-                  </p>
-                </div>
-              </div>
             </div>
 
             <aside className="space-y-6">
@@ -538,7 +536,9 @@ const TransferSend: React.FC = () => {
                         onClick={() => setCreatedSession(session)}
                       >
                         <div className="flex justify-between items-start mb-1">
-                          <span className="font-mono font-bold text-brand-light">{session.pickupCode}</span>
+                          <span className="min-w-0 pr-2 break-all text-sm font-mono font-bold leading-5 tracking-[0.08em] text-brand-light">
+                            {session.pickupCode}
+                          </span>
                           <span className="text-[10px] px-1.5 py-0.5 rounded bg-black/5 dark:bg-white/5 text-text-muted-light dark:text-text-muted-dark">
                             {session.files.length} 文件
                           </span>

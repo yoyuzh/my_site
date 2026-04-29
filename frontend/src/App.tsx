@@ -84,6 +84,7 @@ function App() {
             <Route path="/register" element={<Register />} />
             
             {/* Public Share Route */}
+            <Route path="/share" element={<FileShare />} />
             <Route path="/share/:id" element={<FileShare />} />
             <Route path="/transfer/receive" element={<TransferReceive />} />
             

@@ -3,6 +3,7 @@ import { Alert, Dialog, DialogContent, DialogTitle, IconButton, LinearProgress, 
 import { X } from 'lucide-react';
 import { ReactReader } from 'react-reader';
 import type { FileItem } from '../../api/types';
+import { resolveApiUrl } from '../../api/client';
 import { getFileDownloadUrl } from '../../lib/files';
 
 export interface EpubViewerDialogProps {
@@ -26,7 +27,7 @@ export const EpubViewerDialog: React.FC<EpubViewerDialogProps> = ({ file, onClos
     void getFileDownloadUrl(file.id, { viewer: true })
       .then((result) => {
         if (!disposed) {
-          setSourceUrl(new URL(result.url, window.location.origin).toString());
+          setSourceUrl(resolveApiUrl(result.url));
         }
       })
       .catch((loadError) => {

@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useMutation, useQuery } from '@tanstack/react-query';
-import { useParams } from 'react-router-dom';
+import { useParams, useSearchParams } from 'react-router-dom';
 import Topbar from '../components/Topbar';
 import BackgroundEffects from '../components/BackgroundEffects';
 import { formatBytes, formatDateTime } from '../lib/format';
@@ -10,29 +10,31 @@ import { getSession } from '../lib/session';
 
 const FileShare: React.FC = () => {
   const { id } = useParams<{ id: string }>();
+  const [searchParams] = useSearchParams();
   const [password, setPassword] = useState('');
   const [verifiedShare, setVerifiedShare] = useState<Awaited<ReturnType<typeof getShareDetails>> | null>(null);
   const session = getSession();
+  const shareToken = id?.trim() || searchParams.get('token')?.trim() || '';
 
   const shareQuery = useQuery({
-    queryKey: ['publicShare', id],
-    queryFn: () => getShareDetails(id ?? ''),
-    enabled: !!id,
+    queryKey: ['publicShare', shareToken],
+    queryFn: () => getShareDetails(shareToken),
+    enabled: shareToken.length > 0,
   });
 
   const verifyMutation = useMutation({
-    mutationFn: (value: string) => verifySharePassword(id ?? '', { password: value }),
+    mutationFn: (value: string) => verifySharePassword(shareToken, { password: value }),
     onSuccess: (result) => {
       setVerifiedShare(result);
     },
   });
 
   const importMutation = useMutation({
-    mutationFn: () => importShare(id ?? '', '/', password || undefined),
+    mutationFn: () => importShare(shareToken, '/', password || undefined),
   });
 
   const saveMutation = useMutation({
-    mutationFn: () => saveShare(id ?? '', password || undefined),
+    mutationFn: () => saveShare(shareToken, password || undefined),
     onSuccess: () => {
       alert('已成功保存到与我共享');
     },
@@ -159,7 +161,7 @@ const FileShare: React.FC = () => {
 
         <div className="mt-12 flex flex-wrap gap-4 ml-4">
           <a
-            href={canDownload && id ? buildShareDownloadUrl(id, password || undefined) : '#'}
+            href={canDownload && shareToken ? buildShareDownloadUrl(shareToken, password || undefined) : '#'}
             className={`btn-primary w-[212px] text-center ${canDownload ? '' : 'pointer-events-none opacity-50'}`}
           >
             下载文件

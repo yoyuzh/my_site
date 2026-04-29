@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { Alert, Dialog, DialogContent, DialogTitle, IconButton, LinearProgress, Stack, Typography } from '@mui/material';
 import { X } from 'lucide-react';
 import type { FileItem, FileViewerDefinition } from '../../api/types';
+import { resolveApiUrl } from '../../api/client';
 import { getFileDownloadUrl } from '../../lib/files';
 
 function getLogicalPath(file: Pick<FileItem, 'filename' | 'path'>) {
@@ -76,7 +77,7 @@ export const CustomViewerFrame: React.FC<CustomViewerFrameProps> = ({ file, view
     void getFileDownloadUrl(file.id, { viewer: true })
       .then((result) => {
         if (!disposed) {
-          setSourceUrl(new URL(result.url, window.location.origin).toString());
+          setSourceUrl(resolveApiUrl(result.url));
         }
       })
       .catch((loadError) => {

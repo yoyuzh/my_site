@@ -35,7 +35,9 @@ public class AdminRuntimeSettingsService implements AdminRuntimeSettingsApi {
 
     @Transactional(readOnly = true)
     public State snapshot() {
-        return toState(ensureCurrentState());
+        return adminRuntimeSettingsStateRepository.findById(STATE_ID)
+                .map(this::toState)
+                .orElse(defaultState);
     }
 
     @Transactional

@@ -194,7 +194,12 @@ export async function createDirectory(path: string) {
   });
 }
 
-export async function uploadFile(path: string, file: File, signal?: AbortSignal) {
+export async function uploadFile(
+  path: string,
+  file: File,
+  signal?: AbortSignal,
+  onProgress?: (progress: { loaded: number; total: number }) => void,
+) {
   const params = new URLSearchParams({ path });
   const formData = new FormData();
   formData.append('file', file);
@@ -203,6 +208,13 @@ export async function uploadFile(path: string, file: File, signal?: AbortSignal)
     method: 'POST',
     data: formData,
     signal,
+    timeout: 0,
+    onUploadProgress: (event) => {
+      onProgress?.({
+        loaded: event.loaded,
+        total: event.total ?? file.size,
+      });
+    },
   });
 }
 

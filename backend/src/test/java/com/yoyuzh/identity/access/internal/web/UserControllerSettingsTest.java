@@ -66,7 +66,7 @@ class UserControllerSettingsTest {
     @Test
     void shouldExposeSettings() throws Exception {
         when(authService.getSettings("demo"))
-                .thenReturn(new UserSettingsResponse("demo", "zh-CN", "system", false, Map.of("md", "markdown")));
+                .thenReturn(new UserSettingsResponse("demo", "zh-CN", "system", false, Map.of("md", "markdown"), 2));
 
         mockMvc.perform(get("/api/user/settings").with(user(userDetails())))
                 .andExpect(status().isOk())
@@ -74,7 +74,8 @@ class UserControllerSettingsTest {
                 .andExpect(jsonPath("$.data.preferredLanguage").value("zh-CN"))
                 .andExpect(jsonPath("$.data.preferredTheme").value("system"))
                 .andExpect(jsonPath("$.data.disableViewSync").value(false))
-                .andExpect(jsonPath("$.data.defaultOpenWithByExt.md").value("markdown"));
+                .andExpect(jsonPath("$.data.defaultOpenWithByExt.md").value("markdown"))
+                .andExpect(jsonPath("$.data.uploadConcurrency").value(2));
     }
 
     @Test
@@ -83,10 +84,11 @@ class UserControllerSettingsTest {
                 "en-US",
                 "dark",
                 true,
-                Map.of("md", "markdown")
+                Map.of("md", "markdown"),
+                4
         );
         when(authService.updateSettings("demo", request))
-                .thenReturn(new UserSettingsResponse("demo", "en-US", "dark", true, Map.of("md", "markdown")));
+                .thenReturn(new UserSettingsResponse("demo", "en-US", "dark", true, Map.of("md", "markdown"), 4));
 
         mockMvc.perform(put("/api/user/settings")
                         .with(user(userDetails()))
@@ -96,7 +98,8 @@ class UserControllerSettingsTest {
                 .andExpect(jsonPath("$.data.preferredLanguage").value("en-US"))
                 .andExpect(jsonPath("$.data.preferredTheme").value("dark"))
                 .andExpect(jsonPath("$.data.disableViewSync").value(true))
-                .andExpect(jsonPath("$.data.defaultOpenWithByExt.md").value("markdown"));
+                .andExpect(jsonPath("$.data.defaultOpenWithByExt.md").value("markdown"))
+                .andExpect(jsonPath("$.data.uploadConcurrency").value(4));
 
         verify(authService).updateSettings("demo", request);
     }

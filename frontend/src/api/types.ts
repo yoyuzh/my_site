@@ -45,6 +45,7 @@ export interface UserSettings {
   preferredTheme: 'system' | 'light' | 'dark';
   disableViewSync: boolean;
   defaultOpenWithByExt: Record<string, string>;
+  uploadConcurrency: number;
 }
 
 export interface UpdateUserSettingsPayload {
@@ -52,6 +53,7 @@ export interface UpdateUserSettingsPayload {
   preferredTheme?: 'system' | 'light' | 'dark';
   disableViewSync?: boolean;
   defaultOpenWithByExt?: Record<string, string>;
+  uploadConcurrency?: number;
 }
 
 export type FileViewerType = 'builtin' | 'custom' | 'wopi';

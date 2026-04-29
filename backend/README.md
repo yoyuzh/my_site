@@ -36,6 +36,61 @@ mvn spring-boot:run -Dspring-boot.run.profiles=dev
 
 当前 dev container 会把 `SPRING_DATASOURCE_URL` 覆盖到 `/var/lib/my-site-h2/yoyuzh_portal_dev`。只要不删除对应的 Docker volume，重建后端容器后开发数据会保留。
 
+## Production Docker
+
+仓库现在提供了一套后端生产容器化配置：
+
+- `backend/Dockerfile`：构建 Spring Boot 生产镜像
+- `backend/.env.docker.example`：容器运行环境变量模板
+- `docker-compose.backend.yml`：本地或新环境联调用的 `backend + mysql` 示例编排
+
+### 1. 准备容器环境变量
+
+先复制模板：
+
+```bash
+cp backend/.env.docker.example backend/.env.docker
+```
+
+至少要填写：
+
+- `APP_JWT_SECRET`
+- `SPRING_DATASOURCE_USERNAME`
+- `SPRING_DATASOURCE_PASSWORD`
+
+如果你想复用宿主机已有 MySQL，而不是启动 compose 里的 `mysql` 服务，把 `SPRING_DATASOURCE_URL` 改成：
+
+```env
+SPRING_DATASOURCE_URL=jdbc:mysql://host.docker.internal:3306/yoyuzh_portal?useSSL=false&serverTimezone=Asia/Shanghai&characterEncoding=utf8
+```
+
+### 2. 运行方式
+
+本地一把拉起 `backend + mysql`：
+
+```bash
+docker compose -f docker-compose.backend.yml up --build -d
+```
+
+如果只启动后端容器，并复用宿主机现有 MySQL：
+
+```bash
+docker compose -f docker-compose.backend.yml up --build -d backend
+```
+
+### 3. 镜像内默认行为
+
+- 默认使用 `prod` profile
+- 默认监听 `0.0.0.0:8080`
+- 默认关闭 Redis
+- 默认把本地文件存储写到容器内 `/app/storage`
+
+### 4. 数据库说明
+
+- `docker-compose.backend.yml` 里的 `mysql` 服务会挂载 `backend/sql/mysql-init.sql`
+- 后端如果继续使用本地文件系统存储，建议保留命名 volume `my-site-backend-storage`
+- 如果生产环境使用对象存储，把 `YOYUZH_STORAGE_PROVIDER` 和相关 S3 变量切到 `.env.docker`
+
 ## 启动
 
 推荐先在仓库根目录准备并加载 `.env`：

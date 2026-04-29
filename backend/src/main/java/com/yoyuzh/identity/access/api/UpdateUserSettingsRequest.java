@@ -6,6 +6,7 @@ public record UpdateUserSettingsRequest(
         String preferredLanguage,
         String preferredTheme,
         Boolean disableViewSync,
-        Map<String, String> defaultOpenWithByExt
+        Map<String, String> defaultOpenWithByExt,
+        Integer uploadConcurrency
 ) {
 }

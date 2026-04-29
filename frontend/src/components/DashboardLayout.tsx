@@ -12,6 +12,7 @@ interface DashboardLayoutProps {
   children: React.ReactNode;
   title: string;
   hideHeader?: boolean;
+  headerActions?: React.ReactNode;
   registerDropTarget?: (el: HTMLElement | null, path: string) => void;
   activeDropTarget?: string | null;
 }
@@ -20,6 +21,7 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({
   children, 
   title, 
   hideHeader,
+  headerActions,
   registerDropTarget,
   activeDropTarget,
 }) => {
@@ -45,14 +47,17 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({
                 title={title}
                 eyebrow="MY SITE WORKSPACE"
                 actions={
-                  <button
-                    type="button"
-                    aria-label="Open workspace navigation"
-                    className="flex h-11 w-11 items-center justify-center rounded-2xl border border-white/50 bg-white/80 text-slate-900 dark:bg-[#0F1117]/90 dark:text-white lg:hidden"
-                    onClick={() => setMobileOpen(true)}
-                  >
-                    <Menu size={18} />
-                  </button>
+                  <>
+                    {headerActions}
+                    <button
+                      type="button"
+                      aria-label="Open workspace navigation"
+                      className="flex h-11 w-11 items-center justify-center rounded-2xl border border-white/50 bg-white/80 text-slate-900 dark:bg-[#0F1117]/90 dark:text-white lg:hidden"
+                      onClick={() => setMobileOpen(true)}
+                    >
+                      <Menu size={18} />
+                    </button>
+                  </>
                 }
               />
             )}
@@ -83,8 +88,8 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({
           className="fixed inset-0 z-50 bg-slate-950/35 p-4 lg:hidden"
           onClick={() => setMobileOpen(false)}
         >
-          <div className="w-[272px]" onClick={(event) => event.stopPropagation()}>
-            <div className="mb-3 flex justify-end">
+          <div className="flex h-full w-[min(272px,100%)] flex-col" onClick={(event) => event.stopPropagation()}>
+            <div className="mb-3 flex shrink-0 justify-end">
               <button
                 type="button"
                 aria-label="Close workspace navigation"
@@ -94,11 +99,14 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({
                 <X size={18} />
               </button>
             </div>
-            <WorkspaceSidebar 
-              onNavigate={() => setMobileOpen(false)} 
-              registerDropTarget={registerDropTarget}
-              activeDropTarget={activeDropTarget}
-            />
+            <div className="min-h-0 flex-1">
+              <WorkspaceSidebar 
+                onNavigate={() => setMobileOpen(false)} 
+                registerDropTarget={registerDropTarget}
+                activeDropTarget={activeDropTarget}
+                className="w-full"
+              />
+            </div>
           </div>
         </div>
       ) : null}

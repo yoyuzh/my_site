@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import {
   Activity,
@@ -38,6 +38,8 @@ const items = [
   { name: '快传', path: '/dashboard/transfer-send', icon: Send },
 ];
 
+const WORKSPACE_SIDEBAR_SCROLL_STORAGE_KEY = 'workspace-sidebar-scroll-top';
+
 function restoreFilesSectionCollapsed() {
   if (typeof window === 'undefined') {
     return false;
@@ -50,10 +52,12 @@ const WorkspaceSidebar: React.FC<{
   onNavigate?: () => void;
   registerDropTarget?: (el: HTMLElement | null, path: string) => void;
   activeDropTarget?: string | null;
-}> = ({ onNavigate, registerDropTarget, activeDropTarget }) => {
+  className?: string;
+}> = ({ onNavigate, registerDropTarget, activeDropTarget, className }) => {
   const location = useLocation();
   const { data: capacity, isLoading, isError } = useUserCapacity();
   const [filesSectionCollapsed, setFilesSectionCollapsed] = useState(restoreFilesSectionCollapsed);
+  const scrollContainerRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     if (typeof window === 'undefined') {
@@ -65,10 +69,44 @@ const WorkspaceSidebar: React.FC<{
     );
   }, [filesSectionCollapsed]);
 
+  useLayoutEffect(() => {
+    if (typeof window === 'undefined') {
+      return;
+    }
+
+    const scrollTop = window.sessionStorage.getItem(WORKSPACE_SIDEBAR_SCROLL_STORAGE_KEY);
+    if (!scrollTop || !scrollContainerRef.current) {
+      return;
+    }
+
+    scrollContainerRef.current.scrollTop = Number(scrollTop);
+  }, [location.pathname]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return;
+    }
+
+    const element = scrollContainerRef.current;
+    if (!element) {
+      return;
+    }
+
+    const handleScroll = () => {
+      window.sessionStorage.setItem(WORKSPACE_SIDEBAR_SCROLL_STORAGE_KEY, String(element.scrollTop));
+    };
+
+    handleScroll();
+    element.addEventListener('scroll', handleScroll, { passive: true });
+    return () => {
+      element.removeEventListener('scroll', handleScroll);
+    };
+  }, []);
+
   return (
-    <aside className="sidebar-glass flex h-full w-[272px] flex-col overflow-hidden p-4">
+    <aside className={`sidebar-glass flex h-full min-h-0 w-[272px] flex-col overflow-hidden p-4 ${className ?? ''}`}>
       <nav className="flex min-h-0 flex-1 flex-col">
-        <div className="min-h-0 flex-1 overflow-y-auto pr-1">
+        <div ref={scrollContainerRef} className="min-h-0 flex-1 overflow-y-auto pr-1">
           <div className="space-y-1 pb-5">
             {items.map((item) => {
               const Icon = item.icon;

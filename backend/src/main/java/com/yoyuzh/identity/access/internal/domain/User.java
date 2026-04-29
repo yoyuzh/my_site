@@ -22,6 +22,7 @@ import java.time.LocalDateTime;
 public class User {
     public static final long DEFAULT_STORAGE_QUOTA_BYTES = 50L * 1024 * 1024 * 1024;
     public static final long DEFAULT_MAX_UPLOAD_SIZE_BYTES = 500L * 1024 * 1024;
+    public static final int DEFAULT_UPLOAD_CONCURRENCY = 2;
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
@@ -59,6 +60,9 @@ public class User {
 
     @Column(name = "default_open_with_by_ext", columnDefinition = "TEXT")
     private String defaultOpenWithByExtJson;
+
+    @Column(name = "upload_concurrency")
+    private Integer uploadConcurrency;
 
     @Column(name = "avatar_storage_name", length = 255)
     private String avatarStorageName;
@@ -113,6 +117,9 @@ public class User {
         }
         if (maxUploadSizeBytes == null || maxUploadSizeBytes <= 0) {
             maxUploadSizeBytes = DEFAULT_MAX_UPLOAD_SIZE_BYTES;
+        }
+        if (uploadConcurrency == null || uploadConcurrency <= 0) {
+            uploadConcurrency = DEFAULT_UPLOAD_CONCURRENCY;
         }
     }
 
@@ -210,6 +217,17 @@ public class User {
 
     public void setDefaultOpenWithByExtJson(String defaultOpenWithByExtJson) {
         this.defaultOpenWithByExtJson = defaultOpenWithByExtJson;
+    }
+
+    public int getUploadConcurrency() {
+        if (uploadConcurrency == null || uploadConcurrency <= 0) {
+            return DEFAULT_UPLOAD_CONCURRENCY;
+        }
+        return uploadConcurrency;
+    }
+
+    public void setUploadConcurrency(Integer uploadConcurrency) {
+        this.uploadConcurrency = uploadConcurrency;
     }
 
     public String getAvatarStorageName() {

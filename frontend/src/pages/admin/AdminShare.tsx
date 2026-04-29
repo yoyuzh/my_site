@@ -4,6 +4,7 @@ import { Share2, Search, Link as LinkIcon, Trash2, Filter } from 'lucide-react';
 import { useAdminShares } from '../../api/queries';
 import { deleteAdminShare } from '../../api/mutations';
 import { formatDateTime } from '../../lib/format';
+import { buildFullShareUrl } from '../../lib/shares';
 import type { AdminShare as AdminShareItem } from '../../api/types';
 
 function formatShareLimit(value: number | null) {
@@ -47,7 +48,7 @@ const AdminShare: React.FC = () => {
   }
 
   async function copyShareLink(share: AdminShareItem) {
-    const url = `${window.location.origin}/share/${share.token}`;
+    const url = buildFullShareUrl(share.token);
     try {
       await window.navigator.clipboard.writeText(url);
       setStatusMessage(`已复制分享链接：${url}`);

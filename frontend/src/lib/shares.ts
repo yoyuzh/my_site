@@ -1,4 +1,4 @@
-import { apiRequest } from '../api/client';
+import { apiRequest, resolveApiUrl } from '../api/client';
 import type {
   FileItem,
   QueryPage,
@@ -102,7 +102,7 @@ export async function deleteSavedShare(id: number) {
 }
 
 export function buildShareDownloadUrl(token: string, password?: string) {
-  const url = new URL(`/api/v2/shares/${token}`, window.location.origin);
+  const url = new URL(resolveApiUrl(`/v2/shares/${token}`));
   url.searchParams.set('download', '1');
   if (password) {
     url.searchParams.set('password', password);
@@ -111,5 +111,7 @@ export function buildShareDownloadUrl(token: string, password?: string) {
 }
 
 export function buildFullShareUrl(token: string) {
-  return `${window.location.origin}/share/${token}`;
+  const url = new URL('/share', window.location.origin);
+  url.searchParams.set('token', token);
+  return url.toString();
 }

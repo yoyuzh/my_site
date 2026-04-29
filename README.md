@@ -285,6 +285,45 @@ backend/target/yoyuzh-portal-backend-0.0.1-SNAPSHOT.jar
 
 然后将 jar 上传到服务器，并按你的 systemd / SSH 流程重启服务。
 
+### 后端 Docker 化
+
+仓库现在也提供了后端生产容器化配置，入口文件是：
+
+- `backend/Dockerfile`
+- `backend/.env.docker.example`
+- `docker-compose.backend.yml`
+
+准备容器环境变量：
+
+```bash
+cp backend/.env.docker.example backend/.env.docker
+```
+
+这套 compose 默认会启动：
+
+- `backend`
+- `mysql`
+
+启动命令：
+
+```bash
+docker compose -f docker-compose.backend.yml up --build -d
+```
+
+如果只是本地或新机器快速验证，直接使用 `.env.docker` 中默认的 MySQL 服务地址即可。
+
+如果要迁移当前服务器，建议第一阶段只把 `backend` 容器化，继续复用宿主机现有 MySQL。此时把：
+
+```env
+SPRING_DATASOURCE_URL=jdbc:mysql://host.docker.internal:3306/yoyuzh_portal?useSSL=false&serverTimezone=Asia/Shanghai&characterEncoding=utf8
+```
+
+写入 `backend/.env.docker`，再只启动 `backend` 服务。
+
+```bash
+docker compose -f docker-compose.backend.yml up --build -d backend
+```
+
 ## 项目说明
 
 - 注册需要邀请码

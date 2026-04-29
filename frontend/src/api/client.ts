@@ -5,6 +5,43 @@ const CLIENT_HEADER = 'X-Yoyuzh-Client';
 const CLIENT_ID_HEADER = 'X-Yoyuzh-Client-Id';
 const CLIENT_TYPE = 'desktop';
 
+function getDefaultApiBaseUrl() {
+  if (typeof window === 'undefined') {
+    return '/api';
+  }
+
+  const hostname = window.location.hostname.toLowerCase();
+  if (hostname === 'yoyuzh.xyz' || hostname === 'www.yoyuzh.xyz') {
+    return 'https://api.yoyuzh.xyz/api';
+  }
+
+  return '/api';
+}
+
+function normalizeApiBaseUrl(value: string) {
+  try {
+    const url = new URL(value);
+    url.pathname = url.pathname.replace(/\/+$/, '');
+
+    const isLocalHost = url.hostname === 'localhost' || url.hostname === '127.0.0.1';
+    const hasExplicitPort = url.port.length > 0;
+    if (hasExplicitPort && !isLocalHost) {
+      // Production traffic should go through the public origin without an explicit port.
+      url.port = '';
+    }
+
+    return url.toString().replace(/\/+$/, '');
+  } catch {
+    return value.replace(/\/+$/, '');
+  }
+}
+
+const rawApiBaseUrl =
+  (import.meta as ImportMeta & { env?: Record<string, string | undefined> }).env?.VITE_API_BASE_URL?.trim() ||
+  getDefaultApiBaseUrl();
+
+const API_BASE_URL = normalizeApiBaseUrl(rawApiBaseUrl);
+
 type ApiEnvelope<T> = {
   code: number;
   msg: string;
@@ -33,9 +70,36 @@ export class ApiError extends Error {
 }
 
 export const apiClient = axios.create({
-  baseURL: '/api',
+  baseURL: API_BASE_URL,
   timeout: 15000,
 });
+
+export function resolveApiUrl(url: string) {
+  if (!url) {
+    return url;
+  }
+
+  if (typeof window === 'undefined') {
+    return url;
+  }
+
+  try {
+    return new URL(url).toString();
+  } catch {
+    const apiBase = new URL(API_BASE_URL, window.location.origin);
+    const apiBasePath = apiBase.pathname.replace(/\/+$/, '');
+
+    if (url.startsWith('/')) {
+      if (apiBasePath && apiBasePath !== '/' && !url.startsWith(`${apiBasePath}/`) && url !== apiBasePath) {
+        return new URL(`${apiBasePath}${url}`, apiBase.origin).toString();
+      }
+      return new URL(url, apiBase.origin).toString();
+    }
+
+    const baseHref = apiBase.href.endsWith('/') ? apiBase.href : `${apiBase.href}/`;
+    return new URL(url, baseHref).toString();
+  }
+}
 
 export function getClientId() {
   const storageKey = 'portal-client-id';

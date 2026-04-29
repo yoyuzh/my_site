@@ -20,6 +20,7 @@ import { getFileViewerConfig } from '../lib/files';
 import { getUserSettings, updateUserSettings } from '../lib/user-settings';
 import { clearDefaultViewerPreference, setDefaultViewerPreference } from '../lib/file-open-preferences';
 import { getViewersForExtension } from '../lib/file-viewers';
+import { useUploadQueue } from '../hooks/useUploadQueue';
 import { useNavigate } from 'react-router-dom';
 import clsx from 'clsx';
 
@@ -29,6 +30,7 @@ const AccountSettings: React.FC = () => {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const { setUploadConcurrency } = useUploadQueue();
 
   const [profileData, setProfileData] = useState<UpdateProfilePayload>({
     displayName: user?.displayName || '',
@@ -46,6 +48,7 @@ const AccountSettings: React.FC = () => {
 
   const [message, setMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null);
   const [selectedOpenWithExtension, setSelectedOpenWithExtension] = useState('md');
+  const [uploadConcurrencyDraft, setUploadConcurrencyDraft] = useState(2);
 
   const { data: accountSettings } = useQuery({
     queryKey: ['userSettings'],
@@ -95,6 +98,12 @@ const AccountSettings: React.FC = () => {
       });
   }, []);
 
+  useEffect(() => {
+    if (accountSettings?.uploadConcurrency != null) {
+      setUploadConcurrencyDraft(accountSettings.uploadConcurrency);
+    }
+  }, [accountSettings?.uploadConcurrency]);
+
   const profileMutation = useMutation({
     mutationFn: updateProfile,
     onSuccess: () => {
@@ -133,11 +142,13 @@ const AccountSettings: React.FC = () => {
     mutationFn: updateUserSettings,
     onSuccess: (settings) => {
       queryClient.setQueryData(['userSettings'], settings);
-      setMessage({ type: 'success', text: '文件打开方式已更新' });
+      setUploadConcurrency(settings.uploadConcurrency ?? 2);
+      setUploadConcurrencyDraft(settings.uploadConcurrency ?? 2);
+      setMessage({ type: 'success', text: '文件设置已更新' });
       setTimeout(() => setMessage(null), 3000);
     },
     onError: (error: any) => {
-      setMessage({ type: 'error', text: error.message || '更新打开方式失败' });
+      setMessage({ type: 'error', text: error.message || '更新文件设置失败' });
     }
   });
 
@@ -199,6 +210,10 @@ const AccountSettings: React.FC = () => {
 
   const handleClearAllOpenWithDefaults = () => {
     fileSettingsMutation.mutate({ defaultOpenWithByExt: {} });
+  };
+
+  const handleUploadConcurrencySave = () => {
+    fileSettingsMutation.mutate({ uploadConcurrency: uploadConcurrencyDraft });
   };
 
   if (!user) return null;
@@ -457,6 +472,34 @@ const AccountSettings: React.FC = () => {
                   className="w-full rounded-2xl border border-slate-200 px-5 py-3 text-sm font-semibold text-slate-700 transition-colors hover:bg-slate-50 disabled:opacity-50 dark:border-slate-800 dark:text-slate-300 dark:hover:bg-slate-900"
                 >
                   清除全部
+                </button>
+              </div>
+            </div>
+
+            <div className="mt-6 grid gap-4 md:grid-cols-[1fr_auto]">
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-slate-700 dark:text-slate-300">上传线程数</label>
+                <select
+                  value={uploadConcurrencyDraft}
+                  onChange={e => setUploadConcurrencyDraft(Number(e.target.value))}
+                  className="w-full appearance-none rounded-2xl border border-slate-200 bg-white px-4 py-3 text-slate-900 focus:border-blue-500 focus:outline-none dark:border-slate-800 dark:bg-slate-900 dark:text-white"
+                >
+                  {Array.from({ length: 8 }, (_, index) => index + 1).map((value) => (
+                    <option key={value} value={value}>{value} 线程</option>
+                  ))}
+                </select>
+                <p className="text-xs text-slate-500 dark:text-slate-400">
+                  默认双线程上传，修改后会立即用于新的上传任务。
+                </p>
+              </div>
+              <div className="flex items-end">
+                <button
+                  type="button"
+                  disabled={fileSettingsMutation.isPending || uploadConcurrencyDraft === (accountSettings?.uploadConcurrency ?? 2)}
+                  onClick={handleUploadConcurrencySave}
+                  className="w-full rounded-2xl bg-blue-600 px-5 py-3 text-sm font-semibold text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
+                >
+                  保存线程数
                 </button>
               </div>
             </div>

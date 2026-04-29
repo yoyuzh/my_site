@@ -20,7 +20,7 @@ import {
 } from './oss-deploy-lib.mjs';
 
 const repoRoot = process.cwd();
-const frontDir = path.join(repoRoot, 'front');
+const frontDir = path.join(repoRoot, 'frontend');
 const distDir = path.join(frontDir, 'dist');
 
 function parseArgs(argv) {
