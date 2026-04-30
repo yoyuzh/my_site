@@ -152,7 +152,7 @@ class Task3PlatformSeamArchitectureTest {
                 .or()
                 .haveFullyQualifiedName("com.yoyuzh.files.workspace.internal.application.FileUploadRulesService")
                 .or()
-                .haveFullyQualifiedName("com.yoyuzh.files.upload.UploadSessionService")
+                .haveFullyQualifiedName("com.yoyuzh.files.upload.internal.application.UploadSessionService")
                 .or()
                 .haveFullyQualifiedName("com.yoyuzh.files.upload.internal.application.RuntimeUploadTargetPolicy")
                 .or()

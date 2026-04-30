@@ -11,7 +11,7 @@ class FileViewerConfigServiceTest {
 
     @Test
     void shouldExposeAllMigratedViewerDefinitions() {
-        FileViewerConfigService service = new FileViewerConfigService();
+        FileViewerConfigService service = new FileViewerConfigService(true);
 
         var config = service.defaultConfig();
         Set<String> viewerIds = config.fileViewers().stream()
@@ -45,7 +45,7 @@ class FileViewerConfigServiceTest {
 
     @Test
     void shouldExposeNewFileTemplatesForEditableFormats() {
-        FileViewerConfigService service = new FileViewerConfigService();
+        FileViewerConfigService service = new FileViewerConfigService(true);
 
         var templates = service.defaultConfig().fileViewers().stream()
                 .flatMap(viewer -> viewer.templates().stream())
@@ -56,5 +56,20 @@ class FileViewerConfigServiceTest {
                 .containsEntry("md", "markdown")
                 .containsEntry("drawio", "drawio")
                 .containsEntry("excalidraw", "excalidraw");
+    }
+
+    @Test
+    void shouldHideExternalViewersWhenRuntimeCannotProvideDirectDownloads() {
+        FileViewerConfigService service = new FileViewerConfigService(false);
+
+        var config = service.defaultConfig();
+        Set<String> viewerIds = config.fileViewers().stream()
+                .map(viewer -> viewer.id())
+                .collect(Collectors.toSet());
+
+        assertThat(viewerIds)
+                .doesNotContain("google-docs", "microsoft-office");
+        assertThat(config.defaultViewerMapping())
+                .doesNotContainKeys("doc", "docx", "xls", "xlsx", "ppt", "pptx", "odt", "ods", "odp");
     }
 }

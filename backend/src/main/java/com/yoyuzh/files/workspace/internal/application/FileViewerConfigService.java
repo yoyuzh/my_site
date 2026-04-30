@@ -1,10 +1,14 @@
 package com.yoyuzh.files.workspace.internal.application;
 
+import com.yoyuzh.files.content.api.FileContentStorage;
 import com.yoyuzh.files.workspace.api.FileViewerConfigResponse;
 import com.yoyuzh.files.workspace.api.FileViewerDefinition;
 import com.yoyuzh.files.workspace.api.FileViewerTemplate;
+import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -12,8 +16,20 @@ import java.util.Map;
 @Service
 public class FileViewerConfigService {
 
+    private final boolean externalViewerEnabled;
+
+    @Autowired
+    public FileViewerConfigService(ObjectProvider<FileContentStorage> fileContentStorageProvider) {
+        this(fileContentStorageProvider.getIfAvailable() != null
+                && fileContentStorageProvider.getIfAvailable().supportsDirectDownload());
+    }
+
+    public FileViewerConfigService(boolean externalViewerEnabled) {
+        this.externalViewerEnabled = externalViewerEnabled;
+    }
+
     public FileViewerConfigResponse defaultConfig() {
-        List<FileViewerDefinition> viewers = List.of(
+        List<FileViewerDefinition> viewers = new ArrayList<>(List.of(
                 builtin("image", "图片查看器", "image", List.of(
                         "jpg", "jpeg", "png", "gif", "webp", "bmp", "svg", "avif", "ico", "heic"
                 ), null, true, List.of(), Map.of()),
@@ -41,21 +57,23 @@ public class FileViewerConfigService {
                 builtin("excalidraw", "Excalidraw", "pen-tool", List.of("excalidraw"), 50L * 1024 * 1024, true, List.of(
                         template("excalidraw", "excalidraw", "Excalidraw 画板", "未命名.excalidraw", "", "application/json")
                 ), Map.of()),
-                builtin("archive", "压缩包浏览器", "archive", List.of("zip", "rar", "7z", "tar", "gz", "bz2", "xz"), null, true, List.of(), Map.of()),
-                custom("google-docs", "Google 阅读器", "google", List.of(
-                        "doc", "docx", "xls", "xlsx", "ppt", "pptx", "pdf", "odt", "ods", "odp"
-                ), true, Map.of(
-                        "urlTemplate", "https://docs.google.com/gview?embedded=1&url={$src_urlencoded}",
-                        "embed", true
-                )),
-                wopi("microsoft-office", "Microsoft 阅读器", "microsoft", List.of(
-                        "doc", "docx", "xls", "xlsx", "ppt", "pptx", "odt", "ods", "odp"
-                ), true, Map.of(
-                        "urlTemplate", "https://view.officeapps.live.com/op/embed.aspx?src={$src_urlencoded}",
-                        "preferredAction", "view",
-                        "supportsEdit", true
-                ))
-        );
+                builtin("archive", "压缩包浏览器", "archive", List.of("zip", "rar", "7z", "tar", "gz", "bz2", "xz"), null, true, List.of(), Map.of())
+        ));
+        if (externalViewerEnabled) {
+            viewers.add(custom("google-docs", "Google 阅读器", "google", List.of(
+                    "doc", "docx", "xls", "xlsx", "ppt", "pptx", "pdf", "odt", "ods", "odp"
+            ), true, Map.of(
+                    "urlTemplate", "https://docs.google.com/gview?embedded=1&url={$src_urlencoded}",
+                    "embed", true
+            )));
+            viewers.add(wopi("microsoft-office", "Microsoft 阅读器", "microsoft", List.of(
+                    "doc", "docx", "xls", "xlsx", "ppt", "pptx", "odt", "ods", "odp"
+            ), true, Map.of(
+                    "urlTemplate", "https://view.officeapps.live.com/op/embed.aspx?src={$src_urlencoded}",
+                    "preferredAction", "view",
+                    "supportsEdit", true
+            )));
+        }
         return new FileViewerConfigResponse(viewers, defaultViewerMapping());
     }
 
@@ -113,7 +131,9 @@ public class FileViewerConfigService {
         putAll(mapping, "music", "mp3", "wav", "flac", "aac", "m4a", "opus");
         putAll(mapping, "excalidraw", "excalidraw");
         putAll(mapping, "archive", "zip", "rar", "7z", "tar", "gz", "bz2", "xz");
-        putAll(mapping, "microsoft-office", "doc", "docx", "xls", "xlsx", "ppt", "pptx", "odt", "ods", "odp");
+        if (externalViewerEnabled) {
+            putAll(mapping, "microsoft-office", "doc", "docx", "xls", "xlsx", "ppt", "pptx", "odt", "ods", "odp");
+        }
         return Map.copyOf(mapping);
     }
 

@@ -9,17 +9,27 @@ interface UploadTaskPanelProps {
 
 const MAX_VISIBLE_TASKS = 8;
 
+function formatBytes(bytes: number) {
+  if (bytes <= 0) {
+    return '0 B';
+  }
+  const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+  const exponent = Math.min(Math.floor(Math.log(bytes) / Math.log(1024)), units.length - 1);
+  const value = bytes / 1024 ** exponent;
+  return `${value >= 100 || exponent === 0 ? value.toFixed(0) : value.toFixed(1)} ${units[exponent]}`;
+}
+
 const UploadTaskPanel: React.FC<UploadTaskPanelProps> = ({ onClose }) => {
   const { tasks, cancelTask, cancelAllTasks } = useUploadQueue();
   const [showAllTasks, setShowAllTasks] = useState(false);
-
-  if (tasks.length === 0) return null;
 
   useEffect(() => {
     if (tasks.length <= MAX_VISIBLE_TASKS && showAllTasks) {
       setShowAllTasks(false);
     }
   }, [showAllTasks, tasks.length]);
+
+  if (tasks.length === 0) return null;
 
   const activeCount = tasks.filter((t) => t.status === 'uploading' || t.status === 'waiting').length;
   const totalSpeedBytesPerSecond = tasks
@@ -50,16 +60,6 @@ const UploadTaskPanel: React.FC<UploadTaskPanelProps> = ({ onClose }) => {
   }, [tasks]);
   const visibleTasks = showAllTasks ? orderedTasks : orderedTasks.slice(0, MAX_VISIBLE_TASKS);
   const hiddenTaskCount = Math.max(0, orderedTasks.length - visibleTasks.length);
-
-  const formatBytes = (bytes: number) => {
-    if (bytes <= 0) {
-      return '0 B';
-    }
-    const units = ['B', 'KB', 'MB', 'GB', 'TB'];
-    const exponent = Math.min(Math.floor(Math.log(bytes) / Math.log(1024)), units.length - 1);
-    const value = bytes / 1024 ** exponent;
-    return `${value >= 100 || exponent === 0 ? value.toFixed(0) : value.toFixed(1)} ${units[exponent]}`;
-  };
 
   return (
     <div className="fixed bottom-6 right-6 z-[60] w-96 overflow-hidden rounded-3xl border border-white/50 bg-white/95 shadow-2xl backdrop-blur-xl dark:border-white/5 dark:bg-[#161922]/95">

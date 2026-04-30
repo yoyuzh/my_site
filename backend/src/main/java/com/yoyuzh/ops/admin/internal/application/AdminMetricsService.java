@@ -13,7 +13,6 @@ import com.yoyuzh.ops.admin.internal.infra.AdminMetricsStateRepository;
 import com.yoyuzh.ops.admin.internal.infra.AdminRequestTimelinePointEntity;
 import com.yoyuzh.ops.admin.internal.infra.AdminRequestTimelinePointRepository;
 import lombok.RequiredArgsConstructor;
-import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -33,6 +32,7 @@ public class AdminMetricsService implements WorkspaceDownloadMetricsPort, AdminR
     private static final Long STATE_ID = 1L;
     private static final long DEFAULT_OFFLINE_TRANSFER_STORAGE_LIMIT_BYTES = 20L * 1024 * 1024 * 1024;
     private static final int DAILY_ACTIVE_USER_RETENTION_DAYS = 7;
+    private final Object stateInitializationMonitor = new Object();
 
     private final AdminMetricsStateRepository adminMetricsStateRepository;
     private final AdminRequestTimelinePointRepository adminRequestTimelinePointRepository;
@@ -62,7 +62,7 @@ public class AdminMetricsService implements WorkspaceDownloadMetricsPort, AdminR
         }
         LocalDate today = LocalDate.now();
         pruneExpiredDailyActiveUsers(today);
-        AdminDailyActiveUserEntity entry = adminDailyActiveUserRepository.findByMetricDateAndUserIdForUpdate(today, userId)
+        AdminDailyActiveUserEntity entry = adminDailyActiveUserRepository.findByMetricDateAndUserId(today, userId)
                 .orElseGet(() -> createDailyActiveUser(today, userId, username));
         if (!username.equals(entry.getUsername())) {
             entry.setUsername(username);
@@ -75,8 +75,8 @@ public class AdminMetricsService implements WorkspaceDownloadMetricsPort, AdminR
     public void incrementRequestCount() {
         LocalDateTime now = LocalDateTime.now();
         LocalDate today = now.toLocalDate();
-        ensureStateUpdated(() -> adminMetricsStateRepository.incrementRequestCount(STATE_ID, today, now));
-        incrementRequestTimelinePoint(today, now.getHour());
+        ensureStateUpdated(today, now, () -> adminMetricsStateRepository.incrementRequestCount(STATE_ID, today, now));
+        incrementRequestTimelinePoint(today, now.getHour(), now);
     }
 
     @Transactional
@@ -85,7 +85,7 @@ public class AdminMetricsService implements WorkspaceDownloadMetricsPort, AdminR
         if (bytes <= 0) {
             return;
         }
-        ensureStateUpdated(() -> adminMetricsStateRepository.incrementDownloadTrafficBytes(
+        ensureStateUpdated(LocalDate.now(), LocalDateTime.now(), () -> adminMetricsStateRepository.incrementDownloadTrafficBytes(
                 STATE_ID,
                 bytes,
                 LocalDateTime.now()
@@ -97,11 +97,27 @@ public class AdminMetricsService implements WorkspaceDownloadMetricsPort, AdminR
         if (bytes <= 0) {
             return;
         }
-        ensureStateUpdated(() -> adminMetricsStateRepository.incrementTransferUsageBytes(
+        ensureStateUpdated(LocalDate.now(), LocalDateTime.now(), () -> adminMetricsStateRepository.incrementTransferUsageBytes(
                 STATE_ID,
                 bytes,
                 LocalDateTime.now()
         ));
+    }
+
+    @Transactional
+    public void initializeState() {
+        LocalDateTime now = LocalDateTime.now();
+        synchronized (stateInitializationMonitor) {
+            adminMetricsStateRepository.insertIfAbsent(
+                    STATE_ID,
+                    0L,
+                    now.toLocalDate(),
+                    0L,
+                    0L,
+                    DEFAULT_OFFLINE_TRANSFER_STORAGE_LIMIT_BYTES,
+                    now
+            );
+        }
     }
 
     @Transactional
@@ -141,19 +157,9 @@ public class AdminMetricsService implements WorkspaceDownloadMetricsPort, AdminR
     }
 
     private AdminMetricsState createInitialState() {
-        AdminMetricsState state = new AdminMetricsState();
-        state.setId(STATE_ID);
-        state.setRequestCount(0L);
-        state.setRequestCountDate(LocalDate.now());
-        state.setDownloadTrafficBytes(0L);
-        state.setTransferUsageBytes(0L);
-        state.setOfflineTransferStorageLimitBytes(DEFAULT_OFFLINE_TRANSFER_STORAGE_LIMIT_BYTES);
-        try {
-            return adminMetricsStateRepository.saveAndFlush(state);
-        } catch (DataIntegrityViolationException ignored) {
-            return adminMetricsStateRepository.findById(STATE_ID)
-                    .orElseThrow(() -> ignored);
-        }
+        initializeState();
+        return adminMetricsStateRepository.findById(STATE_ID)
+                .orElseThrow(() -> new IllegalStateException("admin metrics state initialization failed"));
     }
 
     private AdminMetricsState refreshRequestCountDateIfNeeded(AdminMetricsState state, LocalDate today, boolean persistImmediately) {
@@ -201,51 +207,58 @@ public class AdminMetricsService implements WorkspaceDownloadMetricsPort, AdminR
                 .toList();
     }
 
-    private void incrementRequestTimelinePoint(LocalDate metricDate, int hour) {
-        AdminRequestTimelinePointEntity point = adminRequestTimelinePointRepository
-                .findByMetricDateAndHourForUpdate(metricDate, hour)
-                .orElseGet(() -> createTimelinePoint(metricDate, hour));
-        point.setRequestCount(point.getRequestCount() + 1);
-        adminRequestTimelinePointRepository.save(point);
-    }
-
-    private AdminRequestTimelinePointEntity createTimelinePoint(LocalDate metricDate, int hour) {
+    private void incrementRequestTimelinePoint(LocalDate metricDate, int hour, LocalDateTime updatedAt) {
+        if (adminRequestTimelinePointRepository.incrementRequestCount(metricDate, hour, updatedAt) > 0) {
+            return;
+        }
+        ensureCurrentStateForUpdate();
+        if (adminRequestTimelinePointRepository.incrementRequestCount(metricDate, hour, updatedAt) > 0) {
+            return;
+        }
         AdminRequestTimelinePointEntity point = new AdminRequestTimelinePointEntity();
         point.setMetricDate(metricDate);
         point.setHour(hour);
-        point.setRequestCount(0L);
-        try {
-            return adminRequestTimelinePointRepository.saveAndFlush(point);
-        } catch (DataIntegrityViolationException ignored) {
-            return adminRequestTimelinePointRepository.findByMetricDateAndHourForUpdate(metricDate, hour)
-                    .orElseThrow(() -> ignored);
-        }
+        point.setRequestCount(1L);
+        adminRequestTimelinePointRepository.save(point);
     }
 
     private AdminDailyActiveUserEntity createDailyActiveUser(LocalDate metricDate, Long userId, String username) {
-        AdminDailyActiveUserEntity entry = new AdminDailyActiveUserEntity();
-        entry.setMetricDate(metricDate);
-        entry.setUserId(userId);
-        entry.setUsername(username);
-        try {
-            return adminDailyActiveUserRepository.saveAndFlush(entry);
-        } catch (DataIntegrityViolationException ignored) {
-            return adminDailyActiveUserRepository.findByMetricDateAndUserIdForUpdate(metricDate, userId)
-                    .orElseThrow(() -> ignored);
-        }
+        ensureCurrentStateForUpdate();
+        return adminDailyActiveUserRepository.findByMetricDateAndUserIdForUpdate(metricDate, userId)
+                .orElseGet(() -> {
+                    AdminDailyActiveUserEntity entry = new AdminDailyActiveUserEntity();
+                    entry.setMetricDate(metricDate);
+                    entry.setUserId(userId);
+                    entry.setUsername(username);
+                    return adminDailyActiveUserRepository.save(entry);
+                });
     }
 
     private void pruneExpiredDailyActiveUsers(LocalDate today) {
         adminDailyActiveUserRepository.deleteAllByMetricDateBefore(today.minusDays(DAILY_ACTIVE_USER_RETENTION_DAYS - 1L));
     }
 
-    private void ensureStateUpdated(Supplier<Integer> updateOperation) {
+    private void ensureStateUpdated(LocalDate requestCountDate, LocalDateTime updatedAt, Supplier<Integer> updateOperation) {
         if (updateOperation.get() > 0) {
             return;
         }
-        createInitialState();
+        initializeStateIfMissing(requestCountDate, updatedAt);
         if (updateOperation.get() == 0) {
             throw new IllegalStateException("admin metrics state update failed");
+        }
+    }
+
+    private void initializeStateIfMissing(LocalDate requestCountDate, LocalDateTime updatedAt) {
+        synchronized (stateInitializationMonitor) {
+            adminMetricsStateRepository.insertIfAbsent(
+                    STATE_ID,
+                    0L,
+                    requestCountDate,
+                    0L,
+                    0L,
+                    DEFAULT_OFFLINE_TRANSFER_STORAGE_LIMIT_BYTES,
+                    updatedAt
+            );
         }
     }
 

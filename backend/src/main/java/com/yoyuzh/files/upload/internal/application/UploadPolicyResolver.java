@@ -1,5 +1,7 @@
-package com.yoyuzh.files.upload;
+package com.yoyuzh.files.upload.internal.application;
 
+import com.yoyuzh.files.upload.api.UploadSessionUploadMode;
+import com.yoyuzh.files.upload.internal.domain.UploadSession;
 import com.yoyuzh.shared.kernel.BusinessException;
 import com.yoyuzh.shared.kernel.ErrorCode;
 import com.yoyuzh.platform.storage.api.StoragePolicyCapabilities;
@@ -18,10 +20,6 @@ public class UploadPolicyResolver {
                                 UploadConstraintPolicy uploadConstraintPolicy) {
         this.uploadModePolicy = uploadModePolicy;
         this.uploadConstraintPolicy = uploadConstraintPolicy;
-    }
-
-    public UploadPolicyResolver() {
-        this(UploadPolicyResolver::resolveDefaultUploadMode, UploadPolicyResolver::resolveDefaultEffectiveMaxUploadSize);
     }
 
     public UploadSessionUploadMode resolveUploadMode(StoragePolicyCapabilities capabilities) {
@@ -49,7 +47,7 @@ public class UploadPolicyResolver {
 
     public long resolveChunkSize(UploadSession session, int partIndex) {
         if (partIndex < 0 || partIndex >= session.getChunkCount()) {
-            throw new BusinessException(ErrorCode.INVALID_INPUT, "鍒嗙墖搴忓彿涓嶅悎娉?");
+            throw new BusinessException(ErrorCode.INVALID_INPUT, "invalid part index");
         }
         if (partIndex < session.getChunkCount() - 1) {
             return session.getChunkSize();
@@ -68,7 +66,7 @@ public class UploadPolicyResolver {
         return UploadSessionUploadMode.DIRECT_MULTIPART;
     }
 
-    private static StorageUploadMode resolveDefaultUploadMode(StoragePolicyCapabilities capabilities) {
+    static StorageUploadMode resolveDefaultUploadMode(StoragePolicyCapabilities capabilities) {
         if (!capabilities.directUpload()) {
             return StorageUploadMode.PROXY;
         }
@@ -78,10 +76,10 @@ public class UploadPolicyResolver {
         return StorageUploadMode.DIRECT_SINGLE;
     }
 
-    private static long resolveDefaultEffectiveMaxUploadSize(long systemMaxFileSize,
-                                                             long userMaxUploadSizeBytes,
-                                                             long policyMaxSizeBytes,
-                                                             long maxObjectSize) {
+    static long resolveDefaultEffectiveMaxUploadSize(long systemMaxFileSize,
+                                                     long userMaxUploadSizeBytes,
+                                                     long policyMaxSizeBytes,
+                                                     long maxObjectSize) {
         long effectiveMaxUploadSize = Math.min(systemMaxFileSize, userMaxUploadSizeBytes);
         if (policyMaxSizeBytes > 0) {
             effectiveMaxUploadSize = Math.min(effectiveMaxUploadSize, policyMaxSizeBytes);

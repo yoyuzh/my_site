@@ -1,6 +1,19 @@
+import Uppy from '@uppy/core';
+import AwsS3 from '@uppy/aws-s3';
+import Tus from '@uppy/tus';
 import { useCallback, useEffect, useState } from 'react';
-import { uploadFile } from '../lib/files';
+import { buildApiHeaders, resolveApiUrl } from '../api/client';
+import {
+  cancelUploadSession,
+  completeUploadSession,
+  createUploadSession,
+  prepareUploadSession,
+  prepareMultipartPartUpload,
+  recordMultipartPart,
+  uploadUploadSessionContent,
+} from '../lib/files';
 import { getUserSettings } from '../lib/user-settings';
+import type { UploadSessionResponse } from '../api/types';
 
 const DEFAULT_UPLOAD_CONCURRENCY = 2;
 const MAX_UPLOAD_CONCURRENCY = 8;
@@ -9,6 +22,7 @@ const SPEED_IDLE_THRESHOLD_MS = 1_500;
 const MONITOR_INTERVAL_MS = 1_000;
 
 export type UploadStatus = 'waiting' | 'uploading' | 'success' | 'cancelled' | 'error';
+type UploadTransport = 'multipart' | 'proxy' | 'single' | 'tus';
 
 export interface UploadTask {
   id: string;
@@ -19,7 +33,9 @@ export interface UploadTask {
   uploadedBytes: number;
   speedBytesPerSecond: number;
   error?: string;
-  abortController?: AbortController;
+  sessionId?: string;
+  transport?: UploadTransport;
+  cancelUpload?: () => void;
   startedAt?: number;
   lastProgressAt?: number;
   lastByteChangeAt?: number;
@@ -28,6 +44,24 @@ export interface UploadTask {
 type QueueSnapshot = {
   tasks: UploadTask[];
   uploadConcurrency: number;
+};
+
+type MultipartPartData = {
+  partNumber: number;
+};
+
+type MultipartUploadPart = {
+  PartNumber?: number | null;
+  ETag?: string | null;
+};
+
+type MultipartUploadSummary = {
+  parts: MultipartUploadPart[];
+};
+
+type UppyProgress = {
+  bytesUploaded: number;
+  bytesTotal?: number | null;
 };
 
 type Listener = (snapshot: QueueSnapshot) => void;
@@ -40,15 +74,14 @@ let monitorHandle: number | null = null;
 let settingsHydrated = false;
 let settingsLoadPromise: Promise<void> | null = null;
 
-const cloneTasks = () => tasks.map((task) => ({ ...task }));
+const cloneTasks = () => tasks.map(({ cancelUpload, ...task }) => ({ ...task }));
 
 const emit = () => {
   syncMonitorState();
-  const snapshot = {
+  listeners.forEach((listener) => listener({
     tasks: cloneTasks(),
     uploadConcurrency,
-  };
-  listeners.forEach((listener) => listener(snapshot));
+  }));
 };
 
 function clampUploadConcurrency(value: number | null | undefined) {
@@ -74,13 +107,8 @@ function patchTask(taskId: string, updater: (task: UploadTask) => UploadTask) {
   if (taskIndex === -1) {
     return null;
   }
-
   const currentTask = tasks[taskIndex];
   const nextTask = updater(currentTask);
-  if (nextTask === currentTask) {
-    return currentTask;
-  }
-
   const nextTasks = [...tasks];
   nextTasks[taskIndex] = nextTask;
   tasks = nextTasks;
@@ -92,7 +120,6 @@ function moveTaskToBottom(taskId: string, updater: (task: UploadTask) => UploadT
   if (taskIndex === -1) {
     return null;
   }
-
   const nextTask = updater(tasks[taskIndex]);
   const nextTasks = [...tasks];
   nextTasks.splice(taskIndex, 1);
@@ -123,6 +150,7 @@ function hasPendingUploadBytes(task: UploadTask) {
 function runMonitorTick() {
   const now = Date.now();
   let changed = false;
+  const stalledCancellations: Array<() => void> = [];
 
   tasks = tasks.map((task) => {
     if (task.status !== 'uploading') {
@@ -142,7 +170,7 @@ function runMonitorTick() {
     }
 
     if (
-      task.abortController &&
+      task.cancelUpload &&
       hasPendingUploadBytes(task) &&
       task.lastByteChangeAt != null &&
       now - task.lastByteChangeAt >= STALL_TIMEOUT_MS
@@ -153,7 +181,9 @@ function runMonitorTick() {
         speedBytesPerSecond: 0,
         error: '上传速度为 0 持续 30 秒，已自动终止',
       };
-      task.abortController.abort();
+      if (task.cancelUpload) {
+        stalledCancellations.push(task.cancelUpload);
+      }
     }
 
     if (nextTask !== task) {
@@ -165,6 +195,7 @@ function runMonitorTick() {
   if (changed) {
     emit();
   }
+  stalledCancellations.forEach((cancel) => cancel());
 }
 
 function handleProgress(taskId: string, loadedBytes: number, totalBytes?: number) {
@@ -179,15 +210,12 @@ function handleProgress(taskId: string, loadedBytes: number, totalBytes?: number
     const previousProgressAt = task.lastProgressAt ?? task.startedAt ?? now;
     const deltaBytes = Math.max(0, safeLoadedBytes - task.uploadedBytes);
     const deltaTimeMs = Math.max(1, now - previousProgressAt);
-    const speedBytesPerSecond = deltaBytes > 0
-      ? (deltaBytes * 1000) / deltaTimeMs
-      : task.speedBytesPerSecond;
 
     return {
       ...task,
       progress: total > 0 ? Math.min(100, Math.round((safeLoadedBytes / total) * 100)) : task.progress,
       uploadedBytes: safeLoadedBytes,
-      speedBytesPerSecond,
+      speedBytesPerSecond: deltaBytes > 0 ? (deltaBytes * 1000) / deltaTimeMs : task.speedBytesPerSecond,
       lastProgressAt: now,
       lastByteChangeAt: deltaBytes > 0 ? now : task.lastByteChangeAt ?? task.startedAt ?? now,
     };
@@ -198,6 +226,153 @@ function handleProgress(taskId: string, loadedBytes: number, totalBytes?: number
   }
 }
 
+function resolveUploadTransport(session: UploadSessionResponse): UploadTransport {
+  if (session.strategy.tusUrl) {
+    return 'tus';
+  }
+  if (session.uploadMode === 'PROXY' && session.strategy.proxyContentUrl && session.strategy.proxyFormField) {
+    return 'proxy';
+  }
+  if (session.uploadMode === 'DIRECT_SINGLE' && session.strategy.prepareUrl) {
+    return 'single';
+  }
+  if (session.uploadMode === 'DIRECT_MULTIPART') {
+    return 'multipart';
+  }
+  throw new Error(`不支持的上传策略: ${session.uploadMode}`);
+}
+
+function resolvePartSize(session: UploadSessionResponse, fileSize: number, partNumber: number) {
+  const zeroBasedPartIndex = Math.max(0, partNumber - 1);
+  const chunkStart = zeroBasedPartIndex * session.chunkSize;
+  return Math.min(session.chunkSize, Math.max(0, fileSize - chunkStart));
+}
+
+function createMultipartUppy(task: UploadTask, session: UploadSessionResponse) {
+  const uppy = new Uppy({
+    autoProceed: false,
+    allowMultipleUploadBatches: false,
+  });
+
+  uppy.use(AwsS3, {
+    shouldUseMultipart: true,
+    limit: Math.max(1, Math.min(uploadConcurrency, 6)),
+    retryDelays: [0, 1000, 3000],
+    getChunkSize: () => Math.max(session.chunkSize, 5 * 1024 * 1024),
+    async createMultipartUpload() {
+      return {
+        uploadId: session.sessionId,
+        key: session.objectKey,
+      };
+    },
+    async listParts() {
+      return [];
+    },
+    async signPart(_file: unknown, partData: MultipartPartData) {
+      const prepared = await prepareMultipartPartUpload(session.sessionId, partData.partNumber - 1);
+      return {
+        url: prepared.uploadUrl,
+        headers: prepared.headers,
+      };
+    },
+    async abortMultipartUpload() {
+      await cancelUploadSession(session.sessionId).catch(() => undefined);
+    },
+    async completeMultipartUpload(_file: unknown, { parts }: MultipartUploadSummary) {
+      for (const part of parts) {
+        if (part.PartNumber == null || !part.ETag) {
+          throw new Error('缺少已上传分片的确认信息');
+        }
+        await recordMultipartPart(
+          session.sessionId,
+          part.PartNumber - 1,
+          part.ETag,
+          resolvePartSize(session, task.file.size, part.PartNumber),
+        );
+      }
+      await completeUploadSession(session.sessionId);
+      return {
+        location: session.objectKey,
+      };
+    },
+  });
+
+  return uppy;
+}
+
+function createDirectSingleUppy(session: UploadSessionResponse) {
+  if (!session.strategy.prepareUrl) {
+    throw new Error('直接上传策略缺少 prepare endpoint');
+  }
+
+  const uppy = new Uppy({
+    autoProceed: false,
+    allowMultipleUploadBatches: false,
+  });
+
+  uppy.use(AwsS3, {
+    shouldUseMultipart: false,
+    retryDelays: [0, 1000, 3000],
+    async getUploadParameters() {
+      const prepared = await prepareUploadSession(session.strategy.prepareUrl!);
+      if (!prepared.direct || !prepared.uploadUrl) {
+        throw new Error('直接上传策略未返回有效的上传地址');
+      }
+      if (prepared.method.toUpperCase() !== 'PUT') {
+        throw new Error(`暂不支持 ${prepared.method} 方式的直传策略`);
+      }
+
+      return {
+        method: 'PUT' as const,
+        url: resolveApiUrl(prepared.uploadUrl),
+        headers: prepared.headers,
+      };
+    },
+  });
+
+  return uppy;
+}
+
+async function uploadProxySessionContent(taskId: string, task: UploadTask, session: UploadSessionResponse, signal: AbortSignal) {
+  const proxyContentUrl = session.strategy.proxyContentUrl;
+  const proxyFormField = session.strategy.proxyFormField;
+  if (!proxyContentUrl || !proxyFormField) {
+    throw new Error('代理上传策略缺少内容上传 endpoint');
+  }
+
+  await uploadUploadSessionContent(
+    proxyContentUrl,
+    proxyFormField,
+    task.file,
+    signal,
+    (progress) => handleProgress(taskId, progress.loaded, progress.total),
+  );
+}
+
+function createTusUppy(session: UploadSessionResponse) {
+  if (!session.strategy.tusUrl) {
+    throw new Error('Tus 上传策略缺少 endpoint');
+  }
+
+  const uppy = new Uppy({
+    autoProceed: false,
+    allowMultipleUploadBatches: false,
+  });
+
+  uppy.use(Tus, {
+    endpoint: resolveApiUrl(session.strategy.tusUrl),
+    headers: {
+      ...buildApiHeaders(),
+      ...(session.strategy.tusHeaders ?? {}),
+    },
+    chunkSize: session.chunkSize > 0 ? session.chunkSize : undefined,
+    retryDelays: [0, 1000, 3000],
+    allowedMetaFields: [],
+  });
+
+  return uppy;
+}
+
 async function startTask(taskId: string) {
   const taskIndex = findTaskIndex(taskId);
   if (taskIndex === -1 || tasks[taskIndex].status !== 'waiting') {
@@ -205,10 +380,9 @@ async function startTask(taskId: string) {
   }
 
   const now = Date.now();
-  const controller = new AbortController();
   const originalTask = tasks[taskIndex];
-
   activeUploadCount += 1;
+
   tasks = [
     ...tasks.slice(0, taskIndex),
     {
@@ -218,7 +392,6 @@ async function startTask(taskId: string) {
       uploadedBytes: 0,
       speedBytesPerSecond: 0,
       error: undefined,
-      abortController: controller,
       startedAt: now,
       lastProgressAt: now,
       lastByteChangeAt: now,
@@ -227,70 +400,123 @@ async function startTask(taskId: string) {
   ];
   emit();
 
-  try {
-    await uploadFile(originalTask.path, originalTask.file, controller.signal, ({ loaded, total }) => {
-      handleProgress(taskId, loaded, total);
-    });
+  let cancelledByUser = false;
+  let uppy: Uppy | null = null;
 
-    const completedTask = moveTaskToBottom(taskId, (task) => {
-      if (task.status !== 'uploading') {
-        return task;
-      }
-      return {
+  try {
+    const session = await createUploadSession(originalTask.path, originalTask.file);
+    const transport = resolveUploadTransport(session);
+    if (transport === 'proxy') {
+      const abortController = new AbortController();
+      patchTask(taskId, (task) => ({
+        ...task,
+        sessionId: session.sessionId,
+        transport,
+        cancelUpload: () => {
+          cancelledByUser = true;
+          abortController.abort();
+          void cancelUploadSession(session.sessionId).catch(() => undefined);
+        },
+      }));
+      emit();
+
+      await uploadProxySessionContent(taskId, originalTask, session, abortController.signal);
+      await completeUploadSession(session.sessionId);
+
+      const completedTask = moveTaskToBottom(taskId, (task) => ({
         ...task,
         status: 'success',
         progress: 100,
         uploadedBytes: task.file.size,
         speedBytesPerSecond: 0,
-        abortController: undefined,
-      };
+        cancelUpload: undefined,
+      }));
+
+      if (completedTask) {
+        emit();
+        window.dispatchEvent(new CustomEvent('upload-success', { detail: { path: originalTask.path, sessionId: session.sessionId } }));
+      }
+      return;
+    }
+
+    uppy = transport === 'multipart'
+      ? createMultipartUppy(originalTask, session)
+      : transport === 'single'
+        ? createDirectSingleUppy(session)
+        : createTusUppy(session);
+    const currentUppy = uppy;
+
+    const fileId = currentUppy.addFile({
+      name: originalTask.file.name,
+      type: originalTask.file.type || 'application/octet-stream',
+      data: originalTask.file,
     });
+
+    patchTask(taskId, (task) => ({
+        ...task,
+        sessionId: session.sessionId,
+        transport,
+        cancelUpload: () => {
+          cancelledByUser = true;
+          void cancelUploadSession(session.sessionId).catch(() => undefined);
+          currentUppy.cancelAll();
+        },
+      }));
+    emit();
+
+    currentUppy.on('upload-progress', (_file: unknown, progress: UppyProgress) => {
+      handleProgress(taskId, progress.bytesUploaded, progress.bytesTotal ?? undefined);
+    });
+
+    const result = await currentUppy.upload();
+    if (!result) {
+      throw new Error('上传未启动');
+    }
+    const failedUploads = result.failed ?? [];
+    if (failedUploads.length > 0) {
+      throw failedUploads[0]?.error ?? new Error('上传失败');
+    }
+
+    if (transport !== 'multipart') {
+      await completeUploadSession(session.sessionId);
+    }
+
+    const completedTask = moveTaskToBottom(taskId, (task) => ({
+      ...task,
+      status: 'success',
+      progress: 100,
+      uploadedBytes: task.file.size,
+      speedBytesPerSecond: 0,
+      cancelUpload: undefined,
+    }));
 
     if (completedTask) {
       emit();
-      window.dispatchEvent(new CustomEvent('upload-success', { detail: { path: originalTask.path } }));
+      window.dispatchEvent(new CustomEvent('upload-success', { detail: { path: originalTask.path, sessionId: session.sessionId, fileId } }));
     }
   } catch (error: unknown) {
     const taskIndexAfterUpload = findTaskIndex(taskId);
     if (taskIndexAfterUpload !== -1) {
       const currentTask = tasks[taskIndexAfterUpload];
-      const isAbortError =
-        error instanceof DOMException && error.name === 'AbortError';
-      const isAxiosCancelledError =
-        error instanceof Error &&
-        (error.name === 'CanceledError' || error.name === 'AbortError');
-
-      if (currentTask.status === 'cancelled') {
+      if (currentTask.status === 'cancelled' || cancelledByUser) {
         patchTask(taskId, (task) => ({
           ...task,
+          cancelUpload: undefined,
           speedBytesPerSecond: 0,
-          abortController: undefined,
-        }));
-      } else if (currentTask.status === 'error') {
-        patchTask(taskId, (task) => ({
-          ...task,
-          speedBytesPerSecond: 0,
-          abortController: undefined,
-        }));
-      } else if (isAbortError || isAxiosCancelledError) {
-        patchTask(taskId, (task) => ({
-          ...task,
-          status: 'cancelled',
-          speedBytesPerSecond: 0,
-          abortController: undefined,
         }));
       } else {
         patchTask(taskId, (task) => ({
           ...task,
           status: 'error',
+          cancelUpload: undefined,
           speedBytesPerSecond: 0,
-          abortController: undefined,
           error: error instanceof Error ? error.message : '上传失败',
         }));
       }
       emit();
     }
   } finally {
+    uppy?.destroy();
     activeUploadCount = Math.max(0, activeUploadCount - 1);
     syncMonitorState();
     pumpQueue();
@@ -325,9 +551,7 @@ async function ensureSettingsHydrated() {
     .then((settings) => {
       applyUploadConcurrency(settings.uploadConcurrency ?? DEFAULT_UPLOAD_CONCURRENCY);
     })
-    .catch(() => {
-      // Keep the local default when the settings endpoint is unavailable.
-    })
+    .catch(() => undefined)
     .finally(() => {
       settingsHydrated = true;
       settingsLoadPromise = null;
@@ -375,10 +599,7 @@ export const useUploadQueue = () => {
     }
 
     const task = tasks[taskIndex];
-    if (task.status === 'uploading' && task.abortController) {
-      task.abortController.abort();
-    }
-
+    const cancelUpload = task.cancelUpload;
     tasks = [
       ...tasks.slice(0, taskIndex),
       {
@@ -386,32 +607,34 @@ export const useUploadQueue = () => {
         status: 'cancelled',
         progress: 0,
         speedBytesPerSecond: 0,
-        abortController: undefined,
+        cancelUpload: undefined,
       },
       ...tasks.slice(taskIndex + 1),
     ];
     emit();
+    cancelUpload?.();
   }, []);
 
   const cancelAllTasks = useCallback(() => {
-    tasks = tasks.map((task) => {
-      if (task.status === 'uploading' && task.abortController) {
-        task.abortController.abort();
-      }
+    const cancellers = tasks
+      .filter((task) => task.status === 'waiting' || task.status === 'uploading')
+      .map((task) => task.cancelUpload)
+      .filter((cancelUpload): cancelUpload is NonNullable<UploadTask['cancelUpload']> => Boolean(cancelUpload));
 
+    tasks = tasks.map((task) => {
       if (task.status === 'waiting' || task.status === 'uploading') {
         return {
           ...task,
           status: 'cancelled',
           progress: 0,
           speedBytesPerSecond: 0,
-          abortController: undefined,
+          cancelUpload: undefined,
         };
       }
-
       return task;
     });
     emit();
+    cancellers.forEach((cancelUpload) => cancelUpload());
   }, []);
 
   const setUploadConcurrency = useCallback((nextUploadConcurrency: number) => {

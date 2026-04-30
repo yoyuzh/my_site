@@ -11,9 +11,11 @@ import type {
   MediaCategory,
   MoveConflictStrategy,
   MoveResponse,
+  PreparedUploadResponse,
   QueryPage,
   RecycleBinItem,
   ThumbnailResponse,
+  UploadSessionResponse,
 } from '../api/types';
 
 export async function listFiles(path = '/', page = 0, size = 100) {
@@ -215,6 +217,89 @@ export async function uploadFile(
         total: event.total ?? file.size,
       });
     },
+  });
+}
+
+export async function createUploadSession(path: string, file: File) {
+  return apiRequest<UploadSessionResponse>({
+    url: '/v2/files/upload-sessions',
+    method: 'POST',
+    data: {
+      path,
+      filename: file.name,
+      contentType: file.type || 'application/octet-stream',
+      size: file.size,
+    },
+  });
+}
+
+export async function getUploadSession(sessionId: string) {
+  return apiRequest<UploadSessionResponse>({
+    url: `/v2/files/upload-sessions/${sessionId}`,
+    method: 'GET',
+  });
+}
+
+export async function cancelUploadSession(sessionId: string) {
+  return apiRequest<UploadSessionResponse>({
+    url: `/v2/files/upload-sessions/${sessionId}`,
+    method: 'DELETE',
+  });
+}
+
+export async function completeUploadSession(sessionId: string) {
+  return apiRequest<UploadSessionResponse>({
+    url: `/v2/files/upload-sessions/${sessionId}/complete`,
+    method: 'POST',
+  });
+}
+
+export async function uploadUploadSessionContent(
+  contentUrl: string,
+  formField: string,
+  file: File,
+  signal?: AbortSignal,
+  onProgress?: (progress: { loaded: number; total: number }) => void,
+) {
+  const formData = new FormData();
+  formData.append(formField, file);
+  return apiRequest<UploadSessionResponse>({
+    url: contentUrl,
+    method: 'POST',
+    data: formData,
+    signal,
+    timeout: 0,
+    headers: {
+      'Content-Type': 'multipart/form-data',
+    },
+    onUploadProgress: (event) => {
+      onProgress?.({
+        loaded: event.loaded,
+        total: event.total ?? file.size,
+      });
+    },
+  });
+}
+
+export async function prepareUploadSession(prepareUrl: string) {
+  return apiRequest<PreparedUploadResponse>({
+    url: prepareUrl,
+    method: 'GET',
+  });
+}
+
+export async function prepareMultipartPartUpload(sessionId: string, partIndex: number) {
+  return apiRequest<PreparedUploadResponse>({
+    url: `/v2/files/upload-sessions/${sessionId}/parts/${partIndex}/prepare`,
+    method: 'GET',
+  });
+}
+
+export async function recordMultipartPart(sessionId: string, partIndex: number, etag: string, size: number) {
+  return apiRequest<UploadSessionResponse>({
+    url: `/v2/files/upload-sessions/${sessionId}/parts/${partIndex}`,
+    method: 'PUT',
+    data: { etag, size },
   });
 }
 

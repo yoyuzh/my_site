@@ -63,7 +63,6 @@ import {
   renameFile,
   removeFileTag,
   setFileFavorite,
-  uploadFile,
 } from '../lib/files';
 import { getUserSettings, updateUserSettings } from '../lib/user-settings';
 import {
@@ -549,7 +548,6 @@ const Files: React.FC<FilesProps> = ({ mediaCategory }) => {
     const stored = window.localStorage.getItem(VIEW_MODE_STORAGE_KEY);
     return stored === 'list' || stored === 'grid' ? stored : 'grid';
   });
-  const [uploadStatus, setUploadStatus] = useState<string | null>(null);
   const [selectedById, setSelectedById] = useState<SelectedFileMap>({});
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
   const [previewFile, setPreviewFile] = useState<FileItem | null>(null);
@@ -1299,7 +1297,7 @@ const Files: React.FC<FilesProps> = ({ mediaCategory }) => {
     },
   });
 
-  const uploadMutation = useMutation({
+  const enqueueUploadMutation = useMutation({
     mutationFn: async ({ files, folderPath }: { files: File[]; folderPath?: string }) => {
       const targetPath = folderPath ? joinDirectoryPath(currentPath, folderPath) : currentPath;
       addUploadTasks(files, targetPath);
@@ -1307,7 +1305,7 @@ const Files: React.FC<FilesProps> = ({ mediaCategory }) => {
       return files.length;
     },
     onSuccess: (count) => {
-      setUploadStatus(`已加入队列 ${count} 个文件`);
+      showToast({ message: `已加入队列 ${count} 个文件`, severity: 'success' });
     },
     onError: (error) => {
       showToast({ message: error instanceof Error ? error.message : '上传失败', severity: 'error' });
@@ -2013,7 +2011,7 @@ const Files: React.FC<FilesProps> = ({ mediaCategory }) => {
       }
 
       if (files.length > 0) {
-        uploadMutation.mutate({ files });
+        enqueueUploadMutation.mutate({ files });
       } else {
         showToast({ message: '剪贴板中没有可上传的文件', severity: 'warning' });
       }
@@ -2066,7 +2064,7 @@ const Files: React.FC<FilesProps> = ({ mediaCategory }) => {
     }
 
     const file = new File([content], filename.trim(), { type: mimeType });
-    uploadMutation.mutate({ files: [file] });
+    enqueueUploadMutation.mutate({ files: [file] });
     closeContextMenus();
   }
 
@@ -2116,7 +2114,7 @@ const Files: React.FC<FilesProps> = ({ mediaCategory }) => {
           onChange={(event) => {
             const files = Array.from(event.target.files ?? []);
             if (files.length > 0) {
-              uploadMutation.mutate({ files });
+              enqueueUploadMutation.mutate({ files });
             }
             event.target.value = '';
           }}
@@ -2132,7 +2130,7 @@ const Files: React.FC<FilesProps> = ({ mediaCategory }) => {
           onChange={(event) => {
             const files = Array.from(event.target.files ?? []);
             if (files.length > 0) {
-              uploadMutation.mutate({ files });
+              enqueueUploadMutation.mutate({ files });
             }
             event.target.value = '';
           }}
@@ -2625,7 +2623,7 @@ const Files: React.FC<FilesProps> = ({ mediaCategory }) => {
             setRemoteDownloadDialogOpen(false);
           }}
           onCreated={(detail) => {
-            setUploadStatus(`离线下载任务已创建 #${detail.backgroundTaskId ?? detail.id}`);
+            showToast({ message: `离线下载任务已创建 #${detail.backgroundTaskId ?? detail.id}`, severity: 'success' });
             void queryClient.invalidateQueries({ queryKey: ['tasks'] });
           }}
         />

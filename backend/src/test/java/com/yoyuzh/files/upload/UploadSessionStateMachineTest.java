@@ -1,4 +1,4 @@
-package com.yoyuzh.files.upload;
+package com.yoyuzh.files.upload.internal.domain;
 
 import com.yoyuzh.shared.kernel.BusinessException;
 import org.junit.jupiter.api.Test;
@@ -44,9 +44,11 @@ class UploadSessionStateMachineTest {
 
     private UploadSession createSession(UploadSessionStatus status) {
         UploadSession session = new UploadSession();
-        session.setStatus(status);
+        session.initializeCreated(LocalDateTime.of(2026, 4, 11, 11, 0), LocalDateTime.of(2026, 4, 12, 11, 0));
+        if (status != UploadSessionStatus.CREATED) {
+            session.setStatus(status);
+        }
         session.setUpdatedAt(LocalDateTime.of(2026, 4, 11, 11, 0));
-        session.setExpiresAt(LocalDateTime.of(2026, 4, 12, 11, 0));
         return session;
     }
 }

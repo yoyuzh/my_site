@@ -149,6 +149,55 @@ export interface DownloadUrlResponse {
   url: string;
 }
 
+export interface UploadSessionStrategy {
+  prepareUrl: string | null;
+  proxyContentUrl: string | null;
+  partPrepareUrlTemplate: string | null;
+  partRecordUrlTemplate: string | null;
+  completeUrl: string | null;
+  proxyFormField: string | null;
+  tusUrl: string | null;
+  tusHeaders: Record<string, string> | null;
+}
+
+export interface UploadSessionRuntimeState {
+  phase: string;
+  uploadedBytes: number;
+  uploadedPartCount: number;
+  progressPercent: number | null;
+  lastUpdatedAt: string;
+  expiresAt: string;
+}
+
+export interface PreparedUploadResponse {
+  direct: boolean;
+  uploadUrl: string;
+  method: string;
+  headers: Record<string, string>;
+  storageName: string;
+}
+
+export interface UploadSessionResponse {
+  sessionId: string;
+  objectKey: string;
+  directUpload: boolean;
+  multipartUpload: boolean;
+  uploadMode: 'PROXY' | 'DIRECT_SINGLE' | 'DIRECT_MULTIPART';
+  path: string;
+  filename: string;
+  contentType: string;
+  size: number;
+  storagePolicyId: number | null;
+  status: string;
+  chunkSize: number;
+  chunkCount: number;
+  expiresAt: string;
+  createdAt: string;
+  updatedAt: string;
+  runtime: UploadSessionRuntimeState | null;
+  strategy: UploadSessionStrategy;
+}
+
 export interface RecycleBinItem extends FileItem {
   deletedAt: string;
   expiresAt: string;

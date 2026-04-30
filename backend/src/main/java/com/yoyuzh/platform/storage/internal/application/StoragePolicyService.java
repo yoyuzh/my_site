@@ -112,10 +112,13 @@ public class StoragePolicyService implements CommandLineRunner, StoragePolicyQue
     }
 
     private StoragePolicy createDefaultPolicy() {
-        if ("s3".equalsIgnoreCase(properties.getProvider())) {
-            return createDefaultS3Policy();
-        }
-        return createDefaultLocalPolicy();
+        String provider = properties.getProvider() == null ? "local" : properties.getProvider().trim().toLowerCase();
+        return switch (provider) {
+            case "s3" -> createDefaultS3Policy();
+            case "oss" -> createDefaultOssPolicy();
+            case "webdav" -> createDefaultWebDavPolicy();
+            default -> createDefaultLocalPolicy();
+        };
     }
 
     private StoragePolicy createDefaultS3Policy() {
@@ -151,6 +154,58 @@ public class StoragePolicyService implements CommandLineRunner, StoragePolicyQue
         policy.setPrivateBucket(true);
         policy.setPrefix(properties.getLocal().getRootDir());
         policy.setCredentialMode(StoragePolicyCredentialMode.NONE);
+        policy.setMaxSizeBytes(properties.getMaxFileSize());
+        policy.setCapabilitiesJson(writeCapabilities(new StoragePolicyCapabilities(
+                false,
+                false,
+                false,
+                true,
+                false,
+                true,
+                false,
+                false,
+                properties.getMaxFileSize()
+        )));
+        policy.setEnabled(true);
+        policy.setDefaultPolicy(true);
+        return policy;
+    }
+
+    private StoragePolicy createDefaultOssPolicy() {
+        StoragePolicy policy = new StoragePolicy();
+        policy.setName("Default OSS SDK Storage");
+        policy.setType(StoragePolicyType.OSS_SDK);
+        policy.setBucketName(properties.getOss().getBucketName());
+        policy.setEndpoint(properties.getOss().getEndpoint());
+        policy.setRegion(properties.getOss().getRegion());
+        policy.setPrivateBucket(true);
+        policy.setPrefix(properties.getOss().getPrefix());
+        policy.setCredentialMode(StoragePolicyCredentialMode.STATIC);
+        policy.setMaxSizeBytes(properties.getMaxFileSize());
+        policy.setCapabilitiesJson(writeCapabilities(new StoragePolicyCapabilities(
+                true,
+                true,
+                true,
+                true,
+                false,
+                true,
+                true,
+                false,
+                properties.getMaxFileSize()
+        )));
+        policy.setEnabled(true);
+        policy.setDefaultPolicy(true);
+        return policy;
+    }
+
+    private StoragePolicy createDefaultWebDavPolicy() {
+        StoragePolicy policy = new StoragePolicy();
+        policy.setName("Default WebDAV Storage");
+        policy.setType(StoragePolicyType.WEBDAV);
+        policy.setEndpoint(properties.getWebDav().getBaseUrl());
+        policy.setPrivateBucket(true);
+        policy.setPrefix(properties.getWebDav().getRootPath());
+        policy.setCredentialMode(StoragePolicyCredentialMode.STATIC);
         policy.setMaxSizeBytes(properties.getMaxFileSize());
         policy.setCapabilitiesJson(writeCapabilities(new StoragePolicyCapabilities(
                 false,

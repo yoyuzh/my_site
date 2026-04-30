@@ -2,5 +2,7 @@ package com.yoyuzh.platform.storage.api;
 
 public enum StoragePolicyType {
     LOCAL,
-    S3_COMPATIBLE
+    S3_COMPATIBLE,
+    OSS_SDK,
+    WEBDAV
 }

@@ -10,9 +10,12 @@ public class DefaultContentStorageFactory implements ContentStorageFactory {
 
     @Override
     public FileContentStorage create(StorageRuntimeProperties properties) {
-        if ("s3".equalsIgnoreCase(properties.getProvider())) {
-            return new S3FileContentStorage(properties);
-        }
-        return new LocalFileContentStorage(properties);
+        String provider = properties.getProvider() == null ? "local" : properties.getProvider().trim().toLowerCase();
+        return switch (provider) {
+            case "s3" -> new S3FileContentStorage(properties);
+            case "oss" -> new OssSdkFileContentStorage(properties);
+            case "webdav" -> new WebDavFileContentStorage(properties);
+            default -> new LocalFileContentStorage(properties);
+        };
     }
 }

@@ -1,4 +1,4 @@
-package com.yoyuzh.files.upload;
+package com.yoyuzh.files.upload.internal.domain;
 
 import com.yoyuzh.shared.kernel.BusinessException;
 import com.yoyuzh.shared.kernel.ErrorCode;
@@ -14,18 +14,18 @@ public class UploadSessionStateMachine {
                 || session.getStatus() == UploadSessionStatus.FAILED
                 || session.getStatus() == UploadSessionStatus.COMPLETING
                 || session.getStatus() == UploadSessionStatus.COMPLETED) {
-            throw new BusinessException(ErrorCode.INVALID_INPUT, "涓婁紶浼氳瘽涓嶈兘缁х画涓婁紶鍒嗙墖");
+            throw new BusinessException(ErrorCode.INVALID_INPUT, "upload session cannot continue receiving content");
         }
         if (session.getExpiresAt().isBefore(now)) {
             markExpired(session, now);
-            throw new BusinessException(ErrorCode.SESSION_EXPIRED, "涓婁紶浼氳瘽宸茶繃鏈?");
+            throw new BusinessException(ErrorCode.SESSION_EXPIRED, "upload session has expired");
         }
     }
 
     public void ensureCanReceiveContent(UploadSession session, LocalDateTime now, boolean multipartUpload) {
         ensureCanReceivePart(session, now);
         if (session.getStatus() == UploadSessionStatus.UPLOADING && multipartUpload) {
-            throw new BusinessException(ErrorCode.INVALID_INPUT, "multipart 涓婁紶浼氳瘽涓嶈兘璧版暣浣撳唴瀹逛笂浼?");
+            throw new BusinessException(ErrorCode.INVALID_INPUT, "multipart upload session does not accept whole-file content");
         }
     }
 

@@ -1033,7 +1033,7 @@ class FileServiceTest {
     }
 
     @Test
-    void shouldUseConfiguredPublicViewerSourceUrlWhenAvailable() {
+    void shouldUseDirectBlobDownloadUrlForViewerSourceWhenDirectDownloadIsAvailable() {
         FileStorageProperties properties = new FileStorageProperties();
         properties.setMaxFileSize(500L * 1024 * 1024);
         properties.getS3().setPublicDownloadBaseUrl("https://cdn.yoyuzh.xyz/files/");
@@ -1051,11 +1051,13 @@ class FileServiceTest {
         StoredFile file = createFile(22L, user, "/docs", "notes.txt");
         when(storedFileRepository.findDetailedById(22L)).thenReturn(Optional.of(file));
         when(fileContentStorage.supportsDirectDownload()).thenReturn(true);
+        when(fileContentStorage.createBlobDownloadUrl("blobs/blob-22", "notes.txt"))
+                .thenReturn("https://signed-download.example.com/blob-22?signature=test");
 
         DownloadUrlResponse response = fileService.getViewerSourceUrl(FileServiceTestSupport.workspaceUser(user), 22L);
 
-        assertThat(response.url()).isEqualTo("https://cdn.yoyuzh.xyz/files/blobs/blob-22");
-        verify(fileContentStorage, never()).createBlobDownloadUrl(any(), any());
+        assertThat(response.url()).isEqualTo("https://signed-download.example.com/blob-22?signature=test");
+        verify(fileContentStorage).createBlobDownloadUrl("blobs/blob-22", "notes.txt");
     }
 
     @Test

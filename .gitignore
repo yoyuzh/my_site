@@ -9,6 +9,8 @@ front/node_modules/
 front/dist/
 front/.vite/
 front/test-results/
+frontend/dist/
+frontend/.vite/
 
 backend-dev.out.log
 backend-dev.err.log

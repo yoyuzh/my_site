@@ -1,4 +1,4 @@
-package com.yoyuzh.files.upload;
+package com.yoyuzh.files.upload.internal.domain;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
@@ -11,6 +11,7 @@ import jakarta.persistence.Index;
 import jakarta.persistence.PrePersist;
 import jakarta.persistence.PreUpdate;
 import jakarta.persistence.Table;
+import jakarta.persistence.Version;
 
 import java.time.LocalDateTime;
 
@@ -65,6 +66,9 @@ public class UploadSession {
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 32)
     private UploadSessionStatus status;
+
+    @Version
+    private Long version;
 
     @Column(name = "expires_at", nullable = false)
     private LocalDateTime expiresAt;
@@ -202,8 +206,19 @@ public class UploadSession {
         return status;
     }
 
-    public void setStatus(UploadSessionStatus status) {
+    void setStatus(UploadSessionStatus status) {
         this.status = status;
+    }
+
+    public void initializeCreated(LocalDateTime createdAt, LocalDateTime expiresAt) {
+        this.status = UploadSessionStatus.CREATED;
+        this.createdAt = createdAt;
+        this.updatedAt = createdAt;
+        this.expiresAt = expiresAt;
+    }
+
+    public Long getVersion() {
+        return version;
     }
 
     public LocalDateTime getExpiresAt() {

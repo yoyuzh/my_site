@@ -53,6 +53,9 @@ class SecurityConfigTest {
 
         assertThat(configuration).isNotNull();
         assertThat(configuration.getAllowedMethods()).contains("PATCH");
+        assertThat(configuration.getAllowedMethods()).contains("HEAD");
+        assertThat(configuration.getExposedHeaders())
+                .contains("Upload-Offset", "Upload-Length", "Location", "Tus-Resumable");
     }
 
     @Test

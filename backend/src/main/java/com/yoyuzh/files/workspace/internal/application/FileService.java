@@ -813,13 +813,6 @@ public class FileService implements WorkspaceBootstrapApi, WorkspaceArchiveApi {
             return buildPublicPackageDownloadUrl(storedFile);
         }
 
-        if (preferPublicViewerUrl) {
-            String viewerSourceUrl = buildPublicViewerSourceUrl(storedFile);
-            if (viewerSourceUrl != null) {
-                return viewerSourceUrl;
-            }
-        }
-
         if (fileContentStorage.supportsDirectDownload()) {
             return fileContentStorage.createBlobDownloadUrl(
                     getRequiredBlob(storedFile).objectKey(),
@@ -920,17 +913,6 @@ public class FileService implements WorkspaceBootstrapApi, WorkspaceArchiveApi {
                 && StringUtils.hasText(packageDownloadBaseUrl)
                 && StringUtils.hasText(packageDownloadSecret)
                 && isAppPackage(storedFile);
-    }
-
-    private String buildPublicViewerSourceUrl(StoredFile storedFile) {
-        if (!fileContentStorage.supportsDirectDownload() || !StringUtils.hasText(publicDownloadBaseUrl)) {
-            return null;
-        }
-        ContentBlobReference blob = getRequiredBlob(storedFile);
-        String base = publicDownloadBaseUrl.endsWith("/")
-                ? publicDownloadBaseUrl.substring(0, publicDownloadBaseUrl.length() - 1)
-                : publicDownloadBaseUrl;
-        return base + "/" + trimLeadingSlash(blob.objectKey());
     }
 
     private boolean isAppPackage(StoredFile storedFile) {

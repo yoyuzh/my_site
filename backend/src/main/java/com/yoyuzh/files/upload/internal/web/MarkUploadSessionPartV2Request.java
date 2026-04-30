@@ -5,6 +5,6 @@ import jakarta.validation.constraints.NotBlank;
 
 public record MarkUploadSessionPartV2Request(
         @NotBlank String etag,
-        @Min(0) long size
+        @Min(1) long size
 ) {
 }

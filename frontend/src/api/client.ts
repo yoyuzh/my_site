@@ -146,6 +146,10 @@ function buildHeaders(config: ApiRequestConfig) {
   return Object.fromEntries(headers.entries());
 }
 
+export function buildApiHeaders(config: ApiRequestConfig = {}) {
+  return buildHeaders(config);
+}
+
 function unwrapEnvelope<T>(response: AxiosResponse<ApiEnvelope<T> | T>) {
   const payload = response.data;
 

@@ -1,25 +1,35 @@
-package com.yoyuzh.files.upload;
+package com.yoyuzh.files.upload.internal.application;
 
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.yoyuzh.identity.access.api.IdentityAuthenticatedUser;
-import com.yoyuzh.shared.kernel.BusinessException;
-import com.yoyuzh.shared.kernel.ErrorCode;
-import com.yoyuzh.platform.storage.api.StoragePolicyCapabilities;
-import com.yoyuzh.platform.storage.api.StoragePolicyQuery;
 import com.yoyuzh.files.content.api.FileContentStorage;
 import com.yoyuzh.files.content.api.MultipartCompletedPart;
 import com.yoyuzh.files.content.api.PreparedUpload;
 import com.yoyuzh.files.upload.api.UploadCompletionApi;
 import com.yoyuzh.files.upload.api.UploadCompletionCommand;
 import com.yoyuzh.files.upload.api.UploadTargetPolicy;
+import com.yoyuzh.files.upload.api.UploadSessionTransportPolicy;
+import com.yoyuzh.files.upload.api.UploadSessionUploadMode;
 import com.yoyuzh.files.upload.api.ValidatedUploadTarget;
+import com.yoyuzh.files.upload.internal.domain.UploadSession;
+import com.yoyuzh.files.upload.internal.domain.UploadSessionRepository;
+import com.yoyuzh.files.upload.internal.domain.UploadSessionStateMachine;
+import com.yoyuzh.files.upload.internal.domain.UploadSessionStatus;
+import com.yoyuzh.platform.storage.api.StoragePolicyCapabilities;
+import com.yoyuzh.shared.kernel.BusinessException;
+import com.yoyuzh.shared.kernel.ErrorCode;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.io.IOException;
+import java.io.InputStream;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.time.Clock;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
@@ -45,31 +55,37 @@ public class UploadSessionService {
     private final UploadTargetPolicy uploadTargetPolicy;
     private final UploadCompletionApi uploadCompletionApi;
     private final FileContentStorage fileContentStorage;
-    private final StoragePolicyQuery storagePolicyQuery;
-    private final ObjectMapper objectMapper = new ObjectMapper();
+    private final UploadSessionTransportPolicy uploadSessionTransportPolicy;
+    private final ObjectMapper objectMapper;
     private final UploadPolicyResolver uploadPolicyResolver;
     private final UploadSessionStateMachine uploadSessionStateMachine;
     private final Clock clock;
-    @Autowired(required = false)
-    private UploadSessionRuntimeStateService uploadSessionRuntimeStateService = UploadSessionRuntimeStateService.noOp();
+    private final UploadSessionRuntimeStateService uploadSessionRuntimeStateService;
+    private final UploadSessionTusService uploadSessionTusService;
 
     @Autowired
     public UploadSessionService(UploadSessionRepository uploadSessionRepository,
                                 UploadTargetPolicy uploadTargetPolicy,
                                 UploadCompletionApi uploadCompletionApi,
                                 FileContentStorage fileContentStorage,
-                                StoragePolicyQuery storagePolicyQuery,
+                                UploadSessionTransportPolicy uploadSessionTransportPolicy,
+                                ObjectMapper objectMapper,
                                 UploadPolicyResolver uploadPolicyResolver,
-                                UploadSessionStateMachine uploadSessionStateMachine) {
+                                UploadSessionStateMachine uploadSessionStateMachine,
+                                ObjectProvider<UploadSessionRuntimeStateService> uploadSessionRuntimeStateServiceProvider,
+                                UploadSessionTusService uploadSessionTusService) {
         this(
                 uploadSessionRepository,
                 uploadTargetPolicy,
                 uploadCompletionApi,
                 fileContentStorage,
-                storagePolicyQuery,
+                uploadSessionTransportPolicy,
                 Clock.systemUTC(),
+                objectMapper,
                 uploadPolicyResolver,
-                uploadSessionStateMachine
+                uploadSessionStateMachine,
+                uploadSessionRuntimeStateServiceProvider.getIfAvailable(UploadSessionRuntimeStateService::noOp),
+                uploadSessionTusService
         );
     }
 
@@ -77,40 +93,28 @@ public class UploadSessionService {
                          UploadTargetPolicy uploadTargetPolicy,
                          UploadCompletionApi uploadCompletionApi,
                          FileContentStorage fileContentStorage,
-                         StoragePolicyQuery storagePolicyQuery,
-                         Clock clock) {
-        this(
-                uploadSessionRepository,
-                uploadTargetPolicy,
-                uploadCompletionApi,
-                fileContentStorage,
-                storagePolicyQuery,
-                clock,
-                new UploadPolicyResolver(),
-                new UploadSessionStateMachine()
-        );
-    }
-
-    UploadSessionService(UploadSessionRepository uploadSessionRepository,
-                         UploadTargetPolicy uploadTargetPolicy,
-                         UploadCompletionApi uploadCompletionApi,
-                         FileContentStorage fileContentStorage,
-                         StoragePolicyQuery storagePolicyQuery,
+                         UploadSessionTransportPolicy uploadSessionTransportPolicy,
                          Clock clock,
+                         ObjectMapper objectMapper,
                          UploadPolicyResolver uploadPolicyResolver,
-                         UploadSessionStateMachine uploadSessionStateMachine) {
+                         UploadSessionStateMachine uploadSessionStateMachine,
+                         UploadSessionRuntimeStateService uploadSessionRuntimeStateService,
+                         UploadSessionTusService uploadSessionTusService) {
         this.uploadSessionRepository = uploadSessionRepository;
         this.uploadTargetPolicy = uploadTargetPolicy;
         this.uploadCompletionApi = uploadCompletionApi;
         this.fileContentStorage = fileContentStorage;
-        this.storagePolicyQuery = storagePolicyQuery;
+        this.uploadSessionTransportPolicy = uploadSessionTransportPolicy;
         this.clock = clock;
+        this.objectMapper = objectMapper;
         this.uploadPolicyResolver = uploadPolicyResolver;
         this.uploadSessionStateMachine = uploadSessionStateMachine;
+        this.uploadSessionRuntimeStateService = uploadSessionRuntimeStateService;
+        this.uploadSessionTusService = uploadSessionTusService;
     }
 
     @Transactional
-    public UploadSession createSession(IdentityAuthenticatedUser user, UploadSessionCreateCommand command) {
+    public UploadSessionView createSession(IdentityAuthenticatedUser user, UploadSessionCreateCommand command) {
         ValidatedUploadTarget target = uploadTargetPolicy.validateUpload(
                 user.id(),
                 user.maxUploadSizeBytes(),
@@ -119,10 +123,10 @@ public class UploadSessionService {
                 command.filename(),
                 command.size()
         );
-        return createSession(user.id(), target, command);
+        return toView(createSessionEntity(user.id(), target, command));
     }
 
-    private UploadSession createSession(Long userId, ValidatedUploadTarget target, UploadSessionCreateCommand command) {
+    private UploadSession createSessionEntity(Long userId, ValidatedUploadTarget target, UploadSessionCreateCommand command) {
         var defaultPolicySnapshot = target.defaultPolicySnapshot();
         StoragePolicyCapabilities capabilities = defaultPolicySnapshot.capabilities();
         UploadSessionUploadMode uploadMode = uploadPolicyResolver.resolveUploadMode(capabilities);
@@ -141,11 +145,8 @@ public class UploadSessionService {
                 ? uploadPolicyResolver.calculateChunkCount(command.size(), DEFAULT_CHUNK_SIZE)
                 : 1);
         session.setUploadedPartsJson("[]");
-        session.setStatus(UploadSessionStatus.CREATED);
         LocalDateTime now = now();
-        session.setCreatedAt(now);
-        session.setUpdatedAt(now);
-        session.setExpiresAt(now.plusHours(SESSION_TTL_HOURS));
+        session.initializeCreated(now, now.plusHours(SESSION_TTL_HOURS));
         if (uploadMode == UploadSessionUploadMode.DIRECT_MULTIPART) {
             session.setMultipartUploadId(fileContentStorage.createMultipartUpload(session.getObjectKey(), session.getContentType()));
         }
@@ -155,7 +156,12 @@ public class UploadSessionService {
     }
 
     @Transactional(readOnly = true)
-    public UploadSession getOwnedSession(Long userId, String sessionId) {
+    public UploadSessionView getOwnedSession(Long userId, String sessionId) {
+        return toView(getOwnedSessionEntity(userId, sessionId));
+    }
+
+    @Transactional(readOnly = true)
+    UploadSession getOwnedSessionEntity(Long userId, String sessionId) {
         return uploadSessionRepository.findBySessionIdAndUserId(sessionId, userId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.FILE_NOT_FOUND, "upload session not found"));
     }
@@ -166,9 +172,9 @@ public class UploadSessionService {
     }
 
     @Transactional
-    public UploadSession cancelOwnedSession(Long userId, String sessionId) {
-        UploadSession session = getOwnedSession(userId, sessionId);
-        return cancelSession(session);
+    public UploadSessionView cancelOwnedSession(Long userId, String sessionId) {
+        UploadSession session = getOwnedSessionEntity(userId, sessionId);
+        return toView(cancelSession(session));
     }
 
     private UploadSession cancelSession(UploadSession session) {
@@ -181,7 +187,7 @@ public class UploadSessionService {
 
     @Transactional(readOnly = true)
     public PreparedUpload prepareOwnedUpload(Long userId, String sessionId) {
-        UploadSession session = getOwnedSession(userId, sessionId);
+        UploadSession session = getOwnedSessionEntity(userId, sessionId);
         return prepareUpload(session);
     }
 
@@ -201,7 +207,7 @@ public class UploadSessionService {
 
     @Transactional(readOnly = true)
     public PreparedUpload prepareOwnedPartUpload(Long userId, String sessionId, int partIndex) {
-        UploadSession session = getOwnedSession(userId, sessionId);
+        UploadSession session = getOwnedSessionEntity(userId, sessionId);
         return preparePartUpload(session, partIndex);
     }
 
@@ -224,17 +230,17 @@ public class UploadSessionService {
     }
 
     @Transactional
-    public UploadSession recordUploadedPart(Long userId,
-                                            String sessionId,
-                                            int partIndex,
-                                            UploadSessionPartCommand command) {
-        UploadSession session = getOwnedSession(userId, sessionId);
-        return recordUploadedPart(session, partIndex, command);
+    public UploadSessionView recordUploadedPart(Long userId,
+                                                String sessionId,
+                                                int partIndex,
+                                                UploadSessionPartCommand command) {
+        UploadSession session = getOwnedSessionEntity(userId, sessionId);
+        return toView(recordUploadedPartEntity(session, partIndex, command));
     }
 
-    private UploadSession recordUploadedPart(UploadSession session,
-                                             int partIndex,
-                                             UploadSessionPartCommand command) {
+    private UploadSession recordUploadedPartEntity(UploadSession session,
+                                                   int partIndex,
+                                                   UploadSessionPartCommand command) {
         LocalDateTime now = now();
         ensureSessionCanReceivePart(session, now);
         if (resolveUploadMode(session) != UploadSessionUploadMode.DIRECT_MULTIPART) {
@@ -269,9 +275,9 @@ public class UploadSessionService {
     }
 
     @Transactional
-    public UploadSession uploadOwnedContent(Long userId, String sessionId, MultipartFile file) {
-        UploadSession session = getOwnedSession(userId, sessionId);
-        return uploadContent(session, file);
+    public UploadSessionView uploadOwnedContent(Long userId, String sessionId, MultipartFile file) {
+        UploadSession session = getOwnedSessionEntity(userId, sessionId);
+        return toView(uploadContent(session, file));
     }
 
     private UploadSession uploadContent(UploadSession session, MultipartFile file) {
@@ -299,9 +305,45 @@ public class UploadSessionService {
     }
 
     @Transactional
-    public UploadSession completeOwnedSession(Long userId, String sessionId) {
-        UploadSession session = getOwnedSession(userId, sessionId);
-        return completeSession(session, userId);
+    public UploadSessionView completeOwnedSession(Long userId, String sessionId) {
+        UploadSession session = getOwnedSessionEntity(userId, sessionId);
+        return toView(completeSession(session, userId));
+    }
+
+    @Transactional
+    public UploadSessionTusState startTusSession(Long userId, String sessionId, Long uploadLength) {
+        UploadSession session = getOwnedSessionEntity(userId, sessionId);
+        long offset = uploadSessionTusService.start(session, uploadLength);
+        return new UploadSessionTusState(offset, session.getSize() == null ? 0L : session.getSize());
+    }
+
+    @Transactional(readOnly = true)
+    public UploadSessionTusState getTusSessionState(Long userId, String sessionId) {
+        UploadSession session = getOwnedSessionEntity(userId, sessionId);
+        long offset = uploadSessionTusService.currentOffset(session);
+        return new UploadSessionTusState(offset, session.getSize() == null ? 0L : session.getSize());
+    }
+
+    @Transactional
+    public UploadSessionTusState appendTusSession(Long userId,
+                                                  String sessionId,
+                                                  long uploadOffset,
+                                                  Path stagedContent,
+                                                  long contentLength) {
+        UploadSession session = getOwnedSessionEntity(userId, sessionId);
+        try (InputStream content = Files.newInputStream(stagedContent)) {
+            long nextOffset = uploadSessionTusService.append(session, uploadOffset, content, contentLength);
+            return new UploadSessionTusState(nextOffset, session.getSize() == null ? 0L : session.getSize());
+        } catch (IOException ex) {
+            throw new BusinessException(ErrorCode.UNKNOWN, "failed to read staged tus patch content");
+        }
+    }
+
+    @Transactional
+    public void cancelTusSession(Long userId, String sessionId) {
+        UploadSession session = getOwnedSessionEntity(userId, sessionId);
+        uploadSessionTusService.delete(session);
+        cancelSession(session);
     }
 
     private UploadSession completeSession(UploadSession session, Long userId) {
@@ -329,7 +371,9 @@ public class UploadSessionService {
         );
 
         try {
-            if (resolveUploadMode(session) == UploadSessionUploadMode.DIRECT_MULTIPART
+            if (usesTusUpload(session)) {
+                uploadSessionTusService.finalizeUpload(session);
+            } else if (resolveUploadMode(session) == UploadSessionUploadMode.DIRECT_MULTIPART
                     && StringUtils.hasText(session.getMultipartUploadId())) {
                 fileContentStorage.completeMultipartUpload(
                         session.getObjectKey(),
@@ -366,7 +410,9 @@ public class UploadSessionService {
         );
         for (UploadSession session : expiredSessions) {
             try {
-                if (StringUtils.hasText(session.getMultipartUploadId())) {
+                if (usesTusUpload(session)) {
+                    uploadSessionTusService.delete(session);
+                } else if (StringUtils.hasText(session.getMultipartUploadId())) {
                     fileContentStorage.abortMultipartUpload(session.getObjectKey(), session.getMultipartUploadId());
                 } else {
                     fileContentStorage.deleteBlob(session.getObjectKey());
@@ -383,14 +429,16 @@ public class UploadSessionService {
         return expiredSessions.size();
     }
 
-    public UploadSessionUploadMode resolveUploadMode(UploadSession session) {
-        if (session.getStoragePolicyId() == null) {
-            if (StringUtils.hasText(session.getMultipartUploadId()) || session.getChunkCount() > 1) {
-                return UploadSessionUploadMode.DIRECT_MULTIPART;
-            }
-            return UploadSessionUploadMode.PROXY;
-        }
-        return uploadPolicyResolver.resolveUploadMode(storagePolicyQuery.readPolicyCapabilities(session.getStoragePolicyId()));
+    private UploadSessionUploadMode resolveUploadMode(UploadSession session) {
+        return uploadSessionTransportPolicy.resolveUploadMode(
+                session.getStoragePolicyId(),
+                session.getMultipartUploadId(),
+                session.getChunkCount()
+        );
+    }
+
+    private boolean usesTusUpload(UploadSession session) {
+        return session != null && uploadSessionTransportPolicy.usesTusUpload(session.getStoragePolicyId());
     }
 
     private void ensureSessionCanReceiveContent(UploadSession session, LocalDateTime now) {
@@ -467,6 +515,28 @@ public class UploadSessionService {
     }
 
     private record UploadedPart(int partIndex, String etag, long size, String uploadedAt) {
+    }
+
+    private UploadSessionView toView(UploadSession session) {
+        UploadSessionUploadMode uploadMode = resolveUploadMode(session);
+        return new UploadSessionView(
+                session.getSessionId(),
+                session.getObjectKey(),
+                session.getTargetPath(),
+                session.getFilename(),
+                session.getContentType(),
+                session.getSize(),
+                session.getStoragePolicyId(),
+                session.getStatus(),
+                session.getChunkSize(),
+                session.getChunkCount(),
+                session.getExpiresAt(),
+                session.getCreatedAt(),
+                session.getUpdatedAt(),
+                uploadSessionRuntimeStateService.getState(session.getSessionId()).orElse(null),
+                uploadMode,
+                usesTusUpload(session)
+        );
     }
 
     private String createBlobObjectKey() {

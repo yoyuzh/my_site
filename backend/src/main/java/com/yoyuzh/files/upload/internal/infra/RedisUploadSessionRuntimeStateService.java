@@ -1,8 +1,13 @@
-package com.yoyuzh.files.upload;
+package com.yoyuzh.files.upload.internal.infra;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.yoyuzh.files.upload.internal.application.UploadSessionRuntimeState;
+import com.yoyuzh.files.upload.internal.application.UploadSessionRuntimeStateService;
+import com.yoyuzh.files.upload.internal.domain.UploadSession;
 import com.yoyuzh.infra.cache.AppRedisProperties;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
@@ -16,6 +21,8 @@ import java.util.Optional;
 @Service
 @ConditionalOnProperty(prefix = "app.redis", name = "enabled", havingValue = "true")
 public class RedisUploadSessionRuntimeStateService implements UploadSessionRuntimeStateService {
+
+    private static final Logger log = LoggerFactory.getLogger(RedisUploadSessionRuntimeStateService.class);
 
     private final StringRedisTemplate stringRedisTemplate;
     private final AppRedisProperties redisProperties;
@@ -38,6 +45,7 @@ public class RedisUploadSessionRuntimeStateService implements UploadSessionRunti
         try {
             return Optional.of(objectMapper.readValue(value, UploadSessionRuntimeState.class));
         } catch (JsonProcessingException ex) {
+            log.warn("Failed to read upload session runtime state for session {}", sessionId, ex);
             return Optional.empty();
         }
     }
@@ -123,7 +131,8 @@ public class RedisUploadSessionRuntimeStateService implements UploadSessionRunti
                     objectMapper.writeValueAsString(state),
                     resolveTtl(session.getExpiresAt(), state.phase())
             );
-        } catch (JsonProcessingException ignored) {
+        } catch (JsonProcessingException ex) {
+            log.warn("Failed to write upload session runtime state for session {}", session.getSessionId(), ex);
         }
     }
 

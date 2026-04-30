@@ -1,15 +1,18 @@
 package com.yoyuzh.files.upload.internal.web;
 
 import com.yoyuzh.boot.web.v2.ApiV2Response;
-import com.yoyuzh.boot.security.CustomUserDetailsService;
 import com.yoyuzh.identity.access.api.IdentityAuthenticatedUser;
-import com.yoyuzh.files.upload.UploadSession;
-import com.yoyuzh.files.upload.UploadSessionRuntimeState;
-import com.yoyuzh.files.upload.UploadSessionCreateCommand;
-import com.yoyuzh.files.upload.UploadSessionUploadMode;
-import com.yoyuzh.files.upload.UploadSessionPartCommand;
-import com.yoyuzh.files.upload.UploadSessionService;
+import com.yoyuzh.identity.access.api.IdentityAuthenticationApi;
 import com.yoyuzh.files.content.api.PreparedUpload;
+import com.yoyuzh.files.upload.api.UploadSessionUploadMode;
+import com.yoyuzh.files.upload.internal.application.UploadSessionCreateCommand;
+import com.yoyuzh.files.upload.internal.application.UploadSessionPartCommand;
+import com.yoyuzh.files.upload.internal.application.UploadSessionRuntimeState;
+import com.yoyuzh.files.upload.internal.application.UploadSessionService;
+import com.yoyuzh.files.upload.internal.application.UploadSessionTusService;
+import com.yoyuzh.files.upload.internal.application.UploadSessionView;
+import com.yoyuzh.shared.kernel.BusinessException;
+import com.yoyuzh.shared.kernel.ErrorCode;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
@@ -31,13 +34,14 @@ import org.springframework.web.multipart.MultipartFile;
 public class UploadSessionV2Controller {
 
     private final UploadSessionService uploadSessionService;
-    private final CustomUserDetailsService userDetailsService;
+    private final UploadSessionTusService uploadSessionTusService;
+    private final IdentityAuthenticationApi identityAuthenticationApi;
 
     @PostMapping
     public ApiV2Response<UploadSessionV2Response> createSession(@AuthenticationPrincipal UserDetails userDetails,
                                                                 @Valid @RequestBody CreateUploadSessionV2Request request) {
-        IdentityAuthenticatedUser user = userDetailsService.loadAuthenticatedUser(userDetails.getUsername());
-        UploadSession session = uploadSessionService.createSession(user, new UploadSessionCreateCommand(
+        IdentityAuthenticatedUser user = loadAuthenticatedUser(userDetails);
+        UploadSessionView session = uploadSessionService.createSession(user, new UploadSessionCreateCommand(
                 request.path(),
                 request.filename(),
                 request.contentType(),
@@ -49,14 +53,14 @@ public class UploadSessionV2Controller {
     @GetMapping("/{sessionId}")
     public ApiV2Response<UploadSessionV2Response> getSession(@AuthenticationPrincipal UserDetails userDetails,
                                                              @PathVariable String sessionId) {
-        Long user = userDetailsService.loadUserId(userDetails.getUsername());
+        Long user = loadAuthenticatedUser(userDetails).id();
         return ApiV2Response.success(toResponse(uploadSessionService.getOwnedSession(user, sessionId)));
     }
 
     @GetMapping("/{sessionId}/prepare")
     public ApiV2Response<PreparedUploadV2Response> prepareUpload(@AuthenticationPrincipal UserDetails userDetails,
                                                                  @PathVariable String sessionId) {
-        Long user = userDetailsService.loadUserId(userDetails.getUsername());
+        Long user = loadAuthenticatedUser(userDetails).id();
         PreparedUpload preparedUpload = uploadSessionService.prepareOwnedUpload(user, sessionId);
         return ApiV2Response.success(new PreparedUploadV2Response(
                 preparedUpload.direct(),
@@ -70,14 +74,14 @@ public class UploadSessionV2Controller {
     @DeleteMapping("/{sessionId}")
     public ApiV2Response<UploadSessionV2Response> cancelSession(@AuthenticationPrincipal UserDetails userDetails,
                                                                 @PathVariable String sessionId) {
-        Long user = userDetailsService.loadUserId(userDetails.getUsername());
+        Long user = loadAuthenticatedUser(userDetails).id();
         return ApiV2Response.success(toResponse(uploadSessionService.cancelOwnedSession(user, sessionId)));
     }
 
     @PostMapping("/{sessionId}/complete")
     public ApiV2Response<UploadSessionV2Response> completeSession(@AuthenticationPrincipal UserDetails userDetails,
                                                                   @PathVariable String sessionId) {
-        Long user = userDetailsService.loadUserId(userDetails.getUsername());
+        Long user = loadAuthenticatedUser(userDetails).id();
         return ApiV2Response.success(toResponse(uploadSessionService.completeOwnedSession(user, sessionId)));
     }
 
@@ -86,8 +90,8 @@ public class UploadSessionV2Controller {
                                                              @PathVariable String sessionId,
                                                              @PathVariable int partIndex,
                                                              @Valid @RequestBody MarkUploadSessionPartV2Request request) {
-        Long user = userDetailsService.loadUserId(userDetails.getUsername());
-        UploadSession session = uploadSessionService.recordUploadedPart(
+        Long user = loadAuthenticatedUser(userDetails).id();
+        UploadSessionView session = uploadSessionService.recordUploadedPart(
                 user,
                 sessionId,
                 partIndex,
@@ -100,7 +104,7 @@ public class UploadSessionV2Controller {
     public ApiV2Response<UploadSessionV2Response> uploadContent(@AuthenticationPrincipal UserDetails userDetails,
                                                                 @PathVariable String sessionId,
                                                                 @RequestPart("file") MultipartFile file) {
-        Long user = userDetailsService.loadUserId(userDetails.getUsername());
+        Long user = loadAuthenticatedUser(userDetails).id();
         return ApiV2Response.success(toResponse(uploadSessionService.uploadOwnedContent(user, sessionId, file)));
     }
 
@@ -108,7 +112,7 @@ public class UploadSessionV2Controller {
     public ApiV2Response<PreparedUploadV2Response> preparePartUpload(@AuthenticationPrincipal UserDetails userDetails,
                                                                      @PathVariable String sessionId,
                                                                      @PathVariable int partIndex) {
-        Long user = userDetailsService.loadUserId(userDetails.getUsername());
+        Long user = loadAuthenticatedUser(userDetails).id();
         PreparedUpload preparedUpload = uploadSessionService.prepareOwnedPartUpload(user, sessionId, partIndex);
         return ApiV2Response.success(new PreparedUploadV2Response(
                 preparedUpload.direct(),
@@ -119,34 +123,27 @@ public class UploadSessionV2Controller {
         ));
     }
 
-    private UploadSessionV2Response toResponse(UploadSession session) {
-        UploadSessionUploadMode uploadMode = uploadSessionService.resolveUploadMode(session);
-        if (uploadMode == null) {
-            uploadMode = session.getMultipartUploadId() != null
-                    ? UploadSessionUploadMode.DIRECT_MULTIPART
-                    : UploadSessionUploadMode.PROXY;
-        }
+    private UploadSessionV2Response toResponse(UploadSessionView session) {
+        UploadSessionUploadMode uploadMode = session.uploadMode();
         return new UploadSessionV2Response(
-                session.getSessionId(),
-                session.getObjectKey(),
+                session.sessionId(),
+                session.objectKey(),
                 uploadMode != UploadSessionUploadMode.PROXY,
                 uploadMode == UploadSessionUploadMode.DIRECT_MULTIPART,
                 uploadMode.name(),
-                session.getTargetPath(),
-                session.getFilename(),
-                session.getContentType(),
-                session.getSize(),
-                session.getStoragePolicyId(),
-                session.getStatus().name(),
-                session.getChunkSize(),
-                session.getChunkCount(),
-                session.getExpiresAt(),
-                session.getCreatedAt(),
-                session.getUpdatedAt(),
-                uploadSessionService.getRuntimeState(session.getSessionId())
-                        .map(this::toRuntimeResponse)
-                        .orElse(null),
-                toStrategyResponse(session.getSessionId(), uploadMode)
+                session.targetPath(),
+                session.filename(),
+                session.contentType(),
+                session.size(),
+                session.storagePolicyId(),
+                session.status().name(),
+                session.chunkSize(),
+                session.chunkCount(),
+                session.expiresAt(),
+                session.createdAt(),
+                session.updatedAt(),
+                session.runtimeState() == null ? null : toRuntimeResponse(session.runtimeState()),
+                toStrategyResponse(session, uploadMode)
         );
     }
 
@@ -161,16 +158,19 @@ public class UploadSessionV2Controller {
         );
     }
 
-    private UploadSessionV2StrategyResponse toStrategyResponse(String sessionId, UploadSessionUploadMode uploadMode) {
-        String sessionBasePath = "/api/v2/files/upload-sessions/" + sessionId;
+    private UploadSessionV2StrategyResponse toStrategyResponse(UploadSessionView session, UploadSessionUploadMode uploadMode) {
+        String sessionBasePath = "/api/v2/files/upload-sessions/" + session.sessionId();
+        boolean tusBacked = session.tusBacked();
         return switch (uploadMode) {
             case PROXY -> new UploadSessionV2StrategyResponse(
                     null,
-                    sessionBasePath + "/content",
+                    tusBacked ? null : sessionBasePath + "/content",
                     null,
                     null,
                     sessionBasePath + "/complete",
-                    "file"
+                    tusBacked ? null : "file",
+                    tusBacked ? sessionBasePath + "/tus" : null,
+                    tusBacked ? java.util.Map.of("Tus-Resumable", uploadSessionTusService.tusResumableVersion()) : null
             );
             case DIRECT_SINGLE -> new UploadSessionV2StrategyResponse(
                     sessionBasePath + "/prepare",
@@ -178,6 +178,8 @@ public class UploadSessionV2Controller {
                     null,
                     null,
                     sessionBasePath + "/complete",
+                    null,
+                    null,
                     null
             );
             case DIRECT_MULTIPART -> new UploadSessionV2StrategyResponse(
@@ -186,8 +188,15 @@ public class UploadSessionV2Controller {
                     sessionBasePath + "/parts/{partIndex}/prepare",
                     sessionBasePath + "/parts/{partIndex}",
                     sessionBasePath + "/complete",
+                    null,
+                    null,
                     null
             );
         };
+    }
+
+    private IdentityAuthenticatedUser loadAuthenticatedUser(UserDetails userDetails) {
+        return identityAuthenticationApi.findByUsername(userDetails.getUsername())
+                .orElseThrow(() -> new BusinessException(ErrorCode.NOT_LOGGED_IN, "user not found"));
     }
 }

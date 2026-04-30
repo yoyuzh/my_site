@@ -1,6 +1,6 @@
-package com.yoyuzh.files.upload;
+package com.yoyuzh.files.upload.internal.application;
 
-import com.yoyuzh.identity.access.internal.domain.User;
+import com.yoyuzh.files.upload.api.UploadSessionUploadMode;
 import com.yoyuzh.platform.storage.api.StoragePolicyCapabilities;
 import com.yoyuzh.platform.storage.api.StorageUploadMode;
 import com.yoyuzh.platform.storage.api.UploadConstraintPolicy;
@@ -10,8 +10,6 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-
-import java.time.LocalDateTime;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
@@ -45,27 +43,20 @@ class UploadPolicyResolverTest {
 
     @Test
     void shouldDelegateEffectiveMaxUploadSizeResolution() {
-        User user = new User();
-        user.setId(7L);
-        user.setUsername("alice");
-        user.setEmail("alice@example.com");
-        user.setPasswordHash("encoded");
-        user.setCreatedAt(LocalDateTime.now());
-        user.setMaxUploadSizeBytes(1_000L);
         StoragePolicyCapabilities capabilities = new StoragePolicyCapabilities(
                 true, true, true, true, false, true, true, false, 512L
         );
-        when(uploadConstraintPolicy.resolveEffectiveMaxUploadSize(2_000L, user.getMaxUploadSizeBytes(), 800L, capabilities.maxObjectSize()))
+        when(uploadConstraintPolicy.resolveEffectiveMaxUploadSize(2_000L, 1_000L, 800L, capabilities.maxObjectSize()))
                 .thenReturn(512L);
 
         long effectiveMax = uploadPolicyResolver.resolveEffectiveMaxUploadSize(
                 2_000L,
-                user.getMaxUploadSizeBytes(),
+                1_000L,
                 800L,
                 capabilities
         );
 
         assertThat(effectiveMax).isEqualTo(512L);
-        verify(uploadConstraintPolicy).resolveEffectiveMaxUploadSize(2_000L, user.getMaxUploadSizeBytes(), 800L, capabilities.maxObjectSize());
+        verify(uploadConstraintPolicy).resolveEffectiveMaxUploadSize(2_000L, 1_000L, 800L, capabilities.maxObjectSize());
     }
 }

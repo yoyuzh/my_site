@@ -3,6 +3,7 @@ package com.yoyuzh.platform.storage.internal.infra;
 import com.yoyuzh.platform.storage.api.StorageRuntimeProperties;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.stereotype.Component;
+import org.springframework.util.StringUtils;
 
 import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
@@ -18,6 +19,8 @@ public class FileStorageProperties implements StorageRuntimeProperties {
     private String provider = "local";
     private final Local local = new Local();
     private final S3 s3 = new S3();
+    private final Oss oss = new Oss();
+    private final WebDav webDav = new WebDav();
     private long maxFileSize = 500L * 1024 * 1024L;
 
     public String getProvider() {
@@ -34,6 +37,14 @@ public class FileStorageProperties implements StorageRuntimeProperties {
 
     public S3 getS3() {
         return s3;
+    }
+
+    public Oss getOss() {
+        return oss;
+    }
+
+    public WebDav getWebDav() {
+        return webDav;
     }
 
     public long getMaxFileSize() {
@@ -57,11 +68,35 @@ public class FileStorageProperties implements StorageRuntimeProperties {
         return s3.hasApiCredentials();
     }
 
+    public boolean hasOssCredentials() {
+        return oss.hasCredentials();
+    }
+
+    public boolean hasWebDavCredentials() {
+        return webDav.hasCredentials();
+    }
+
     public void copyS3ApiCredentialsTo(FileStorageProperties target) {
         if (target == null) {
             throw new IllegalArgumentException("target properties must not be null");
         }
         target.getS3().replaceApiCredentials(s3.copyApiAccessKey(), s3.copyApiSecretKey());
+    }
+
+    public void copyOssCredentialsTo(FileStorageProperties target) {
+        if (target == null) {
+            throw new IllegalArgumentException("target properties must not be null");
+        }
+        target.getOss().setAccessKeyId(oss.getAccessKeyId());
+        target.getOss().setAccessKeySecret(oss.getAccessKeySecret());
+    }
+
+    public void copyWebDavCredentialsTo(FileStorageProperties target) {
+        if (target == null) {
+            throw new IllegalArgumentException("target properties must not be null");
+        }
+        target.getWebDav().setUsername(webDav.getUsername());
+        target.getWebDav().setPassword(webDav.getPassword());
     }
 
     public static class Local implements StorageRuntimeProperties.Local {
@@ -234,6 +269,142 @@ public class FileStorageProperties implements StorageRuntimeProperties {
             byte[] bytes = Arrays.copyOfRange(encoded.array(), encoded.position(), encoded.limit());
             Arrays.fill(encoded.array(), (byte) 0);
             return bytes;
+        }
+    }
+
+    public static class Oss implements StorageRuntimeProperties.Oss {
+        private String endpoint;
+        private String bucketName;
+        private String prefix = "";
+        private String region = "cn-hangzhou";
+        private String publicDownloadBaseUrl;
+        private int ttlSeconds = 3600;
+        private String accessKeyId;
+        private String accessKeySecret;
+
+        @Override
+        public String getEndpoint() {
+            return endpoint;
+        }
+
+        public void setEndpoint(String endpoint) {
+            this.endpoint = endpoint;
+        }
+
+        @Override
+        public String getBucketName() {
+            return bucketName;
+        }
+
+        public void setBucketName(String bucketName) {
+            this.bucketName = bucketName;
+        }
+
+        @Override
+        public String getPrefix() {
+            return prefix;
+        }
+
+        public void setPrefix(String prefix) {
+            this.prefix = prefix;
+        }
+
+        @Override
+        public String getRegion() {
+            return region;
+        }
+
+        public void setRegion(String region) {
+            this.region = region;
+        }
+
+        @Override
+        public String getPublicDownloadBaseUrl() {
+            return publicDownloadBaseUrl;
+        }
+
+        public void setPublicDownloadBaseUrl(String publicDownloadBaseUrl) {
+            this.publicDownloadBaseUrl = publicDownloadBaseUrl;
+        }
+
+        @Override
+        public int getTtlSeconds() {
+            return ttlSeconds;
+        }
+
+        public void setTtlSeconds(int ttlSeconds) {
+            this.ttlSeconds = ttlSeconds;
+        }
+
+        @Override
+        public boolean hasCredentials() {
+            return StringUtils.hasText(accessKeyId) && StringUtils.hasText(accessKeySecret);
+        }
+
+        @Override
+        public String getAccessKeyId() {
+            return accessKeyId;
+        }
+
+        public void setAccessKeyId(String accessKeyId) {
+            this.accessKeyId = accessKeyId;
+        }
+
+        @Override
+        public String getAccessKeySecret() {
+            return accessKeySecret;
+        }
+
+        public void setAccessKeySecret(String accessKeySecret) {
+            this.accessKeySecret = accessKeySecret;
+        }
+    }
+
+    public static class WebDav implements StorageRuntimeProperties.WebDav {
+        private String baseUrl;
+        private String rootPath = "";
+        private String username;
+        private String password;
+
+        @Override
+        public String getBaseUrl() {
+            return baseUrl;
+        }
+
+        public void setBaseUrl(String baseUrl) {
+            this.baseUrl = baseUrl;
+        }
+
+        @Override
+        public String getRootPath() {
+            return rootPath;
+        }
+
+        public void setRootPath(String rootPath) {
+            this.rootPath = rootPath;
+        }
+
+        @Override
+        public String getUsername() {
+            return username;
+        }
+
+        public void setUsername(String username) {
+            this.username = username;
+        }
+
+        @Override
+        public String getPassword() {
+            return password;
+        }
+
+        public void setPassword(String password) {
+            this.password = password;
+        }
+
+        @Override
+        public boolean hasCredentials() {
+            return StringUtils.hasText(username) && StringUtils.hasText(password);
         }
     }
 }

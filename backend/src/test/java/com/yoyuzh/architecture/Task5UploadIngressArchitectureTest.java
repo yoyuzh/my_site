@@ -17,7 +17,7 @@ class Task5UploadIngressArchitectureTest {
     void uploadSessionServiceMustDependOnUploadTargetPolicy() {
         ArchRule rule = classes()
                 .that()
-                .haveFullyQualifiedName("com.yoyuzh.files.upload.UploadSessionService")
+                .haveFullyQualifiedName("com.yoyuzh.files.upload.internal.application.UploadSessionService")
                 .should()
                 .dependOnClassesThat()
                 .haveFullyQualifiedName("com.yoyuzh.files.upload.api.UploadTargetPolicy");
@@ -49,14 +49,14 @@ class Task5UploadIngressArchitectureTest {
     void uploadSessionServiceMustStopDependingOnLegacyCoreUploadRules() {
         ArchRule workspaceRule = noClasses()
                 .that()
-                .haveFullyQualifiedName("com.yoyuzh.files.upload.UploadSessionService")
+                .haveFullyQualifiedName("com.yoyuzh.files.upload.internal.application.UploadSessionService")
                 .should()
                 .dependOnClassesThat()
                 .haveFullyQualifiedName("com.yoyuzh.files.workspace.internal.application.WorkspaceNodeRulesService");
 
         ArchRule uploadRule = noClasses()
                 .that()
-                .haveFullyQualifiedName("com.yoyuzh.files.upload.UploadSessionService")
+                .haveFullyQualifiedName("com.yoyuzh.files.upload.internal.application.UploadSessionService")
                 .should()
                 .dependOnClassesThat()
                 .haveFullyQualifiedName("com.yoyuzh.files.workspace.internal.application.FileUploadRulesService");

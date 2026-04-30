@@ -15,6 +15,8 @@ public interface AdminDailyActiveUserRepository extends JpaRepository<AdminDaily
 
     List<AdminDailyActiveUserEntity> findAllByMetricDateBetweenOrderByMetricDateAscUsernameAsc(LocalDate startDate, LocalDate endDate);
 
+    Optional<AdminDailyActiveUserEntity> findByMetricDateAndUserId(LocalDate metricDate, Long userId);
+
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("""
             select entry from AdminDailyActiveUserEntity entry

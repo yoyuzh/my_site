@@ -137,9 +137,12 @@ public class RuntimeStoragePolicyAdminApi implements StoragePolicyAdminApi {
             }
             validateLocalStorageRoot(command.prefix());
         }
-        if (command.type() == StoragePolicyType.S3_COMPATIBLE
+        if ((command.type() == StoragePolicyType.S3_COMPATIBLE || command.type() == StoragePolicyType.OSS_SDK)
                 && !StringUtils.hasText(command.bucketName())) {
-            throw new BusinessException(ErrorCode.INVALID_INPUT, "S3 存储策略必须配置 bucketName");
+            throw new BusinessException(ErrorCode.INVALID_INPUT, "对象存储策略必须配置 bucketName");
+        }
+        if (command.type() == StoragePolicyType.WEBDAV && !StringUtils.hasText(command.endpoint())) {
+            throw new BusinessException(ErrorCode.INVALID_INPUT, "WebDAV 存储策略必须配置 endpoint");
         }
     }
 

@@ -1,4 +1,6 @@
-package com.yoyuzh.files.upload;
+package com.yoyuzh.files.upload.internal.application;
+
+import com.yoyuzh.files.upload.internal.domain.UploadSession;
 
 import java.time.LocalDateTime;
 import java.util.Optional;

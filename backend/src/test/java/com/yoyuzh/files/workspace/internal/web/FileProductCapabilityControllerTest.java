@@ -49,7 +49,7 @@ class FileProductCapabilityControllerTest {
         fileService = mock(FileService.class);
         userDetailsService = mock(CustomUserDetailsService.class);
         workspaceTagService = mock(WorkspaceTagService.class);
-        fileViewerConfigService = new FileViewerConfigService();
+        fileViewerConfigService = new FileViewerConfigService(true);
         when(userDetailsService.loadUserId("alice")).thenReturn(7L);
         when(workspaceTagService.listFileTags(eq(7L), eq(1L))).thenReturn(List.of());
         mockMvc = MockMvcBuilders.standaloneSetup(new FileController(

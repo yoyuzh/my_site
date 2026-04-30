@@ -106,18 +106,37 @@ public class RuntimeStoragePolicyBlobAccessApi implements StoragePolicyBlobAcces
             }
             return;
         }
-        if (policy.type() != StoragePolicyType.S3_COMPATIBLE) {
-            throw new BusinessException(ErrorCode.INVALID_INPUT, label + "类型不支持迁移");
+        if (policy.type() == StoragePolicyType.S3_COMPATIBLE) {
+            if (!StringUtils.hasText(policy.bucketName())) {
+                throw new BusinessException(ErrorCode.INVALID_INPUT, label + "缺少 bucketName 配置");
+            }
+            if (policy.credentialMode() != StoragePolicyCredentialMode.DOGECLOUD_TEMP) {
+                throw new BusinessException(ErrorCode.INVALID_INPUT, label + "当前仅支持使用多吉云临时凭证的 S3 兼容策略迁移");
+            }
+            if (!globalProperties.hasS3ApiCredentials()) {
+                throw new BusinessException(ErrorCode.INVALID_INPUT, "当前运行环境缺少多吉云临时凭证配置，无法执行策略迁移");
+            }
+            return;
         }
-        if (!StringUtils.hasText(policy.bucketName())) {
-            throw new BusinessException(ErrorCode.INVALID_INPUT, label + "缺少 bucketName 配置");
+        if (policy.type() == StoragePolicyType.OSS_SDK) {
+            if (!StringUtils.hasText(policy.bucketName())) {
+                throw new BusinessException(ErrorCode.INVALID_INPUT, label + "缺少 bucketName 配置");
+            }
+            if (!globalProperties.hasOssCredentials()) {
+                throw new BusinessException(ErrorCode.INVALID_INPUT, "当前运行环境缺少 OSS 凭证配置，无法执行策略迁移");
+            }
+            return;
         }
-        if (policy.credentialMode() != StoragePolicyCredentialMode.DOGECLOUD_TEMP) {
-            throw new BusinessException(ErrorCode.INVALID_INPUT, label + "当前仅支持使用多吉云临时凭证的 S3 兼容策略迁移");
+        if (policy.type() == StoragePolicyType.WEBDAV) {
+            if (!StringUtils.hasText(policy.endpoint())) {
+                throw new BusinessException(ErrorCode.INVALID_INPUT, label + "缺少 WebDAV endpoint 配置");
+            }
+            if (!globalProperties.hasWebDavCredentials()) {
+                throw new BusinessException(ErrorCode.INVALID_INPUT, "当前运行环境缺少 WebDAV 凭证配置，无法执行策略迁移");
+            }
+            return;
         }
-        if (!globalProperties.hasS3ApiCredentials()) {
-            throw new BusinessException(ErrorCode.INVALID_INPUT, "当前运行环境缺少多吉云临时凭证配置，无法执行策略迁移");
-        }
+        throw new BusinessException(ErrorCode.INVALID_INPUT, label + "类型不支持迁移");
     }
 
     private FileStorageProperties localProperties(StoragePolicyDescriptor policy) {
@@ -144,7 +163,33 @@ public class RuntimeStoragePolicyBlobAccessApi implements StoragePolicyBlobAcces
         return switch (policy.type()) {
             case LOCAL -> localProperties(policy);
             case S3_COMPATIBLE -> s3Properties(policy);
+            case OSS_SDK -> ossProperties(policy);
+            case WEBDAV -> webDavProperties(policy);
         };
+    }
+
+    private FileStorageProperties ossProperties(StoragePolicyDescriptor policy) {
+        FileStorageProperties properties = new FileStorageProperties();
+        properties.setProvider("oss");
+        properties.setMaxFileSize(globalProperties.getMaxFileSize());
+        properties.getOss().setEndpoint(StringUtils.hasText(policy.endpoint()) ? policy.endpoint().trim() : globalProperties.getOss().getEndpoint());
+        properties.getOss().setBucketName(policy.bucketName());
+        properties.getOss().setPrefix(policy.prefix());
+        properties.getOss().setRegion(StringUtils.hasText(policy.region()) ? policy.region().trim() : globalProperties.getOss().getRegion());
+        properties.getOss().setPublicDownloadBaseUrl(globalProperties.getOss().getPublicDownloadBaseUrl());
+        properties.getOss().setTtlSeconds(globalProperties.getOss().getTtlSeconds());
+        globalProperties.copyOssCredentialsTo(properties);
+        return properties;
+    }
+
+    private FileStorageProperties webDavProperties(StoragePolicyDescriptor policy) {
+        FileStorageProperties properties = new FileStorageProperties();
+        properties.setProvider("webdav");
+        properties.setMaxFileSize(globalProperties.getMaxFileSize());
+        properties.getWebDav().setBaseUrl(StringUtils.hasText(policy.endpoint()) ? policy.endpoint().trim() : globalProperties.getWebDav().getBaseUrl());
+        properties.getWebDav().setRootPath(policy.prefix());
+        globalProperties.copyWebDavCredentialsTo(properties);
+        return properties;
     }
 
     private StorageBackendKey storageBackendKey(StoragePolicyDescriptor policy) {

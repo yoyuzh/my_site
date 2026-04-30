@@ -1,4 +1,4 @@
-package com.yoyuzh.files.upload;
+package com.yoyuzh.files.upload.internal.application;
 
 import java.time.LocalDateTime;
 

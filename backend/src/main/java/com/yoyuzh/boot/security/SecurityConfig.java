@@ -130,8 +130,16 @@ public class SecurityConfig {
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration configuration = new CorsConfiguration();
         configuration.setAllowedOrigins(corsProperties.getAllowedOrigins());
-        configuration.setAllowedMethods(List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
+        configuration.setAllowedMethods(List.of("GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"));
         configuration.setAllowedHeaders(List.of("*"));
+        configuration.setExposedHeaders(List.of(
+                "Upload-Offset",
+                "Upload-Length",
+                "Location",
+                "Tus-Resumable",
+                "Tus-Version",
+                "Tus-Extension"
+        ));
         configuration.setAllowCredentials(false);
         configuration.setMaxAge(3600L);
 

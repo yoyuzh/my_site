@@ -1,4 +1,4 @@
-package com.yoyuzh.files.upload;
+package com.yoyuzh.files.upload.internal.domain;
 
 import org.springframework.data.jpa.repository.JpaRepository;
 

@@ -8,6 +8,10 @@ public interface StorageRuntimeProperties {
 
     S3 getS3();
 
+    Oss getOss();
+
+    WebDav getWebDav();
+
     long getMaxFileSize();
 
     interface Local {
@@ -34,5 +38,37 @@ public interface StorageRuntimeProperties {
         boolean hasApiCredentials();
 
         String createApiAuthorization(String signTarget);
+    }
+
+    interface Oss {
+        String getEndpoint();
+
+        String getBucketName();
+
+        String getPrefix();
+
+        String getRegion();
+
+        String getPublicDownloadBaseUrl();
+
+        int getTtlSeconds();
+
+        boolean hasCredentials();
+
+        String getAccessKeyId();
+
+        String getAccessKeySecret();
+    }
+
+    interface WebDav {
+        String getBaseUrl();
+
+        String getRootPath();
+
+        String getUsername();
+
+        String getPassword();
+
+        boolean hasCredentials();
     }
 }
