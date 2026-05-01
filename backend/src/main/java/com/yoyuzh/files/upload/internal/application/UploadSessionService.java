@@ -313,6 +313,7 @@ public class UploadSessionService {
     @Transactional
     public UploadSessionTusState startTusSession(Long userId, String sessionId, Long uploadLength) {
         UploadSession session = getOwnedSessionEntity(userId, sessionId);
+        ensureTusBackedSession(session);
         long offset = uploadSessionTusService.start(session, uploadLength);
         return new UploadSessionTusState(offset, session.getSize() == null ? 0L : session.getSize());
     }
@@ -320,6 +321,7 @@ public class UploadSessionService {
     @Transactional(readOnly = true)
     public UploadSessionTusState getTusSessionState(Long userId, String sessionId) {
         UploadSession session = getOwnedSessionEntity(userId, sessionId);
+        ensureTusBackedSession(session);
         long offset = uploadSessionTusService.currentOffset(session);
         return new UploadSessionTusState(offset, session.getSize() == null ? 0L : session.getSize());
     }
@@ -331,6 +333,7 @@ public class UploadSessionService {
                                                   Path stagedContent,
                                                   long contentLength) {
         UploadSession session = getOwnedSessionEntity(userId, sessionId);
+        ensureTusBackedSession(session);
         try (InputStream content = Files.newInputStream(stagedContent)) {
             long nextOffset = uploadSessionTusService.append(session, uploadOffset, content, contentLength);
             return new UploadSessionTusState(nextOffset, session.getSize() == null ? 0L : session.getSize());
@@ -342,6 +345,7 @@ public class UploadSessionService {
     @Transactional
     public void cancelTusSession(Long userId, String sessionId) {
         UploadSession session = getOwnedSessionEntity(userId, sessionId);
+        ensureTusBackedSession(session);
         uploadSessionTusService.delete(session);
         cancelSession(session);
     }
@@ -439,6 +443,12 @@ public class UploadSessionService {
 
     private boolean usesTusUpload(UploadSession session) {
         return session != null && uploadSessionTransportPolicy.usesTusUpload(session.getStoragePolicyId());
+    }
+
+    private void ensureTusBackedSession(UploadSession session) {
+        if (!usesTusUpload(session)) {
+            throw new BusinessException(ErrorCode.INVALID_INPUT, "upload session does not support tus upload");
+        }
     }
 
     private void ensureSessionCanReceiveContent(UploadSession session, LocalDateTime now) {

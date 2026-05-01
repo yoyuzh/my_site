@@ -11,6 +11,7 @@ import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -60,5 +61,26 @@ class WebDavFileContentStorageTest {
         storage.close();
 
         verify(sardine).shutdown();
+    }
+
+    @Test
+    void shouldRenameWebDavFileToNewStorageName() throws Exception {
+        FileStorageProperties.WebDav properties = new FileStorageProperties.WebDav();
+        properties.setBaseUrl("https://dav.example.com");
+        Sardine sardine = mock(Sardine.class);
+        when(sardine.exists("https://dav.example.com/users/7/docs")).thenReturn(true);
+
+        WebDavFileContentStorage storage = new WebDavFileContentStorage(properties, sardine);
+
+        storage.renameFile(7L, "/docs", "old.txt", "new.txt");
+
+        verify(sardine).move(
+                "https://dav.example.com/users/7/docs/old.txt",
+                "https://dav.example.com/users/7/docs/new.txt"
+        );
+        verify(sardine, never()).move(
+                "https://dav.example.com/users/7/docs/old.txt",
+                "https://dav.example.com/users/7/docs/old.txt"
+        );
     }
 }

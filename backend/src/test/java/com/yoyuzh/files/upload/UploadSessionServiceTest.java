@@ -404,6 +404,22 @@ class UploadSessionServiceTest {
     }
 
     @Test
+    void shouldRejectStartingTusSessionWhenStoragePolicyIsNotTusBacked() {
+        IdentityAuthenticatedUser user = createUser(7L);
+        UploadSession session = createSession(user);
+        session.setStoragePolicyId(42L);
+        when(uploadSessionRepository.findBySessionIdAndUserId("session-1", 7L))
+                .thenReturn(Optional.of(session));
+        when(uploadSessionTransportPolicy.usesTusUpload(42L)).thenReturn(false);
+
+        assertThatThrownBy(() -> uploadSessionService.startTusSession(user.id(), "session-1", 20L))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("does not support tus upload");
+
+        verify(uploadSessionTusService, never()).start(any(), any());
+    }
+
+    @Test
     void shouldRejectCompletingIncompleteMultipartSessionAndMarkFailed() {
         IdentityAuthenticatedUser user = createUser(7L);
         UploadSession session = createSession(user);

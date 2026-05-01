@@ -162,7 +162,14 @@ public class WebDavFileContentStorage implements FileContentStorage, AutoCloseab
 
     @Override
     public void renameFile(Long userId, String path, String oldStorageName, String newStorageName) {
-        moveFile(userId, path, oldStorageName, path);
+        try {
+            String sourceUrl = resolveUrl(resolveLegacyFileObjectKey(userId, path, oldStorageName));
+            String targetUrl = resolveUrl(resolveLegacyFileObjectKey(userId, path, newStorageName));
+            ensureParentDirectory(targetUrl);
+            sardine.move(sourceUrl, targetUrl);
+        } catch (IOException ex) {
+            throw new BusinessException(ErrorCode.UNKNOWN, "File rename failed");
+        }
     }
 
     @Override
