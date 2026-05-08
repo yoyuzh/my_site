@@ -36,6 +36,9 @@ app:
     secret: ${APP_JWT_SECRET:}
     access-expiration-seconds: 900
     refresh-expiration-seconds: 1209600
+  files:
+    viewer-token-secret: ${APP_FILES_VIEWER_TOKEN_SECRET:${app.jwt.secret:}}
+    viewer-url-expiration-seconds: ${APP_FILES_VIEWER_URL_EXPIRATION_SECONDS:120}
   admin:
     usernames: ${APP_ADMIN_USERNAMES:}
   registration:
@@ -104,6 +107,9 @@ app:
       locks: ${APP_REDIS_NAMESPACE_LOCKS:locks}
       file-events: ${APP_REDIS_NAMESPACE_FILE_EVENTS:file-events}
       broker: ${APP_REDIS_NAMESPACE_BROKER:broker}
+  probe:
+    files:
+      enabled: ${APP_PROBE_FILES_ENABLED:false}
 
 springdoc:
   swagger-ui:

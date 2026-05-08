@@ -84,7 +84,6 @@ class FileServiceEdgeCaseTest {
     @Test
     void shouldNormalizeBackslashesInPath() {
         User user = createUser(1L);
-        when(storedFileRepository.existsByUserIdAndPathAndFilename(1L, "/", "docs")).thenReturn(false);
         when(storedFileRepository.save(any(StoredFile.class))).thenAnswer(inv -> {
             StoredFile f = inv.getArgument(0);
             f.setId(10L);
@@ -101,7 +100,6 @@ class FileServiceEdgeCaseTest {
     @Test
     void shouldNormalizeTrailingSlashInPath() {
         User user = createUser(1L);
-        when(storedFileRepository.existsByUserIdAndPathAndFilename(1L, "/", "docs")).thenReturn(false);
         when(storedFileRepository.save(any(StoredFile.class))).thenAnswer(inv -> {
             StoredFile f = inv.getArgument(0);
             f.setId(10L);
@@ -117,7 +115,6 @@ class FileServiceEdgeCaseTest {
     @Test
     void shouldNormalizeDoubleSlashInPath() {
         User user = createUser(1L);
-        when(storedFileRepository.existsByUserIdAndPathAndFilename(1L, "/", "docs")).thenReturn(false);
         when(storedFileRepository.save(any(StoredFile.class))).thenAnswer(inv -> {
             StoredFile f = inv.getArgument(0);
             f.setId(10L);
@@ -144,7 +141,6 @@ class FileServiceEdgeCaseTest {
     @Test
     void shouldAutoRenameCreatingAlreadyExistingDirectory() {
         User user = createUser(1L);
-        when(storedFileRepository.existsByUserIdAndPathAndFilename(1L, "/", "docs")).thenReturn(true);
         when(storedFileRepository.findActiveFilenamesByUserIdAndPathAndFilenamePrefix(1L, "/", "docs", "docs"))
                 .thenReturn(List.of("docs"));
         when(storedFileRepository.save(any(StoredFile.class))).thenAnswer(inv -> {

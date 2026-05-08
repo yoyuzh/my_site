@@ -4,11 +4,15 @@ This directory is the Spring Boot backend for `yoyuzh.xyz`. Keep changes aligned
 
 ## Backend layout
 
-- `src/main/java/com/yoyuzh/auth`: authentication, JWT, login/register/profile DTOs and services.
-- `src/main/java/com/yoyuzh/files`: file APIs and storage flows, including `files/storage`.
-- `src/main/java/com/yoyuzh/cqu`: CQU schedule/grade aggregation.
-- `src/main/java/com/yoyuzh/config`: Spring and security configuration.
-- `src/main/java/com/yoyuzh/common`: shared exceptions and common utilities.
+- `src/main/java/com/yoyuzh/boot`: bootstrap, security, global web wiring, and site-edge controllers.
+- `src/main/java/com/yoyuzh/shared/kernel`: small shared abstractions only.
+- `src/main/java/com/yoyuzh/identity/access`: auth, session, profile, invite code, and identity governance flows.
+- `src/main/java/com/yoyuzh/files`: workspace, content, upload, sharing, and search modules.
+- `src/main/java/com/yoyuzh/transfer`: browser transfer and remote download flows.
+- `src/main/java/com/yoyuzh/platform`: platform job and storage policy modules.
+- `src/main/java/com/yoyuzh/ops/admin`: admin governance entrypoints and orchestration.
+- `src/main/java/com/yoyuzh/app/android`: Android release endpoints.
+- `src/main/java/com/yoyuzh/infra`: cross-cutting technical infrastructure.
 - `src/main/resources`: runtime config and logging.
 - `src/test/java/com/yoyuzh/...`: matching package-level tests.
 
@@ -31,9 +35,10 @@ There is no dedicated backend lint command and no dedicated backend typecheck co
 
 ## Backend rules
 
-- Keep controller, service, DTO, config, and storage responsibilities separated along the current package boundaries.
-- When changing `auth`, `files`, or `cqu`, check whether an existing test package already covers that area before adding new files elsewhere.
-- Respect the existing `dev` profile in `application-dev.yml`; do not hardcode assumptions that bypass H2 or mock CQU behavior.
+- Keep changes aligned with `backend-next/archtecture.md` and the matching docs under `docs/backend-next/`, even when the runtime package migration is still in progress.
+- Respect the current module and layer split: `api`, `internal.web`, `internal.application`, `internal.domain`, and `internal.infra`.
+- When changing `identity.access`, `files.*`, `transfer`, `platform.*`, or `ops.admin`, check whether an existing test package already covers that area before adding new files elsewhere.
+- Respect the existing `dev` profile in `application-dev.yml`; do not hardcode assumptions that bypass H2 behavior.
 - If a change affects file storage behavior, note that the repo currently supports local storage and OSS-related migration/deploy scripts.
 - Prefer Maven-based verification from this directory instead of ad hoc shell pipelines.
 - For deploy work, never invent a remote directory, service name, or restart command. Discover them from the server or ask when discovery is impossible.

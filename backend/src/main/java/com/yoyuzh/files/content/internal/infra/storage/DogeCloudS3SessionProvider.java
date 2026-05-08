@@ -1,6 +1,8 @@
 package com.yoyuzh.files.content.internal.infra.storage;
 
 import com.yoyuzh.platform.storage.api.StorageRuntimeProperties;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import software.amazon.awssdk.auth.credentials.AwsSessionCredentials;
 import software.amazon.awssdk.auth.credentials.StaticCredentialsProvider;
 import software.amazon.awssdk.regions.Region;
@@ -12,10 +14,13 @@ import java.net.URI;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.Locale;
 import java.util.function.Function;
 import java.util.function.Supplier;
 
 final class DogeCloudS3SessionProvider implements S3SessionProvider {
+
+    private static final Logger log = LoggerFactory.getLogger(DogeCloudS3SessionProvider.class);
 
     private static final Duration REFRESH_WINDOW = Duration.ofMinutes(1);
 
@@ -51,10 +56,18 @@ final class DogeCloudS3SessionProvider implements S3SessionProvider {
             return cachedSession.runtimeSession();
         }
 
+        long startedAt = System.nanoTime();
+        boolean hadCachedSession = cachedSession != null;
         closeCachedSession();
         DogeCloudTemporaryS3Session nextSession = sessionSupplier.get();
         S3FileRuntimeSession runtimeSession = runtimeFactory.apply(nextSession);
         cachedSession = new CachedSession(nextSession.expiresAt(), runtimeSession);
+        log.info(
+                "upload-probe operation=dogecloud-session-refresh durationMs={} cacheRefresh={} expiresAt={}",
+                formatMillis(System.nanoTime() - startedAt),
+                hadCachedSession,
+                nextSession.expiresAt()
+        );
         return runtimeSession;
     }
 
@@ -101,6 +114,10 @@ final class DogeCloudS3SessionProvider implements S3SessionProvider {
         return properties.getRegion() == null || properties.getRegion().isBlank()
                 ? "automatic"
                 : properties.getRegion();
+    }
+
+    private static String formatMillis(long durationNanos) {
+        return String.format(Locale.ROOT, "%.2f", durationNanos / 1_000_000.0d);
     }
 
     private record CachedSession(Instant expiresAt, S3FileRuntimeSession runtimeSession) {

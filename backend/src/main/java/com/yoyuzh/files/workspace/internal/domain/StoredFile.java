@@ -18,6 +18,7 @@ import java.util.Set;
 @Entity
 @Table(name = "portal_file", indexes = {
         @Index(name = "uk_file_user_path_name", columnList = "user_id,path,filename", unique = true),
+        @Index(name = "idx_file_user_path_deleted_directory_created", columnList = "user_id,path,deleted_at,is_directory,created_at"),
         @Index(name = "idx_file_created_at", columnList = "created_at"),
         @Index(name = "idx_file_deleted_at", columnList = "deleted_at"),
         @Index(name = "idx_file_recycle_group", columnList = "recycle_group_id"),

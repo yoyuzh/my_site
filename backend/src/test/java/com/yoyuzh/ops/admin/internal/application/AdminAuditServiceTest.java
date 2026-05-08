@@ -55,6 +55,8 @@ class AdminAuditServiceTest {
                         99L,
                         "service-admin",
                         "N/A",
+                        0L,
+                        0L,
                         List.of(new SimpleGrantedAuthority("ROLE_ADMIN"), new SimpleGrantedAuthority("ROLE_MODERATOR")),
                         true
                 ),

@@ -73,6 +73,17 @@ public interface StoredFileRepository extends JpaRepository<StoredFile, Long> {
 
     @Query("""
             select f from StoredFile f
+            where f.userId = :userId
+              and f.deletedAt is null
+              and f.path in :paths
+              and f.filename in :filenames
+            """)
+    List<StoredFile> findActiveNodesByUserIdAndPathInAndFilenameIn(@Param("userId") Long userId,
+                                                                    @Param("paths") Collection<String> paths,
+                                                                    @Param("filenames") Collection<String> filenames);
+
+    @Query("""
+            select f from StoredFile f
             where f.userId = :userId and f.path = :path and f.deletedAt is null
             order by f.directory desc, f.createdAt desc
             """)
@@ -272,6 +283,12 @@ public interface StoredFileRepository extends JpaRepository<StoredFile, Long> {
             where f.id = :id
             """)
     Optional<StoredFile> findDetailedById(@Param("id") Long id);
+
+    @Query("""
+            select f from StoredFile f
+            where f.id = :id and f.userId = :userId
+            """)
+    Optional<StoredFile> findDetailedByIdAndUserId(@Param("id") Long id, @Param("userId") Long userId);
 
     List<StoredFile> findAllByDirectoryFalseAndBlobIdIsNull();
 

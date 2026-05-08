@@ -61,6 +61,15 @@ function getLogicalPath(path: string, filename: string) {
   return `${path}/${filename}`;
 }
 
+function getNearestLoadedAncestorPath(path: string, nodes: Record<string, WorkspaceFolderTreeNodeState>) {
+  let candidatePath = normalizeWorkspaceFolderPath(path);
+  while (candidatePath !== ROOT_PATH && !nodes[candidatePath]) {
+    const slashIndex = candidatePath.lastIndexOf('/');
+    candidatePath = slashIndex <= 0 ? ROOT_PATH : candidatePath.slice(0, slashIndex);
+  }
+  return nodes[candidatePath] ? candidatePath : ROOT_PATH;
+}
+
 function restoreExpandedPaths() {
   if (typeof window === 'undefined') {
     return [];
@@ -150,6 +159,10 @@ const WorkspaceFolderTree: React.FC<{
       return;
     }
 
+    if (!force && existing.childrenStatus === 'loading') {
+      return;
+    }
+
     setNodes((current) => ({
       ...current,
       [normalizedPath]: {
@@ -221,28 +234,22 @@ const WorkspaceFolderTree: React.FC<{
 
   async function refreshFolderPath(path: string) {
     const normalizedPath = normalizeWorkspaceFolderPath(path);
-    if (normalizedPath !== ROOT_PATH && !nodesRef.current[normalizedPath]) {
-      return;
-    }
+    const refreshTargetPath = getNearestLoadedAncestorPath(normalizedPath, nodesRef.current);
 
     setNodes((current) => ({
       ...current,
-      [normalizedPath]: {
-        ...(current[normalizedPath] ?? createTreeNode(normalizedPath)),
+      [refreshTargetPath]: {
+        ...(current[refreshTargetPath] ?? createTreeNode(refreshTargetPath)),
         childPaths: null,
         childrenStatus: 'unknown',
       },
     }));
 
-    await loadFolderChildren(normalizedPath, true);
+    await loadFolderChildren(refreshTargetPath, true);
   }
 
   useEffect(() => {
     if (rootNode?.childPaths !== null) {
-      return;
-    }
-
-    if (rootNode?.childrenStatus === 'loading' && cachedNodes?.[ROOT_PATH]?.childPaths !== null) {
       return;
     }
 

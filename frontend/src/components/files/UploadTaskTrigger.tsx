@@ -10,7 +10,7 @@ interface UploadTaskTriggerProps {
 
 const UploadTaskTrigger: React.FC<UploadTaskTriggerProps> = ({ onClick, active }) => {
   const { tasks } = useUploadQueue();
-  const uploadingCount = tasks.filter((t) => t.status === 'uploading' || t.status === 'waiting').length;
+  const uploadingCount = tasks.filter((t) => t.status === 'uploading' || t.status === 'preparing' || t.status === 'waiting').length;
 
   if (tasks.length === 0) return null;
 

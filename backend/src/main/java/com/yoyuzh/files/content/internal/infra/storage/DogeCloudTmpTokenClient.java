@@ -3,6 +3,8 @@ package com.yoyuzh.files.content.internal.infra.storage;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.yoyuzh.platform.storage.api.StorageRuntimeProperties;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.util.StringUtils;
 
 import java.io.IOException;
@@ -12,11 +14,15 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
+import java.util.Locale;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
 final class DogeCloudTmpTokenClient {
+
+    private static final Logger log = LoggerFactory.getLogger(DogeCloudTmpTokenClient.class);
+    private static final long SLOW_TMP_TOKEN_NANOS = 300L * 1_000_000L;
 
     private static final String API_PATH = "/auth/tmp_token.json";
 
@@ -35,19 +41,37 @@ final class DogeCloudTmpTokenClient {
     }
 
     DogeCloudTemporaryS3Session fetchSession() {
+        return fetchSession(new TokenRequest("OSS_FULL", properties.getScope()));
+    }
+
+    DogeCloudTemporaryS3Session fetchUploadSession(String objectKey) {
+        return fetchSession(new TokenRequest("OSS_UPLOAD", buildUploadScope(objectKey)));
+    }
+
+    private DogeCloudTemporaryS3Session fetchSession(TokenRequest request) {
+        long startedAt = System.nanoTime();
         validateConfiguration();
-        String body = buildRequestBody();
+        String body = buildRequestBody(request);
         Map<String, String> headers = Map.of(
                 "Content-Type", "application/json",
                 "Authorization", buildAuthorization(body)
         );
 
+        long httpStartedAt = System.nanoTime();
         TransportResponse response = post(body, headers);
+        long httpDuration = System.nanoTime() - httpStartedAt;
         if (response.statusCode() < 200 || response.statusCode() >= 300) {
+            log.warn(
+                    "upload-probe operation=dogecloud-tmp-token-http durationMs={} status={} scope={}",
+                    formatMillis(httpDuration),
+                    response.statusCode(),
+                    request.scope()
+            );
             throw new IllegalStateException("多吉云临时密钥请求失败: HTTP " + response.statusCode() + " " + response.body());
         }
 
         try {
+            long parseStartedAt = System.nanoTime();
             JsonNode root = objectMapper.readTree(response.body());
             if (root.path("code").asInt() != 200) {
                 throw new IllegalStateException("多吉云临时密钥请求失败: " + root.path("msg").asText("unknown"));
@@ -55,8 +79,8 @@ final class DogeCloudTmpTokenClient {
 
             JsonNode data = root.path("data");
             JsonNode credentials = data.path("Credentials");
-            JsonNode bucketNode = resolveBucketNode(data.path("Buckets"));
-            return new DogeCloudTemporaryS3Session(
+            JsonNode bucketNode = resolveBucketNode(data.path("Buckets"), request.scope());
+            DogeCloudTemporaryS3Session session = new DogeCloudTemporaryS3Session(
                     requiredText(bucketNode, "s3Bucket"),
                     requiredText(bucketNode, "s3Endpoint"),
                     requiredText(credentials, "accessKeyId"),
@@ -64,7 +88,26 @@ final class DogeCloudTmpTokenClient {
                     requiredText(credentials, "sessionToken"),
                     resolveExpiresAt(data.path("ExpiredAt"))
             );
+            long parseDuration = System.nanoTime() - parseStartedAt;
+            long totalDuration = System.nanoTime() - startedAt;
+            if (totalDuration >= SLOW_TMP_TOKEN_NANOS) {
+                log.info(
+                        "upload-probe operation=dogecloud-tmp-token durationMs={} httpMs={} parseMs={} scope={} bucket={}",
+                        formatMillis(totalDuration),
+                        formatMillis(httpDuration),
+                        formatMillis(parseDuration),
+                        request.scope(),
+                        session.bucket()
+                );
+            }
+            return session;
         } catch (IOException ex) {
+            log.warn(
+                    "upload-probe operation=dogecloud-tmp-token-parse durationMs={} scope={}",
+                    formatMillis(System.nanoTime() - startedAt),
+                    request.scope(),
+                    ex
+            );
             throw new IllegalStateException("解析多吉云临时密钥响应失败", ex);
         }
     }
@@ -86,11 +129,11 @@ final class DogeCloudTmpTokenClient {
         }
     }
 
-    private String buildRequestBody() {
+    private String buildRequestBody(TokenRequest request) {
         LinkedHashMap<String, Object> payload = new LinkedHashMap<>();
-        payload.put("channel", "OSS_FULL");
+        payload.put("channel", request.channel());
         payload.put("ttl", properties.getTtlSeconds());
-        payload.put("scopes", List.of(properties.getScope()));
+        payload.put("scopes", List.of(request.scope()));
         try {
             return objectMapper.writeValueAsString(payload);
         } catch (IOException ex) {
@@ -111,12 +154,12 @@ final class DogeCloudTmpTokenClient {
         return configured.replaceAll("/+$", "");
     }
 
-    private JsonNode resolveBucketNode(JsonNode bucketsNode) {
+    private JsonNode resolveBucketNode(JsonNode bucketsNode, String scope) {
         if (!bucketsNode.isArray() || bucketsNode.isEmpty()) {
             throw new IllegalStateException("多吉云临时密钥响应缺少 Buckets");
         }
 
-        String bucketName = extractBucketName(properties.getScope());
+        String bucketName = extractBucketName(scope);
         for (JsonNode node : bucketsNode) {
             if (bucketName.equals(node.path("name").asText())) {
                 return node;
@@ -132,6 +175,15 @@ final class DogeCloudTmpTokenClient {
     static String extractBucketName(String scope) {
         int separatorIndex = scope.indexOf(':');
         return separatorIndex >= 0 ? scope.substring(0, separatorIndex) : scope;
+    }
+
+    private String buildUploadScope(String objectKey) {
+        String bucketName = extractBucketName(properties.getScope());
+        String normalizedObjectKey = objectKey == null ? "" : objectKey.trim();
+        if (!StringUtils.hasText(bucketName) || !StringUtils.hasText(normalizedObjectKey)) {
+            throw new IllegalStateException("上传临时密钥 scope 构建失败");
+        }
+        return bucketName + ":" + normalizedObjectKey;
     }
 
     private static Instant resolveExpiresAt(JsonNode node) {
@@ -150,11 +202,18 @@ final class DogeCloudTmpTokenClient {
         return value;
     }
 
+    private static String formatMillis(long durationNanos) {
+        return String.format(Locale.ROOT, "%.2f", durationNanos / 1_000_000.0d);
+    }
+
     interface Transport {
         TransportResponse post(String baseUrl, String apiPath, String body, Map<String, String> headers) throws IOException, InterruptedException;
     }
 
     record TransportResponse(int statusCode, String body) {
+    }
+
+    private record TokenRequest(String channel, String scope) {
     }
 
     private static final class HttpTransport implements Transport {

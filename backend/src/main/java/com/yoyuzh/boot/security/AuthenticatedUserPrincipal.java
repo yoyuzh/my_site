@@ -10,17 +10,23 @@ public class AuthenticatedUserPrincipal implements UserDetails {
     private final Long userId;
     private final String username;
     private final String password;
+    private final Long storageQuotaBytes;
+    private final Long maxUploadSizeBytes;
     private final List<? extends GrantedAuthority> authorities;
     private final boolean enabled;
 
     public AuthenticatedUserPrincipal(Long userId,
                                       String username,
                                       String password,
+                                      Long storageQuotaBytes,
+                                      Long maxUploadSizeBytes,
                                       Collection<? extends GrantedAuthority> authorities,
                                       boolean enabled) {
         this.userId = userId;
         this.username = username;
         this.password = password;
+        this.storageQuotaBytes = storageQuotaBytes;
+        this.maxUploadSizeBytes = maxUploadSizeBytes;
         this.authorities = List.copyOf(authorities);
         this.enabled = enabled;
     }
@@ -37,6 +43,14 @@ public class AuthenticatedUserPrincipal implements UserDetails {
     @Override
     public String getPassword() {
         return password;
+    }
+
+    public Long getStorageQuotaBytes() {
+        return storageQuotaBytes;
+    }
+
+    public Long getMaxUploadSizeBytes() {
+        return maxUploadSizeBytes;
     }
 
     @Override

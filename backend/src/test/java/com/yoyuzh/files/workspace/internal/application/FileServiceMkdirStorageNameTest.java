@@ -57,7 +57,6 @@ class FileServiceMkdirStorageNameTest {
     @Test
     void shouldPersistDirectoryStorageNameWhenCreatingDirectory() {
         User user = createUser(1L);
-        when(storedFileRepository.existsByUserIdAndPathAndFilename(1L, "/", "docs")).thenReturn(false);
         when(storedFileRepository.save(any(StoredFile.class))).thenAnswer(invocation -> {
             StoredFile storedFile = invocation.getArgument(0);
             storedFile.setId(10L);

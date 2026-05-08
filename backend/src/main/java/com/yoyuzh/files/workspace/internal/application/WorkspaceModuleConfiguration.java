@@ -25,8 +25,14 @@ public class WorkspaceModuleConfiguration {
     @Bean
     WorkspaceDirectoryApi workspaceDirectoryApi(StoredFileRepository storedFileRepository,
                                                 FileContentStorage fileContentStorage,
-                                                RuntimeWorkspacePathPolicy workspacePathPolicy) {
-        return new RuntimeWorkspaceDirectoryApi(storedFileRepository, fileContentStorage, workspacePathPolicy);
+                                                RuntimeWorkspacePathPolicy workspacePathPolicy,
+                                                WorkspaceRequestProbe workspaceRequestProbe) {
+        return new RuntimeWorkspaceDirectoryApi(
+                storedFileRepository,
+                fileContentStorage,
+                workspacePathPolicy,
+                workspaceRequestProbe
+        );
     }
 
     @Bean

@@ -6,7 +6,8 @@
       "Bash(gh pr:*)",
       "Bash(obsidian read *)",
       "Bash(obsidian eval *)",
-      "Bash(obsidian append *)"
+      "Bash(obsidian append *)",
+      "Bash(git *)"
     ]
   }
 }

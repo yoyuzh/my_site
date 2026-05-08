@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import React, { createContext, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Box, Divider, Menu, MenuItem, Stack, Typography, ListItemIcon, ListItemText, alpha } from '@mui/material';
 import type { MenuProps } from '@mui/material';
 import {
@@ -70,6 +70,7 @@ import {
   collectFolderDownloadEntries,
   type FolderDownloadMode,
 } from '../lib/folder-downloads';
+import { buildFolderUploadPlans } from '../lib/folder-uploads';
 import { useUploadQueue } from '../hooks/useUploadQueue';
 import { useUploadPanelStore } from '../hooks/useUploadPanelStore';
 import { showToast, updateToast, removeToast } from '../components/files/WorkspaceActionToastHost';
@@ -452,11 +453,12 @@ const Files: React.FC<FilesProps> = ({ mediaCategory }) => {
   const [searchParams, setSearchParams] = useSearchParams();
   const queryClient = useQueryClient();
   const { theme } = useAppTheme();
-  const { addTasks: addUploadTasks } = useUploadQueue();
+  const { addTasks: addUploadTasks, addTaskEntries: addUploadTaskEntries } = useUploadQueue();
   const { set: setUploadPanelOpen } = useUploadPanelStore();
   const requestedPath = mediaCategory ? '/' : getWorkspaceFolderPathFromSearchParams(searchParams);
   const categoryMeta = mediaCategory ? MEDIA_CATEGORY_META[mediaCategory] : null;
   const isCategoryMode = mediaCategory != null;
+  const browsingContextKey = `${mediaCategory ?? 'directory'}::${requestedPath}`;
   const muiTheme = useMemo(
     () => {
       const isDark = theme === 'dark';
@@ -530,6 +532,7 @@ const Files: React.FC<FilesProps> = ({ mediaCategory }) => {
 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const folderInputRef = useRef<HTMLInputElement | null>(null);
+  const lastBrowsingContextKeyRef = useRef<string | null>(null);
   const lastSelectedIndexRef = useRef(0);
   const keyboardSelectionAnchorRef = useRef<number | null>(null);
   const [search, setSearch] = useState('');
@@ -626,6 +629,10 @@ const Files: React.FC<FilesProps> = ({ mediaCategory }) => {
     () => `${mediaCategory ?? 'directory'}::${currentPath}::${search.trim()}::${sortBy}::${sortOrder}`,
     [currentPath, mediaCategory, search, sortBy, sortOrder],
   );
+  const activeQueryContextKey = useMemo(
+    () => `${mediaCategory ?? 'directory'}::${currentPath}::${search.trim()}`,
+    [currentPath, mediaCategory, search],
+  );
   const activeMenuFileExtension =
     activeMenuFile && !activeMenuFile.directory ? getFileExtension(activeMenuFile) : '';
   const activeMenuFileAllViewers =
@@ -649,7 +656,7 @@ const Files: React.FC<FilesProps> = ({ mediaCategory }) => {
   function refreshCurrentListing() {
     if (page === 1) {
       void refetch().then((result) => {
-        if (result.data?.items) {
+        if (result.data?.items && result.data.contextKey === activeQueryContextKey) {
           setAllRows(result.data.items);
         }
       });
@@ -676,11 +683,14 @@ const Files: React.FC<FilesProps> = ({ mediaCategory }) => {
   }
 
   const folderTagQueries = useQueries({
-    queries: visibleFolders.map((folder) => ({
-      queryKey: ['file-tags', folder.id],
-      queryFn: () => listFileTags(folder.id),
-      staleTime: 30_000,
-    })),
+    queries:
+      sortBy === 'tags'
+        ? visibleFolders.map((folder) => ({
+            queryKey: ['file-tags', folder.id],
+            queryFn: () => listFileTags(folder.id),
+            staleTime: 30_000,
+          }))
+        : [],
   });
 
   const folderTagsMap = useMemo(
@@ -1062,8 +1072,30 @@ const Files: React.FC<FilesProps> = ({ mediaCategory }) => {
     selectKeyboardRange(anchorIndex, targetIndex, 'grid', gridColumnCount);
   }
 
+  useLayoutEffect(() => {
+    if (lastBrowsingContextKeyRef.current === browsingContextKey) {
+      return;
+    }
+
+    lastBrowsingContextKeyRef.current = browsingContextKey;
+    setSelectedById({});
+    setContextMenu(null);
+    setPreviewFile(null);
+    setActiveViewer(null);
+    setOpenWithState(null);
+    setDetailFileId(null);
+    setDetail(null);
+    setDetailLoading(false);
+    setDetailError(null);
+    lastSelectedIndexRef.current = 0;
+    keyboardSelectionAnchorRef.current = null;
+    setAllRows([]);
+    setPage(1);
+    setCurrentPath(requestedPath);
+  }, [browsingContextKey, requestedPath]);
+
   useEffect(() => {
-    if (data?.items) {
+    if (data?.items && data.contextKey === activeQueryContextKey) {
       if (page === 1) {
         setAllRows(data.items);
       } else {
@@ -1075,7 +1107,7 @@ const Files: React.FC<FilesProps> = ({ mediaCategory }) => {
         });
       }
     }
-  }, [data, page]);
+  }, [activeQueryContextKey, data, page]);
 
   const createDirectoryMutation = useMutation({
     mutationFn: createDirectory,
@@ -1298,14 +1330,69 @@ const Files: React.FC<FilesProps> = ({ mediaCategory }) => {
   });
 
   const enqueueUploadMutation = useMutation({
-    mutationFn: async ({ files, folderPath }: { files: File[]; folderPath?: string }) => {
+    mutationFn: async ({
+      files,
+      folderPath,
+      preserveFolderStructure,
+    }: {
+      files: File[];
+      folderPath?: string;
+      preserveFolderStructure?: boolean;
+    }) => {
+      if (preserveFolderStructure) {
+        const folderPlans = buildFolderUploadPlans(files);
+        const uploadEntries: Array<{ file: File; path: string }> = [];
+        const refreshPaths = new Set<string>([currentPath]);
+        let createdDirectoryCount = 0;
+
+        for (const plan of folderPlans) {
+          const rootDirectory = await createDirectory(joinDirectoryPath(currentPath, plan.rootFolderName));
+          const rootDirectoryPath = getLogicalPath(rootDirectory);
+          refreshPaths.add(rootDirectoryPath);
+          createdDirectoryCount += 1;
+
+          for (const relativeDirectoryPath of plan.directories) {
+            const directoryPath = joinDirectoryPath(rootDirectoryPath, relativeDirectoryPath);
+            await createDirectory(directoryPath);
+            refreshPaths.add(directoryPath);
+            createdDirectoryCount += 1;
+          }
+
+          for (const entry of plan.files) {
+            uploadEntries.push({
+              file: entry.file,
+              path: entry.relativeDirectoryPath
+                ? joinDirectoryPath(rootDirectoryPath, entry.relativeDirectoryPath)
+                : rootDirectoryPath,
+            });
+          }
+        }
+
+        addUploadTaskEntries(uploadEntries);
+        setUploadPanelOpen(true);
+        emitWorkspaceFolderTreeRefresh(Array.from(refreshPaths));
+        refreshCurrentListing();
+        return {
+          fileCount: uploadEntries.length,
+          createdDirectoryCount,
+        };
+      }
+
       const targetPath = folderPath ? joinDirectoryPath(currentPath, folderPath) : currentPath;
       addUploadTasks(files, targetPath);
       setUploadPanelOpen(true);
-      return files.length;
+      return {
+        fileCount: files.length,
+        createdDirectoryCount: 0,
+      };
     },
-    onSuccess: (count) => {
-      showToast({ message: `已加入队列 ${count} 个文件`, severity: 'success' });
+    onSuccess: ({ fileCount, createdDirectoryCount }) => {
+      showToast({
+        message: createdDirectoryCount > 0
+          ? `已创建 ${createdDirectoryCount} 个文件夹，并加入队列 ${fileCount} 个文件`
+          : `已加入队列 ${fileCount} 个文件`,
+        severity: 'success',
+      });
     },
     onError: (error) => {
       showToast({ message: error instanceof Error ? error.message : '上传失败', severity: 'error' });
@@ -1524,11 +1611,6 @@ const Files: React.FC<FilesProps> = ({ mediaCategory }) => {
       return next;
     });
   }, [allRows]);
-
-  useEffect(() => {
-    // Ensure data is fresh on mount
-    void refetch();
-  }, []);
 
   useEffect(() => {
     if (sortedRows.length === 0) {
@@ -2130,7 +2212,7 @@ const Files: React.FC<FilesProps> = ({ mediaCategory }) => {
           onChange={(event) => {
             const files = Array.from(event.target.files ?? []);
             if (files.length > 0) {
-              enqueueUploadMutation.mutate({ files });
+              enqueueUploadMutation.mutate({ files, preserveFolderStructure: true });
             }
             event.target.value = '';
           }}

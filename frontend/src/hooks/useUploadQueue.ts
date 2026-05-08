@@ -7,8 +7,8 @@ import {
   cancelUploadSession,
   completeUploadSession,
   createUploadSession,
-  prepareUploadSession,
   prepareMultipartPartUpload,
+  prepareUploadSession,
   recordMultipartPart,
   uploadUploadSessionContent,
 } from '../lib/files';
@@ -21,7 +21,7 @@ const STALL_TIMEOUT_MS = 30_000;
 const SPEED_IDLE_THRESHOLD_MS = 1_500;
 const MONITOR_INTERVAL_MS = 1_000;
 
-export type UploadStatus = 'waiting' | 'uploading' | 'success' | 'cancelled' | 'error';
+export type UploadStatus = 'waiting' | 'preparing' | 'uploading' | 'success' | 'cancelled' | 'error';
 type UploadTransport = 'multipart' | 'proxy' | 'single' | 'tus';
 
 export interface UploadTask {
@@ -41,13 +41,14 @@ export interface UploadTask {
   lastByteChangeAt?: number;
 }
 
+export interface UploadTaskEntry {
+  file: File;
+  path: string;
+}
+
 type QueueSnapshot = {
   tasks: UploadTask[];
   uploadConcurrency: number;
-};
-
-type MultipartPartData = {
-  partNumber: number;
 };
 
 type MultipartUploadPart = {
@@ -129,7 +130,7 @@ function moveTaskToBottom(taskId: string, updater: (task: UploadTask) => UploadT
 }
 
 function syncMonitorState() {
-  const hasUploadingTask = tasks.some((task) => task.status === 'uploading');
+  const hasUploadingTask = tasks.some((task) => task.status === 'uploading' || task.status === 'preparing');
   if (!hasUploadingTask) {
     if (monitorHandle != null && typeof window !== 'undefined') {
       window.clearInterval(monitorHandle);
@@ -201,7 +202,7 @@ function runMonitorTick() {
 function handleProgress(taskId: string, loadedBytes: number, totalBytes?: number) {
   const now = Date.now();
   const updatedTask = patchTask(taskId, (task) => {
-    if (task.status !== 'uploading') {
+    if (task.status !== 'uploading' && task.status !== 'preparing') {
       return task;
     }
 
@@ -213,6 +214,7 @@ function handleProgress(taskId: string, loadedBytes: number, totalBytes?: number
 
     return {
       ...task,
+      status: 'uploading',
       progress: total > 0 ? Math.min(100, Math.round((safeLoadedBytes / total) * 100)) : task.progress,
       uploadedBytes: safeLoadedBytes,
       speedBytesPerSecond: deltaBytes > 0 ? (deltaBytes * 1000) / deltaTimeMs : task.speedBytesPerSecond,
@@ -268,9 +270,17 @@ function createMultipartUppy(task: UploadTask, session: UploadSessionResponse) {
     async listParts() {
       return [];
     },
-    async signPart(_file: unknown, partData: MultipartPartData) {
-      const prepared = await prepareMultipartPartUpload(session.sessionId, partData.partNumber - 1);
+    async signPart(_file: unknown, { partNumber }: { partNumber: number }) {
+      const prepared = await prepareMultipartPartUpload(session.sessionId, partNumber - 1);
+      if (!prepared.direct || !prepared.uploadUrl) {
+        throw new Error('分片上传策略未返回有效的上传地址');
+      }
+      if (prepared.method.toUpperCase() !== 'PUT') {
+        throw new Error(`暂不支持 ${prepared.method} 方式的分片直传策略`);
+      }
+
       return {
+        method: 'PUT' as const,
         url: prepared.uploadUrl,
         headers: prepared.headers,
       };
@@ -295,7 +305,7 @@ function createMultipartUppy(task: UploadTask, session: UploadSessionResponse) {
         location: session.objectKey,
       };
     },
-  });
+  } as never);
 
   return uppy;
 }
@@ -387,7 +397,7 @@ async function startTask(taskId: string) {
     ...tasks.slice(0, taskIndex),
     {
       ...originalTask,
-      status: 'uploading',
+      status: 'preparing',
       progress: 0,
       uploadedBytes: 0,
       speedBytesPerSecond: 0,
@@ -410,6 +420,7 @@ async function startTask(taskId: string) {
       const abortController = new AbortController();
       patchTask(taskId, (task) => ({
         ...task,
+        status: 'uploading',
         sessionId: session.sessionId,
         transport,
         cancelUpload: () => {
@@ -592,6 +603,22 @@ export const useUploadQueue = () => {
     pumpQueue();
   }, []);
 
+  const addTaskEntries = useCallback((entries: UploadTaskEntry[]) => {
+    const newTasks: UploadTask[] = entries.map(({ file, path }) => ({
+      id: Math.random().toString(36).slice(2) + Date.now().toString(36),
+      file,
+      path,
+      status: 'waiting',
+      progress: 0,
+      uploadedBytes: 0,
+      speedBytesPerSecond: 0,
+    }));
+
+    tasks = [...tasks, ...newTasks];
+    emit();
+    pumpQueue();
+  }, []);
+
   const cancelTask = useCallback((id: string) => {
     const taskIndex = findTaskIndex(id);
     if (taskIndex === -1) {
@@ -617,12 +644,12 @@ export const useUploadQueue = () => {
 
   const cancelAllTasks = useCallback(() => {
     const cancellers = tasks
-      .filter((task) => task.status === 'waiting' || task.status === 'uploading')
+      .filter((task) => task.status === 'waiting' || task.status === 'preparing' || task.status === 'uploading')
       .map((task) => task.cancelUpload)
       .filter((cancelUpload): cancelUpload is NonNullable<UploadTask['cancelUpload']> => Boolean(cancelUpload));
 
     tasks = tasks.map((task) => {
-      if (task.status === 'waiting' || task.status === 'uploading') {
+      if (task.status === 'waiting' || task.status === 'preparing' || task.status === 'uploading') {
         return {
           ...task,
           status: 'cancelled',
@@ -645,6 +672,7 @@ export const useUploadQueue = () => {
     tasks: snapshot.tasks,
     uploadConcurrency: snapshot.uploadConcurrency,
     addTasks,
+    addTaskEntries,
     cancelTask,
     cancelAllTasks,
     setUploadConcurrency,

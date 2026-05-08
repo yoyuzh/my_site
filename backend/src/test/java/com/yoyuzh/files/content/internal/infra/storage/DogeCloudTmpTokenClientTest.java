@@ -88,6 +88,47 @@ class DogeCloudTmpTokenClientTest {
                 .hasMessageContaining("ERROR_UNAUTHORIZED");
     }
 
+    @Test
+    void fetchUploadSessionUsesUploadChannelAndExactObjectScope() {
+        FileStorageProperties.S3 properties = new FileStorageProperties.S3();
+        properties.setApiBaseUrl("https://api.dogecloud.com");
+        properties.setApiAccessKey("doge-ak");
+        properties.setApiSecretKey("doge-sk");
+        properties.setScope("yoyuzh-files:blobs/*");
+        properties.setRegion("automatic");
+        properties.setTtlSeconds(1800);
+
+        CapturingTransport transport = new CapturingTransport("""
+                {
+                  "code": 200,
+                  "msg": "OK",
+                  "data": {
+                    "Credentials": {
+                      "accessKeyId": "tmp-ak",
+                      "secretAccessKey": "tmp-sk",
+                      "sessionToken": "tmp-token"
+                    },
+                    "ExpiredAt": 1777777777,
+                    "Buckets": [
+                      {
+                        "name": "yoyuzh-files",
+                        "s3Bucket": "s-cd-14873-yoyuzh-files-1258813047",
+                        "s3Endpoint": "https://cos.ap-chengdu.myqcloud.com"
+                      }
+                    ]
+                  }
+                }
+                """);
+
+        DogeCloudTmpTokenClient client = new DogeCloudTmpTokenClient(properties, objectMapper, transport);
+
+        DogeCloudTemporaryS3Session session = client.fetchUploadSession("blobs/object-1");
+
+        assertThat(transport.body).isEqualTo("{\"channel\":\"OSS_UPLOAD\",\"ttl\":1800,\"scopes\":[\"yoyuzh-files:blobs/object-1\"]}");
+        assertThat(session.bucket()).isEqualTo("s-cd-14873-yoyuzh-files-1258813047");
+        assertThat(session.endpoint()).isEqualTo("https://cos.ap-chengdu.myqcloud.com");
+    }
+
     private static final class CapturingTransport implements DogeCloudTmpTokenClient.Transport {
 
         private final String responseBody;

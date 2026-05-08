@@ -62,7 +62,12 @@ export function buildObjectKey(prefix, relativePath) {
 }
 
 export function getCacheControl(relativePath) {
-  if (relativePath === 'index.html') {
+  const normalizedPath = relativePath.replace(/\/+$/, '');
+  if (
+    relativePath === 'index.html'
+    || relativePath.endsWith('.html')
+    || FRONTEND_SPA_ALIASES.includes(normalizedPath)
+  ) {
     return 'no-cache';
   }
 

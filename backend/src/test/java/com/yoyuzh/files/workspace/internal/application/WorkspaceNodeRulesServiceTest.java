@@ -18,7 +18,6 @@ import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.time.LocalDateTime;
 import java.util.List;
-import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -58,7 +57,7 @@ class WorkspaceNodeRulesServiceTest {
     void shouldCreateMissingDirectoryHierarchy() {
         WorkspaceNodeRulesService rulesService = createRulesService();
         User user = createUser(7L);
-        when(storedFileRepository.findByUserIdAndPathAndFilename(eq(7L), any(), any())).thenReturn(Optional.empty());
+        when(storedFileRepository.findActiveNodesByUserIdAndPathInAndFilenameIn(eq(7L), any(), any())).thenReturn(List.of());
         when(storedFileRepository.save(any(StoredFile.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
         rulesService.ensureDirectoryHierarchy(user.getId(), "/projects/site");
@@ -72,8 +71,8 @@ class WorkspaceNodeRulesServiceTest {
     void shouldRejectExistingPathWhenEntryIsFile() {
         WorkspaceNodeRulesService rulesService = createRulesService();
         StoredFile file = createFile(11L, 7L, "/", "projects");
-        when(storedFileRepository.findByUserIdAndPathAndFilename(7L, "/", "projects"))
-                .thenReturn(Optional.of(file));
+        when(storedFileRepository.findActiveNodesByUserIdAndPathInAndFilenameIn(eq(7L), any(), any()))
+                .thenReturn(List.of(file));
 
         assertThatThrownBy(() -> rulesService.ensureExistingDirectoryPath(7L, "/projects"))
                 .isInstanceOf(BusinessException.class);

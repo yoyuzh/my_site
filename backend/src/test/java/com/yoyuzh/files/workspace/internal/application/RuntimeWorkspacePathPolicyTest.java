@@ -11,7 +11,6 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.util.List;
-import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -42,7 +41,7 @@ class RuntimeWorkspacePathPolicyTest {
     @Test
     void shouldCreateMissingDirectoryHierarchy() {
         RuntimeWorkspacePathPolicy policy = new RuntimeWorkspacePathPolicy(storedFileRepository, fileContentStorage);
-        when(storedFileRepository.findByUserIdAndPathAndFilename(eq(7L), any(), any())).thenReturn(Optional.empty());
+        when(storedFileRepository.findActiveNodesByUserIdAndPathInAndFilenameIn(eq(7L), any(), any())).thenReturn(List.of());
         when(storedFileRepository.save(any(StoredFile.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
         policy.ensureDirectoryHierarchy(7L, "/projects/site");
@@ -69,7 +68,6 @@ class RuntimeWorkspacePathPolicyTest {
     @Test
     void shouldResolveAvailableFileNameByAppendingCounterBeforeExtension() {
         RuntimeWorkspacePathPolicy policy = new RuntimeWorkspacePathPolicy(storedFileRepository, fileContentStorage);
-        when(storedFileRepository.existsByUserIdAndPathAndFilename(7L, "/docs", "report.txt")).thenReturn(true);
         when(storedFileRepository.findActiveFilenamesByUserIdAndPathAndFilenamePrefix(7L, "/docs", "report.txt", "report"))
                 .thenReturn(List.of("report.txt", "report(1).txt", "report(2).md", "report-final.txt"));
 
@@ -79,7 +77,6 @@ class RuntimeWorkspacePathPolicyTest {
     @Test
     void shouldResolveAvailableDirectoryNameByAppendingCounter() {
         RuntimeWorkspacePathPolicy policy = new RuntimeWorkspacePathPolicy(storedFileRepository, fileContentStorage);
-        when(storedFileRepository.existsByUserIdAndPathAndFilename(7L, "/", "docs")).thenReturn(true);
         when(storedFileRepository.findActiveFilenamesByUserIdAndPathAndFilenamePrefix(7L, "/", "docs", "docs"))
                 .thenReturn(List.of("docs", "docs(1).txt"));
 
@@ -89,7 +86,6 @@ class RuntimeWorkspacePathPolicyTest {
     @Test
     void shouldFailWhenAutoResolvedNamesExceedRetryLimit() {
         RuntimeWorkspacePathPolicy policy = new RuntimeWorkspacePathPolicy(storedFileRepository, fileContentStorage);
-        when(storedFileRepository.existsByUserIdAndPathAndFilename(7L, "/docs", "report.txt")).thenReturn(true);
         java.util.ArrayList<String> existingNames = new java.util.ArrayList<>();
         existingNames.add("report.txt");
         for (int counter = 1; counter <= 100; counter++) {

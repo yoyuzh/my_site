@@ -91,11 +91,11 @@ function App() {
           {/* Dashboard Routes */}
           <Route path="/dashboard">
             <Route index element={<Navigate to="files" replace />} />
-            <Route path="files" element={<RequireAuth><Files /></RequireAuth>} />
-            <Route path="images" element={<RequireAuth><Files mediaCategory="image" /></RequireAuth>} />
-            <Route path="videos" element={<RequireAuth><Files mediaCategory="video" /></RequireAuth>} />
-            <Route path="music" element={<RequireAuth><Files mediaCategory="audio" /></RequireAuth>} />
-            <Route path="documents" element={<RequireAuth><Files mediaCategory="document" /></RequireAuth>} />
+            <Route path="files" element={<RequireAuth><Files key="files-directory" /></RequireAuth>} />
+            <Route path="images" element={<RequireAuth><Files key="files-image" mediaCategory="image" /></RequireAuth>} />
+            <Route path="videos" element={<RequireAuth><Files key="files-video" mediaCategory="video" /></RequireAuth>} />
+            <Route path="music" element={<RequireAuth><Files key="files-audio" mediaCategory="audio" /></RequireAuth>} />
+            <Route path="documents" element={<RequireAuth><Files key="files-document" mediaCategory="document" /></RequireAuth>} />
             <Route path="shared-with-me" element={<RequireAuth><SharedWithMe /></RequireAuth>} />
             <Route path="tasks" element={<RequireAuth><Tasks /></RequireAuth>} />
             <Route path="shares" element={<RequireAuth><Shares /></RequireAuth>} />

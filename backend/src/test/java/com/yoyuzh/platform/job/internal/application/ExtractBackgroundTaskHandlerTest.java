@@ -51,7 +51,7 @@ class ExtractBackgroundTaskHandlerTest {
     @Test
     void shouldDelegateArchiveExtractionAndExposeProgressSummary() {
         when(identityUserDirectoryApi.findSnapshotById(7L)).thenReturn(Optional.of(createUser(7L)));
-        when(workspaceArchiveApi.extractZipCompatibleArchive(
+        when(workspaceArchiveApi.extractArchive(
                 eq(new WorkspaceUserContext(7L, 1024L, 1024L)),
                 eq(11L),
                 eq("/docs"),
@@ -61,7 +61,7 @@ class ExtractBackgroundTaskHandlerTest {
 
         BackgroundTaskHandlerResult result = handler.handle(createExtractTask(11L, 7L, "archive"));
 
-        verify(workspaceArchiveApi).extractZipCompatibleArchive(
+        verify(workspaceArchiveApi).extractArchive(
                 eq(new WorkspaceUserContext(7L, 1024L, 1024L)),
                 eq(11L),
                 eq("/docs"),
@@ -88,18 +88,18 @@ class ExtractBackgroundTaskHandlerTest {
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessage("extract task missing output target");
 
-        verify(workspaceArchiveApi, never()).extractZipCompatibleArchive(any(), any(), any(), any(), any());
+        verify(workspaceArchiveApi, never()).extractArchive(any(), any(), any(), any(), any());
     }
 
     @Test
     void shouldWrapMalformedArchiveAsDataStateFailure() {
         when(identityUserDirectoryApi.findSnapshotById(7L)).thenReturn(Optional.of(createUser(7L)));
-        when(workspaceArchiveApi.extractZipCompatibleArchive(any(), eq(11L), eq("/docs"), eq("archive"), any()))
+        when(workspaceArchiveApi.extractArchive(any(), eq(11L), eq("/docs"), eq("archive"), any()))
                 .thenThrow(new BusinessException(ErrorCode.ARCHIVE_READ_FAILED, "unstable message"));
 
         assertThatThrownBy(() -> handler.handle(createExtractTask(11L, 7L, "archive")))
                 .isInstanceOf(IllegalStateException.class)
-                .hasMessage("extract task only supports zip-compatible archives");
+                .hasMessage("extract task only supports supported archive files");
     }
 
     @Test

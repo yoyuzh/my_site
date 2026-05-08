@@ -2,12 +2,17 @@ import React, { useEffect, useState } from 'react';
 import { Box, IconButton, Paper, Typography, Chip, Divider, Stack, Skeleton } from '@mui/material';
 import { Clock3, Heart, Share2, X } from 'lucide-react';
 import type { FileDetail } from '../../api/types';
+import { resolveApiUrl } from '../../api/client';
 import { formatBytes, formatDateTime } from '../../lib/format';
 import { downloadFileBlob, getFileDownloadUrl } from '../../lib/files';
 import CloudreveFileTypeIcon from './CloudreveFileTypeIcon';
 
 function isExternalUrl(url: string) {
   return /^https?:\/\//i.test(url) || url.startsWith('//');
+}
+
+function isEmbeddableViewerUrl(url: string) {
+  return isExternalUrl(url) || url.startsWith('/api/files/viewer/');
 }
 
 export interface FileDetailsRailProps {
@@ -48,11 +53,11 @@ const FileDetailsRail: React.FC<FileDetailsRailProps> = ({ detail, loading, erro
     let shouldRevoke = false;
     setPreviewLoading(true);
 
-    void getFileDownloadUrl(detail.id)
+    void getFileDownloadUrl(detail.id, { viewer: true })
       .then(async (result) => {
         if (disposed) return;
-        if (isExternalUrl(result.url)) {
-          nextUrl = result.url;
+        if (isEmbeddableViewerUrl(result.url)) {
+          nextUrl = resolveApiUrl(result.url);
           setObjectUrl(nextUrl);
           return;
         }

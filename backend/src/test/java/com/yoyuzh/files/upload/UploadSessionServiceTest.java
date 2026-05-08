@@ -177,6 +177,41 @@ class UploadSessionServiceTest {
     }
 
     @Test
+    void shouldAllowLegacyMultipartPrepareRetryAfterCompletionStarted() {
+        IdentityAuthenticatedUser user = createUser(7L);
+        UploadSession session = createSessionWithStatus(user, UploadSessionStatus.COMPLETING);
+        session.setMultipartUploadId("upload-123");
+        session.setChunkCount(1);
+        session.setChunkSize(8L * 1024 * 1024);
+        session.setSize(20L);
+        session.setUploadedPartsJson("""
+                [
+                  {"partIndex":0,"etag":"etag-1","size":20,"uploadedAt":"2026-04-08T06:00:00"}
+                ]
+                """);
+        when(uploadSessionRepository.findBySessionIdAndUserId("session-1", 7L))
+                .thenReturn(Optional.of(session));
+        when(fileContentStorage.prepareMultipartPartUpload(
+                "blobs/session-1",
+                "upload-123",
+                1,
+                "video/mp4",
+                20L
+        )).thenReturn(new PreparedUpload(
+                true,
+                "https://upload.example.com/session-1/part-1",
+                "PUT",
+                Map.of("Content-Type", "video/mp4"),
+                "blobs/session-1"
+        ));
+
+        PreparedUpload preparedUpload = uploadSessionService.prepareOwnedPartUpload(user.id(), "session-1", 0);
+
+        assertThat(preparedUpload.uploadUrl()).isEqualTo("https://upload.example.com/session-1/part-1");
+        verify(fileContentStorage, never()).createMultipartUpload(any(), any());
+    }
+
+    @Test
     void shouldPrepareDirectSingleUploadForOwnedSessionWhenPolicyDisablesMultipart() {
         IdentityAuthenticatedUser user = createUser(7L);
         UploadSession session = createSession(user);
@@ -480,6 +515,32 @@ class UploadSessionServiceTest {
     }
 
     @Test
+    void shouldTreatLegacyMultipartRecordedPartRetryAsIdempotent() {
+        IdentityAuthenticatedUser user = createUser(7L);
+        UploadSession session = createSessionWithStatus(user, UploadSessionStatus.COMPLETED);
+        session.setMultipartUploadId("upload-123");
+        session.setChunkCount(1);
+        session.setSize(20L);
+        session.setUploadedPartsJson("""
+                [
+                  {"partIndex":0,"etag":"etag-1","size":20,"uploadedAt":"2026-04-08T06:00:00"}
+                ]
+                """);
+        when(uploadSessionRepository.findBySessionIdAndUserId("session-1", 7L))
+                .thenReturn(Optional.of(session));
+
+        UploadSessionView result = uploadSessionService.recordUploadedPart(
+                user.id(),
+                "session-1",
+                0,
+                new UploadSessionPartCommand("etag-1", 20L)
+        );
+
+        assertThat(result.status()).isEqualTo(UploadSessionStatus.COMPLETED);
+        verify(uploadSessionRepository, never()).save(any(UploadSession.class));
+    }
+
+    @Test
     void shouldRejectUploadedPartOutsideSessionRange() {
         IdentityAuthenticatedUser user = createUser(7L);
         UploadSession session = createSession(user);
@@ -540,7 +601,42 @@ class UploadSessionServiceTest {
         UploadSessionView result = uploadSessionService.cancelOwnedSession(user.id(), "session-1");
 
         assertThat(result.status()).isEqualTo(UploadSessionStatus.CANCELLED);
+        verify(fileContentStorage).deleteBlob("blobs/session-1");
         verify(uploadSessionRuntimeStateService).markCancelled(any(UploadSession.class), eq(LocalDateTime.of(2026, 4, 8, 6, 0)));
+    }
+
+    @Test
+    void shouldAbortMultipartUploadWhenCancellingOwnedSession() {
+        IdentityAuthenticatedUser user = createUser(7L);
+        UploadSession session = createSession(user);
+        session.setMultipartUploadId("upload-123");
+        when(uploadSessionRepository.findBySessionIdAndUserId("session-1", 7L))
+                .thenReturn(Optional.of(session));
+        when(uploadSessionRepository.save(any(UploadSession.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        UploadSessionView result = uploadSessionService.cancelOwnedSession(user.id(), "session-1");
+
+        assertThat(result.status()).isEqualTo(UploadSessionStatus.CANCELLED);
+        verify(fileContentStorage).abortMultipartUpload("blobs/session-1", "upload-123");
+        verify(fileContentStorage, never()).deleteBlob(any());
+    }
+
+    @Test
+    void shouldDeleteTusStateWhenCancellingOwnedSession() {
+        IdentityAuthenticatedUser user = createUser(7L);
+        UploadSession session = createSession(user);
+        session.setStoragePolicyId(42L);
+        when(uploadSessionRepository.findBySessionIdAndUserId("session-1", 7L))
+                .thenReturn(Optional.of(session));
+        when(uploadSessionRepository.save(any(UploadSession.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(uploadSessionTransportPolicy.usesTusUpload(42L)).thenReturn(true);
+
+        UploadSessionView result = uploadSessionService.cancelOwnedSession(user.id(), "session-1");
+
+        assertThat(result.status()).isEqualTo(UploadSessionStatus.CANCELLED);
+        verify(uploadSessionTusService).delete(session);
+        verify(fileContentStorage, never()).deleteBlob(any());
+        verify(fileContentStorage, never()).abortMultipartUpload(any(), any());
     }
 
     @Test

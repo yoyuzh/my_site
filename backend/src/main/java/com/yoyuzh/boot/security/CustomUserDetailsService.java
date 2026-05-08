@@ -30,6 +30,8 @@ public class CustomUserDetailsService implements UserDetailsService {
                 user.id(),
                 user.username(),
                 user.passwordHash(),
+                user.storageQuotaBytes(),
+                user.maxUploadSizeBytes(),
                 List.of(new SimpleGrantedAuthority("ROLE_" + user.role().name())),
                 !user.banned()
         );

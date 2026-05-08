@@ -17,20 +17,21 @@ export const FileViewerHost: React.FC<FileViewerHostProps> = ({ file, viewer, on
   if (!file || !viewer) {
     return null;
   }
+  const viewerInstanceKey = `${viewer.id}:${file.id}`;
   if (viewer.id === 'epub') {
-    return <EpubViewerDialog file={file} onClose={onClose} />;
+    return <EpubViewerDialog key={viewerInstanceKey} file={file} onClose={onClose} />;
   }
   if (viewer.id === 'archive') {
-    return <ArchiveViewerDialog file={file} onClose={onClose} />;
+    return <ArchiveViewerDialog key={viewerInstanceKey} file={file} onClose={onClose} />;
   }
   if (viewer.id === 'photopea' || viewer.type === 'custom') {
-    return <CustomViewerFrame file={file} viewer={viewer} onClose={onClose} />;
+    return <CustomViewerFrame key={viewerInstanceKey} file={file} viewer={viewer} onClose={onClose} />;
   }
   if (viewer.type === 'wopi') {
     if (typeof viewer.props.urlTemplate === 'string') {
-      return <CustomViewerFrame file={file} viewer={viewer} onClose={onClose} />;
+      return <CustomViewerFrame key={viewerInstanceKey} file={file} viewer={viewer} onClose={onClose} />;
     }
-    return <WopiViewerFrame file={file} viewer={viewer} onClose={onClose} />;
+    return <WopiViewerFrame key={viewerInstanceKey} file={file} viewer={viewer} onClose={onClose} />;
   }
-  return <FilesPreviewDialog file={file} onClose={onClose} onSaved={onSaved} />;
+  return <FilesPreviewDialog key={viewerInstanceKey} file={file} onClose={onClose} onSaved={onSaved} />;
 };

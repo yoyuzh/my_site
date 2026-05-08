@@ -18,6 +18,7 @@ import com.yoyuzh.files.upload.api.UploadCompletionApi;
 import com.yoyuzh.files.upload.api.UploadCompletionCommand;
 import com.yoyuzh.files.workspace.api.WorkspaceUserContext;
 import com.yoyuzh.platform.storage.api.StoragePolicyCapabilities;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 
@@ -40,6 +41,30 @@ public class WorkspaceFileIngressService {
     private final ContentBlobLifecycleApi contentBlobLifecycleApi;
     private final FileUploadRulesService fileUploadRulesService;
     private final WorkspaceNodeRulesService workspaceNodeRulesService;
+    private final WorkspaceRequestProbe workspaceRequestProbe;
+
+    @Autowired
+    public WorkspaceFileIngressService(FileContentStorage fileContentStorage,
+                                       ContentAssetApi contentAssetApi,
+                                       ContentRegistrationApi contentRegistrationApi,
+                                       ContentBlobRegistrationApi contentBlobRegistrationApi,
+                                       UploadCompletionApi uploadCompletionApi,
+                                       ContentBlobLifecycleApi contentBlobLifecycleApi,
+                                       FileUploadRulesService fileUploadRulesService,
+                                       WorkspaceNodeRulesService workspaceNodeRulesService,
+                                       WorkspaceRequestProbe workspaceRequestProbe) {
+        this.fileContentStorage = fileContentStorage;
+        this.contentAssetApi = contentAssetApi;
+        this.contentRegistrationApi = contentRegistrationApi;
+        this.contentBlobRegistrationApi = contentBlobRegistrationApi;
+        this.uploadCompletionApi = uploadCompletionApi;
+        this.contentBlobLifecycleApi = contentBlobLifecycleApi;
+        this.fileUploadRulesService = fileUploadRulesService;
+        this.workspaceNodeRulesService = workspaceNodeRulesService;
+        this.workspaceRequestProbe = workspaceRequestProbe == null
+                ? WorkspaceRequestProbe.disabled()
+                : workspaceRequestProbe;
+    }
 
     public WorkspaceFileIngressService(FileContentStorage fileContentStorage,
                                        ContentAssetApi contentAssetApi,
@@ -49,54 +74,92 @@ public class WorkspaceFileIngressService {
                                        ContentBlobLifecycleApi contentBlobLifecycleApi,
                                        FileUploadRulesService fileUploadRulesService,
                                        WorkspaceNodeRulesService workspaceNodeRulesService) {
-        this.fileContentStorage = fileContentStorage;
-        this.contentAssetApi = contentAssetApi;
-        this.contentRegistrationApi = contentRegistrationApi;
-        this.contentBlobRegistrationApi = contentBlobRegistrationApi;
-        this.uploadCompletionApi = uploadCompletionApi;
-        this.contentBlobLifecycleApi = contentBlobLifecycleApi;
-        this.fileUploadRulesService = fileUploadRulesService;
-        this.workspaceNodeRulesService = workspaceNodeRulesService;
+        this(
+                fileContentStorage,
+                contentAssetApi,
+                contentRegistrationApi,
+                contentBlobRegistrationApi,
+                uploadCompletionApi,
+                contentBlobLifecycleApi,
+                fileUploadRulesService,
+                workspaceNodeRulesService,
+                WorkspaceRequestProbe.disabled()
+        );
     }
 
     public CreatedFile upload(WorkspaceUserContext user,
                               String path,
                               MultipartFile multipartFile,
                               ContentTypeResolver contentTypeResolver) {
-        String normalizedPath = normalizeDirectoryPath(path);
-        String filename = normalizeUploadFilename(multipartFile.getOriginalFilename());
-        String contentType = contentTypeResolver.resolve(filename, multipartFile.getContentType());
-        fileUploadRulesService.validateUpload(user, normalizedPath, filename, multipartFile.getSize());
-        ensureDirectoryHierarchy(user, normalizedPath);
+        String normalizedPath = workspaceRequestProbe.measure("ingress.normalizePath", () -> normalizeDirectoryPath(path));
+        String filename = workspaceRequestProbe.measure(
+                "ingress.normalizeFilename",
+                () -> normalizeUploadFilename(multipartFile.getOriginalFilename())
+        );
+        String contentType = workspaceRequestProbe.measure(
+                "ingress.resolveContentType",
+                () -> contentTypeResolver.resolve(filename, multipartFile.getContentType())
+        );
+        workspaceRequestProbe.putMetadata("normalizedPath", normalizedPath);
+        workspaceRequestProbe.putMetadata("filename", filename);
+        workspaceRequestProbe.putMetadata("size", multipartFile.getSize());
+        workspaceRequestProbe.measure(
+                "ingress.validateUpload",
+                () -> fileUploadRulesService.validateUpload(user, normalizedPath, filename, multipartFile.getSize())
+        );
+        workspaceRequestProbe.measure("ingress.ensureDirectoryHierarchy", () -> ensureDirectoryHierarchy(user, normalizedPath));
 
         String objectKey = createBlobObjectKey();
-        RegisteredContentFile savedFile = contentBlobLifecycleApi.executeAfterBlobStored(objectKey, () -> {
-            fileContentStorage.uploadBlob(objectKey, multipartFile);
-            ContentBlobReference blob = contentBlobRegistrationApi.registerStoredBlob(objectKey, contentType, multipartFile.getSize());
-            return registerBlob(user, normalizedPath, filename, contentType, multipartFile.getSize(), blob);
-        });
+        RegisteredContentFile savedFile = workspaceRequestProbe.measure("ingress.storeBlobAndRegister", () ->
+                contentBlobLifecycleApi.executeAfterBlobStored(objectKey, () -> {
+                    workspaceRequestProbe.measure("ingress.uploadBlob", () -> fileContentStorage.uploadBlob(objectKey, multipartFile));
+                    ContentBlobReference blob = workspaceRequestProbe.measure(
+                            "ingress.registerStoredBlob",
+                            () -> contentBlobRegistrationApi.registerStoredBlob(objectKey, contentType, multipartFile.getSize())
+                    );
+                    return workspaceRequestProbe.measure(
+                            "ingress.registerBlob",
+                            () -> registerBlob(user, normalizedPath, filename, contentType, multipartFile.getSize(), blob)
+                    );
+                })
+        );
         return new CreatedFile(normalizedPath, savedFile);
     }
 
     public InitiateUploadResponse initiateUpload(WorkspaceUserContext user,
                                                  InitiateUploadRequest request,
                                                  ContentTypeResolver contentTypeResolver) {
-        String normalizedPath = normalizeDirectoryPath(request.path());
-        String filename = normalizeLeafName(request.filename());
-        String contentType = contentTypeResolver.resolve(filename, request.contentType());
-        fileUploadRulesService.validateUpload(user, normalizedPath, filename, request.size());
+        String normalizedPath = workspaceRequestProbe.measure("ingress.normalizePath", () -> normalizeDirectoryPath(request.path()));
+        String filename = workspaceRequestProbe.measure("ingress.normalizeFilename", () -> normalizeLeafName(request.filename()));
+        String contentType = workspaceRequestProbe.measure(
+                "ingress.resolveContentType",
+                () -> contentTypeResolver.resolve(filename, request.contentType())
+        );
+        workspaceRequestProbe.putMetadata("normalizedPath", normalizedPath);
+        workspaceRequestProbe.putMetadata("filename", filename);
+        workspaceRequestProbe.putMetadata("size", request.size());
+        workspaceRequestProbe.measure(
+                "ingress.validateUpload",
+                () -> fileUploadRulesService.validateUpload(user, normalizedPath, filename, request.size())
+        );
 
         String objectKey = createBlobObjectKey();
-        StoragePolicyCapabilities capabilities = contentAssetApi.resolveDefaultStoragePolicyCapabilities();
+        StoragePolicyCapabilities capabilities = workspaceRequestProbe.measure(
+                "ingress.resolveStorageCapabilities",
+                contentAssetApi::resolveDefaultStoragePolicyCapabilities
+        );
         if (capabilities != null && !capabilities.directUpload()) {
             return new InitiateUploadResponse(false, "", "POST", Map.of(), objectKey);
         }
-        PreparedUpload preparedUpload = fileContentStorage.prepareBlobUpload(
-                normalizedPath,
-                filename,
-                objectKey,
-                contentType,
-                request.size()
+        PreparedUpload preparedUpload = workspaceRequestProbe.measure(
+                "ingress.prepareBlobUpload",
+                () -> fileContentStorage.prepareBlobUpload(
+                        normalizedPath,
+                        filename,
+                        objectKey,
+                        contentType,
+                        request.size()
+                )
         );
 
         return new InitiateUploadResponse(
@@ -111,19 +174,31 @@ public class WorkspaceFileIngressService {
     public CreatedFile completeUpload(WorkspaceUserContext user,
                                       CompleteUploadRequest request,
                                       ContentTypeResolver contentTypeResolver) {
-        String normalizedPath = normalizeDirectoryPath(request.path());
-        String filename = normalizeLeafName(request.filename());
-        String objectKey = normalizeBlobObjectKey(request.storageName());
-        String contentType = contentTypeResolver.resolve(filename, request.contentType());
-        fileUploadRulesService.validateUpload(user, normalizedPath, filename, request.size());
-        RegisteredContentFile savedFile = uploadCompletionApi.completeStoredBlob(new UploadCompletionCommand(
-                user.userId(),
-                normalizedPath,
-                filename,
-                objectKey,
-                contentType,
-                request.size()
-        ));
+        String normalizedPath = workspaceRequestProbe.measure("ingress.normalizePath", () -> normalizeDirectoryPath(request.path()));
+        String filename = workspaceRequestProbe.measure("ingress.normalizeFilename", () -> normalizeLeafName(request.filename()));
+        String objectKey = workspaceRequestProbe.measure("ingress.normalizeBlobObjectKey", () -> normalizeBlobObjectKey(request.storageName()));
+        String contentType = workspaceRequestProbe.measure(
+                "ingress.resolveContentType",
+                () -> contentTypeResolver.resolve(filename, request.contentType())
+        );
+        workspaceRequestProbe.putMetadata("normalizedPath", normalizedPath);
+        workspaceRequestProbe.putMetadata("filename", filename);
+        workspaceRequestProbe.putMetadata("size", request.size());
+        workspaceRequestProbe.measure(
+                "ingress.validateUpload",
+                () -> fileUploadRulesService.validateUpload(user, normalizedPath, filename, request.size())
+        );
+        RegisteredContentFile savedFile = workspaceRequestProbe.measure(
+                "ingress.completeStoredBlob",
+                () -> uploadCompletionApi.completeStoredBlob(new UploadCompletionCommand(
+                        user.userId(),
+                        normalizedPath,
+                        filename,
+                        objectKey,
+                        contentType,
+                        request.size()
+                ))
+        );
         return new CreatedFile(normalizedPath, savedFile);
     }
 
@@ -149,19 +224,30 @@ public class WorkspaceFileIngressService {
                                    long size,
                                    java.io.InputStream contentStream,
                                    List<String> writtenBlobObjectKeys) throws IOException {
-        String normalizedPath = normalizeDirectoryPath(path);
-        String normalizedFilename = normalizeLeafName(filename);
-        fileUploadRulesService.validateUpload(recipient, normalizedPath, normalizedFilename, size);
-        ensureDirectoryHierarchy(recipient, normalizedPath);
+        String normalizedPath = workspaceRequestProbe.measure("ingress.normalizePath", () -> normalizeDirectoryPath(path));
+        String normalizedFilename = workspaceRequestProbe.measure("ingress.normalizeFilename", () -> normalizeLeafName(filename));
+        workspaceRequestProbe.measure(
+                "ingress.validateUpload",
+                () -> fileUploadRulesService.validateUpload(recipient, normalizedPath, normalizedFilename, size)
+        );
+        workspaceRequestProbe.measure("ingress.ensureDirectoryHierarchy", () -> ensureDirectoryHierarchy(recipient, normalizedPath));
         String objectKey = createBlobObjectKey();
         if (writtenBlobObjectKeys != null) {
             writtenBlobObjectKeys.add(objectKey);
         }
-        RegisteredContentFile savedFile = contentBlobLifecycleApi.executeAfterBlobStored(objectKey, () -> {
-            fileContentStorage.storeBlob(objectKey, contentType, contentStream, size);
-            ContentBlobReference blob = contentBlobRegistrationApi.registerStoredBlob(objectKey, contentType, size);
-            return registerBlob(recipient, normalizedPath, normalizedFilename, contentType, size, blob);
-        });
+        RegisteredContentFile savedFile = workspaceRequestProbe.measure("ingress.storeBlobAndRegister", () ->
+                contentBlobLifecycleApi.executeAfterBlobStored(objectKey, () -> {
+                    workspaceRequestProbe.measure("ingress.storeBlob", () -> fileContentStorage.storeBlob(objectKey, contentType, contentStream, size));
+                    ContentBlobReference blob = workspaceRequestProbe.measure(
+                            "ingress.registerStoredBlob",
+                            () -> contentBlobRegistrationApi.registerStoredBlob(objectKey, contentType, size)
+                    );
+                    return workspaceRequestProbe.measure(
+                            "ingress.registerBlob",
+                            () -> registerBlob(recipient, normalizedPath, normalizedFilename, contentType, size, blob)
+                    );
+                })
+        );
         return new CreatedFile(normalizedPath, savedFile);
     }
 
@@ -196,13 +282,24 @@ public class WorkspaceFileIngressService {
         fileUploadRulesService.validateReplacement(user, previousSize, size);
         String objectKey = createBlobObjectKey();
         try {
-            return contentBlobLifecycleApi.executeAfterBlobStored(objectKey, () -> {
-                fileContentStorage.storeBlob(objectKey, contentType, contentStream, size);
-                ContentBlobReference blob = contentBlobRegistrationApi.registerStoredBlob(objectKey, contentType, size);
-                ContentPrimaryEntity primaryEntity = contentAssetApi.createOrReferencePrimaryEntity(user.userId(), blob);
-                contentAssetApi.savePrimaryEntityRelation(new ContentPrimaryEntityRelationCommand(fileId, primaryEntity.entityId()));
-                return new ReplacementContent(blob.blobId(), blob.objectKey(), primaryEntity.entityId());
-            });
+            return workspaceRequestProbe.measure("ingress.replaceContent", () ->
+                    contentBlobLifecycleApi.executeAfterBlobStored(objectKey, () -> {
+                        workspaceRequestProbe.measure("ingress.storeBlob", () -> fileContentStorage.storeBlob(objectKey, contentType, contentStream, size));
+                        ContentBlobReference blob = workspaceRequestProbe.measure(
+                                "ingress.registerStoredBlob",
+                                () -> contentBlobRegistrationApi.registerStoredBlob(objectKey, contentType, size)
+                        );
+                        ContentPrimaryEntity primaryEntity = workspaceRequestProbe.measure(
+                                "ingress.createPrimaryEntity",
+                                () -> contentAssetApi.createOrReferencePrimaryEntity(user.userId(), blob)
+                        );
+                        workspaceRequestProbe.measure(
+                                "ingress.savePrimaryRelation",
+                                () -> contentAssetApi.savePrimaryEntityRelation(new ContentPrimaryEntityRelationCommand(fileId, primaryEntity.entityId()))
+                        );
+                        return new ReplacementContent(blob.blobId(), blob.objectKey(), primaryEntity.entityId());
+                    })
+            );
         } finally {
             try {
                 contentStream.close();

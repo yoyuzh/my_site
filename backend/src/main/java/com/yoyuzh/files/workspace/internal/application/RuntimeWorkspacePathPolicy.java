@@ -9,8 +9,10 @@ import com.yoyuzh.files.workspace.api.WorkspacePathPolicy;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
-import java.util.Optional;
+import java.util.Map;
 import java.util.Set;
 import java.util.function.Function;
 import java.util.stream.Collectors;
@@ -92,9 +94,6 @@ public final class RuntimeWorkspacePathPolicy implements WorkspacePathPolicy, Re
     @Override
     public String resolveAvailableNodeName(Long userId, String path, String filename) {
         String normalizedFilename = normalizeLeafName(filename);
-        if (!existsNodeName(userId, path, normalizedFilename)) {
-            return normalizedFilename;
-        }
         NameParts nameParts = splitName(normalizedFilename);
         Set<String> existingNames = storedFileRepository.findActiveFilenamesByUserIdAndPathAndFilenamePrefix(
                 userId,
@@ -104,6 +103,9 @@ public final class RuntimeWorkspacePathPolicy implements WorkspacePathPolicy, Re
                 .stream()
                 .filter(existingName -> matchesResolvedName(existingName, normalizedFilename, nameParts))
                 .collect(Collectors.toSet());
+        if (!existingNames.contains(normalizedFilename)) {
+            return normalizedFilename;
+        }
         return resolveAvailableNodeNameFromExistingNames(existingNames, nameParts);
     }
 
@@ -140,12 +142,13 @@ public final class RuntimeWorkspacePathPolicy implements WorkspacePathPolicy, Re
         }
 
         String[] segments = normalizedPath.substring(1).split("/");
+        Map<String, StoredFile> existingDirectories = loadExistingDirectories(userId, segments);
         String currentPath = "/";
 
         for (String segment : segments) {
-            Optional<StoredFile> existing = storedFileRepository.findByUserIdAndPathAndFilename(userId, currentPath, segment);
-            if (existing.isPresent()) {
-                if (!existing.get().isDirectory()) {
+            StoredFile existing = existingDirectories.get(directoryKey(currentPath, segment));
+            if (existing != null) {
+                if (!existing.isDirectory()) {
                     throw new BusinessException(ErrorCode.INVALID_INPUT, "目标路径不是目录");
                 }
                 currentPath = "/".equals(currentPath) ? "/" + segment : currentPath + "/" + segment;
@@ -155,7 +158,8 @@ public final class RuntimeWorkspacePathPolicy implements WorkspacePathPolicy, Re
             String logicalPath = "/".equals(currentPath) ? "/" + segment : currentPath + "/" + segment;
             fileContentStorage.ensureDirectory(userId, logicalPath);
 
-            storedFileRepository.save(StoredFile.directory(userId, currentPath, segment));
+            StoredFile createdDirectory = storedFileRepository.save(StoredFile.directory(userId, currentPath, segment));
+            existingDirectories.put(directoryKey(currentPath, segment), createdDirectory);
 
             currentPath = logicalPath;
         }
@@ -168,10 +172,13 @@ public final class RuntimeWorkspacePathPolicy implements WorkspacePathPolicy, Re
         }
 
         String[] segments = normalizedPath.substring(1).split("/");
+        Map<String, StoredFile> existingDirectories = loadExistingDirectories(userId, segments);
         String currentPath = "/";
         for (String segment : segments) {
-            StoredFile directory = storedFileRepository.findByUserIdAndPathAndFilename(userId, currentPath, segment)
-                    .orElseThrow(() -> new BusinessException(ErrorCode.FILE_NOT_FOUND, "目标目录不存在"));
+            StoredFile directory = existingDirectories.get(directoryKey(currentPath, segment));
+            if (directory == null) {
+                throw new BusinessException(ErrorCode.FILE_NOT_FOUND, "目标目录不存在");
+            }
             if (!directory.isDirectory()) {
                 throw new BusinessException(ErrorCode.INVALID_INPUT, "目标路径不是目录");
             }
@@ -222,6 +229,29 @@ public final class RuntimeWorkspacePathPolicy implements WorkspacePathPolicy, Re
                 .replace("\\", "\\\\")
                 .replace("%", "\\%")
                 .replace("_", "\\_");
+    }
+
+    private Map<String, StoredFile> loadExistingDirectories(Long userId, String[] segments) {
+        Set<String> parentPaths = new LinkedHashSet<>();
+        Set<String> filenames = new LinkedHashSet<>();
+        String currentPath = "/";
+        for (String segment : segments) {
+            parentPaths.add(currentPath);
+            filenames.add(segment);
+            currentPath = "/".equals(currentPath) ? "/" + segment : currentPath + "/" + segment;
+        }
+        return storedFileRepository.findActiveNodesByUserIdAndPathInAndFilenameIn(userId, parentPaths, filenames)
+                .stream()
+                .collect(Collectors.toMap(
+                        file -> directoryKey(file.getPath(), file.getFilename()),
+                        Function.identity(),
+                        (left, right) -> left,
+                        LinkedHashMap::new
+                ));
+    }
+
+    private String directoryKey(String path, String filename) {
+        return path + '\u0000' + filename;
     }
 
     private record NameParts(String baseName, String extension, int nextCounter) {

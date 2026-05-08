@@ -9,7 +9,7 @@
 
 如果接口细节和本文档冲突，以当前控制器和安全配置为准：
 
-- `backend/src/main/java/com/yoyuzh/config/SecurityConfig.java`
+- `backend/src/main/java/com/yoyuzh/boot/security/SecurityConfig.java`
 - `backend/src/main/java/com/yoyuzh/**/**/*Controller.java`
 
 ## 1. 接口分层总览
@@ -66,9 +66,9 @@
 
 控制器：
 
-- `backend/src/main/java/com/yoyuzh/auth/AuthController.java`
-- `backend/src/main/java/com/yoyuzh/auth/DevAuthController.java`
-- `backend/src/main/java/com/yoyuzh/auth/UserController.java`
+- `backend/src/main/java/com/yoyuzh/identity/access/internal/web/AuthController.java`
+- `backend/src/main/java/com/yoyuzh/identity/access/internal/web/DevAuthController.java`
+- `backend/src/main/java/com/yoyuzh/identity/access/internal/web/UserController.java`
 
 ### 2.1 `POST /api/auth/register`
 
@@ -167,7 +167,7 @@
 
 控制器：
 
-- `backend/src/main/java/com/yoyuzh/config/AndroidReleaseController.java`
+- `backend/src/main/java/com/yoyuzh/app/android/internal/web/AndroidReleaseController.java`
 
 ### 3.1 `GET /api/app/android/latest`
 
@@ -197,7 +197,7 @@
 
 控制器：
 
-- `backend/src/main/java/com/yoyuzh/files/core/FileController.java`
+- `backend/src/main/java/com/yoyuzh/files/workspace/internal/web/FileController.java`
 
 这组接口仍然是当前网盘主业务入口，尤其是：
 
@@ -550,13 +550,13 @@
 
 控制器：
 
-- `backend/src/main/java/com/yoyuzh/admin/AdminOverviewController.java`
-- `backend/src/main/java/com/yoyuzh/admin/AdminSettingsController.java`
-- `backend/src/main/java/com/yoyuzh/admin/AdminUserController.java`
-- `backend/src/main/java/com/yoyuzh/admin/AdminResourceController.java`
-- `backend/src/main/java/com/yoyuzh/admin/AdminTaskController.java`
-- `backend/src/main/java/com/yoyuzh/admin/AdminStoragePolicyController.java`
-- `backend/src/main/java/com/yoyuzh/admin/AdminAuditController.java`
+- `backend/src/main/java/com/yoyuzh/ops/admin/internal/web/AdminOverviewController.java`
+- `backend/src/main/java/com/yoyuzh/ops/admin/internal/web/AdminSettingsController.java`
+- `backend/src/main/java/com/yoyuzh/ops/admin/internal/web/AdminUserController.java`
+- `backend/src/main/java/com/yoyuzh/ops/admin/internal/web/AdminResourceController.java`
+- `backend/src/main/java/com/yoyuzh/ops/admin/internal/web/AdminTaskController.java`
+- `backend/src/main/java/com/yoyuzh/ops/admin/internal/web/AdminStoragePolicyController.java`
+- `backend/src/main/java/com/yoyuzh/ops/admin/internal/web/AdminAuditController.java`
 
 当前管理端覆盖的是真实治理能力，不只是统计看板。
 
@@ -642,8 +642,8 @@
 
 控制器：
 
-- `backend/src/main/java/com/yoyuzh/api/v2/site/SiteV2Controller.java`
-- `backend/src/main/java/com/yoyuzh/config/ApiRootController.java`
+- `backend/src/main/java/com/yoyuzh/boot/web/SiteV2Controller.java`
+- `backend/src/main/java/com/yoyuzh/boot/web/ApiRootController.java`
 
 ### 10.1 `GET /api/v2/site/ping`
 

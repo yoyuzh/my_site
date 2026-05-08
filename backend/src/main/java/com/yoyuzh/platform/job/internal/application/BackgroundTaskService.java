@@ -49,7 +49,24 @@ public class BackgroundTaskService {
     static final String STATE_LEASE_EXPIRES_AT_KEY = BackgroundTaskStateKeys.LEASE_EXPIRES_AT;
     static final String STATE_STARTED_AT_KEY = BackgroundTaskStateKeys.STARTED_AT;
 
-    private static final List<String> ZIP_COMPATIBLE_EXTENSIONS = List.of(".zip", ".jar", ".war");
+    private static final List<String> SUPPORTED_ARCHIVE_EXTENSIONS = List.of(
+            ".tar.gz",
+            ".tar.bz2",
+            ".tar.xz",
+            ".tgz",
+            ".tbz2",
+            ".tbz",
+            ".txz",
+            ".zip",
+            ".jar",
+            ".war",
+            ".7z",
+            ".rar",
+            ".tar",
+            ".gz",
+            ".bz2",
+            ".xz"
+    );
     private static final List<String> RETRY_TRANSIENT_STATE_KEYS = List.of(
             STATE_RETRY_SCHEDULED_KEY,
             STATE_NEXT_RETRY_AT_KEY,
@@ -410,8 +427,8 @@ public class BackgroundTaskService {
         if (file.directory()) {
             throw new BusinessException(ErrorCode.INVALID_INPUT, "task target type is not supported");
         }
-        if (type == BackgroundTaskType.EXTRACT && !isZipCompatibleArchive(file)) {
-            throw new BusinessException(ErrorCode.INVALID_INPUT, "extract task only supports zip-compatible archives");
+        if (type == BackgroundTaskType.EXTRACT && !isSupportedArchive(file)) {
+            throw new BusinessException(ErrorCode.INVALID_INPUT, "extract task only supports supported archive files");
         }
         if (type == BackgroundTaskType.MEDIA_META
                 && !MediaTaskSupport.isMediaLike(file.filename(), file.contentType())) {
@@ -430,12 +447,19 @@ public class BackgroundTaskService {
         return state;
     }
 
-    private boolean isZipCompatibleArchive(WorkspaceFileSnapshot file) {
+    private boolean isSupportedArchive(WorkspaceFileSnapshot file) {
         String contentType = normalizeContentType(file.contentType());
-        if (contentType.contains("zip") || contentType.contains("java-archive")) {
+        if (contentType.contains("zip")
+                || contentType.contains("java-archive")
+                || contentType.contains("7z")
+                || contentType.contains("rar")
+                || contentType.contains("tar")
+                || contentType.contains("gzip")
+                || contentType.contains("bzip2")
+                || contentType.contains("xz")) {
             return true;
         }
-        return hasExtension(file.filename(), ZIP_COMPATIBLE_EXTENSIONS);
+        return hasExtension(file.filename(), SUPPORTED_ARCHIVE_EXTENSIONS);
     }
 
     private String deriveExtractOutputDirectoryName(String filename) {
@@ -444,7 +468,7 @@ public class BackgroundTaskService {
         }
         String trimmed = filename.trim();
         String lower = trimmed.toLowerCase(Locale.ROOT);
-        for (String extension : ZIP_COMPATIBLE_EXTENSIONS) {
+        for (String extension : SUPPORTED_ARCHIVE_EXTENSIONS) {
             if (lower.endsWith(extension) && trimmed.length() > extension.length()) {
                 return trimmed.substring(0, trimmed.length() - extension.length());
             }

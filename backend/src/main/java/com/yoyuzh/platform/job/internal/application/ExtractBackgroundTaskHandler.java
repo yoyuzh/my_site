@@ -64,7 +64,7 @@ public class ExtractBackgroundTaskHandler implements BackgroundTaskHandler {
         progressReporter.report(progressPatch(0, 0, 0, 0));
         WorkspaceArchiveExtractionResult extractionResult;
         try {
-            extractionResult = workspaceArchiveApi.extractZipCompatibleArchive(
+            extractionResult = workspaceArchiveApi.extractArchive(
                     workspaceUser(user),
                     fileId,
                     outputPath,
@@ -77,8 +77,8 @@ public class ExtractBackgroundTaskHandler implements BackgroundTaskHandler {
                     ))
             );
         } catch (BusinessException ex) {
-            if (isUnsupportedZipCompatibleArchive(ex)) {
-                throw new IllegalStateException("extract task only supports zip-compatible archives", ex);
+            if (isUnsupportedArchive(ex)) {
+                throw new IllegalStateException("extract task only supports supported archive files", ex);
             }
             throw ex;
         }
@@ -135,7 +135,7 @@ public class ExtractBackgroundTaskHandler implements BackgroundTaskHandler {
         );
     }
 
-    private boolean isUnsupportedZipCompatibleArchive(BusinessException ex) {
+    private boolean isUnsupportedArchive(BusinessException ex) {
         return ex.getErrorCode() == ErrorCode.ARCHIVE_READ_FAILED;
     }
 }

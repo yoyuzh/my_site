@@ -31,7 +31,7 @@ const UploadTaskPanel: React.FC<UploadTaskPanelProps> = ({ onClose }) => {
 
   if (tasks.length === 0) return null;
 
-  const activeCount = tasks.filter((t) => t.status === 'uploading' || t.status === 'waiting').length;
+  const activeCount = tasks.filter((t) => t.status === 'uploading' || t.status === 'preparing' || t.status === 'waiting').length;
   const totalSpeedBytesPerSecond = tasks
     .filter((task) => task.status === 'uploading')
     .reduce((sum, task) => sum + task.speedBytesPerSecond, 0);
@@ -40,11 +40,12 @@ const UploadTaskPanel: React.FC<UploadTaskPanelProps> = ({ onClose }) => {
   );
   const orderedTasks = useMemo(() => {
     const statusPriority: Record<string, number> = {
-      uploading: 0,
-      waiting: 1,
-      error: 2,
-      cancelled: 3,
-      success: 4,
+      preparing: 0,
+      uploading: 1,
+      waiting: 2,
+      error: 3,
+      cancelled: 4,
+      success: 5,
     };
 
     return tasks
@@ -103,6 +104,7 @@ const UploadTaskPanel: React.FC<UploadTaskPanelProps> = ({ onClose }) => {
               className="group relative flex items-center gap-3 rounded-2xl p-3 transition-colors hover:bg-slate-50 dark:hover:bg-white/5"
             >
               <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-slate-100 text-slate-500 dark:bg-white/5 dark:text-slate-400">
+                {task.status === 'preparing' && <Clock size={20} className="animate-pulse text-amber-500" />}
                 {task.status === 'uploading' && <Clock size={20} className="animate-pulse text-blue-500" />}
                 {task.status === 'waiting' && <Clock size={20} />}
                 {task.status === 'success' && <CheckCircle2 size={20} className="text-green-500" />}
@@ -121,11 +123,13 @@ const UploadTaskPanel: React.FC<UploadTaskPanelProps> = ({ onClose }) => {
                   <span>•</span>
                   <span
                     className={clsx(
+                      task.status === 'preparing' && 'text-amber-500',
                       task.status === 'uploading' && 'text-blue-500',
                       task.status === 'success' && 'text-green-500',
                       task.status === 'error' && 'text-red-500',
                     )}
                   >
+                    {task.status === 'preparing' && '准备上传...'}
                     {task.status === 'uploading' && '正在上传...'}
                     {task.status === 'waiting' && '等待中'}
                     {task.status === 'success' && '上传成功'}
@@ -140,6 +144,7 @@ const UploadTaskPanel: React.FC<UploadTaskPanelProps> = ({ onClose }) => {
                       task.status === 'success' && 'bg-green-500',
                       task.status === 'error' && 'bg-red-500',
                       task.status === 'cancelled' && 'bg-slate-300 dark:bg-slate-600',
+                      task.status === 'preparing' && 'bg-amber-500',
                       (task.status === 'waiting' || task.status === 'uploading') && 'bg-blue-500',
                     )}
                     style={{ width: `${task.progress}%` }}
@@ -155,7 +160,7 @@ const UploadTaskPanel: React.FC<UploadTaskPanelProps> = ({ onClose }) => {
                 </div>
               </div>
 
-              {(task.status === 'uploading' || task.status === 'waiting') && (
+              {(task.status === 'uploading' || task.status === 'preparing' || task.status === 'waiting') && (
                 <button
                   onClick={() => cancelTask(task.id)}
                   className="flex h-8 w-8 items-center justify-center rounded-xl text-slate-400 opacity-0 transition-all hover:bg-red-50 hover:text-red-500 group-hover:opacity-100 dark:text-slate-500 dark:hover:bg-red-500/10"

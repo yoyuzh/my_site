@@ -9,20 +9,26 @@ import com.yoyuzh.ops.admin.internal.infra.AdminRequestTimelinePointRepository;
 import com.yoyuzh.files.workspace.api.WorkspaceAdminMetricsApi;
 import com.yoyuzh.files.sharing.api.SharingAdminMetricsApi;
 import com.yoyuzh.platform.job.api.BackgroundTaskAdminQueryApi;
+import jakarta.persistence.EntityManager;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
+import java.time.Clock;
 import java.time.LocalDate;
+import java.time.Instant;
 import java.time.LocalTime;
+import java.time.ZoneOffset;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.atMostOnce;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -42,6 +48,8 @@ class AdminMetricsServiceTest {
     private SharingAdminMetricsApi sharingAdminMetricsApi;
     @Mock
     private BackgroundTaskAdminQueryApi backgroundTaskAdminQueryApi;
+    @Mock
+    private EntityManager entityManager;
 
     private AdminMetricsService adminMetricsService;
 
@@ -53,7 +61,8 @@ class AdminMetricsServiceTest {
                 adminDailyActiveUserRepository,
                 workspaceAdminMetricsApi,
                 sharingAdminMetricsApi,
-                backgroundTaskAdminQueryApi
+                backgroundTaskAdminQueryApi,
+                entityManager
         );
     }
 
@@ -93,8 +102,8 @@ class AdminMetricsServiceTest {
 
     @Test
     void shouldStartNewDayRequestCountAtOneWhenIncrementingPreviousDayState() {
-        when(adminMetricsStateRepository.incrementRequestCount(eq(1L), eq(LocalDate.now()), any())).thenReturn(1);
-        when(adminRequestTimelinePointRepository.incrementRequestCount(eq(LocalDate.now()), eq(LocalTime.now().getHour()), any()))
+        when(adminMetricsStateRepository.incrementRequestCountBy(eq(1L), eq(LocalDate.now()), eq(1L), any())).thenReturn(1);
+        when(adminRequestTimelinePointRepository.incrementRequestCount(eq(LocalDate.now()), eq(LocalTime.now().getHour()), eq(1L), any()))
                 .thenReturn(0)
                 .thenReturn(0);
         when(adminMetricsStateRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(createCurrentState(LocalDate.now())));
@@ -102,30 +111,32 @@ class AdminMetricsServiceTest {
                 .thenAnswer(invocation -> invocation.getArgument(0));
 
         adminMetricsService.incrementRequestCount();
+        adminMetricsService.flushPendingMetrics();
 
-        verify(adminMetricsStateRepository).incrementRequestCount(eq(1L), eq(LocalDate.now()), any());
+        verify(adminMetricsStateRepository).incrementRequestCountBy(eq(1L), eq(LocalDate.now()), eq(1L), any());
         verify(adminRequestTimelinePointRepository).save(any(AdminRequestTimelinePointEntity.class));
     }
 
     @Test
     void shouldInitializeMetricsStateWithoutFlushInsertPath() {
-        when(adminMetricsStateRepository.incrementRequestCount(eq(1L), eq(LocalDate.now()), any()))
+        when(adminMetricsStateRepository.incrementRequestCountBy(eq(1L), eq(LocalDate.now()), eq(1L), any()))
                 .thenReturn(0)
                 .thenReturn(1);
         when(adminMetricsStateRepository.insertIfAbsent(eq(1L), eq(0L), eq(LocalDate.now()), eq(0L), eq(0L), eq(20L * 1024 * 1024 * 1024), any()))
                 .thenReturn(1);
-        when(adminRequestTimelinePointRepository.incrementRequestCount(eq(LocalDate.now()), eq(LocalTime.now().getHour()), any()))
+        when(adminRequestTimelinePointRepository.incrementRequestCount(eq(LocalDate.now()), eq(LocalTime.now().getHour()), eq(1L), any()))
                 .thenReturn(1);
 
         adminMetricsService.incrementRequestCount();
+        adminMetricsService.flushPendingMetrics();
 
-        verify(adminMetricsStateRepository, never()).saveAndFlush(any(AdminMetricsState.class));
+        verify(adminMetricsStateRepository, never()).save(any(AdminMetricsState.class));
     }
 
     @Test
     void shouldCreateMissingTimelinePointWithoutFlushInsertPath() {
-        when(adminMetricsStateRepository.incrementRequestCount(eq(1L), eq(LocalDate.now()), any())).thenReturn(1);
-        when(adminRequestTimelinePointRepository.incrementRequestCount(eq(LocalDate.now()), eq(LocalTime.now().getHour()), any()))
+        when(adminMetricsStateRepository.incrementRequestCountBy(eq(1L), eq(LocalDate.now()), eq(1L), any())).thenReturn(1);
+        when(adminRequestTimelinePointRepository.incrementRequestCount(eq(LocalDate.now()), eq(LocalTime.now().getHour()), eq(1L), any()))
                 .thenReturn(0)
                 .thenReturn(0);
         when(adminMetricsStateRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(createCurrentState(LocalDate.now())));
@@ -133,9 +144,12 @@ class AdminMetricsServiceTest {
                 .thenAnswer(invocation -> invocation.getArgument(0));
 
         adminMetricsService.incrementRequestCount();
+        adminMetricsService.flushPendingMetrics();
 
-        verify(adminRequestTimelinePointRepository, never()).saveAndFlush(any(AdminRequestTimelinePointEntity.class));
+        verify(adminRequestTimelinePointRepository, times(2))
+                .incrementRequestCount(eq(LocalDate.now()), eq(LocalTime.now().getHour()), eq(1L), any());
         verify(adminMetricsStateRepository).findByIdForUpdate(1L);
+        verify(adminRequestTimelinePointRepository).save(any(AdminRequestTimelinePointEntity.class));
     }
 
     @Test
@@ -143,6 +157,7 @@ class AdminMetricsServiceTest {
         when(adminMetricsStateRepository.incrementDownloadTrafficBytes(eq(1L), eq(1024L), any())).thenReturn(1);
 
         adminMetricsService.recordDownloadTraffic(1024L);
+        adminMetricsService.flushPendingMetrics();
 
         verify(adminMetricsStateRepository).incrementDownloadTrafficBytes(eq(1L), eq(1024L), any());
         verify(adminMetricsStateRepository, never()).findByIdForUpdate(1L);
@@ -161,7 +176,6 @@ class AdminMetricsServiceTest {
         yesterday.setUserId(8L);
         yesterday.setUsername("bob");
 
-        when(adminDailyActiveUserRepository.findByMetricDateAndUserId(today, 7L)).thenReturn(Optional.of(existing));
         when(adminDailyActiveUserRepository.findAllByMetricDateBetweenOrderByMetricDateAscUsernameAsc(today.minusDays(6), today))
                 .thenReturn(java.util.List.of(yesterday, existing));
         when(adminMetricsStateRepository.findById(1L)).thenReturn(Optional.of(createCurrentState(today)));
@@ -170,6 +184,7 @@ class AdminMetricsServiceTest {
         when(sharingAdminMetricsApi.totalDownloadCountAsAdmin()).thenReturn(0L);
         when(backgroundTaskAdminQueryApi.countActiveTasks()).thenReturn(0L);
 
+        adminMetricsService.recordUserOnline(7L, "alice");
         adminMetricsService.recordUserOnline(7L, "alice");
         AdminMetricsSnapshot snapshot = adminMetricsService.getSnapshot();
 
@@ -180,24 +195,58 @@ class AdminMetricsServiceTest {
         assertThat(snapshot.dailyActiveUsers().get(6).metricDate()).isEqualTo(today);
         assertThat(snapshot.dailyActiveUsers().get(6).userCount()).isEqualTo(1L);
         assertThat(snapshot.dailyActiveUsers().get(6).usernames()).containsExactly("alice");
+        verify(adminDailyActiveUserRepository).insertIfAbsent(today, 7L, "alice");
         verify(adminDailyActiveUserRepository, never()).save(any(AdminDailyActiveUserEntity.class));
-        verify(adminDailyActiveUserRepository, times(2)).deleteAllByMetricDateBefore(today.minusDays(6));
+        verify(adminDailyActiveUserRepository, atMostOnce()).deleteAllByMetricDateBefore(today.minusDays(6));
     }
 
     @Test
-    void shouldCreateMissingDailyActiveUserWithoutFlushInsertPath() {
+    void shouldInsertPendingDailyActiveUserWithoutImmediateReadBack() {
         LocalDate today = LocalDate.now();
 
-        when(adminDailyActiveUserRepository.findByMetricDateAndUserId(today, 7L)).thenReturn(Optional.empty());
-        when(adminMetricsStateRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(createCurrentState(today)));
-        when(adminDailyActiveUserRepository.findByMetricDateAndUserIdForUpdate(today, 7L)).thenReturn(Optional.empty());
-        when(adminDailyActiveUserRepository.save(any(AdminDailyActiveUserEntity.class)))
-                .thenAnswer(invocation -> invocation.getArgument(0));
+        when(adminDailyActiveUserRepository.insertIfAbsent(today, 7L, "alice")).thenReturn(1);
 
         adminMetricsService.recordUserOnline(7L, "alice");
+        adminMetricsService.flushPendingMetrics();
 
-        verify(adminDailyActiveUserRepository, never()).saveAndFlush(any(AdminDailyActiveUserEntity.class));
-        verify(adminMetricsStateRepository).findByIdForUpdate(1L);
+        verify(adminDailyActiveUserRepository).insertIfAbsent(today, 7L, "alice");
+        verify(adminDailyActiveUserRepository, never()).findByMetricDateAndUserId(today, 7L);
+        verify(adminDailyActiveUserRepository, never()).findByMetricDateAndUserIdForUpdate(today, 7L);
+        verify(adminDailyActiveUserRepository, never()).save(any(AdminDailyActiveUserEntity.class));
+    }
+
+    @Test
+    void shouldContinueFlushingOtherDailyActiveUsersWhenOneInsertFails() {
+        Clock fixedClock = Clock.fixed(Instant.parse("2026-05-01T05:10:00Z"), ZoneOffset.UTC);
+        LocalDate today = LocalDate.now(fixedClock);
+        adminMetricsService = new AdminMetricsService(
+                adminMetricsStateRepository,
+                adminRequestTimelinePointRepository,
+                adminDailyActiveUserRepository,
+                workspaceAdminMetricsApi,
+                sharingAdminMetricsApi,
+                backgroundTaskAdminQueryApi,
+                entityManager,
+                fixedClock
+        );
+
+        doThrow(new IllegalStateException("db unavailable"))
+                .when(adminDailyActiveUserRepository)
+                .insertIfAbsent(today, 7L, "alice");
+        when(adminDailyActiveUserRepository.insertIfAbsent(today, 8L, "bob")).thenReturn(1);
+
+        adminMetricsService.recordUserOnline(7L, "alice");
+        adminMetricsService.recordUserOnline(8L, "bob");
+
+        adminMetricsService.flushPendingMetrics();
+
+        verify(adminDailyActiveUserRepository).insertIfAbsent(today, 7L, "alice");
+        verify(adminDailyActiveUserRepository).insertIfAbsent(today, 8L, "bob");
+
+        adminMetricsService.flushPendingMetrics();
+
+        verify(adminDailyActiveUserRepository, times(2)).insertIfAbsent(today, 7L, "alice");
+        verify(adminDailyActiveUserRepository, times(1)).insertIfAbsent(today, 8L, "bob");
     }
 
     private AdminMetricsState createCurrentState(LocalDate metricDate) {

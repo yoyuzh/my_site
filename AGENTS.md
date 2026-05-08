@@ -15,10 +15,10 @@ This repository is split across a Java backend, a Vite/React frontend, a small `
 
 ## Real project structure
 
-- `backend/`: Spring Boot 3.3.8, Java 17, Maven, domain packages under `com.yoyuzh.{auth,cqu,files,config,common}`.
-- `frontend/`: Vite 6, React 19, TypeScript, Tailwind CSS v4, route/page code under `src/pages`, reusable UI under `src/components`, shared logic under `src/lib`.
-- `docs/`: active project docs and active plans under `docs/plans/`; historical implementation plans live under `docs/archive/plans/`.
-- `scripts/`: deployment, migration, smoke, and local startup helpers.
+- `backend/`: Spring Boot 3.3.8, Java 17, Maven. The active runtime package layout is centered on `com.yoyuzh.boot`, `shared.kernel`, `identity.access`, `files.{workspace,content,upload,sharing,search}`, `transfer`, `platform.{job,storage}`, `ops.admin`, `app.android`, and `infra`.
+- `frontend/`: Vite 5, React 18, TypeScript, Tailwind CSS 3, route/page code under `src/pages`, reusable UI under `src/components`, shared logic under `src/lib`, and request contracts under `src/api`.
+- `docs/`: active project docs, active plans under `docs/plans/`, active backend-next constraints under `docs/backend-next/`, and historical plans under `docs/archive/plans/`.
+- `scripts/`: deployment, migration, dependency-check, smoke, and local startup helpers.
 
 ## Command source of truth
 
@@ -47,6 +47,9 @@ Important: there is no dedicated backend lint command and no dedicated backend t
 - `scripts/deploy-android-apk.mjs`
 - `scripts/deploy-android-release.mjs`
 - `scripts/deploy-front-oss.mjs`
+- `scripts/check-backend-internal-deps.py`
+- `scripts/migrate-aliyun-oss-to-s3.mjs`
+- `scripts/migrate-aliyun-oss-to-s3.test.mjs`
 - `scripts/migrate-file-storage-to-oss.mjs`
 - `scripts/oss-deploy-lib.mjs`
 - `scripts/oss-deploy-lib.test.mjs`
@@ -133,10 +136,10 @@ Important:
 ## Repo-specific guardrails
 
 - Do not run `npm` commands at the repository root. The repository root is not an application package; frontend commands belong under `frontend/`.
-- Frontend API proxying is defined in `frontend/vite.config.ts`, with `VITE_BACKEND_URL` defaulting to `http://localhost:8080`.
+- Frontend API proxying is defined in `frontend/vite.config.ts`, with `VITE_BACKEND_URL` defaulting to `http://127.0.0.1:8080`.
 - Backend local development behavior is split between `backend/src/main/resources/application.yml` and `application-dev.yml`; the `dev` profile uses H2 and mock CQU data.
 - Backend tests already exist under `backend/src/test/java/com/yoyuzh/...`; prefer adding or updating tests in the matching package.
-- Frontend tests already exist under `frontend/src/**/*.test.ts`; keep new tests next to the state or library module they verify.
+- Frontend test files are not a guaranteed baseline in this repo. If a task needs frontend tests, first verify the target area already has a runnable test pattern or add one next to the affected module deliberately instead of assuming a pre-existing test suite.
 - For frontend releases, prefer `node scripts/deploy-front-oss.mjs` over ad hoc `ossutil` or manual uploads.
 - For backend releases, package from `backend/` and deploy the produced jar; do not commit `backend/target/` artifacts to git unless the user explicitly asks for that unusual workflow.
 

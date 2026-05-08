@@ -20,6 +20,7 @@ import java.util.Optional;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -60,7 +61,7 @@ class RuntimeWorkspaceMutationApiTest {
         StoredFile targetDirectory = createDirectory(11L, user, "/", "图片");
         StoredFile childFile = createFile(12L, user, "/docs/archive", "nested.txt");
         when(storedFileRepository.findDetailedById(10L)).thenReturn(Optional.of(directory));
-        when(storedFileRepository.findByUserIdAndPathAndFilename(7L, "/", "图片")).thenReturn(Optional.of(targetDirectory));
+        stubExistingNodes(7L, targetDirectory);
         when(storedFileRepository.existsByUserIdAndPathAndFilename(7L, "/图片", "archive")).thenReturn(false);
         when(storedFileRepository.findByUserIdAndPathEqualsOrDescendant(7L, "/docs/archive")).thenReturn(List.of(childFile));
         when(storedFileRepository.save(any(StoredFile.class))).thenAnswer(invocation -> invocation.getArgument(0));
@@ -82,9 +83,7 @@ class RuntimeWorkspaceMutationApiTest {
         StoredFile archiveDirectory = createDirectory(12L, user, "/docs", "archive");
         StoredFile descendantDirectory = createDirectory(13L, user, "/docs/archive", "nested");
         when(storedFileRepository.findDetailedById(10L)).thenReturn(Optional.of(directory));
-        when(storedFileRepository.findByUserIdAndPathAndFilename(7L, "/", "docs")).thenReturn(Optional.of(docsDirectory));
-        when(storedFileRepository.findByUserIdAndPathAndFilename(7L, "/docs", "archive")).thenReturn(Optional.of(archiveDirectory));
-        when(storedFileRepository.findByUserIdAndPathAndFilename(7L, "/docs/archive", "nested")).thenReturn(Optional.of(descendantDirectory));
+        stubExistingNodes(7L, docsDirectory, archiveDirectory, descendantDirectory);
 
         WorkspaceMoveResult result = api.move(user.getId(), 10L, "/docs/archive/nested", null);
 
@@ -99,7 +98,7 @@ class RuntimeWorkspaceMutationApiTest {
         StoredFile file = createFile(10L, user, "/docs", "notes.txt");
         StoredFile targetDirectory = createDirectory(11L, user, "/", "下载");
         when(storedFileRepository.findDetailedById(10L)).thenReturn(Optional.of(file));
-        when(storedFileRepository.findByUserIdAndPathAndFilename(7L, "/", "下载")).thenReturn(Optional.of(targetDirectory));
+        stubExistingNodes(7L, targetDirectory);
         when(storedFileRepository.existsByUserIdAndPathAndFilename(7L, "/下载", "notes.txt")).thenReturn(true);
 
         WorkspaceMoveResult result = api.move(user.getId(), 10L, "/下载", null);
@@ -116,7 +115,7 @@ class RuntimeWorkspaceMutationApiTest {
         StoredFile file = createFile(10L, user, "/docs", "notes.txt");
         StoredFile targetDirectory = createDirectory(11L, user, "/", "下载");
         when(storedFileRepository.findDetailedById(10L)).thenReturn(Optional.of(file));
-        when(storedFileRepository.findByUserIdAndPathAndFilename(7L, "/", "下载")).thenReturn(Optional.of(targetDirectory));
+        stubExistingNodes(7L, targetDirectory);
         when(storedFileRepository.existsByUserIdAndPathAndFilename(7L, "/下载", "notes.txt")).thenReturn(true);
         when(storedFileRepository.findActiveFilenamesByUserIdAndPathAndFilenamePrefix(7L, "/下载", "notes.txt", "notes"))
                 .thenReturn(List.of("notes.txt", "notes(1).txt"));
@@ -162,5 +161,10 @@ class RuntimeWorkspaceMutationApiTest {
         storedFile.setSize(5L);
         storedFile.setCreatedAt(LocalDateTime.now());
         return storedFile;
+    }
+
+    private void stubExistingNodes(Long userId, StoredFile... files) {
+        when(storedFileRepository.findActiveNodesByUserIdAndPathInAndFilenameIn(eq(userId), any(), any()))
+                .thenReturn(List.of(files));
     }
 }

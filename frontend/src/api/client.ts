@@ -18,6 +18,20 @@ function getDefaultApiBaseUrl() {
   return '/api';
 }
 
+function shouldPreferLocalProxyInDev() {
+  if (typeof window === 'undefined') {
+    return false;
+  }
+
+  const isDev = (import.meta as ImportMeta & { env?: Record<string, string | boolean | undefined> }).env?.DEV === true;
+  if (!isDev) {
+    return false;
+  }
+
+  const hostname = window.location.hostname.toLowerCase();
+  return hostname === 'localhost' || hostname === '127.0.0.1';
+}
+
 function normalizeApiBaseUrl(value: string) {
   try {
     const url = new URL(value);
@@ -36,9 +50,13 @@ function normalizeApiBaseUrl(value: string) {
   }
 }
 
+const configuredApiBaseUrl =
+  (import.meta as ImportMeta & { env?: Record<string, string | undefined> }).env?.VITE_API_BASE_URL?.trim();
+
 const rawApiBaseUrl =
-  (import.meta as ImportMeta & { env?: Record<string, string | undefined> }).env?.VITE_API_BASE_URL?.trim() ||
-  getDefaultApiBaseUrl();
+  shouldPreferLocalProxyInDev()
+    ? '/api'
+    : configuredApiBaseUrl || getDefaultApiBaseUrl();
 
 const API_BASE_URL = normalizeApiBaseUrl(rawApiBaseUrl);
 
@@ -54,6 +72,7 @@ type RetryableApiRequestConfig = ApiRequestConfig & {
 
 export type ApiRequestConfig = AxiosRequestConfig & {
   authRequired?: boolean;
+  includeClientHeaders?: boolean;
   rawResponse?: boolean;
 };
 
@@ -73,6 +92,8 @@ export const apiClient = axios.create({
   baseURL: API_BASE_URL,
   timeout: 15000,
 });
+
+let refreshPromise: Promise<PortalSession> | null = null;
 
 export function resolveApiUrl(url: string) {
   if (!url) {
@@ -135,8 +156,11 @@ function toApiError(error: unknown) {
 
 function buildHeaders(config: ApiRequestConfig) {
   const headers = new Headers(config.headers as HeadersInit | undefined);
-  headers.set(CLIENT_HEADER, CLIENT_TYPE);
-  headers.set(CLIENT_ID_HEADER, getClientId());
+
+  if (config.includeClientHeaders === true) {
+    headers.set(CLIENT_HEADER, CLIENT_TYPE);
+    headers.set(CLIENT_ID_HEADER, getClientId());
+  }
 
   const session = getSession();
   if (config.authRequired !== false && session?.accessToken && !headers.has('Authorization')) {
@@ -181,12 +205,6 @@ async function refreshAccessToken(session: PortalSession) {
   const response = await apiClient.post<ApiEnvelope<PortalSession>>(
     '/auth/refresh',
     { refreshToken: session.refreshToken },
-    {
-      headers: {
-        [CLIENT_HEADER]: CLIENT_TYPE,
-        [CLIENT_ID_HEADER]: getClientId(),
-      },
-    },
   );
 
   const refreshed = unwrapEnvelope(response);
@@ -196,6 +214,33 @@ async function refreshAccessToken(session: PortalSession) {
   };
   setSession(nextSession);
   return nextSession;
+}
+
+function shouldTreatAsAuthenticationFailure(error: ApiError) {
+  return error.status === 401;
+}
+
+function shouldClearSessionForRefreshFailure(session: PortalSession) {
+  const currentSession = getSession();
+  if (!currentSession?.refreshToken) {
+    return true;
+  }
+  return currentSession.refreshToken === session.refreshToken;
+}
+
+async function refreshAccessTokenSingleFlight(session: PortalSession) {
+  const currentSession = getSession();
+  if (currentSession?.refreshToken && currentSession.refreshToken !== session.refreshToken) {
+    return currentSession;
+  }
+
+  if (refreshPromise == null) {
+    refreshPromise = refreshAccessToken(session).finally(() => {
+      refreshPromise = null;
+    });
+  }
+
+  return refreshPromise;
 }
 
 export async function apiRequest<T>(config: RetryableApiRequestConfig): Promise<T> {
@@ -219,11 +264,11 @@ export async function apiRequest<T>(config: RetryableApiRequestConfig): Promise<
       requestConfig.authRequired !== false &&
       requestConfig._retryOnAuthFailure !== false &&
       session?.refreshToken &&
-      (apiError.status === 401 || apiError.status === 403);
+      shouldTreatAsAuthenticationFailure(apiError);
 
     if (shouldRefresh) {
       try {
-        const refreshed = await refreshAccessToken(session);
+        const refreshed = await refreshAccessTokenSingleFlight(session);
         return apiRequest<T>({
           ...config,
           _retryOnAuthFailure: false,
@@ -233,11 +278,13 @@ export async function apiRequest<T>(config: RetryableApiRequestConfig): Promise<
           },
         });
       } catch {
-        clearSession();
+        if (shouldClearSessionForRefreshFailure(session)) {
+          clearSession();
+        }
       }
     }
 
-    if (apiError.status === 401 || apiError.status === 403) {
+    if (shouldTreatAsAuthenticationFailure(apiError)) {
       clearSession();
       redirectToLoginAfterAuthFailure(requestConfig);
     }

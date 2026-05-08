@@ -45,10 +45,10 @@
 
 ### 前端
 
-- React 19
+- React 18
 - TypeScript
-- Vite 6
-- Tailwind CSS v4
+- Vite 5
+- Tailwind CSS 3
 
 ### 后端
 
@@ -68,12 +68,14 @@
 
 ```text
 .
-├── backend/      Spring Boot 后端
-├── frontend/        React 前端
-├── docs/         活跃文档与归档计划
-├── scripts/      部署与辅助脚本
-├── data/         本地数据或辅助文件
-└── 模板/         页面参考模板
+├── backend/                 Spring Boot 后端
+├── backend-next/            目标后端架构与 API 约束文档
+├── frontend/                React 前端
+├── docs/                    活跃文档、计划与 backend-next 约束
+├── scripts/                 部署、迁移与辅助脚本
+├── third_party/             参考源码与外部前端副本
+├── data/                    本地数据或辅助文件
+└── .codex/agents/           仓库内 agent 角色定义
 ```
 
 ## 快速开始
@@ -129,8 +131,9 @@ npm run dev
 
 说明：
 
-- 默认端口：`3000`
+- Vite 默认端口通常是 `5173`
 - 本地前端代理配置位于 `frontend/vite.config.ts`
+- 前端 `/api` 代理默认转发到 `http://127.0.0.1:8080`，也可通过 `VITE_BACKEND_URL` 覆盖
 
 ## 常用命令
 
@@ -336,6 +339,9 @@ docker compose -f docker-compose.backend.yml up --build -d backend
 - [backend/README.md](./backend/README.md)
 - [frontend/package.json](./frontend/package.json)
 - [AGENTS.md](./AGENTS.md)
+- [frontend/AGENTS.md](./frontend/AGENTS.md)
+- [backend-next/archtecture.md](./backend-next/archtecture.md)
+- [backend-next/api-reference.md](./backend-next/api-reference.md)
 - `docs/plans/`
 - `docs/archive/plans/`
 

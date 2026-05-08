@@ -145,19 +145,19 @@ class BackgroundTaskServiceTest {
     }
 
     @Test
-    void shouldRejectExtractTaskForNonZipCompatibleArchive() {
+    void shouldRejectExtractTaskForUnsupportedArchive() {
         User user = createUser(7L);
-        WorkspaceFileSnapshot archive = createStoredFile(17L, user, "/docs", "backup.7z", false, "application/x-7z-compressed", 64L);
+        WorkspaceFileSnapshot archive = createStoredFile(17L, user, "/docs", "backup.exe", false, "application/octet-stream", 64L);
         when(workspaceFileQueryApi.findOwnedActiveFile(7L, 17L)).thenReturn(Optional.of(archive));
 
         assertThatThrownBy(() -> backgroundTaskService.createQueuedFileTask(
                 user.getId(),
                 BackgroundTaskType.EXTRACT,
                 17L,
-                "/docs/backup.7z",
+                "/docs/backup.exe",
                 null
         )).isInstanceOf(BusinessException.class)
-                .hasMessage("extract task only supports zip-compatible archives");
+                .hasMessage("extract task only supports supported archive files");
     }
 
     @Test
@@ -528,7 +528,7 @@ class BackgroundTaskServiceTest {
                 }
                 """);
         task.setFinishedAt(java.time.LocalDateTime.now());
-        task.setErrorMessage("extract task only supports zip-compatible archives");
+        task.setErrorMessage("extract task only supports supported archive files");
         BackgroundTask reloaded = createTask(8L, BackgroundTaskType.EXTRACT, BackgroundTaskStatus.QUEUED);
         reloaded.setPublicStateJson("""
                 {"fileId":11,"path":"/docs/extract.zip","outputPath":"/docs","outputDirectoryName":"extract","phase":"queued","attemptCount":0,"maxAttempts":3}

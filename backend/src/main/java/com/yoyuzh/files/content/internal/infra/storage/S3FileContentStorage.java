@@ -7,6 +7,8 @@ import com.yoyuzh.files.content.api.PreparedUpload;
 import com.yoyuzh.shared.kernel.BusinessException;
 import com.yoyuzh.shared.kernel.ErrorCode;
 import com.yoyuzh.platform.storage.api.StorageRuntimeProperties;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.util.StringUtils;
 import org.springframework.web.multipart.MultipartFile;
 import software.amazon.awssdk.core.ResponseBytes;
@@ -40,18 +42,23 @@ import java.time.Duration;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 
 public class S3FileContentStorage implements FileContentStorage, AutoCloseable {
 
     private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
+    private static final Logger log = LoggerFactory.getLogger(S3FileContentStorage.class);
+    private static final long SLOW_UPLOAD_PROBE_NANOS = 300L * 1_000_000L;
 
     private final StorageRuntimeProperties.S3 properties;
     private final S3SessionProvider sessionProvider;
+    private final DogeCloudTmpTokenClient tmpTokenClient;
 
     public S3FileContentStorage(StorageRuntimeProperties storageProperties) {
         this(
                 storageProperties,
+                new DogeCloudTmpTokenClient(storageProperties.getS3(), OBJECT_MAPPER),
                 new DogeCloudS3SessionProvider(
                         storageProperties.getS3(),
                         new DogeCloudTmpTokenClient(storageProperties.getS3(), OBJECT_MAPPER)
@@ -60,15 +67,18 @@ public class S3FileContentStorage implements FileContentStorage, AutoCloseable {
     }
 
     S3FileContentStorage(StorageRuntimeProperties storageProperties,
+                         DogeCloudTmpTokenClient tmpTokenClient,
+                         S3SessionProvider sessionProvider) {
+        this.properties = storageProperties.getS3();
+        this.sessionProvider = sessionProvider;
+        this.tmpTokenClient = tmpTokenClient;
+    }
+
+    S3FileContentStorage(StorageRuntimeProperties storageProperties,
                          String bucket,
                          software.amazon.awssdk.services.s3.S3Client s3Client,
                          software.amazon.awssdk.services.s3.presigner.S3Presigner s3Presigner) {
-        this(storageProperties, () -> new S3FileRuntimeSession(bucket, s3Client, s3Presigner));
-    }
-
-    S3FileContentStorage(StorageRuntimeProperties storageProperties, S3SessionProvider sessionProvider) {
-        this.properties = storageProperties.getS3();
-        this.sessionProvider = sessionProvider;
+        this(storageProperties, null, () -> new S3FileRuntimeSession(bucket, s3Client, s3Presigner));
     }
 
     @Override
@@ -112,26 +122,51 @@ public class S3FileContentStorage implements FileContentStorage, AutoCloseable {
 
     @Override
     public PreparedUpload prepareBlobUpload(String path, String filename, String objectKey, String contentType, long size) {
-        S3FileRuntimeSession session = sessionProvider.currentSession();
-        PutObjectRequest.Builder requestBuilder = PutObjectRequest.builder()
-                .bucket(session.bucket())
-                .key(normalizeObjectKey(objectKey));
-        if (StringUtils.hasText(contentType)) {
-            requestBuilder.contentType(contentType);
-        }
+        long startedAt = System.nanoTime();
+        long sessionStartedAt = startedAt;
+        try {
+            S3FileRuntimeSession session = sessionProvider.currentSession();
+            long sessionDuration = System.nanoTime() - sessionStartedAt;
 
-        PutObjectPresignRequest presignRequest = PutObjectPresignRequest.builder()
-                .signatureDuration(Duration.ofSeconds(Math.max(1, properties.getTtlSeconds())))
-                .putObjectRequest(requestBuilder.build())
-                .build();
-        PresignedPutObjectRequest presignedRequest = session.s3Presigner().presignPutObject(presignRequest);
-        return new PreparedUpload(
-                true,
-                presignedRequest.url().toString(),
-                resolveUploadMethod(presignedRequest),
-                resolveUploadHeaders(presignedRequest, contentType),
-                objectKey
-        );
+            long presignStartedAt = System.nanoTime();
+            PutObjectRequest.Builder requestBuilder = PutObjectRequest.builder()
+                    .bucket(session.bucket())
+                    .key(normalizeObjectKey(objectKey));
+            if (StringUtils.hasText(contentType)) {
+                requestBuilder.contentType(contentType);
+            }
+
+            PutObjectPresignRequest presignRequest = PutObjectPresignRequest.builder()
+                    .signatureDuration(Duration.ofSeconds(Math.max(1, properties.getTtlSeconds())))
+                    .putObjectRequest(requestBuilder.build())
+                    .build();
+            PresignedPutObjectRequest presignedRequest = session.s3Presigner().presignPutObject(presignRequest);
+            long presignDuration = System.nanoTime() - presignStartedAt;
+
+            logIfSlow(
+                    "s3-prepare-direct-upload",
+                    System.nanoTime() - startedAt,
+                    "sessionMs=" + formatMillis(sessionDuration)
+                            + " presignMs=" + formatMillis(presignDuration)
+                            + " objectKey=" + objectKey
+                            + " size=" + size
+            );
+            return new PreparedUpload(
+                    true,
+                    presignedRequest.url().toString(),
+                    resolveUploadMethod(presignedRequest),
+                    resolveUploadHeaders(presignedRequest, contentType),
+                    objectKey
+            );
+        } catch (RuntimeException ex) {
+            logFailure(
+                    "s3-prepare-direct-upload",
+                    System.nanoTime() - startedAt,
+                    "objectKey=" + objectKey + " size=" + size,
+                    ex
+            );
+            throw ex;
+        }
     }
 
     @Override
@@ -190,16 +225,37 @@ public class S3FileContentStorage implements FileContentStorage, AutoCloseable {
 
     @Override
     public String createMultipartUpload(String objectKey, String contentType) {
-        S3FileRuntimeSession session = sessionProvider.currentSession();
-        CreateMultipartUploadRequest.Builder requestBuilder = CreateMultipartUploadRequest.builder()
-                .bucket(session.bucket())
-                .key(normalizeObjectKey(objectKey));
-        if (StringUtils.hasText(contentType)) {
-            requestBuilder.contentType(contentType);
-        }
+        long startedAt = System.nanoTime();
+        long sessionStartedAt = startedAt;
         try {
-            return session.s3Client().createMultipartUpload(requestBuilder.build()).uploadId();
+            S3FileRuntimeSession session = sessionProvider.currentSession();
+            long sessionDuration = System.nanoTime() - sessionStartedAt;
+
+            CreateMultipartUploadRequest.Builder requestBuilder = CreateMultipartUploadRequest.builder()
+                    .bucket(session.bucket())
+                    .key(normalizeObjectKey(objectKey));
+            if (StringUtils.hasText(contentType)) {
+                requestBuilder.contentType(contentType);
+            }
+
+            long createStartedAt = System.nanoTime();
+            String uploadId = session.s3Client().createMultipartUpload(requestBuilder.build()).uploadId();
+            long createDuration = System.nanoTime() - createStartedAt;
+            logIfSlow(
+                    "s3-create-multipart-upload",
+                    System.nanoTime() - startedAt,
+                    "sessionMs=" + formatMillis(sessionDuration)
+                            + " createMs=" + formatMillis(createDuration)
+                            + " objectKey=" + objectKey
+            );
+            return uploadId;
         } catch (S3Exception ex) {
+            logFailure(
+                    "s3-create-multipart-upload",
+                    System.nanoTime() - startedAt,
+                    "objectKey=" + objectKey,
+                    ex
+            );
             throw new BusinessException(ErrorCode.UNKNOWN, "Multipart upload init failed");
         }
     }
@@ -210,30 +266,88 @@ public class S3FileContentStorage implements FileContentStorage, AutoCloseable {
                                                      int partNumber,
                                                      String contentType,
                                                      long size) {
-        S3FileRuntimeSession session = sessionProvider.currentSession();
-        UploadPartRequest uploadPartRequest = UploadPartRequest.builder()
-                .bucket(session.bucket())
-                .key(normalizeObjectKey(objectKey))
-                .uploadId(uploadId)
-                .partNumber(partNumber)
-                .contentLength(size)
-                .build();
-        UploadPartPresignRequest presignRequest = UploadPartPresignRequest.builder()
-                .signatureDuration(Duration.ofSeconds(Math.max(1, properties.getTtlSeconds())))
-                .uploadPartRequest(uploadPartRequest)
-                .build();
-        PresignedUploadPartRequest presignedRequest = session.s3Presigner().presignUploadPart(presignRequest);
-        Map<String, String> headers = flattenSignedHeaders(presignedRequest.signedHeaders());
-        if (StringUtils.hasText(contentType)) {
-            headers.put("Content-Type", contentType);
+        long startedAt = System.nanoTime();
+        long sessionStartedAt = startedAt;
+        try {
+            S3FileRuntimeSession session = sessionProvider.currentSession();
+            long sessionDuration = System.nanoTime() - sessionStartedAt;
+
+            UploadPartRequest uploadPartRequest = UploadPartRequest.builder()
+                    .bucket(session.bucket())
+                    .key(normalizeObjectKey(objectKey))
+                    .uploadId(uploadId)
+                    .partNumber(partNumber)
+                    .contentLength(size)
+                    .build();
+            long presignStartedAt = System.nanoTime();
+            UploadPartPresignRequest presignRequest = UploadPartPresignRequest.builder()
+                    .signatureDuration(Duration.ofSeconds(Math.max(1, properties.getTtlSeconds())))
+                    .uploadPartRequest(uploadPartRequest)
+                    .build();
+            PresignedUploadPartRequest presignedRequest = session.s3Presigner().presignUploadPart(presignRequest);
+            long presignDuration = System.nanoTime() - presignStartedAt;
+
+            Map<String, String> headers = flattenSignedHeaders(presignedRequest.signedHeaders());
+            if (StringUtils.hasText(contentType)) {
+                headers.put("Content-Type", contentType);
+            }
+            logIfSlow(
+                    "s3-prepare-multipart-part",
+                    System.nanoTime() - startedAt,
+                    "sessionMs=" + formatMillis(sessionDuration)
+                            + " presignMs=" + formatMillis(presignDuration)
+                            + " objectKey=" + objectKey
+                            + " partNumber=" + partNumber
+                            + " size=" + size
+            );
+            return new PreparedUpload(
+                    true,
+                    presignedRequest.url().toString(),
+                    resolveUploadMethod(presignedRequest),
+                    headers,
+                    objectKey
+            );
+        } catch (RuntimeException ex) {
+            logFailure(
+                    "s3-prepare-multipart-part",
+                    System.nanoTime() - startedAt,
+                    "objectKey=" + objectKey + " partNumber=" + partNumber + " size=" + size,
+                    ex
+            );
+            throw ex;
         }
-        return new PreparedUpload(
-                true,
-                presignedRequest.url().toString(),
-                resolveUploadMethod(presignedRequest),
-                headers,
-                objectKey
+    }
+
+    private void logIfSlow(String operation, long durationNanos, String details) {
+        if (durationNanos < SLOW_UPLOAD_PROBE_NANOS) {
+            return;
+        }
+        log.info(
+                "upload-probe operation={} durationMs={} {}",
+                operation,
+                formatMillis(durationNanos),
+                details
         );
+    }
+
+    private void logFailure(String operation, long durationNanos, String details, RuntimeException ex) {
+        log.warn(
+                "upload-probe operation={} durationMs={} {}",
+                operation,
+                formatMillis(durationNanos),
+                details,
+                ex
+        );
+    }
+
+    private String formatMillis(long durationNanos) {
+        return String.format(Locale.ROOT, "%.2f", durationNanos / 1_000_000.0d);
+    }
+
+    private static String resolveRegion(StorageRuntimeProperties.S3 properties) {
+        return properties.getRegion() == null || properties.getRegion().isBlank()
+                ? "automatic"
+                : properties.getRegion();
     }
 
     @Override

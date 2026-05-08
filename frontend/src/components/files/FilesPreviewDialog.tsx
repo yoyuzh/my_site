@@ -20,6 +20,7 @@ import {
 } from '@mui/material';
 import { Download, Eye, Save, X } from 'lucide-react';
 import type { FileItem } from '../../api/types';
+import { resolveApiUrl } from '../../api/client';
 import { formatBytes } from '../../lib/format';
 import { downloadFileBlob, getFileDownloadUrl, updateFileContent } from '../../lib/files';
 import CloudreveFileTypeIcon from './CloudreveFileTypeIcon';
@@ -63,10 +64,6 @@ function isPreviewable(file: FileItem) {
   );
 }
 
-function isExternalUrl(url: string) {
-  return /^https?:\/\//i.test(url) || url.startsWith('//');
-}
-
 function getLogicalPath(file: Pick<FileItem, 'filename' | 'path'>) {
   if (!file.path) {
     return `/${file.filename}`;
@@ -91,16 +88,26 @@ function getEditableContentType(file: FileItem) {
   return 'text/plain;charset=utf-8';
 }
 
-async function loadFileBlob(fileId: number) {
-  const result = await getFileDownloadUrl(fileId);
-  if (isExternalUrl(result.url)) {
-    const response = await fetch(result.url);
-    if (!response.ok) {
-      throw new Error('文件内容加载失败');
-    }
-    return response.blob();
+function isExternalUrl(url: string) {
+  return /^https?:\/\//i.test(url) || url.startsWith('//');
+}
+
+function isEmbeddableViewerUrl(url: string) {
+  return isExternalUrl(url) || url.startsWith('/api/files/viewer/');
+}
+
+async function loadPreviewSource(fileId: number) {
+  const result = await getFileDownloadUrl(fileId, { viewer: true });
+  const resolvedUrl = resolveApiUrl(result.url);
+  if (isEmbeddableViewerUrl(result.url)) {
+    return { url: resolvedUrl, shouldRevoke: false };
   }
-  return downloadFileBlob(fileId);
+
+  const blob = await downloadFileBlob(fileId);
+  return {
+    url: URL.createObjectURL(blob),
+    shouldRevoke: true,
+  };
 }
 
 function buildDrawioSrc(darkMode: boolean) {
@@ -226,6 +233,12 @@ export const FilesPreviewDialog: React.FC<FilesPreviewDialogProps> = ({ file, on
     setActiveFile(file);
   }, [file]);
 
+  const contentType = activeFile?.contentType ?? '';
+  const previewable = activeFile != null && !activeFile.directory && isPreviewable(activeFile);
+  const editableKind = activeFile ? getEditableKind(activeFile) : null;
+  const dirty = editableKind != null && documentText !== initialDocumentText;
+  const displayPath = activeFile ? getLogicalPath(activeFile) : '';
+
   useEffect(() => {
     if (!activeFile || activeFile.directory || !isPreviewable(activeFile)) {
       setObjectUrl(null);
@@ -245,34 +258,50 @@ export const FilesPreviewDialog: React.FC<FilesPreviewDialogProps> = ({ file, on
     setDocumentText('');
     setInitialDocumentText('');
 
-    void loadFileBlob(activeFile.id)
-      .then(async (blob) => {
-        if (disposed) {
-          return;
-        }
-        if (getEditableKind(activeFile) != null) {
+    if (editableKind != null) {
+      void downloadFileBlob(activeFile.id)
+        .then(async (blob) => {
+          if (disposed) {
+            return;
+          }
           const text = await blob.text();
           if (disposed) {
             return;
           }
           setDocumentText(text);
           setInitialDocumentText(text);
-          return;
-        }
-        nextUrl = URL.createObjectURL(blob);
-        shouldRevoke = true;
-        setObjectUrl(nextUrl);
-      })
-      .catch((previewError: unknown) => {
-        if (!disposed) {
-          setError(previewError instanceof Error ? previewError.message : '预览加载失败');
-        }
-      })
-      .finally(() => {
-        if (!disposed) {
-          setLoading(false);
-        }
-      });
+        })
+        .catch((previewError: unknown) => {
+          if (!disposed) {
+            setError(previewError instanceof Error ? previewError.message : '预览加载失败');
+          }
+        })
+        .finally(() => {
+          if (!disposed) {
+            setLoading(false);
+          }
+        });
+    } else {
+      void loadPreviewSource(activeFile.id)
+        .then((result) => {
+          if (disposed) {
+            return;
+          }
+          nextUrl = result.url;
+          shouldRevoke = result.shouldRevoke;
+          setObjectUrl(result.url);
+        })
+        .catch((previewError: unknown) => {
+          if (!disposed) {
+            setError(previewError instanceof Error ? previewError.message : '预览加载失败');
+          }
+        })
+        .finally(() => {
+          if (!disposed) {
+            setLoading(false);
+          }
+        });
+    }
 
     return () => {
       disposed = true;
@@ -280,13 +309,7 @@ export const FilesPreviewDialog: React.FC<FilesPreviewDialogProps> = ({ file, on
         URL.revokeObjectURL(nextUrl);
       }
     };
-  }, [activeFile]);
-
-  const contentType = activeFile?.contentType ?? '';
-  const previewable = activeFile != null && !activeFile.directory && isPreviewable(activeFile);
-  const editableKind = activeFile ? getEditableKind(activeFile) : null;
-  const dirty = editableKind != null && documentText !== initialDocumentText;
-  const displayPath = activeFile ? getLogicalPath(activeFile) : '';
+  }, [activeFile, editableKind]);
 
   const saveDocument = useCallback(
     async (nextContent = documentText) => {

@@ -1,5 +1,6 @@
 package com.yoyuzh.files.search.internal.web;
 
+import com.yoyuzh.boot.security.AuthenticatedUserPrincipal;
 import com.yoyuzh.boot.security.CustomUserDetailsService;
 import com.yoyuzh.files.search.api.FileEventApi;
 import lombok.RequiredArgsConstructor;
@@ -28,6 +29,9 @@ public class FileEventsV2Controller {
     }
 
     private Long currentUserId(UserDetails userDetails) {
+        if (userDetails instanceof AuthenticatedUserPrincipal authenticatedUserPrincipal) {
+            return authenticatedUserPrincipal.getUserId();
+        }
         return userDetailsService.loadUserId(userDetails.getUsername());
     }
 }

@@ -185,7 +185,6 @@ class RuntimeContentRegistrationApiTest {
             entity.setId(25L);
             return entity;
         });
-        when(storedFileRepository.existsByUserIdAndPathAndFilename(7L, "/docs", "notes.txt")).thenReturn(true);
         when(storedFileRepository.findActiveFilenamesByUserIdAndPathAndFilenamePrefix(7L, "/docs", "notes.txt", "notes"))
                 .thenReturn(java.util.List.of("notes.txt"));
         when(storedFileRepository.save(any(StoredFile.class))).thenAnswer(invocation -> {

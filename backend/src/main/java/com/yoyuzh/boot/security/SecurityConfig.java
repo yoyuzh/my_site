@@ -6,6 +6,7 @@ import com.yoyuzh.shared.kernel.ApiResponse;
 import com.yoyuzh.shared.kernel.ErrorCode;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpMethod;
@@ -26,11 +27,13 @@ import org.springframework.security.web.authentication.UsernamePasswordAuthentic
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
+import org.springframework.util.StringUtils;
 
 @Configuration
 @EnableWebSecurity
 @EnableMethodSecurity
 @RequiredArgsConstructor
+@Slf4j
 public class SecurityConfig {
 
     private final JwtAuthenticationFilter jwtAuthenticationFilter;
@@ -79,6 +82,8 @@ public class SecurityConfig {
                         .permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/files/share-links/*")
                         .permitAll()
+                        .requestMatchers(HttpMethod.GET, "/api/files/viewer/*")
+                        .permitAll()
                         .requestMatchers("/api/admin/**")
                         .access((authentication, context) -> new org.springframework.security.authorization.AuthorizationDecision(
                                 adminAccessPolicy.hasAdminAccess(authentication.get())
@@ -90,6 +95,7 @@ public class SecurityConfig {
                 .authenticationProvider(authenticationProvider())
                 .exceptionHandling(ex -> ex
                         .authenticationEntryPoint((request, response, e) -> {
+                            logAuthProbe("unauthorized-entrypoint", request.getRequestURI(), request.getHeader("Authorization"));
                             response.setStatus(401);
                             response.setContentType(MediaType.APPLICATION_JSON_VALUE);
                             response.setCharacterEncoding("UTF-8");
@@ -97,6 +103,7 @@ public class SecurityConfig {
                                     ApiResponse.error(ErrorCode.NOT_LOGGED_IN, "用户未登录"));
                         })
                         .accessDeniedHandler((request, response, e) -> {
+                            logAuthProbe("forbidden-entrypoint", request.getRequestURI(), request.getHeader("Authorization"));
                             response.setStatus(403);
                             response.setContentType(MediaType.APPLICATION_JSON_VALUE);
                             response.setCharacterEncoding("UTF-8");
@@ -141,10 +148,33 @@ public class SecurityConfig {
                 "Tus-Extension"
         ));
         configuration.setAllowCredentials(false);
-        configuration.setMaxAge(3600L);
+        configuration.setMaxAge(86400L);
 
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
         source.registerCorsConfiguration("/**", configuration);
         return source;
+    }
+
+    private void logAuthProbe(String reason, String requestPath, String authorizationHeader) {
+        if (!StringUtils.hasText(requestPath)) {
+            return;
+        }
+        if (!requestPath.startsWith("/api/v2/files/upload-sessions")
+                && !requestPath.startsWith("/api/auth/refresh")) {
+            return;
+        }
+        log.info(
+                "auth-probe reason={} path={} authHeaderPresent={}",
+                sanitizeForLog(reason),
+                sanitizeForLog(requestPath),
+                StringUtils.hasText(authorizationHeader)
+        );
+    }
+
+    private String sanitizeForLog(String value) {
+        if (!StringUtils.hasText(value)) {
+            return "-";
+        }
+        return value.replace('\n', '_').replace('\r', '_');
     }
 }

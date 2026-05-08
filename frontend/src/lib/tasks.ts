@@ -40,6 +40,18 @@ export async function rebuildSearchIndex() {
   });
 }
 
+export async function createExtractTask(fileId: number, path: string, correlationId?: string) {
+  return apiRequest<BackgroundTask>({
+    url: '/v2/tasks/extract',
+    method: 'POST',
+    data: {
+      fileId,
+      path,
+      correlationId,
+    },
+  });
+}
+
 export function readTaskPublicState(publicStateJson: string | null | undefined): Record<string, unknown> | null {
   if (!publicStateJson) {
     return null;

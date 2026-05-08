@@ -25,6 +25,7 @@ import java.util.concurrent.atomic.AtomicLong;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -56,7 +57,7 @@ class RuntimeWorkspaceLifecycleApiTest {
         FileBlob childBlob = createBlob(51L, "blobs/blob-archive-1");
         StoredFile childFile = createFile(13L, user, "/docs/archive", "notes.txt", childBlob);
         when(storedFileRepository.findDetailedById(10L)).thenReturn(Optional.of(directory));
-        when(storedFileRepository.findByUserIdAndPathAndFilename(7L, "/", "图片")).thenReturn(Optional.of(targetDirectory));
+        stubExistingNodes(7L, targetDirectory);
         when(storedFileRepository.existsByUserIdAndPathAndFilename(7L, "/图片", "archive")).thenReturn(false);
         when(storedFileRepository.findByUserIdAndPathEqualsOrDescendant(7L, "/docs/archive"))
                 .thenReturn(List.of(childFile));
@@ -123,7 +124,7 @@ class RuntimeWorkspaceLifecycleApiTest {
         when(storedFileRepository.findDetailedById(16L)).thenReturn(Optional.of(recycleRoot));
         when(storedFileRepository.findByRecycleGroupId("recycle-group-1")).thenReturn(List.of(recycleRoot));
         when(storedFileRepository.existsByUserIdAndPathAndFilename(7L, "/docs", "last.txt")).thenReturn(false);
-        when(storedFileRepository.findByUserIdAndPathAndFilename(7L, "/", "docs")).thenReturn(Optional.of(docsDirectory));
+        stubExistingNodes(7L, docsDirectory);
 
         WorkspaceLifecycleResult result = api.restore(user.getId(), 16L, bytes -> assertThat(bytes).isEqualTo(5L));
 
@@ -147,9 +148,7 @@ class RuntimeWorkspaceLifecycleApiTest {
         StoredFile archiveDirectory = createDirectory(12L, user, "/docs", "archive");
         StoredFile descendantDirectory = createDirectory(13L, user, "/docs/archive", "nested");
         when(storedFileRepository.findDetailedById(10L)).thenReturn(Optional.of(directory));
-        when(storedFileRepository.findByUserIdAndPathAndFilename(7L, "/", "docs")).thenReturn(Optional.of(docsDirectory));
-        when(storedFileRepository.findByUserIdAndPathAndFilename(7L, "/docs", "archive")).thenReturn(Optional.of(archiveDirectory));
-        when(storedFileRepository.findByUserIdAndPathAndFilename(7L, "/docs/archive", "nested")).thenReturn(Optional.of(descendantDirectory));
+        stubExistingNodes(7L, docsDirectory, archiveDirectory, descendantDirectory);
 
         assertThatThrownBy(() -> api.copy(user.getId(), 10L, "/docs/archive/nested", bytes -> {}))
                 .isInstanceOf(BusinessException.class)
@@ -198,5 +197,10 @@ class RuntimeWorkspaceLifecycleApiTest {
         blob.setContentType("text/plain");
         blob.setSize(5L);
         return blob;
+    }
+
+    private void stubExistingNodes(Long userId, StoredFile... files) {
+        when(storedFileRepository.findActiveNodesByUserIdAndPathInAndFilenameIn(eq(userId), any(), any()))
+                .thenReturn(List.of(files));
     }
 }

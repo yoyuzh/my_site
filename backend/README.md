@@ -117,7 +117,7 @@ mvn spring-boot:run -Dspring-boot.run.profiles=dev
 `dev` 环境特点：
 
 - 数据库使用 H2 文件库
-- 方便和 `vue/` 前端直接联调
+- 方便和仓库里的 `frontend/` 前端直接联调
 
 JWT 启动要求：
 
@@ -154,6 +154,7 @@ mvn test jacoco:report
 
 - MockMvc 测试已经作为默认 Web 测试栈使用。
 - Testcontainers 用例在本机可用 Docker 时执行；如果 Docker 不可用，标记为 `disabledWithoutDocker` 的容器测试会自动跳过，不阻塞其他后端测试。
+- 当前 Maven 构建已接入 JaCoCo 插件，覆盖率报告输出到 `backend/target/site/jacoco/`。
 
 ## 访问地址
 

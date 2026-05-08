@@ -32,7 +32,6 @@ class RuntimeWorkspaceDirectoryApiTest {
     @Test
     void shouldCreateDirectoryEntry() {
         RuntimeWorkspaceDirectoryApi api = new RuntimeWorkspaceDirectoryApi(storedFileRepository, fileContentStorage);
-        when(storedFileRepository.existsByUserIdAndPathAndFilename(7L, "/", "docs")).thenReturn(false);
         when(storedFileRepository.save(any(StoredFile.class))).thenAnswer(invocation -> {
             StoredFile storedFile = invocation.getArgument(0);
             storedFile.setId(10L);
@@ -86,7 +85,6 @@ class RuntimeWorkspaceDirectoryApiTest {
     @Test
     void shouldCreateDirectoryWithAutoRenamedNameWhenSameDirectoryExists() {
         RuntimeWorkspaceDirectoryApi api = new RuntimeWorkspaceDirectoryApi(storedFileRepository, fileContentStorage);
-        when(storedFileRepository.existsByUserIdAndPathAndFilename(7L, "/", "docs")).thenReturn(true);
         when(storedFileRepository.findActiveFilenamesByUserIdAndPathAndFilenamePrefix(7L, "/", "docs", "docs"))
                 .thenReturn(List.of("docs"));
         when(storedFileRepository.save(any(StoredFile.class))).thenAnswer(invocation -> {

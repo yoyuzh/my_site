@@ -172,7 +172,8 @@ final class FileServiceTestSupport {
                 uploadCompletionApi,
                 contentBlobLifecycleApi,
                 fileUploadRulesService,
-                workspaceNodeRulesService
+                workspaceNodeRulesService,
+                WorkspaceRequestProbe.disabled()
         );
         WorkspaceFileActivityService workspaceFileActivityService = new WorkspaceFileActivityService(
                 workspaceNodeRulesService,
@@ -207,6 +208,7 @@ final class FileServiceTestSupport {
                 workspaceFileActivityService,
                 workspaceArchiveService,
                 DistributedLockGateway.noOp(),
+                WorkspaceRequestProbe.disabled(),
                 maxFileSize,
                 clock
         );

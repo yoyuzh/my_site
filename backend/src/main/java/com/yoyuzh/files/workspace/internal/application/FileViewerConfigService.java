@@ -57,7 +57,9 @@ public class FileViewerConfigService {
                 builtin("excalidraw", "Excalidraw", "pen-tool", List.of("excalidraw"), 50L * 1024 * 1024, true, List.of(
                         template("excalidraw", "excalidraw", "Excalidraw 画板", "未命名.excalidraw", "", "application/json")
                 ), Map.of()),
-                builtin("archive", "压缩包浏览器", "archive", List.of("zip", "rar", "7z", "tar", "gz", "bz2", "xz"), null, true, List.of(), Map.of())
+                builtin("archive", "压缩包浏览器", "archive", List.of(
+                        "zip", "rar", "7z", "tar", "tgz", "gz", "tbz2", "tbz", "bz2", "txz", "xz"
+                ), null, true, List.of(), Map.of())
         ));
         if (externalViewerEnabled) {
             viewers.add(custom("google-docs", "Google 阅读器", "google", List.of(
@@ -130,7 +132,7 @@ public class FileViewerConfigService {
         putAll(mapping, "epub", "epub");
         putAll(mapping, "music", "mp3", "wav", "flac", "aac", "m4a", "opus");
         putAll(mapping, "excalidraw", "excalidraw");
-        putAll(mapping, "archive", "zip", "rar", "7z", "tar", "gz", "bz2", "xz");
+        putAll(mapping, "archive", "zip", "rar", "7z", "tar", "tgz", "gz", "tbz2", "tbz", "bz2", "txz", "xz");
         if (externalViewerEnabled) {
             putAll(mapping, "microsoft-office", "doc", "docx", "xls", "xlsx", "ppt", "pptx", "odt", "ods", "odp");
         }

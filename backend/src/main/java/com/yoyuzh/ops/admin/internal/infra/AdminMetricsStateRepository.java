@@ -51,14 +51,15 @@ public interface AdminMetricsStateRepository extends JpaRepository<AdminMetricsS
     @Modifying
     @Query("""
             update AdminMetricsState state
-            set state.requestCount = case when state.requestCountDate = :metricDate then state.requestCount + 1 else 1 end,
+            set state.requestCount = case when state.requestCountDate = :metricDate then state.requestCount + :delta else :delta end,
                 state.requestCountDate = :metricDate,
                 state.updatedAt = :updatedAt
             where state.id = :id
             """)
-    int incrementRequestCount(@Param("id") Long id,
-                              @Param("metricDate") LocalDate metricDate,
-                              @Param("updatedAt") LocalDateTime updatedAt);
+    int incrementRequestCountBy(@Param("id") Long id,
+                                @Param("metricDate") LocalDate metricDate,
+                                @Param("delta") long delta,
+                                @Param("updatedAt") LocalDateTime updatedAt);
 
     @Modifying
     @Query("""

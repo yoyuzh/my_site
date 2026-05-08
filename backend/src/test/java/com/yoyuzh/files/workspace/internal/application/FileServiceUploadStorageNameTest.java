@@ -61,7 +61,6 @@ class FileServiceUploadStorageNameTest {
         MockMultipartFile multipartFile = new MockMultipartFile(
                 "file", "notes.txt", "text/plain", "hello".getBytes()
         );
-        when(storedFileRepository.existsByUserIdAndPathAndFilename(1L, "/", "notes.txt")).thenReturn(false);
         when(fileBlobRepository.save(any(FileBlob.class))).thenAnswer(invocation -> {
             FileBlob blob = invocation.getArgument(0);
             blob.setId(100L);

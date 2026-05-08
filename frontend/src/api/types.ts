@@ -149,6 +149,18 @@ export interface DownloadUrlResponse {
   url: string;
 }
 
+export interface ArchiveEntry {
+  relativePath: string;
+  directory: boolean;
+  size: number;
+  contentType: string;
+}
+
+export interface ArchiveListing {
+  entries: ArchiveEntry[];
+  commonRootDirectoryName: string | null;
+}
+
 export interface UploadSessionStrategy {
   prepareUrl: string | null;
   proxyContentUrl: string | null;

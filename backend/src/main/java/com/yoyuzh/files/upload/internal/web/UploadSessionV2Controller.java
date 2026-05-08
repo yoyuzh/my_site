@@ -15,6 +15,8 @@ import com.yoyuzh.shared.kernel.BusinessException;
 import com.yoyuzh.shared.kernel.ErrorCode;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -33,6 +35,9 @@ import org.springframework.web.multipart.MultipartFile;
 @RequiredArgsConstructor
 public class UploadSessionV2Controller {
 
+    private static final Logger log = LoggerFactory.getLogger(UploadSessionV2Controller.class);
+    private static final long SLOW_UPLOAD_PROBE_NANOS = 300L * 1_000_000L;
+
     private final UploadSessionService uploadSessionService;
     private final UploadSessionTusService uploadSessionTusService;
     private final IdentityAuthenticationApi identityAuthenticationApi;
@@ -40,13 +45,27 @@ public class UploadSessionV2Controller {
     @PostMapping
     public ApiV2Response<UploadSessionV2Response> createSession(@AuthenticationPrincipal UserDetails userDetails,
                                                                 @Valid @RequestBody CreateUploadSessionV2Request request) {
+        long startedAt = System.nanoTime();
+        long authStartedAt = startedAt;
         IdentityAuthenticatedUser user = loadAuthenticatedUser(userDetails);
+        long authDuration = System.nanoTime() - authStartedAt;
+
+        long serviceStartedAt = System.nanoTime();
         UploadSessionView session = uploadSessionService.createSession(user, new UploadSessionCreateCommand(
                 request.path(),
                 request.filename(),
                 request.contentType(),
                 request.size()
         ));
+        long serviceDuration = System.nanoTime() - serviceStartedAt;
+        logIfSlow(
+                "create-session-endpoint",
+                System.nanoTime() - startedAt,
+                "sessionId=" + session.sessionId()
+                        + " mode=" + session.uploadMode()
+                        + " authMs=" + formatMillis(authDuration)
+                        + " serviceMs=" + formatMillis(serviceDuration)
+        );
         return ApiV2Response.success(toResponse(session));
     }
 
@@ -60,8 +79,20 @@ public class UploadSessionV2Controller {
     @GetMapping("/{sessionId}/prepare")
     public ApiV2Response<PreparedUploadV2Response> prepareUpload(@AuthenticationPrincipal UserDetails userDetails,
                                                                  @PathVariable String sessionId) {
+        long startedAt = System.nanoTime();
+        long authStartedAt = startedAt;
         Long user = loadAuthenticatedUser(userDetails).id();
+        long authDuration = System.nanoTime() - authStartedAt;
+        long serviceStartedAt = System.nanoTime();
         PreparedUpload preparedUpload = uploadSessionService.prepareOwnedUpload(user, sessionId);
+        long serviceDuration = System.nanoTime() - serviceStartedAt;
+        logIfSlow(
+                "prepare-direct-upload-endpoint",
+                System.nanoTime() - startedAt,
+                "sessionId=" + sessionId
+                        + " authMs=" + formatMillis(authDuration)
+                        + " serviceMs=" + formatMillis(serviceDuration)
+        );
         return ApiV2Response.success(new PreparedUploadV2Response(
                 preparedUpload.direct(),
                 preparedUpload.uploadUrl(),
@@ -112,8 +143,21 @@ public class UploadSessionV2Controller {
     public ApiV2Response<PreparedUploadV2Response> preparePartUpload(@AuthenticationPrincipal UserDetails userDetails,
                                                                      @PathVariable String sessionId,
                                                                      @PathVariable int partIndex) {
+        long startedAt = System.nanoTime();
+        long authStartedAt = startedAt;
         Long user = loadAuthenticatedUser(userDetails).id();
+        long authDuration = System.nanoTime() - authStartedAt;
+        long serviceStartedAt = System.nanoTime();
         PreparedUpload preparedUpload = uploadSessionService.prepareOwnedPartUpload(user, sessionId, partIndex);
+        long serviceDuration = System.nanoTime() - serviceStartedAt;
+        logIfSlow(
+                "prepare-multipart-part-endpoint",
+                System.nanoTime() - startedAt,
+                "sessionId=" + sessionId
+                        + " partIndex=" + partIndex
+                        + " authMs=" + formatMillis(authDuration)
+                        + " serviceMs=" + formatMillis(serviceDuration)
+        );
         return ApiV2Response.success(new PreparedUploadV2Response(
                 preparedUpload.direct(),
                 preparedUpload.uploadUrl(),
@@ -198,5 +242,21 @@ public class UploadSessionV2Controller {
     private IdentityAuthenticatedUser loadAuthenticatedUser(UserDetails userDetails) {
         return identityAuthenticationApi.findByUsername(userDetails.getUsername())
                 .orElseThrow(() -> new BusinessException(ErrorCode.NOT_LOGGED_IN, "user not found"));
+    }
+
+    private void logIfSlow(String operation, long durationNanos, String details) {
+        if (durationNanos < SLOW_UPLOAD_PROBE_NANOS) {
+            return;
+        }
+        log.info(
+                "upload-probe operation={} durationMs={} {}",
+                operation,
+                formatMillis(durationNanos),
+                details
+        );
+    }
+
+    private String formatMillis(long durationNanos) {
+        return String.format(java.util.Locale.ROOT, "%.2f", durationNanos / 1_000_000.0d);
     }
 }

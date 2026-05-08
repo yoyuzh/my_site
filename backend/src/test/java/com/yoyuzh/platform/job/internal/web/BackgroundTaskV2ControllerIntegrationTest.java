@@ -168,7 +168,7 @@ class BackgroundTaskV2ControllerIntegrationTest {
                 "broken-extract",
                 "not-a-zip".getBytes(StandardCharsets.UTF_8)
         )).getId();
-        unsupportedExtractFileId = storedFileRepository.save(createFile(alice, "/docs", "backup.7z", false, "application/x-7z-compressed", 64L, null)).getId();
+        unsupportedExtractFileId = storedFileRepository.save(createFile(alice, "/docs", "backup.exe", false, "application/octet-stream", 64L, null)).getId();
         mediaFileId = storedFileRepository.save(createFile(alice, "/docs", "media.png", false, "image/png", 24L, null)).getId();
         foreignFileId = storedFileRepository.save(createBlobBackedFile(
                 bob,
@@ -372,14 +372,14 @@ class BackgroundTaskV2ControllerIntegrationTest {
     }
 
     @Test
-    void shouldRejectExtractTaskForNonZipCompatibleArchive() throws Exception {
+    void shouldRejectExtractTaskForUnsupportedArchive() throws Exception {
         mockMvc.perform(post("/api/v2/tasks/extract")
                         .with(user("alice"))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {
                                   "fileId": %d,
-                                  "path": "/docs/backup.7z"
+                                  "path": "/docs/backup.exe"
                                 }
                                 """.formatted(unsupportedExtractFileId)))
                 .andExpect(status().isBadRequest())
@@ -517,12 +517,12 @@ class BackgroundTaskV2ControllerIntegrationTest {
                 .andExpect(jsonPath("$.data.publicStateJson", containsString("\"attemptCount\":1")))
                 .andExpect(jsonPath("$.data.publicStateJson", containsString("\"maxAttempts\":3")))
                 .andExpect(jsonPath("$.data.publicStateJson", containsString("\"failureCategory\":\"DATA_STATE\"")))
-                .andExpect(jsonPath("$.data.errorMessage").value("extract task only supports zip-compatible archives"));
+                .andExpect(jsonPath("$.data.errorMessage").value("extract task only supports supported archive files"));
 
         BackgroundTask failed = backgroundTaskRepository.findById(taskId).orElseThrow();
         assertThat(failed.getStatus()).isEqualTo(BackgroundTaskStatus.FAILED);
         assertThat(failed.getFinishedAt()).isNotNull();
-        assertThat(failed.getErrorMessage()).isEqualTo("extract task only supports zip-compatible archives");
+        assertThat(failed.getErrorMessage()).isEqualTo("extract task only supports supported archive files");
     }
 
     @Test

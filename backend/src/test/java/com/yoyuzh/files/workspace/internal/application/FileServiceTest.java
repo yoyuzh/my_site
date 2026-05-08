@@ -38,6 +38,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
+import org.mockito.Mockito;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
@@ -51,6 +52,7 @@ import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.net.URI;
+import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 import java.time.Clock;
 import java.time.Instant;
@@ -127,7 +129,6 @@ class FileServiceTest {
         User user = createUser(7L);
         MockMultipartFile multipartFile = new MockMultipartFile(
                 "file", "notes.txt", "text/plain", "hello".getBytes());
-        when(storedFileRepository.existsByUserIdAndPathAndFilename(7L, "/docs", "notes.txt")).thenReturn(false);
         when(fileBlobRepository.save(any(FileBlob.class))).thenAnswer(invocation -> {
             FileBlob blob = invocation.getArgument(0);
             blob.setId(100L);
@@ -156,7 +157,6 @@ class FileServiceTest {
         User user = createUser(7L);
         MockMultipartFile multipartFile = new MockMultipartFile(
                 "file", "notes.txt", "text/plain", "hello".getBytes());
-        when(storedFileRepository.existsByUserIdAndPathAndFilename(7L, "/docs", "notes.txt")).thenReturn(true);
         when(storedFileRepository.findActiveFilenamesByUserIdAndPathAndFilenamePrefix(7L, "/docs", "notes.txt", "notes"))
                 .thenReturn(List.of("notes.txt"));
         when(fileBlobRepository.save(any(FileBlob.class))).thenAnswer(invocation -> {
@@ -180,7 +180,6 @@ class FileServiceTest {
         User user = createUser(7L);
         MockMultipartFile multipartFile = new MockMultipartFile(
                 "file", "slides.pptx", "text/plain", "hello".getBytes());
-        when(storedFileRepository.existsByUserIdAndPathAndFilename(7L, "/docs", "slides.pptx")).thenReturn(false);
         when(fileBlobRepository.save(any(FileBlob.class))).thenAnswer(invocation -> {
             FileBlob blob = invocation.getArgument(0);
             blob.setId(100L);
@@ -206,7 +205,6 @@ class FileServiceTest {
         User user = createUser(7L);
         MockMultipartFile multipartFile = new MockMultipartFile(
                 "file", "截屏2026-04-25 14.18.37.png", "text/plain", "hello".getBytes());
-        when(storedFileRepository.existsByUserIdAndPathAndFilename(7L, "/docs", "截屏2026-04-25 14.18.37.png")).thenReturn(false);
         when(fileBlobRepository.save(any(FileBlob.class))).thenAnswer(invocation -> {
             FileBlob blob = invocation.getArgument(0);
             blob.setId(100L);
@@ -234,7 +232,6 @@ class FileServiceTest {
         User user = createUser(7L);
         MockMultipartFile multipartFile = new MockMultipartFile(
                 "file", "photo.png", "image/png", "hello".getBytes());
-        when(storedFileRepository.existsByUserIdAndPathAndFilename(7L, "/docs", "photo.png")).thenReturn(false);
         when(fileBlobRepository.save(any(FileBlob.class))).thenAnswer(invocation -> {
             FileBlob blob = invocation.getArgument(0);
             blob.setId(100L);
@@ -267,7 +264,6 @@ class FileServiceTest {
         User user = createUser(7L);
         MockMultipartFile multipartFile = new MockMultipartFile(
                 "file", "notes.txt", "text/plain", "hello".getBytes());
-        when(storedFileRepository.existsByUserIdAndPathAndFilename(7L, "/docs", "notes.txt")).thenReturn(false);
         when(fileBlobRepository.save(any(FileBlob.class))).thenAnswer(invocation -> {
             FileBlob blob = invocation.getArgument(0);
             blob.setId(100L);
@@ -320,7 +316,6 @@ class FileServiceTest {
         User user = createUser(7L);
         MockMultipartFile multipartFile = new MockMultipartFile(
                 "file", "notes.txt", "text/plain", "hello".getBytes());
-        when(storedFileRepository.existsByUserIdAndPathAndFilename(7L, "/docs", "notes.txt")).thenReturn(false);
         when(fileBlobRepository.save(any(FileBlob.class))).thenAnswer(invocation -> {
             FileBlob blob = invocation.getArgument(0);
             blob.setId(100L);
@@ -426,7 +421,6 @@ class FileServiceTest {
     @Test
     void shouldCompleteDirectUploadAndPersistMetadata() {
         User user = createUser(7L);
-        when(storedFileRepository.existsByUserIdAndPathAndFilename(7L, "/docs", "notes.txt")).thenReturn(false);
         when(fileBlobRepository.save(any(FileBlob.class))).thenAnswer(invocation -> {
             FileBlob blob = invocation.getArgument(0);
             blob.setId(101L);
@@ -450,9 +444,7 @@ class FileServiceTest {
         User user = createUser(7L);
         MockMultipartFile multipartFile = new MockMultipartFile(
                 "file", "notes.txt", "text/plain", "hello".getBytes());
-        when(storedFileRepository.existsByUserIdAndPathAndFilename(7L, "/docs", "notes.txt")).thenReturn(false);
-        when(storedFileRepository.findByUserIdAndPathAndFilename(7L, "/", "docs"))
-                .thenReturn(Optional.of(createDirectory(20L, user, "/", "docs")));
+        stubExistingNodes(7L, createDirectory(20L, user, "/", "docs"));
         when(fileBlobRepository.save(any(FileBlob.class))).thenAnswer(invocation -> invocation.getArgument(0));
         doThrow(new IllegalStateException("insert failed")).when(storedFileRepository).save(any(StoredFile.class));
 
@@ -467,9 +459,7 @@ class FileServiceTest {
     @Test
     void shouldDeleteCompletedUploadBlobWhenMetadataSaveFails() {
         User user = createUser(7L);
-        when(storedFileRepository.existsByUserIdAndPathAndFilename(7L, "/docs", "notes.txt")).thenReturn(false);
-        when(storedFileRepository.findByUserIdAndPathAndFilename(7L, "/", "docs"))
-                .thenReturn(Optional.of(createDirectory(21L, user, "/", "docs")));
+        stubExistingNodes(7L, createDirectory(21L, user, "/", "docs"));
         when(fileBlobRepository.save(any(FileBlob.class))).thenAnswer(invocation -> invocation.getArgument(0));
         doThrow(new IllegalStateException("insert failed")).when(storedFileRepository).save(any(StoredFile.class));
 
@@ -484,9 +474,7 @@ class FileServiceTest {
     @Test
     void shouldCreateMissingDirectoriesBeforeCompletingNestedUpload() {
         User user = createUser(7L);
-        when(storedFileRepository.existsByUserIdAndPathAndFilename(7L, "/projects/site", "logo.png")).thenReturn(false);
-        when(storedFileRepository.findByUserIdAndPathAndFilename(7L, "/", "projects")).thenReturn(Optional.empty());
-        when(storedFileRepository.findByUserIdAndPathAndFilename(7L, "/projects", "site")).thenReturn(Optional.empty());
+        stubExistingNodes(7L);
         when(fileBlobRepository.save(any(FileBlob.class))).thenAnswer(invocation -> invocation.getArgument(0));
         when(storedFileRepository.save(any(StoredFile.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
@@ -537,7 +525,7 @@ class FileServiceTest {
         StoredFile file = createFile(10L, user, "/docs", "notes.txt");
         StoredFile targetDirectory = createDirectory(11L, user, "/", "下载");
         when(storedFileRepository.findDetailedById(10L)).thenReturn(Optional.of(file));
-        when(storedFileRepository.findByUserIdAndPathAndFilename(7L, "/", "下载")).thenReturn(Optional.of(targetDirectory));
+        stubExistingNodes(7L, targetDirectory);
         when(storedFileRepository.existsByUserIdAndPathAndFilename(7L, "/下载", "notes.txt")).thenReturn(false);
         when(storedFileRepository.save(any(StoredFile.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
@@ -556,7 +544,7 @@ class FileServiceTest {
         StoredFile targetDirectory = createDirectory(11L, user, "/", "图片");
         StoredFile childFile = createFile(12L, user, "/docs/archive", "nested.txt");
         when(storedFileRepository.findDetailedById(10L)).thenReturn(Optional.of(directory));
-        when(storedFileRepository.findByUserIdAndPathAndFilename(7L, "/", "图片")).thenReturn(Optional.of(targetDirectory));
+        stubExistingNodes(7L, targetDirectory);
         when(storedFileRepository.existsByUserIdAndPathAndFilename(7L, "/图片", "archive")).thenReturn(false);
         when(storedFileRepository.findByUserIdAndPathEqualsOrDescendant(7L, "/docs/archive")).thenReturn(List.of(childFile));
         when(storedFileRepository.save(any(StoredFile.class))).thenAnswer(invocation -> invocation.getArgument(0));
@@ -581,7 +569,7 @@ class FileServiceTest {
         Object activityService = ReflectionTestUtils.getField(fileService, "workspaceFileActivityService");
         ReflectionTestUtils.setField(activityService, "fileListDirectoryCacheService", cacheService);
         when(storedFileRepository.findDetailedById(10L)).thenReturn(Optional.of(directory));
-        when(storedFileRepository.findByUserIdAndPathAndFilename(7L, "/", "图片")).thenReturn(Optional.of(targetDirectory));
+        stubExistingNodes(7L, targetDirectory);
         when(storedFileRepository.existsByUserIdAndPathAndFilename(7L, "/图片", "archive")).thenReturn(false);
         when(storedFileRepository.findByUserIdAndPathEqualsOrDescendant(7L, "/docs/archive")).thenReturn(List.of(childFile));
         when(storedFileRepository.save(any(StoredFile.class))).thenAnswer(invocation -> invocation.getArgument(0));
@@ -603,12 +591,7 @@ class FileServiceTest {
         StoredFile archiveDirectory = createDirectory(12L, user, "/docs", "archive");
         StoredFile descendantDirectory = createDirectory(13L, user, "/docs/archive", "nested");
         when(storedFileRepository.findDetailedById(10L)).thenReturn(Optional.of(directory));
-        when(storedFileRepository.findByUserIdAndPathAndFilename(7L, "/", "docs"))
-                .thenReturn(Optional.of(docsDirectory));
-        when(storedFileRepository.findByUserIdAndPathAndFilename(7L, "/docs", "archive"))
-                .thenReturn(Optional.of(archiveDirectory));
-        when(storedFileRepository.findByUserIdAndPathAndFilename(7L, "/docs/archive", "nested"))
-                .thenReturn(Optional.of(descendantDirectory));
+        stubExistingNodes(7L, docsDirectory, archiveDirectory, descendantDirectory);
 
         var result = fileService.move(FileServiceTestSupport.workspaceUser(user), 10L, "/docs/archive/nested", null);
 
@@ -624,7 +607,7 @@ class FileServiceTest {
         StoredFile targetDirectory = createDirectory(11L, user, "/", "下载");
         when(storedFileRepository.findDetailedById(120L)).thenReturn(Optional.of(first));
         when(storedFileRepository.findDetailedById(121L)).thenReturn(Optional.of(second));
-        when(storedFileRepository.findByUserIdAndPathAndFilename(7L, "/", "下载")).thenReturn(Optional.of(targetDirectory));
+        stubExistingNodes(7L, targetDirectory);
         when(storedFileRepository.existsByUserIdAndPathAndFilename(7L, "/下载", "first.txt")).thenReturn(false);
         when(storedFileRepository.existsByUserIdAndPathAndFilename(7L, "/下载", "second.txt")).thenReturn(false);
         when(storedFileRepository.save(any(StoredFile.class))).thenAnswer(invocation -> invocation.getArgument(0));
@@ -662,7 +645,7 @@ class FileServiceTest {
         StoredFile file = createFile(10L, user, "/docs", "notes.txt", blob);
         StoredFile targetDirectory = createDirectory(11L, user, "/", "下载");
         when(storedFileRepository.findDetailedById(10L)).thenReturn(Optional.of(file));
-        when(storedFileRepository.findByUserIdAndPathAndFilename(7L, "/", "下载")).thenReturn(Optional.of(targetDirectory));
+        stubExistingNodes(7L, targetDirectory);
         when(storedFileRepository.existsByUserIdAndPathAndFilename(7L, "/下载", "notes.txt")).thenReturn(false);
         when(storedFileRepository.save(any(StoredFile.class))).thenAnswer(invocation -> {
             StoredFile storedFile = invocation.getArgument(0);
@@ -694,7 +677,7 @@ class FileServiceTest {
         StoredFile childFile = createFile(13L, user, "/docs/archive", "notes.txt", childBlob);
         StoredFile nestedFile = createFile(14L, user, "/docs/archive/nested", "todo.txt", nestedBlob);
         when(storedFileRepository.findDetailedById(10L)).thenReturn(Optional.of(directory));
-        when(storedFileRepository.findByUserIdAndPathAndFilename(7L, "/", "图片")).thenReturn(Optional.of(targetDirectory));
+        stubExistingNodes(7L, targetDirectory);
         when(storedFileRepository.existsByUserIdAndPathAndFilename(7L, "/图片", "archive")).thenReturn(false);
         when(storedFileRepository.findByUserIdAndPathEqualsOrDescendant(7L, "/docs/archive"))
                 .thenReturn(List.of(childDirectory, childFile, nestedFile));
@@ -723,12 +706,7 @@ class FileServiceTest {
         StoredFile archiveDirectory = createDirectory(12L, user, "/docs", "archive");
         StoredFile descendantDirectory = createDirectory(13L, user, "/docs/archive", "nested");
         when(storedFileRepository.findDetailedById(10L)).thenReturn(Optional.of(directory));
-        when(storedFileRepository.findByUserIdAndPathAndFilename(7L, "/", "docs"))
-                .thenReturn(Optional.of(docsDirectory));
-        when(storedFileRepository.findByUserIdAndPathAndFilename(7L, "/docs", "archive"))
-                .thenReturn(Optional.of(archiveDirectory));
-        when(storedFileRepository.findByUserIdAndPathAndFilename(7L, "/docs/archive", "nested"))
-                .thenReturn(Optional.of(descendantDirectory));
+        stubExistingNodes(7L, docsDirectory, archiveDirectory, descendantDirectory);
 
         assertThatThrownBy(() -> fileService.copy(FileServiceTestSupport.workspaceUser(user), 10L, "/docs/archive/nested"))
                 .isInstanceOf(BusinessException.class)
@@ -883,7 +861,7 @@ class FileServiceTest {
     }
 
     @Test
-    void shouldPopulateHasChildDirectoryForRootDirectoriesFromFinalListResponse() {
+    void shouldPreserveHasChildDirectoryFromCachedDirectoryPage() {
         User user = createUser(7L);
         LocalDateTime timestamp = LocalDateTime.of(2026, 4, 25, 12, 0);
         FileListDirectoryCacheService cacheService = org.mockito.Mockito.mock(FileListDirectoryCacheService.class);
@@ -900,15 +878,34 @@ class FileServiceTest {
                         timestamp,
                         null,
                         null,
-                        false
+                        true
                 )),
                 1,
                 0,
                 10
         );
         when(cacheService.getOrLoad(eq(7L), eq("/"), eq(0), eq(10), any())).thenReturn(cachedResponse);
+
+        var result = fileService.list(FileServiceTestSupport.workspaceUser(user), "/", 0, 10);
+
+        assertThat(result.items()).hasSize(1);
+        assertThat(result.items().get(0).hasChildDirectory()).isTrue();
+        verify(storedFileRepository, never()).findDirectoryPathsWithChildDirectories(anyLong(), any());
+    }
+
+    @Test
+    void shouldPopulateHasChildDirectoryWhenCacheMissUsesDirectoryLoader() {
+        User user = createUser(7L);
+        StoredFile directory = createDirectory(100L, user, "/", "文档");
+        FileListDirectoryCacheService cacheService = org.mockito.Mockito.mock(FileListDirectoryCacheService.class);
+        ReflectionTestUtils.setField(fileService, "fileListDirectoryCacheService", cacheService);
+        when(storedFileRepository.findByUserIdAndPathOrderByDirectoryDescCreatedAtDesc(
+                7L, "/", PageRequest.of(0, 10)))
+                .thenReturn(new PageImpl<>(List.of(directory)));
         when(storedFileRepository.findDirectoryPathsWithChildDirectories(7L, List.of("/文档")))
                 .thenReturn(List.of("/文档"));
+        when(cacheService.getOrLoad(eq(7L), eq("/"), eq(0), eq(10), any()))
+                .thenAnswer(invocation -> invocation.<java.util.function.Supplier<PageResponse<FileMetadataResponse>>>getArgument(4).get());
 
         var result = fileService.list(FileServiceTestSupport.workspaceUser(user), "/", 0, 10);
 
@@ -1347,6 +1344,76 @@ class FileServiceTest {
     }
 
     @Test
+    void shouldReadZipCompatibleArchiveListingWithoutMaterializingFileContents() throws Exception {
+        User user = createUser(7L);
+        StoredFile archive = createFile(23L, user, "/docs", "listing.zip", createBlob(23L, "blobs/blob-23", 64L, "application/zip"));
+        byte[] archiveBytes = createZipArchive(Map.of(
+                "archive/", "",
+                "archive/notes.txt", "hello",
+                "archive/nested/todo.txt", "world"
+        ));
+        when(storedFileRepository.findDetailedById(23L)).thenReturn(Optional.of(archive));
+        when(fileContentStorage.readBlobStream("blobs/blob-23")).thenReturn(new ByteArrayInputStream(archiveBytes));
+
+        var listing = fileService.readArchive(7L, 23L);
+
+        assertThat(listing.commonRootDirectoryName()).isEqualTo("archive");
+        assertThat(listing.entries())
+                .extracting(
+                        com.yoyuzh.files.workspace.api.WorkspaceArchiveEntry::relativePath,
+                        com.yoyuzh.files.workspace.api.WorkspaceArchiveEntry::directory,
+                        com.yoyuzh.files.workspace.api.WorkspaceArchiveEntry::size
+                )
+                .containsExactlyInAnyOrder(
+                        org.assertj.core.groups.Tuple.tuple("archive", true, 0L),
+                        org.assertj.core.groups.Tuple.tuple("archive/notes.txt", false, 5L),
+                        org.assertj.core.groups.Tuple.tuple("archive/nested/todo.txt", false, 5L)
+                );
+        verify(fileContentStorage).readBlobStream("blobs/blob-23");
+        verify(fileContentStorage, never()).readBlob("blobs/blob-23");
+    }
+
+    @Test
+    void shouldDownloadZipArchiveEntryWithoutUsingReadZipCompatibleArchive() throws Exception {
+        User user = createUser(7L);
+        StoredFile archive = createFile(24L, user, "/docs", "entry.zip", createBlob(24L, "blobs/blob-24", 64L, "application/zip"));
+        byte[] archiveBytes = createZipArchive(Map.of(
+                "archive/", "",
+                "archive/notes.txt", "hello",
+                "archive/other.txt", "world"
+        ));
+        when(storedFileRepository.findDetailedById(24L)).thenReturn(Optional.of(archive));
+        when(fileContentStorage.readBlobStream("blobs/blob-24")).thenReturn(new ByteArrayInputStream(archiveBytes));
+
+        WorkspaceDownloadResult result = fileService.downloadArchiveEntry(7L, 24L, "archive/notes.txt");
+
+        assertThat(result.filename()).isEqualTo("notes.txt");
+        assertThat(result.contentType()).isEqualTo("text/plain");
+        assertThat(new String(result.body(), StandardCharsets.UTF_8)).isEqualTo("hello");
+        verify(fileContentStorage).readBlobStream("blobs/blob-24");
+        verify(fileContentStorage, never()).readBlob("blobs/blob-24");
+    }
+
+    @Test
+    void shouldDownloadZipArchiveEntryWithGbkEncodedName() throws Exception {
+        User user = createUser(7L);
+        StoredFile archive = createFile(241L, user, "/docs", "gbk-entry.zip", createBlob(241L, "blobs/blob-241", 64L, "application/zip"));
+        byte[] archiveBytes = createZipArchiveWithCharset(Map.of(
+                "资料/", "",
+                "资料/说明.txt", "hello"
+        ), Charset.forName("GBK"));
+        when(storedFileRepository.findDetailedById(241L)).thenReturn(Optional.of(archive));
+        when(fileContentStorage.readBlobStream("blobs/blob-241"))
+                .thenReturn(new ByteArrayInputStream(archiveBytes), new ByteArrayInputStream(archiveBytes));
+
+        WorkspaceDownloadResult result = fileService.downloadArchiveEntry(7L, 241L, "资料/说明.txt");
+
+        assertThat(result.filename()).isEqualTo("说明.txt");
+        assertThat(result.contentType()).isEqualTo("text/plain");
+        assertThat(new String(result.body(), StandardCharsets.UTF_8)).isEqualTo("hello");
+    }
+
+    @Test
     void shouldRejectZipCompatibleArchiveWithTraversalEntry() throws Exception {
         User user = createUser(7L);
         StoredFile archive = createFile(21L, user, "/docs", "extract.zip", createBlob(21L, "blobs/blob-21", 32L, "application/zip"));
@@ -1382,6 +1449,32 @@ class FileServiceTest {
                 .isInstanceOf(BusinessException.class)
                 .satisfies(ex -> assertThat(((BusinessException) ex).getErrorCode()).isEqualTo(ErrorCode.ARCHIVE_READ_FAILED))
                 .hasMessage("压缩包读取失败");
+    }
+
+    @Test
+    void shouldReportMissingBsdtarAsOperationalFailure() throws Exception {
+        FileStorageProperties properties = new FileStorageProperties();
+        properties.setMaxFileSize(500L * 1024 * 1024);
+        fileService = FileServiceTestSupport.create(
+                storedFileRepository,
+                fileBlobRepository,
+                fileContentStorage,
+                adminMetricsService,
+                toDownloadOptions(properties),
+                properties.getMaxFileSize()
+        );
+        Object workspaceArchiveService = ReflectionTestUtils.getField(fileService, "workspaceArchiveService");
+        ReflectionTestUtils.setField(workspaceArchiveService, "archiveToolCommand", "__missing_bsdtar__");
+
+        User user = createUser(7L);
+        StoredFile archive = createFile(30L, user, "/docs", "sample.rar", createBlob(30L, "blobs/blob-30", 16L, "application/vnd.rar"));
+        when(storedFileRepository.findDetailedById(30L)).thenReturn(Optional.of(archive));
+        when(fileContentStorage.readBlobStream("blobs/blob-30")).thenReturn(new ByteArrayInputStream("not-a-rar".getBytes(StandardCharsets.UTF_8)));
+
+        assertThatThrownBy(() -> fileService.readArchive(7L, 30L))
+                .isInstanceOf(BusinessException.class)
+                .satisfies(ex -> assertThat(((BusinessException) ex).getErrorCode()).isEqualTo(ErrorCode.ARCHIVE_READ_FAILED))
+                .hasMessage("RAR 解压依赖未安装");
     }
 
     @Test
@@ -1445,9 +1538,7 @@ class FileServiceTest {
         StoredFile archive = createFile(29L, user, "/docs", "notes.zip", createBlob(29L, "blobs/blob-29", (long) archiveBytes.length, "application/zip"));
         archive.setSize((long) archiveBytes.length);
         when(storedFileRepository.findDetailedById(29L)).thenReturn(Optional.of(archive));
-        when(storedFileRepository.existsByUserIdAndPathAndFilename(7L, "/docs", "notes.txt")).thenReturn(false);
-        when(storedFileRepository.findByUserIdAndPathAndFilename(7L, "/", "docs"))
-                .thenReturn(Optional.of(createDirectory(290L, user, "/", "docs")));
+        stubExistingNodes(7L, createDirectory(290L, user, "/", "docs"));
         when(fileContentStorage.readBlobStream("blobs/blob-29"))
                 .thenReturn(new ByteArrayInputStream(archiveBytes), new ByteArrayInputStream(archiveBytes));
         when(fileBlobRepository.save(any(FileBlob.class))).thenAnswer(invocation -> {
@@ -1469,9 +1560,9 @@ class FileServiceTest {
                 null
         );
 
-        assertThat(result.extractedPath()).isEqualTo("/docs");
+        assertThat(result.extractedPath()).isEqualTo("/docs/notes.txt");
         assertThat(result.extractedFileCount()).isEqualTo(1);
-        assertThat(result.extractedDirectoryCount()).isEqualTo(0);
+        assertThat(result.extractedDirectoryCount()).isEqualTo(1);
         verify(fileContentStorage, times(2)).readBlobStream("blobs/blob-29");
         verify(fileContentStorage, never()).readBlob("blobs/blob-29");
         verify(fileContentStorage).storeBlob(anyString(), eq("text/plain"), any(InputStream.class), eq(5L));
@@ -1482,9 +1573,7 @@ class FileServiceTest {
     void shouldDeleteWrittenBlobsWhenBatchExternalImportFails() {
         User user = createUser(8L);
         StoredFile docs = createDirectory(300L, user, "/", "docs");
-        when(storedFileRepository.findByUserIdAndPathAndFilename(8L, "/", "docs")).thenReturn(Optional.of(docs));
-        when(storedFileRepository.existsByUserIdAndPathAndFilename(8L, "/docs", "first.txt")).thenReturn(false);
-        when(storedFileRepository.existsByUserIdAndPathAndFilename(8L, "/docs", "second.txt")).thenReturn(false);
+        stubExistingNodes(8L, docs);
         when(fileBlobRepository.save(any(FileBlob.class))).thenAnswer(invocation -> {
             FileBlob blob = invocation.getArgument(0);
             blob.setId(System.nanoTime());
@@ -1522,9 +1611,7 @@ class FileServiceTest {
     void shouldDeleteImportedBlobWhenMetadataSaveFails() {
         User recipient = createUser(8L);
         byte[] content = "hello".getBytes(StandardCharsets.UTF_8);
-        when(storedFileRepository.existsByUserIdAndPathAndFilename(8L, "/下载", "notes.txt")).thenReturn(false);
-        when(storedFileRepository.findByUserIdAndPathAndFilename(8L, "/", "下载"))
-                .thenReturn(Optional.of(createDirectory(22L, recipient, "/", "下载")));
+        stubExistingNodes(8L, createDirectory(22L, recipient, "/", "下载"));
         when(fileBlobRepository.save(any(FileBlob.class))).thenAnswer(invocation -> invocation.getArgument(0));
         doThrow(new IllegalStateException("insert failed")).when(storedFileRepository).save(any(StoredFile.class));
 
@@ -1583,6 +1670,11 @@ class FileServiceTest {
         return directory;
     }
 
+    private void stubExistingNodes(Long userId, StoredFile... files) {
+        when(storedFileRepository.findActiveNodesByUserIdAndPathInAndFilenameIn(eq(userId), any(), any()))
+                .thenReturn(List.of(files));
+    }
+
     private StoragePolicyCapabilities defaultCapabilities() {
         return new StoragePolicyCapabilities(
                 false,
@@ -1611,18 +1703,26 @@ class FileServiceTest {
     }
 
     private byte[] createZipArchive(Map<String, String> entries) throws IOException {
+        return createZipArchiveWithCharset(entries, StandardCharsets.UTF_8);
+    }
+
+    private byte[] createZipArchiveWithCharset(Map<String, String> entries, Charset charset) throws IOException {
         return createZipArchiveBytes(entries.entrySet().stream()
                 .collect(java.util.stream.Collectors.toMap(
                         Map.Entry::getKey,
                         entry -> entry.getValue().getBytes(StandardCharsets.UTF_8),
                         (left, right) -> left,
                         LinkedHashMap::new
-                )));
+                )), charset);
     }
 
     private byte[] createZipArchiveBytes(Map<String, byte[]> entries) throws IOException {
+        return createZipArchiveBytes(entries, StandardCharsets.UTF_8);
+    }
+
+    private byte[] createZipArchiveBytes(Map<String, byte[]> entries, Charset charset) throws IOException {
         try (ByteArrayOutputStream outputStream = new ByteArrayOutputStream();
-             ZipOutputStream zipOutputStream = new ZipOutputStream(outputStream, StandardCharsets.UTF_8)) {
+             ZipOutputStream zipOutputStream = new ZipOutputStream(outputStream, charset)) {
             Set<String> createdEntries = new java.util.LinkedHashSet<>();
             for (Map.Entry<String, byte[]> entry : entries.entrySet()) {
                 if (!createdEntries.add(entry.getKey())) {

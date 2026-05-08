@@ -1,6 +1,7 @@
 import type { AxiosResponse } from 'axios';
 import { apiRequest } from '../api/client';
 import type {
+  ArchiveListing,
   DownloadUrlResponse,
   FavoriteFileResponse,
   FileDeleteMode,
@@ -332,9 +333,27 @@ export async function getFileViewerConfig() {
   });
 }
 
+export async function getArchiveListing(fileId: number) {
+  return apiRequest<ArchiveListing>({
+    url: `/files/${fileId}/archive`,
+    method: 'GET',
+  });
+}
+
 export async function downloadFileBlob(fileId: number) {
   const response = await apiRequest<AxiosResponse<Blob>>({
     url: `/files/download/${fileId}`,
+    method: 'GET',
+    responseType: 'blob',
+    rawResponse: true,
+  });
+  return response.data;
+}
+
+export async function downloadArchiveEntryBlob(fileId: number, path: string) {
+  const params = new URLSearchParams({ path });
+  const response = await apiRequest<AxiosResponse<Blob>>({
+    url: `/files/${fileId}/archive/content?${params.toString()}`,
     method: 'GET',
     responseType: 'blob',
     rawResponse: true,

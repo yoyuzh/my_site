@@ -21,18 +21,34 @@ public final class RuntimeWorkspaceDirectoryApi implements WorkspaceDirectoryApi
     private final StoredFileRepository storedFileRepository;
     private final FileContentStorage fileContentStorage;
     private final WorkspacePathPolicy workspacePathPolicy;
+    private final WorkspaceRequestProbe workspaceRequestProbe;
+
+    public RuntimeWorkspaceDirectoryApi(StoredFileRepository storedFileRepository,
+                                        FileContentStorage fileContentStorage,
+                                        WorkspacePathPolicy workspacePathPolicy,
+                                        WorkspaceRequestProbe workspaceRequestProbe) {
+        this.storedFileRepository = storedFileRepository;
+        this.fileContentStorage = fileContentStorage;
+        this.workspacePathPolicy = workspacePathPolicy;
+        this.workspaceRequestProbe = workspaceRequestProbe == null
+                ? WorkspaceRequestProbe.disabled()
+                : workspaceRequestProbe;
+    }
 
     public RuntimeWorkspaceDirectoryApi(StoredFileRepository storedFileRepository,
                                         FileContentStorage fileContentStorage,
                                         WorkspacePathPolicy workspacePathPolicy) {
-        this.storedFileRepository = storedFileRepository;
-        this.fileContentStorage = fileContentStorage;
-        this.workspacePathPolicy = workspacePathPolicy;
+        this(storedFileRepository, fileContentStorage, workspacePathPolicy, WorkspaceRequestProbe.disabled());
     }
 
     public RuntimeWorkspaceDirectoryApi(StoredFileRepository storedFileRepository,
                                         FileContentStorage fileContentStorage) {
-        this(storedFileRepository, fileContentStorage, new RuntimeWorkspacePathPolicy(storedFileRepository, fileContentStorage));
+        this(
+                storedFileRepository,
+                fileContentStorage,
+                new RuntimeWorkspacePathPolicy(storedFileRepository, fileContentStorage),
+                WorkspaceRequestProbe.disabled()
+        );
     }
 
     @Override
@@ -53,16 +69,24 @@ public final class RuntimeWorkspaceDirectoryApi implements WorkspaceDirectoryApi
 
     @Override
     public PageResponse<FileMetadataResponse> loadDirectoryPage(Long userId, String normalizedPath, int page, int size) {
-        Page<StoredFile> result = storedFileRepository.findByUserIdAndPathOrderByDirectoryDescCreatedAtDesc(
-                userId,
-                normalizedPath,
-                PageRequest.of(page, size)
+        Page<StoredFile> result = workspaceRequestProbe.measure(
+                "directory.listQuery",
+                () -> storedFileRepository.findByUserIdAndPathOrderByDirectoryDescCreatedAtDesc(
+                        userId,
+                        normalizedPath,
+                        PageRequest.of(page, size)
+                )
         );
-        Set<String> directoryPathsWithChildren = loadDirectoryPathsWithChildren(userId, result.getContent());
-        List<FileMetadataResponse> items = result.getContent().stream()
-                .map(storedFile -> toResponse(storedFile, directoryPathsWithChildren.contains(buildLogicalPath(storedFile))))
-                .toList();
-        return new PageResponse<>(items, result.getTotalElements(), page, size);
+        Set<String> directoryPathsWithChildren = workspaceRequestProbe.measure(
+                "directory.childDirQuery",
+                () -> loadDirectoryPathsWithChildren(userId, result.getContent())
+        );
+        return workspaceRequestProbe.measure("directory.responseAssemble", () -> {
+            List<FileMetadataResponse> items = result.getContent().stream()
+                    .map(storedFile -> toResponse(storedFile, directoryPathsWithChildren.contains(buildLogicalPath(storedFile))))
+                    .toList();
+            return new PageResponse<>(items, result.getTotalElements(), page, size);
+        });
     }
 
     private FileMetadataResponse toResponse(StoredFile storedFile) {

@@ -5,6 +5,7 @@ import com.yoyuzh.files.upload.internal.domain.UploadSession;
 import com.yoyuzh.files.upload.internal.domain.UploadSessionRepository;
 import com.yoyuzh.files.upload.internal.domain.UploadSessionStateMachine;
 import com.yoyuzh.files.upload.internal.domain.UploadSessionStatus;
+import com.yoyuzh.infra.lock.DistributedLockGateway;
 import com.yoyuzh.shared.kernel.BusinessException;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -37,6 +38,7 @@ class UploadSessionTusServiceTest {
                 new UploadSessionStateMachine(),
                 mock(UploadSessionRuntimeStateService.class),
                 mock(FileContentStorage.class),
+                DistributedLockGateway.noOp(),
                 fixedClock(),
                 tempDir
         );
@@ -57,6 +59,7 @@ class UploadSessionTusServiceTest {
                 new UploadSessionStateMachine(),
                 mock(UploadSessionRuntimeStateService.class),
                 mock(FileContentStorage.class),
+                DistributedLockGateway.noOp(),
                 fixedClock(),
                 tempDir
         );
@@ -82,6 +85,7 @@ class UploadSessionTusServiceTest {
                 new UploadSessionStateMachine(),
                 mock(UploadSessionRuntimeStateService.class),
                 mock(FileContentStorage.class),
+                DistributedLockGateway.noOp(),
                 fixedClock(),
                 tempDir
         );
@@ -104,6 +108,7 @@ class UploadSessionTusServiceTest {
                 new UploadSessionStateMachine(),
                 mock(UploadSessionRuntimeStateService.class),
                 fileContentStorage,
+                DistributedLockGateway.noOp(),
                 fixedClock(),
                 tempDir
         );
@@ -116,6 +121,30 @@ class UploadSessionTusServiceTest {
 
         verify(fileContentStorage).storeBlob(eq("blobs/session-1"), eq("video/mp4"), any(), eq(7L));
         assertThat(Files.exists(tempDir.resolve("session-1.bin"))).isFalse();
+    }
+
+    @Test
+    void shouldSerializeTusAppendThroughSessionLock() {
+        UploadSessionRepository repository = mock(UploadSessionRepository.class);
+        when(repository.save(any(UploadSession.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        DistributedLockGateway lockGateway = mock(DistributedLockGateway.class);
+        when(lockGateway.executeWithLock(eq("upload-session-tus:session-1"), eq(java.time.Duration.ofMinutes(5)), any()))
+                .thenAnswer(invocation -> ((java.util.function.Supplier<?>) invocation.getArgument(2)).get());
+        UploadSessionTusService service = new UploadSessionTusService(
+                repository,
+                new UploadSessionStateMachine(),
+                mock(UploadSessionRuntimeStateService.class),
+                mock(FileContentStorage.class),
+                lockGateway,
+                fixedClock(),
+                tempDir
+        );
+
+        UploadSession session = createSession("session-1", 7L);
+        long offset = service.append(session, 0L, new ByteArrayInputStream("payload".getBytes()), 7L);
+
+        assertThat(offset).isEqualTo(7L);
+        verify(lockGateway).executeWithLock(eq("upload-session-tus:session-1"), eq(java.time.Duration.ofMinutes(5)), any());
     }
 
     private Clock fixedClock() {

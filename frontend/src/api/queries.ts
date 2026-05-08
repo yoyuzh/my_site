@@ -28,6 +28,10 @@ import { getMyShares, listSavedShares, getSavedShareDetail } from '../lib/shares
 import { getTasks } from '../lib/tasks';
 import { getUserCapacity } from '../lib/user-settings';
 
+type FilesQueryResult = UiPage<FileItem> & {
+  contextKey: string;
+};
+
 function normalizePage<T>(result: QueryPage<T>): UiPage<T> {
   return {
     items: result.items,
@@ -75,7 +79,8 @@ export const useFiles = (
 ) =>
   useQuery({
     queryKey: ['files', path, page, size, search, options?.category ?? null],
-    queryFn: async () => {
+    queryFn: async (): Promise<FilesQueryResult> => {
+      const contextKey = `${options?.category ?? 'directory'}::${path}::${search.trim()}`;
       if (options?.category || search.trim()) {
         const result = await searchFiles({
           name: search.trim() || undefined,
@@ -84,9 +89,15 @@ export const useFiles = (
           type: options?.category ? 'file' : undefined,
           category: options?.category,
         });
-        return normalizePage(result);
+        return {
+          ...normalizePage(result),
+          contextKey,
+        };
       }
-      return normalizePage(await listFiles(path, Math.max(0, page - 1), size));
+      return {
+        ...normalizePage(await listFiles(path, Math.max(0, page - 1), size)),
+        contextKey,
+      };
     },
   });
 

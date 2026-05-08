@@ -13,6 +13,20 @@ import java.util.Optional;
 
 public interface AdminDailyActiveUserRepository extends JpaRepository<AdminDailyActiveUserEntity, Long> {
 
+    @Modifying
+    @Query(value = """
+            insert into portal_admin_daily_active_user (metric_date, user_id, username)
+            select :metricDate, :userId, :username
+            where not exists (
+                select 1
+                from portal_admin_daily_active_user
+                where metric_date = :metricDate and user_id = :userId
+            )
+            """, nativeQuery = true)
+    int insertIfAbsent(@Param("metricDate") LocalDate metricDate,
+                       @Param("userId") Long userId,
+                       @Param("username") String username);
+
     List<AdminDailyActiveUserEntity> findAllByMetricDateBetweenOrderByMetricDateAscUsernameAsc(LocalDate startDate, LocalDate endDate);
 
     Optional<AdminDailyActiveUserEntity> findByMetricDateAndUserId(LocalDate metricDate, Long userId);

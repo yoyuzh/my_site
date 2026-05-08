@@ -19,12 +19,13 @@ public interface AdminRequestTimelinePointRepository extends JpaRepository<Admin
     @Modifying
     @Query("""
             update AdminRequestTimelinePointEntity point
-            set point.requestCount = point.requestCount + 1,
+            set point.requestCount = point.requestCount + :delta,
                 point.updatedAt = :updatedAt
             where point.metricDate = :metricDate and point.hour = :hour
             """)
     int incrementRequestCount(@Param("metricDate") LocalDate metricDate,
                               @Param("hour") int hour,
+                              @Param("delta") long delta,
                               @Param("updatedAt") LocalDateTime updatedAt);
 
     @Lock(LockModeType.PESSIMISTIC_WRITE)

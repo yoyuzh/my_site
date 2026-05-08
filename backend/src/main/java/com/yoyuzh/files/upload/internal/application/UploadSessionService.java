@@ -19,6 +19,8 @@ import com.yoyuzh.files.upload.internal.domain.UploadSessionStatus;
 import com.yoyuzh.platform.storage.api.StoragePolicyCapabilities;
 import com.yoyuzh.shared.kernel.BusinessException;
 import com.yoyuzh.shared.kernel.ErrorCode;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
@@ -28,21 +30,23 @@ import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
 import java.io.InputStream;
-import java.nio.file.Files;
-import java.nio.file.Path;
 import java.time.Clock;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Locale;
 import java.util.Optional;
 import java.util.UUID;
 
 @Service
 public class UploadSessionService {
 
+    private static final Logger log = LoggerFactory.getLogger(UploadSessionService.class);
+
     private static final long DEFAULT_CHUNK_SIZE = 8L * 1024 * 1024;
     private static final long SESSION_TTL_HOURS = 24;
+    private static final long SLOW_UPLOAD_PROBE_NANOS = 300L * 1_000_000L;
     private static final List<UploadSessionStatus> EXPIRABLE_STATUSES = List.of(
             UploadSessionStatus.CREATED,
             UploadSessionStatus.UPLOADING,
@@ -115,15 +119,47 @@ public class UploadSessionService {
 
     @Transactional
     public UploadSessionView createSession(IdentityAuthenticatedUser user, UploadSessionCreateCommand command) {
-        ValidatedUploadTarget target = uploadTargetPolicy.validateUpload(
-                user.id(),
-                user.maxUploadSizeBytes(),
-                user.storageQuotaBytes(),
-                command.path(),
-                command.filename(),
-                command.size()
-        );
-        return toView(createSessionEntity(user.id(), target, command));
+        long startedAt = System.nanoTime();
+        long validateStartedAt = startedAt;
+        try {
+            ValidatedUploadTarget target = uploadTargetPolicy.validateUpload(
+                    user.id(),
+                    user.maxUploadSizeBytes(),
+                    user.storageQuotaBytes(),
+                    command.path(),
+                    command.filename(),
+                    command.size()
+            );
+            long validateDuration = System.nanoTime() - validateStartedAt;
+
+            long createStartedAt = System.nanoTime();
+            UploadSession session = createSessionEntity(user.id(), target, command);
+            long createDuration = System.nanoTime() - createStartedAt;
+            UploadSessionView view = toView(session);
+
+            logIfSlow(
+                    "create-session",
+                    System.nanoTime() - startedAt,
+                    "userId=" + user.id()
+                            + " sessionId=" + view.sessionId()
+                            + " mode=" + view.uploadMode()
+                            + " size=" + command.size()
+                            + " validateMs=" + formatMillis(validateDuration)
+                            + " createMs=" + formatMillis(createDuration)
+            );
+            return view;
+        } catch (RuntimeException ex) {
+            logFailure(
+                    "create-session",
+                    System.nanoTime() - startedAt,
+                    "userId=" + user.id()
+                            + " path=" + sanitizeForLog(command.path())
+                            + " filename=" + sanitizeForLog(command.filename())
+                            + " size=" + command.size(),
+                    ex
+            );
+            throw ex;
+        }
     }
 
     private UploadSession createSessionEntity(Long userId, ValidatedUploadTarget target, UploadSessionCreateCommand command) {
@@ -179,6 +215,7 @@ public class UploadSessionService {
 
     private UploadSession cancelSession(UploadSession session) {
         uploadSessionStateMachine.ensureCancellable(session);
+        cleanupCancelledSessionArtifacts(session);
         uploadSessionStateMachine.markCancelled(session, now());
         UploadSession savedSession = uploadSessionRepository.save(session);
         uploadSessionRuntimeStateService.markCancelled(savedSession, savedSession.getUpdatedAt());
@@ -187,8 +224,28 @@ public class UploadSessionService {
 
     @Transactional(readOnly = true)
     public PreparedUpload prepareOwnedUpload(Long userId, String sessionId) {
-        UploadSession session = getOwnedSessionEntity(userId, sessionId);
-        return prepareUpload(session);
+        long startedAt = System.nanoTime();
+        try {
+            UploadSession session = getOwnedSessionEntity(userId, sessionId);
+            PreparedUpload preparedUpload = prepareUpload(session);
+            logIfSlow(
+                    "prepare-direct-upload",
+                    System.nanoTime() - startedAt,
+                    "userId=" + userId
+                            + " sessionId=" + sessionId
+                            + " mode=" + resolveUploadMode(session)
+                            + " size=" + session.getSize()
+            );
+            return preparedUpload;
+        } catch (RuntimeException ex) {
+            logFailure(
+                    "prepare-direct-upload",
+                    System.nanoTime() - startedAt,
+                    "userId=" + userId + " sessionId=" + sessionId,
+                    ex
+            );
+            throw ex;
+        }
     }
 
     private PreparedUpload prepareUpload(UploadSession session) {
@@ -205,14 +262,70 @@ public class UploadSessionService {
         );
     }
 
-    @Transactional(readOnly = true)
+    @Transactional
     public PreparedUpload prepareOwnedPartUpload(Long userId, String sessionId, int partIndex) {
-        UploadSession session = getOwnedSessionEntity(userId, sessionId);
-        return preparePartUpload(session, partIndex);
+        long startedAt = System.nanoTime();
+        try {
+            UploadSession session = getOwnedSessionEntity(userId, sessionId);
+            PreparedUpload preparedUpload = preparePartUpload(session, partIndex);
+            logIfSlow(
+                    "prepare-multipart-part",
+                    System.nanoTime() - startedAt,
+                    "userId=" + userId
+                            + " sessionId=" + sessionId
+                            + " partIndex=" + partIndex
+                            + " chunkCount=" + session.getChunkCount()
+                            + " chunkSize=" + session.getChunkSize()
+            );
+            return preparedUpload;
+        } catch (RuntimeException ex) {
+            logFailure(
+                    "prepare-multipart-part",
+                    System.nanoTime() - startedAt,
+                    "userId=" + userId + " sessionId=" + sessionId + " partIndex=" + partIndex,
+                    ex
+            );
+            throw ex;
+        }
+    }
+
+    private void logIfSlow(String operation, long durationNanos, String details) {
+        if (durationNanos < SLOW_UPLOAD_PROBE_NANOS) {
+            return;
+        }
+        log.info(
+                "upload-probe operation={} durationMs={} {}",
+                operation,
+                formatMillis(durationNanos),
+                details
+        );
+    }
+
+    private void logFailure(String operation, long durationNanos, String details, RuntimeException ex) {
+        log.warn(
+                "upload-probe operation={} durationMs={} {}",
+                operation,
+                formatMillis(durationNanos),
+                details,
+                ex
+        );
+    }
+
+    private String formatMillis(long durationNanos) {
+        return String.format(Locale.ROOT, "%.2f", durationNanos / 1_000_000.0d);
+    }
+
+    private String sanitizeForLog(String value) {
+        if (value == null) {
+            return "-";
+        }
+        return value.replace('\n', '_').replace('\r', '_');
     }
 
     private PreparedUpload preparePartUpload(UploadSession session, int partIndex) {
-        ensureSessionCanReceivePart(session, now());
+        if (!isLegacyMultipartPrepareRetry(session, partIndex)) {
+            ensureSessionCanReceivePart(session, now());
+        }
         if (resolveUploadMode(session) != UploadSessionUploadMode.DIRECT_MULTIPART
                 || !StringUtils.hasText(session.getMultipartUploadId())) {
             throw new BusinessException(ErrorCode.INVALID_INPUT, "upload session does not support multipart upload");
@@ -242,6 +355,9 @@ public class UploadSessionService {
                                                    int partIndex,
                                                    UploadSessionPartCommand command) {
         LocalDateTime now = now();
+        if (isLegacyMultipartRecordedPartRetry(session, partIndex, command)) {
+            return session;
+        }
         ensureSessionCanReceivePart(session, now);
         if (resolveUploadMode(session) != UploadSessionUploadMode.DIRECT_MULTIPART) {
             throw new BusinessException(ErrorCode.INVALID_INPUT, "upload session does not support multipart upload");
@@ -330,16 +446,12 @@ public class UploadSessionService {
     public UploadSessionTusState appendTusSession(Long userId,
                                                   String sessionId,
                                                   long uploadOffset,
-                                                  Path stagedContent,
+                                                  InputStream content,
                                                   long contentLength) {
         UploadSession session = getOwnedSessionEntity(userId, sessionId);
         ensureTusBackedSession(session);
-        try (InputStream content = Files.newInputStream(stagedContent)) {
-            long nextOffset = uploadSessionTusService.append(session, uploadOffset, content, contentLength);
-            return new UploadSessionTusState(nextOffset, session.getSize() == null ? 0L : session.getSize());
-        } catch (IOException ex) {
-            throw new BusinessException(ErrorCode.UNKNOWN, "failed to read staged tus patch content");
-        }
+        long nextOffset = uploadSessionTusService.append(session, uploadOffset, content, contentLength);
+        return new UploadSessionTusState(nextOffset, session.getSize() == null ? 0L : session.getSize());
     }
 
     @Transactional
@@ -479,6 +591,48 @@ public class UploadSessionService {
         }
         UploadSession expiredSession = uploadSessionRepository.save(session);
         uploadSessionRuntimeStateService.markExpired(expiredSession, expiredSession.getUpdatedAt());
+    }
+
+    private void cleanupCancelledSessionArtifacts(UploadSession session) {
+        if (usesTusUpload(session)) {
+            uploadSessionTusService.delete(session);
+            return;
+        }
+        if (StringUtils.hasText(session.getMultipartUploadId())) {
+            fileContentStorage.abortMultipartUpload(session.getObjectKey(), session.getMultipartUploadId());
+            return;
+        }
+        fileContentStorage.deleteBlob(session.getObjectKey());
+    }
+
+    private boolean isLegacyMultipartPrepareRetry(UploadSession session, int partIndex) {
+        if (resolveUploadMode(session) != UploadSessionUploadMode.DIRECT_MULTIPART) {
+            return false;
+        }
+        UploadSessionStatus status = session.getStatus();
+        if (status != UploadSessionStatus.COMPLETING && status != UploadSessionStatus.COMPLETED) {
+            return false;
+        }
+        return readUploadedParts(session).stream().anyMatch(part -> part.partIndex() == partIndex);
+    }
+
+    private boolean isLegacyMultipartRecordedPartRetry(UploadSession session,
+                                                       int partIndex,
+                                                       UploadSessionPartCommand command) {
+        if (resolveUploadMode(session) != UploadSessionUploadMode.DIRECT_MULTIPART) {
+            return false;
+        }
+        UploadSessionStatus status = session.getStatus();
+        if (status != UploadSessionStatus.COMPLETING && status != UploadSessionStatus.COMPLETED) {
+            return false;
+        }
+        if (!StringUtils.hasText(command.etag())) {
+            return false;
+        }
+        return readUploadedParts(session).stream()
+                .anyMatch(part -> part.partIndex() == partIndex
+                        && part.size() == command.size()
+                        && command.etag().equals(part.etag()));
     }
 
     private List<UploadedPart> readUploadedParts(UploadSession session) {
