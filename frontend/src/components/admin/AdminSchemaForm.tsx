@@ -11,7 +11,7 @@ import {
   TextField,
   Typography,
 } from '@mui/material';
-import { Controller, useForm } from 'react-hook-form';
+import { Controller, useForm, useFormState } from 'react-hook-form';
 import type { RegisterOptions } from 'react-hook-form';
 import type { AdminConfigField, AdminConfigValidationRules } from './adminSchemaTypes';
 import AdminStatusBadge from './AdminStatusBadge';
@@ -206,6 +206,10 @@ const AdminSchemaForm: React.FC<AdminSchemaFormProps> = ({ fields, readOnly = fa
   const initialValuesSignature = React.useMemo(() => createInitialValuesSignature(initialValues), [initialValues]);
   const form = useForm<Record<string, unknown>>({
     defaultValues: initialValues,
+  });
+  useFormState({
+    control: form.control,
+    name: fields.map((field) => field.key),
   });
   const baselineRef = React.useRef<{ fieldSetSignature: string; initialValuesSignature: string } | null>(null);
 

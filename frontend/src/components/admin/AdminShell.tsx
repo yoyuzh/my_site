@@ -6,7 +6,7 @@ import BackgroundEffects from '../BackgroundEffects';
 import Topbar from '../Topbar';
 import { adminNavGroups } from './adminNavigation';
 
-interface AdminShellProps {
+export interface AdminShellProps {
   children: React.ReactNode;
   title: string;
 }
