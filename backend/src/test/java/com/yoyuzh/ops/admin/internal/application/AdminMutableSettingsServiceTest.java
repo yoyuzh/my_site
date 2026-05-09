@@ -29,8 +29,6 @@ class AdminMutableSettingsServiceTest {
     @Mock
     private AdminMetricsService adminMetricsService;
     @Mock
-    private AdminAuditService adminAuditService;
-    @Mock
     private AdminRuntimeSettingsService adminRuntimeSettingsService;
     @Mock
     private AdminConfigSnapshotService adminConfigSnapshotService;
@@ -42,7 +40,6 @@ class AdminMutableSettingsServiceTest {
         adminMutableSettingsService = new AdminMutableSettingsService(
                 identityAdminSummaryApi,
                 adminMetricsService,
-                adminAuditService,
                 adminRuntimeSettingsService,
                 adminConfigSnapshotService
         );
