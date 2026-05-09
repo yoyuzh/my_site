@@ -80,7 +80,7 @@ class AdminUserGovernanceServiceTest {
         assertThat(response.role()).isEqualTo(AdminUserRole.ADMIN);
         assertThat(response.usedStorageBytes()).isEqualTo(1024L);
         verify(adminAuditService).record(
-                eq(AdminAuditAction.UPDATE_USER_ROLE),
+                eq(AdminAuditAction.USER_ROLE_UPDATED),
                 eq("USER"),
                 eq(1L),
                 eq("Updated user role"),
@@ -99,7 +99,7 @@ class AdminUserGovernanceServiceTest {
 
         assertThat(response.banned()).isTrue();
         verify(adminAuditService).record(
-                eq(AdminAuditAction.UPDATE_USER_BANNED),
+                eq(AdminAuditAction.USER_STATUS_UPDATED),
                 eq("USER"),
                 eq(1L),
                 eq("Banned user"),
@@ -118,7 +118,7 @@ class AdminUserGovernanceServiceTest {
 
         ArgumentCaptor<Map<String, Object>> detailsCaptor = ArgumentCaptor.forClass(Map.class);
         verify(adminAuditService).record(
-                eq(AdminAuditAction.UPDATE_USER_PASSWORD),
+                eq(AdminAuditAction.USER_PASSWORD_UPDATED),
                 eq("USER"),
                 eq(1L),
                 eq("Updated user password"),
@@ -141,7 +141,7 @@ class AdminUserGovernanceServiceTest {
         assertThat(response.temporaryPassword()).matches(".*[A-Z].*");
         ArgumentCaptor<Map<String, Object>> detailsCaptor = ArgumentCaptor.forClass(Map.class);
         verify(adminAuditService).record(
-                eq(AdminAuditAction.RESET_USER_PASSWORD),
+                eq(AdminAuditAction.USER_PASSWORD_RESET),
                 eq("USER"),
                 eq(2L),
                 eq("Reset user password"),
@@ -162,7 +162,7 @@ class AdminUserGovernanceServiceTest {
 
         assertThat(response.storageQuotaBytes()).isEqualTo(2048L);
         verify(adminAuditService).record(
-                eq(AdminAuditAction.UPDATE_USER_STORAGE_QUOTA),
+                eq(AdminAuditAction.USER_STORAGE_QUOTA_UPDATED),
                 eq("USER"),
                 eq(1L),
                 eq("Updated user storage quota"),
@@ -181,7 +181,7 @@ class AdminUserGovernanceServiceTest {
 
         assertThat(response.maxUploadSizeBytes()).isEqualTo(4096L);
         verify(adminAuditService).record(
-                eq(AdminAuditAction.UPDATE_USER_MAX_UPLOAD_SIZE),
+                eq(AdminAuditAction.USER_MAX_UPLOAD_SIZE_UPDATED),
                 eq("USER"),
                 eq(1L),
                 eq("Updated user max upload size"),

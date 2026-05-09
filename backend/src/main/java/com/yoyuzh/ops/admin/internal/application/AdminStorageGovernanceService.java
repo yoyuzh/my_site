@@ -31,7 +31,7 @@ public class AdminStorageGovernanceService {
                 storagePolicyAdminApi.createStoragePolicyAsAdmin(toUpsertCommand(input));
         AdminStoragePolicyResponse response = AdminStoragePolicyResponses.from(storagePolicy);
         adminAuditService.record(
-                AdminAuditAction.CREATE_STORAGE_POLICY,
+                AdminAuditAction.STORAGE_POLICY_CREATED,
                 "STORAGE_POLICY",
                 response.id(),
                 "Created storage policy",
@@ -50,7 +50,7 @@ public class AdminStorageGovernanceService {
                 storagePolicyAdminApi.updateStoragePolicyAsAdmin(policyId, toUpsertCommand(input));
         AdminStoragePolicyResponse response = AdminStoragePolicyResponses.from(storagePolicy);
         adminAuditService.record(
-                AdminAuditAction.UPDATE_STORAGE_POLICY,
+                AdminAuditAction.STORAGE_POLICY_UPDATED,
                 "STORAGE_POLICY",
                 policyId,
                 "Updated storage policy",
@@ -69,7 +69,7 @@ public class AdminStorageGovernanceService {
                 storagePolicyAdminApi.updateStoragePolicyStatusAsAdmin(policyId, enabled);
         AdminStoragePolicyResponse response = AdminStoragePolicyResponses.from(storagePolicy);
         adminAuditService.record(
-                AdminAuditAction.UPDATE_STORAGE_POLICY_STATUS,
+                AdminAuditAction.STORAGE_POLICY_STATUS_UPDATED,
                 "STORAGE_POLICY",
                 policyId,
                 enabled ? "Enabled storage policy" : "Disabled storage policy",
@@ -110,10 +110,10 @@ public class AdminStorageGovernanceService {
         auditDetails.put("targetPolicyId", candidate.targetPolicyId());
         auditDetails.put("correlationId", input.correlationId());
         adminAuditService.record(
-                AdminAuditAction.CREATE_STORAGE_POLICY_MIGRATION_TASK,
-                "TASK",
-                task.id(),
-                "Created storage policy migration task",
+                AdminAuditAction.STORAGE_POLICY_MIGRATION_REQUESTED,
+                "STORAGE_POLICY",
+                candidate.sourcePolicyId(),
+                "Requested storage policy migration",
                 auditDetails
         );
         return task;

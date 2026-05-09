@@ -1108,13 +1108,13 @@ class AdminControllerIntegrationTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.role").value("ADMIN"));
 
-        mockMvc.perform(get("/api/admin/audits?page=0&size=10&actionType=UPDATE_USER_ROLE&targetType=USER")
+        mockMvc.perform(get("/api/admin/audits?page=0&size=10&actionType=USER_ROLE_UPDATED&targetType=USER")
                         .with(user("service-admin").roles("ADMIN")))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value(0))
                 .andExpect(jsonPath("$.data.total").value(1))
                 .andExpect(jsonPath("$.data.items[0].actorUsername").value("service-admin"))
-                .andExpect(jsonPath("$.data.items[0].actionType").value("UPDATE_USER_ROLE"))
+                .andExpect(jsonPath("$.data.items[0].actionType").value("USER_ROLE_UPDATED"))
                 .andExpect(jsonPath("$.data.items[0].targetType").value("USER"))
                 .andExpect(jsonPath("$.data.items[0].targetId").value(portalUser.getId()))
                 .andExpect(jsonPath("$.data.items[0].summary").value("Updated user role"));

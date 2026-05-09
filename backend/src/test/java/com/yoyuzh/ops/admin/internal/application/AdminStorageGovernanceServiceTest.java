@@ -108,7 +108,7 @@ class AdminStorageGovernanceServiceTest {
 
         assertThat(response.enabled()).isFalse();
         verify(adminAuditService).record(
-                eq(AdminAuditAction.UPDATE_STORAGE_POLICY_STATUS),
+                eq(AdminAuditAction.STORAGE_POLICY_STATUS_UPDATED),
                 eq("STORAGE_POLICY"),
                 eq(3L),
                 eq("Disabled storage policy"),

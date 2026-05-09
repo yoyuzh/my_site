@@ -28,7 +28,7 @@ public class AdminResourceGovernanceService {
         Map<String, Object> details = new LinkedHashMap<>();
         details.put("token", shareSnapshot.token());
         adminAuditService.record(
-                AdminAuditAction.DELETE_SHARE,
+                AdminAuditAction.SHARE_DELETED,
                 "SHARE",
                 shareId,
                 "Deleted share link",
@@ -46,7 +46,7 @@ public class AdminResourceGovernanceService {
         details.put("filename", fileSnapshot.filename());
         details.put("directory", fileSnapshot.directory());
         adminAuditService.record(
-                AdminAuditAction.DELETE_FILE,
+                AdminAuditAction.FILE_DELETED,
                 "FILE",
                 fileId,
                 "Deleted file",

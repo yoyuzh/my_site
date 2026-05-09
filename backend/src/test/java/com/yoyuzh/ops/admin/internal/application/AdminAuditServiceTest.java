@@ -65,7 +65,7 @@ class AdminAuditServiceTest {
         ));
 
         adminAuditService.record(
-                AdminAuditAction.UPDATE_USER_ROLE,
+                AdminAuditAction.USER_ROLE_UPDATED,
                 "USER",
                 42L,
                 "Updated user role",
@@ -78,18 +78,18 @@ class AdminAuditServiceTest {
         assertThat(entity.getActorUserId()).isEqualTo(99L);
         assertThat(entity.getActorUsername()).isEqualTo("service-admin");
         assertThat(entity.getActorAuthorities()).isEqualTo("ROLE_ADMIN,ROLE_MODERATOR");
-        assertThat(entity.getActionType()).isEqualTo("UPDATE_USER_ROLE");
+        assertThat(entity.getActionType()).isEqualTo("USER_ROLE_UPDATED");
         assertThat(entity.getTargetType()).isEqualTo("USER");
         assertThat(entity.getTargetId()).isEqualTo(42L);
         assertThat(entity.getSummary()).isEqualTo("Updated user role");
-        assertThat(entity.getDetailsJson()).contains("\"role\":\"ADMIN\"");
+        assertThat(entity.getDetailsJson()).isEqualTo("{\"role\":\"ADMIN\"}");
         verify(identityUserDirectoryApi, never()).findProfileByUsername("service-admin");
     }
 
     @Test
     void shouldRecordAuditLogWithSystemActorWhenAuthenticationMissing() {
         adminAuditService.record(
-                AdminAuditAction.DELETE_FILE,
+                AdminAuditAction.FILE_DELETED,
                 "FILE",
                 7L,
                 "Deleted file",
@@ -102,7 +102,7 @@ class AdminAuditServiceTest {
         assertThat(entity.getActorUserId()).isNull();
         assertThat(entity.getActorUsername()).isEqualTo("system");
         assertThat(entity.getActorAuthorities()).isEmpty();
-        assertThat(entity.getActionType()).isEqualTo("DELETE_FILE");
+        assertThat(entity.getActionType()).isEqualTo("FILE_DELETED");
     }
 
     @Test
@@ -116,7 +116,7 @@ class AdminAuditServiceTest {
         ));
 
         adminAuditService.record(
-                AdminAuditAction.UPDATE_USER_ROLE,
+                AdminAuditAction.USER_ROLE_UPDATED,
                 "USER",
                 42L,
                 "Updated user role",
@@ -135,7 +135,7 @@ class AdminAuditServiceTest {
         AdminAuditService service = new AdminAuditService(adminAuditLogRepository, identityUserDirectoryApi, failingMapper);
 
         assertThatThrownBy(() -> service.record(
-                AdminAuditAction.UPDATE_USER_ROLE,
+                AdminAuditAction.USER_ROLE_UPDATED,
                 "USER",
                 42L,
                 "Updated user role",

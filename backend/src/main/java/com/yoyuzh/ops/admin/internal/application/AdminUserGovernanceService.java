@@ -54,7 +54,7 @@ public class AdminUserGovernanceService {
         );
         AdminUserResponse response = toUserResponse(user, workspaceAdminGovernanceApi.loadUsedStorageBytesByUserId(userId));
         adminAuditService.record(
-                AdminAuditAction.UPDATE_USER_ROLE,
+                AdminAuditAction.USER_ROLE_UPDATED,
                 "USER",
                 userId,
                 "Updated user role",
@@ -68,7 +68,7 @@ public class AdminUserGovernanceService {
         IdentityAdminUserView user = identityAdminUserGovernanceApi.updateUserBannedAsAdmin(userId, banned);
         AdminUserResponse response = toUserResponse(user, workspaceAdminGovernanceApi.loadUsedStorageBytesByUserId(userId));
         adminAuditService.record(
-                AdminAuditAction.UPDATE_USER_BANNED,
+                AdminAuditAction.USER_STATUS_UPDATED,
                 "USER",
                 userId,
                 banned ? "Banned user" : "Unbanned user",
@@ -79,13 +79,13 @@ public class AdminUserGovernanceService {
 
     @Transactional
     public AdminUserResponse updateUserPassword(Long userId, String newPassword) {
-        return updateUserPasswordInternal(userId, newPassword, AdminAuditAction.UPDATE_USER_PASSWORD);
+        return updateUserPasswordInternal(userId, newPassword, AdminAuditAction.USER_PASSWORD_UPDATED);
     }
 
     @Transactional
     public AdminPasswordResetResponse resetUserPassword(Long userId) {
         String temporaryPassword = generateTemporaryPassword();
-        updateUserPasswordInternal(userId, temporaryPassword, AdminAuditAction.RESET_USER_PASSWORD);
+        updateUserPasswordInternal(userId, temporaryPassword, AdminAuditAction.USER_PASSWORD_RESET);
         return new AdminPasswordResetResponse(temporaryPassword);
     }
 
@@ -93,12 +93,12 @@ public class AdminUserGovernanceService {
         IdentityAdminUserView user = identityAdminUserGovernanceApi.updateUserPasswordAsAdmin(userId, newPassword);
         AdminUserResponse response = toUserResponse(user, workspaceAdminGovernanceApi.loadUsedStorageBytesByUserId(userId));
         Map<String, Object> details = new LinkedHashMap<>();
-        details.put("temporaryPassword", action == AdminAuditAction.RESET_USER_PASSWORD);
+        details.put("temporaryPassword", action == AdminAuditAction.USER_PASSWORD_RESET);
         adminAuditService.record(
                 action,
                 "USER",
                 userId,
-                action == AdminAuditAction.RESET_USER_PASSWORD
+                action == AdminAuditAction.USER_PASSWORD_RESET
                         ? "Reset user password"
                         : "Updated user password",
                 details
@@ -168,7 +168,7 @@ public class AdminUserGovernanceService {
                 identityAdminUserGovernanceApi.updateUserStorageQuotaAsAdmin(userId, storageQuotaBytes);
         AdminUserResponse response = toUserResponse(user, workspaceAdminGovernanceApi.loadUsedStorageBytesByUserId(userId));
         adminAuditService.record(
-                AdminAuditAction.UPDATE_USER_STORAGE_QUOTA,
+                AdminAuditAction.USER_STORAGE_QUOTA_UPDATED,
                 "USER",
                 userId,
                 "Updated user storage quota",
@@ -183,7 +183,7 @@ public class AdminUserGovernanceService {
                 identityAdminUserGovernanceApi.updateUserMaxUploadSizeAsAdmin(userId, maxUploadSizeBytes);
         AdminUserResponse response = toUserResponse(user, workspaceAdminGovernanceApi.loadUsedStorageBytesByUserId(userId));
         adminAuditService.record(
-                AdminAuditAction.UPDATE_USER_MAX_UPLOAD_SIZE,
+                AdminAuditAction.USER_MAX_UPLOAD_SIZE_UPDATED,
                 "USER",
                 userId,
                 "Updated user max upload size",
