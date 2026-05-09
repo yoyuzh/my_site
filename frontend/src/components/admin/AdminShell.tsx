@@ -19,36 +19,61 @@ const AdminShell: React.FC<AdminShellProps> = ({ children, title }) => {
   const location = useLocation();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = React.useState(false);
 
-  React.useEffect(() => {
-    setIsMobileMenuOpen(false);
-  }, [location.pathname]);
-
   const flatItems = adminNavGroups.flatMap((group) => group.items);
   const activeItem = flatItems.find((item) => isActivePath(location.pathname, item.path));
   const activeGroup = adminNavGroups.find((group) =>
     group.items.some((item) => isActivePath(location.pathname, item.path)),
   );
+  const resolvedTitle = activeItem?.label ?? title;
+  const mobileNavId = 'admin-shell-navigation';
+
+  React.useEffect(() => {
+    setIsMobileMenuOpen(false);
+  }, [location.pathname]);
+
+  React.useEffect(() => {
+    if (!isMobileMenuOpen) {
+      return undefined;
+    }
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setIsMobileMenuOpen(false);
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isMobileMenuOpen]);
 
   return (
     <div className="min-h-screen bg-[#EEF3FB] text-text-primary-light transition-colors duration-300 dark:bg-[#090B10] dark:text-text-primary-dark">
-      <Topbar meta={`管理中心 · ${activeItem?.label ?? title}`} />
+      <Topbar meta={`管理中心 · ${resolvedTitle}`} />
       <BackgroundEffects />
 
       <div className="relative flex min-h-screen pt-[68px]">
-        <div
+        <button
+          type="button"
           className={clsx(
             'fixed inset-0 z-40 bg-slate-950/45 backdrop-blur-sm transition-opacity lg:hidden',
             isMobileMenuOpen ? 'opacity-100' : 'pointer-events-none opacity-0',
           )}
           onClick={() => setIsMobileMenuOpen(false)}
+          aria-label="Close admin navigation"
+          aria-hidden={!isMobileMenuOpen}
+          tabIndex={isMobileMenuOpen ? 0 : -1}
         />
 
         <aside
+          id={mobileNavId}
           className={clsx(
             'fixed inset-y-0 left-0 z-50 w-72 border-r border-slate-200/80 bg-white/92 backdrop-blur-xl transition-transform dark:border-white/10 dark:bg-[#0F131B]/92',
             'pt-[68px] lg:translate-x-0',
             isMobileMenuOpen ? 'translate-x-0' : '-translate-x-full',
           )}
+          role={isMobileMenuOpen ? 'dialog' : undefined}
+          aria-modal={isMobileMenuOpen ? true : undefined}
+          aria-label="管理中心导航"
         >
           <div className="flex h-full flex-col">
             <div className="flex items-center justify-between border-b border-slate-200/70 px-5 py-4 dark:border-white/10 lg:hidden">
@@ -74,7 +99,7 @@ const AdminShell: React.FC<AdminShellProps> = ({ children, title }) => {
                 </p>
               </div>
 
-              <nav className="mt-5 space-y-5">
+              <nav className="mt-5 space-y-5" aria-label="管理中心主要导航">
                 {adminNavGroups.map((group) => (
                   <div key={group.label}>
                     <p className="px-3 text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-400">
@@ -89,6 +114,7 @@ const AdminShell: React.FC<AdminShellProps> = ({ children, title }) => {
                           <Link
                             key={item.path}
                             to={item.path}
+                            onClick={() => setIsMobileMenuOpen(false)}
                             className={clsx(
                               'flex items-center gap-3 rounded-2xl px-3 py-3 text-sm font-medium transition-all',
                               isActive
@@ -148,6 +174,8 @@ const AdminShell: React.FC<AdminShellProps> = ({ children, title }) => {
                   onClick={() => setIsMobileMenuOpen(true)}
                   className="inline-flex h-11 w-11 items-center justify-center rounded-full border border-slate-200/70 bg-white text-slate-700 shadow-sm transition-colors hover:bg-slate-50 dark:border-white/10 dark:bg-white/5 dark:text-slate-200 dark:hover:bg-white/10 lg:hidden"
                   aria-label="Open admin navigation"
+                  aria-expanded={isMobileMenuOpen}
+                  aria-controls={mobileNavId}
                 >
                   <Menu size={18} />
                 </button>
