@@ -1,6 +1,9 @@
 import React, { useState } from 'react';
+import { Alert, Box, Button, Paper, Stack, Typography } from '@mui/material';
+import { ArrowRight, Database, Edit2, Plus, Power, Trash2 } from 'lucide-react';
 import AdminLayout from '../../components/AdminLayout';
-import { Database, Plus, Edit2, Trash2, ArrowRight, Power } from 'lucide-react';
+import AdminPage from '../../components/admin/AdminPage';
+import AdminStatusBadge from '../../components/admin/AdminStatusBadge';
 import { useAdminPolicies } from '../../api/queries';
 import {
   createAdminStoragePolicy,
@@ -149,115 +152,149 @@ const AdminPolicy: React.FC = () => {
 
   return (
     <AdminLayout title="存储策略">
-      <div className="flex justify-between items-center mb-6">
-        <button className="btn-primary flex items-center gap-2 px-4 py-2 text-sm h-10" onClick={() => void handleCreate()}>
-          <Plus size={16} /> 添加存储策略
-        </button>
-      </div>
+      <AdminPage
+        title="存储策略"
+        description="维护存储策略、对象大小上限与启停状态。"
+        isLoading={isLoading}
+        isError={isError}
+        errorText="存储策略加载失败。"
+        toolbar={
+          <Button variant="contained" startIcon={<Plus size={16} />} onClick={() => void handleCreate()}>
+            添加存储策略
+          </Button>
+        }
+      >
+        <Stack spacing={2}>
+          {statusMessage ? <Alert severity="info">{statusMessage}</Alert> : null}
 
-      {statusMessage && (
-        <div className="mb-4 rounded-lg border border-[#D9E3F2] dark:border-[#222233] bg-white dark:bg-[#111117] px-4 py-3 text-sm text-text-secondary-light dark:text-text-secondary-dark">
-          {statusMessage}
-        </div>
-      )}
-
-      {isLoading ? (
-        <div className="p-8 text-center text-text-muted-light">加载中...</div>
-      ) : isError ? (
-        <div className="p-8 text-center text-red-500">加载失败</div>
-      ) : (
-        <>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 animate-fade-in-up">
+          <Box
+            sx={{
+              display: 'grid',
+              gridTemplateColumns: { xs: '1fr', md: 'repeat(2, minmax(0, 1fr))', xl: 'repeat(3, minmax(0, 1fr))' },
+              gap: 2,
+            }}
+          >
             {(data?.items || []).map((policy: AdminStoragePolicy) => (
-              <div key={policy.id} className="card-container flex flex-col h-full">
-                <div className="p-6 flex-1">
-                  <div className="flex justify-between items-start mb-4">
-                    <div className="bg-brand-light/10 text-brand-light p-3 rounded-lg">
-                      <Database size={24} />
-                    </div>
-                    <div className="flex gap-2">
-                      <button
-                        className="text-text-muted-light hover:text-brand-light transition-colors p-1"
-                        title="编辑"
-                        onClick={() => void handleEdit(policy)}
-                      >
-                        <Edit2 size={18} />
-                      </button>
-                      <button
-                        className="text-text-muted-light hover:text-red-500 transition-colors p-1 disabled:opacity-50 disabled:cursor-not-allowed"
-                        title="后端暂未提供删除存储策略接口"
-                        disabled
-                      >
-                        <Trash2 size={18} />
-                      </button>
-                    </div>
-                  </div>
-                  <h3 className="text-xl font-bold text-text-primary-light dark:text-white mb-2">{policy.name}</h3>
-                  <div className="flex items-center gap-2 mb-4">
-                    <span className="bg-black/5 dark:bg-white/5 px-2 py-1 rounded text-xs font-bold text-text-secondary-light dark:text-text-secondary-dark">{policy.type}</span>
-                    <span className="text-xs text-text-muted-light dark:text-text-muted-dark">
-                      {policy.defaultPolicy ? '默认策略' : policy.enabled ? '已启用' : '已禁用'}
-                    </span>
-                  </div>
-                  <div className="space-y-2 text-sm text-text-secondary-light dark:text-text-secondary-dark font-geist">
-                    <p className="break-all bg-gray-50 dark:bg-[#1A1A24] p-2 rounded">
-                      {policy.endpoint || policy.bucketName || policy.prefix || '本地默认存储'}
-                    </p>
-                    <p>最大对象：{formatBytes(policy.maxSizeBytes)}</p>
-                    <p>凭证模式：{policy.credentialMode}</p>
-                    <p>更新时间：{formatDateTime(policy.updatedAt)}</p>
-                  </div>
-                </div>
-                <div className="p-4 border-t border-[#D9E3F2] dark:border-[#222233] bg-[#F8FBFF] dark:bg-[#1A1A24]/50 flex justify-between items-center gap-2">
-                   <button
-                     className="text-sm font-semibold text-brand-light dark:text-brand-dark flex items-center gap-2 group"
-                     onClick={() => void handleEdit(policy)}
-                   >
-                     修改策略向导
-                     <ArrowRight size={16} className="transform group-hover:translate-x-1 transition-transform" />
-                   </button>
-                   <button
-                     className={`text-xs font-semibold px-3 py-1 rounded-full transition-colors ${policy.enabled ? 'bg-red-500/10 text-red-500 hover:bg-red-500/20' : 'bg-emerald-500/10 text-emerald-600 hover:bg-emerald-500/20'}`}
-                     onClick={() => void handleToggle(policy)}
-                   >
-                     <Power size={14} className="inline mr-1" />
-                     {policy.enabled ? '禁用' : '启用'}
-                   </button>
-                </div>
-              </div>
-            ))}
-          </div>
-
-          {/* Pagination */}
-          <div className="p-4 mt-6 border-t border-[#D9E3F2] dark:border-[#222233] flex flex-col sm:flex-row justify-between items-center text-sm text-text-secondary-light dark:text-text-secondary-dark gap-4">
-            <div className="flex items-center gap-4">
-              <span>共 {data?.pagination?.total_items || 0} 条记录</span>
-              <select 
-                className="bg-transparent border-none text-brand-light font-medium cursor-pointer outline-none hidden sm:block"
-                value={pageSize}
-                onChange={(e) => { setPageSize(Number(e.target.value)); setPage(1); }}
+              <Paper
+                key={policy.id}
+                elevation={0}
+                sx={{
+                  border: '1px solid',
+                  borderColor: 'divider',
+                  borderRadius: 3,
+                  bgcolor: 'background.paper',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  minHeight: '100%',
+                }}
               >
-                <option value={10}>10 条/页</option>
-                <option value={20}>20 条/页</option>
-                <option value={50}>50 条/页</option>
-              </select>
-            </div>
-            <div className="flex gap-2">
-              <button 
-                className="px-3 py-1 border border-[#D9E3F2] dark:border-[#222233] rounded hover:bg-black/5 dark:hover:bg-white/5 transition-colors disabled:opacity-50 disabled:cursor-not-allowed" 
-                disabled={page <= 1}
-                onClick={() => setPage(page - 1)}
-              >上一页</button>
-              <button className="px-3 py-1 border border-[#D9E3F2] dark:border-[#222233] rounded hover:bg-black/5 dark:hover:bg-white/5 transition-colors bg-brand-light text-white border-brand-light">{page}</button>
-              <button 
-                className="px-3 py-1 border border-[#D9E3F2] dark:border-[#222233] rounded hover:bg-black/5 dark:hover:bg-white/5 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                disabled={!data?.pagination?.total_pages || page >= data.pagination.total_pages}
-                onClick={() => setPage(page + 1)}
-              >下一页</button>
-            </div>
-          </div>
-        </>
-      )}
+                <Box sx={{ p: 2.5, flex: 1 }}>
+                  <Stack direction="row" justifyContent="space-between" spacing={2} sx={{ mb: 2 }}>
+                    <Box
+                      sx={{
+                        width: 44,
+                        height: 44,
+                        borderRadius: 2,
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        bgcolor: 'action.hover',
+                        color: 'primary.main',
+                      }}
+                    >
+                      <Database size={22} />
+                    </Box>
+                    <Stack direction="row" spacing={0.5}>
+                      <Button size="small" color="inherit" onClick={() => void handleEdit(policy)}>
+                        <Edit2 size={16} />
+                      </Button>
+                      <Button size="small" color="error" disabled title="后端暂未提供删除存储策略接口">
+                        <Trash2 size={16} />
+                      </Button>
+                    </Stack>
+                  </Stack>
+
+                  <Typography variant="h6" sx={{ fontWeight: 700 }}>
+                    {policy.name}
+                  </Typography>
+                  <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap" sx={{ mt: 1.5, mb: 2 }}>
+                    <AdminStatusBadge label={policy.type} tone="neutral" />
+                    <AdminStatusBadge label={policy.defaultPolicy ? '默认策略' : policy.enabled ? '已启用' : '已禁用'} tone={policy.defaultPolicy ? 'info' : policy.enabled ? 'success' : 'warning'} />
+                  </Stack>
+
+                  <Stack spacing={1}>
+                    <Typography variant="body2" color="text.secondary" sx={{ wordBreak: 'break-all' }}>
+                      {policy.endpoint || policy.bucketName || policy.prefix || '本地默认存储'}
+                    </Typography>
+                    <Typography variant="body2" color="text.secondary">
+                      最大对象：{formatBytes(policy.maxSizeBytes)}
+                    </Typography>
+                    <Typography variant="body2" color="text.secondary">
+                      凭证模式：{policy.credentialMode}
+                    </Typography>
+                    <Typography variant="body2" color="text.secondary">
+                      更新时间：{formatDateTime(policy.updatedAt)}
+                    </Typography>
+                  </Stack>
+                </Box>
+
+                <Stack
+                  direction="row"
+                  justifyContent="space-between"
+                  alignItems="center"
+                  spacing={1.5}
+                  sx={{ px: 2.5, py: 2, borderTop: '1px solid', borderColor: 'divider', bgcolor: 'action.hover' }}
+                >
+                  <Button size="small" color="inherit" endIcon={<ArrowRight size={16} />} onClick={() => void handleEdit(policy)}>
+                    修改策略向导
+                  </Button>
+                  <Button
+                    size="small"
+                    variant={policy.enabled ? 'outlined' : 'contained'}
+                    color={policy.enabled ? 'warning' : 'success'}
+                    startIcon={<Power size={14} />}
+                    onClick={() => void handleToggle(policy)}
+                  >
+                    {policy.enabled ? '禁用' : '启用'}
+                  </Button>
+                </Stack>
+              </Paper>
+            ))}
+          </Box>
+
+          <Paper elevation={0} sx={{ borderTop: '1px solid', borderColor: 'divider', p: 2 }}>
+            <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2} justifyContent="space-between" alignItems={{ xs: 'flex-start', sm: 'center' }}>
+              <Typography variant="body2" color="text.secondary">
+                共 {data?.pagination?.total_items || 0} 条记录
+              </Typography>
+              <Stack direction="row" spacing={1}>
+                <Button variant="outlined" onClick={() => { setPageSize(10); setPage(1); }} disabled={pageSize === 10}>
+                  10 条/页
+                </Button>
+                <Button variant="outlined" onClick={() => { setPageSize(20); setPage(1); }} disabled={pageSize === 20}>
+                  20 条/页
+                </Button>
+                <Button variant="outlined" onClick={() => { setPageSize(50); setPage(1); }} disabled={pageSize === 50}>
+                  50 条/页
+                </Button>
+                <Button variant="outlined" disabled={page <= 1} onClick={() => setPage(page - 1)}>
+                  上一页
+                </Button>
+                <Button variant="contained" disableElevation>
+                  {page}
+                </Button>
+                <Button
+                  variant="outlined"
+                  disabled={!data?.pagination?.total_pages || page >= data.pagination.total_pages}
+                  onClick={() => setPage(page + 1)}
+                >
+                  下一页
+                </Button>
+              </Stack>
+            </Stack>
+          </Paper>
+        </Stack>
+      </AdminPage>
     </AdminLayout>
   );
 };

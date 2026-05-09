@@ -1,6 +1,25 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
+import {
+  Alert,
+  Box,
+  Button,
+  FormControl,
+  InputAdornment,
+  MenuItem,
+  Paper,
+  Select,
+  Stack,
+  TextField,
+  Typography,
+} from '@mui/material';
+import { Edit2, Filter, Lock, Search, Trash2, UserPlus } from 'lucide-react';
 import AdminLayout from '../../components/AdminLayout';
-import { UserPlus, Search, Edit2, Lock, Trash2, Filter } from 'lucide-react';
+import type { AdminColumn } from '../../components/admin/AdminDataTable';
+import AdminConfirmDialog from '../../components/admin/AdminConfirmDialog';
+import AdminDataTable from '../../components/admin/AdminDataTable';
+import AdminFilterBar from '../../components/admin/AdminFilterBar';
+import AdminPage from '../../components/admin/AdminPage';
+import AdminStatusBadge from '../../components/admin/AdminStatusBadge';
 import { useAdminUsers } from '../../api/queries';
 import type { AdminUser as AdminUserRecord } from '../../api/types';
 import {
@@ -18,6 +37,12 @@ const roleLabels: Record<AdminUserRecord['role'], string> = {
   USER: '普通用户',
 };
 
+const roleTones: Record<AdminUserRecord['role'], 'danger' | 'warning' | 'neutral'> = {
+  ADMIN: 'danger',
+  MODERATOR: 'warning',
+  USER: 'neutral',
+};
+
 const roleOptions: AdminUserRecord['role'][] = ['USER', 'MODERATOR', 'ADMIN'];
 
 function toPositiveNumber(value: string | null) {
@@ -28,6 +53,11 @@ function toPositiveNumber(value: string | null) {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
 }
 
+type UserConfirmState =
+  | { type: 'ban'; user: AdminUserRecord }
+  | { type: 'resetPassword'; user: AdminUserRecord }
+  | null;
+
 const AdminUser: React.FC = () => {
   const [showFilters, setShowFilters] = useState(false);
   const [page, setPage] = useState(1);
@@ -35,6 +65,8 @@ const AdminUser: React.FC = () => {
   const [searchDraft, setSearchDraft] = useState('');
   const [query, setQuery] = useState('');
   const [statusMessage, setStatusMessage] = useState('');
+  const [confirmState, setConfirmState] = useState<UserConfirmState>(null);
+  const [isConfirmSubmitting, setIsConfirmSubmitting] = useState(false);
   const { data, isLoading, isError, refetch } = useAdminUsers({ page, page_size: pageSize, query });
 
   async function runAction(action: () => Promise<unknown>, successMessage: string) {
@@ -59,25 +91,207 @@ const AdminUser: React.FC = () => {
     setPage(1);
   }
 
+  async function handleConfirm() {
+    if (!confirmState) {
+      return;
+    }
+
+    setIsConfirmSubmitting(true);
+    try {
+      if (confirmState.type === 'ban') {
+        await runAction(
+          () => updateAdminUserBanned(confirmState.user.id, !confirmState.user.banned),
+          confirmState.user.banned ? '用户已解封' : '用户已封禁',
+        );
+      } else {
+        await runAction(async () => {
+          const result = await resetAdminUserPassword(confirmState.user.id);
+          window.alert(`新密码：${result.newPassword}`);
+        }, '密码已重置');
+      }
+      setConfirmState(null);
+    } finally {
+      setIsConfirmSubmitting(false);
+    }
+  }
+
+  const columns = useMemo<AdminColumn<AdminUserRecord>[]>(
+    () => [
+      {
+        id: 'select',
+        header: '',
+        accessor: () => <input type="checkbox" className="rounded border-gray-300 text-brand-light focus:ring-brand-light cursor-pointer" />,
+      },
+      {
+        id: 'username',
+        header: '用户名',
+        accessor: (user) => (
+          <Stack spacing={0.5}>
+            <Typography variant="body2" sx={{ fontWeight: 700 }}>
+              {user.username}
+            </Typography>
+            <Typography variant="caption" color="text.secondary">
+              ID #{user.id}
+            </Typography>
+          </Stack>
+        ),
+      },
+      {
+        id: 'email',
+        header: '邮箱',
+        accessor: (user) => (
+          <Stack spacing={0.5}>
+            <Typography variant="body2">{user.email}</Typography>
+            <Typography variant="caption" color="text.secondary">
+              {user.phoneNumber || '无手机号'}
+            </Typography>
+          </Stack>
+        ),
+      },
+      {
+        id: 'role',
+        header: '用户组',
+        accessor: (user) => <AdminStatusBadge label={roleLabels[user.role]} tone={roleTones[user.role]} />,
+      },
+      {
+        id: 'status',
+        header: '状态',
+        accessor: (user) => (
+          <AdminStatusBadge label={user.banned ? '已封禁' : '正常'} tone={user.banned ? 'danger' : 'success'} />
+        ),
+      },
+      {
+        id: 'actions',
+        header: '操作',
+        accessor: (user) => (
+          <Box sx={{ display: 'flex', justifyContent: 'flex-end', flexWrap: 'wrap', gap: 0.5 }}>
+            <Button
+              size="small"
+              color="inherit"
+              onClick={() => {
+                const nextRole = window.prompt('输入新角色：USER / MODERATOR / ADMIN', user.role)?.trim().toUpperCase();
+                if (!nextRole) {
+                  return;
+                }
+                if (!roleOptions.includes(nextRole as AdminUserRecord['role'])) {
+                  setStatusMessage('角色只能是 USER、MODERATOR 或 ADMIN');
+                  return;
+                }
+                void runAction(() => updateAdminUserRole(user.id, nextRole as AdminUserRecord['role']), '角色已更新');
+              }}
+            >
+              <Edit2 size={16} />
+            </Button>
+            <Button
+              size="small"
+              color="warning"
+              onClick={() => {
+                const newPassword = window.prompt(`输入 ${user.username} 的新密码`);
+                if (!newPassword) {
+                  return;
+                }
+                void runAction(() => updateAdminUserPassword(user.id, newPassword), '密码已更新');
+              }}
+            >
+              <Lock size={16} />
+            </Button>
+            <Button size="small" color="inherit" onClick={() => setConfirmState({ type: 'ban', user })}>
+              {user.banned ? '解封' : '封禁'}
+            </Button>
+            <Button size="small" color="inherit" onClick={() => setConfirmState({ type: 'resetPassword', user })}>
+              重置
+            </Button>
+            <Button
+              size="small"
+              color="inherit"
+              onClick={() => {
+                const quota = toPositiveNumber(window.prompt('输入存储容量字节数', String(user.storageQuotaBytes)));
+                if (quota == null) {
+                  setStatusMessage('容量必须是正数');
+                  return;
+                }
+                void runAction(() => updateAdminUserStorageQuota(user.id, quota), '存储容量已更新');
+              }}
+            >
+              容量
+            </Button>
+            <Button
+              size="small"
+              color="inherit"
+              onClick={() => {
+                const maxUpload = toPositiveNumber(window.prompt('输入最大上传字节数', String(user.maxUploadSizeBytes)));
+                if (maxUpload == null) {
+                  setStatusMessage('最大上传大小必须是正数');
+                  return;
+                }
+                void runAction(() => updateAdminUserMaxUploadSize(user.id, maxUpload), '最大上传大小已更新');
+              }}
+            >
+              上传
+            </Button>
+            <Button size="small" color="error" disabled title="后端暂未提供删除用户接口">
+              <Trash2 size={16} />
+            </Button>
+          </Box>
+        ),
+        className: 'text-right',
+      },
+    ],
+    [],
+  );
+
+  const confirmTitle = confirmState?.type === 'ban'
+    ? `${confirmState.user.banned ? '解封' : '封禁'}用户`
+    : '重置密码';
+  const confirmDescription = confirmState?.type === 'ban'
+    ? `确认${confirmState.user.banned ? '解封' : '封禁'}用户 ${confirmState.user.username}？`
+    : confirmState
+      ? `确认重置 ${confirmState.user.username} 的密码？`
+      : '';
+  const confirmLabel = confirmState?.type === 'ban'
+    ? (confirmState.user.banned ? '确认解封' : '确认封禁')
+    : '确认重置';
+
   return (
     <AdminLayout title="用户管理">
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 gap-4">
-        <div className="flex items-center gap-2">
-          <button className="btn-primary flex items-center gap-2 px-4 py-2 text-sm h-10 disabled:opacity-50 disabled:cursor-not-allowed" disabled title="后端暂未提供创建用户接口">
-            <UserPlus size={16} /> 添加用户
-          </button>
-          <button className="bg-red-500/10 text-red-500 px-4 py-2 rounded-lg text-sm h-10 transition-colors font-medium disabled:opacity-50 disabled:cursor-not-allowed" disabled title="后端暂未提供批量删除用户接口">
-            批量删除
-          </button>
-        </div>
-        
-        <div className="flex items-center gap-2 w-full md:w-auto">
-          <div className="relative flex-1 md:w-64">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-text-muted-light dark:text-text-muted-dark" size={16} />
-            <input 
-              type="text" 
-              placeholder="搜索用户名或邮箱..." 
-              className="input-field h-10 w-full text-sm pl-9"
+      <AdminPage
+        title="用户管理"
+        description="治理用户角色、账号状态与单用户容量限制。"
+        isLoading={isLoading}
+        isError={isError}
+        errorText="用户列表加载失败。"
+        toolbar={
+          <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap">
+            <Button
+              variant="contained"
+              startIcon={<UserPlus size={16} />}
+              disabled
+              title="后端暂未提供创建用户接口"
+            >
+              添加用户
+            </Button>
+            <Button variant="outlined" color="error" disabled title="后端暂未提供批量删除用户接口">
+              批量删除
+            </Button>
+          </Stack>
+        }
+      >
+        <Stack spacing={2}>
+          <AdminFilterBar
+            actions={
+              <Button
+                variant={showFilters ? 'contained' : 'outlined'}
+                startIcon={<Filter size={16} />}
+                onClick={() => setShowFilters((value) => !value)}
+              >
+                高级筛选
+              </Button>
+            }
+            summary={`共 ${data?.pagination?.total_items || 0} 条记录`}
+          >
+            <TextField
+              size="small"
+              placeholder="搜索用户名或邮箱..."
               value={searchDraft}
               onChange={(event) => setSearchDraft(event.target.value)}
               onKeyDown={(event) => {
@@ -85,224 +299,99 @@ const AdminUser: React.FC = () => {
                   applySearch();
                 }
               }}
+              sx={{ minWidth: { xs: '100%', md: 280 } }}
+              InputProps={{
+                startAdornment: (
+                  <InputAdornment position="start">
+                    <Search size={16} />
+                  </InputAdornment>
+                ),
+              }}
             />
-          </div>
-          <button 
-            onClick={() => setShowFilters(!showFilters)}
-            className={`border border-[#D9E3F2] dark:border-[#222233] h-10 px-3 rounded-lg transition-colors flex items-center justify-center gap-2 text-sm ${showFilters ? 'bg-brand-light/10 text-brand-light border-brand-light/30' : 'bg-white dark:bg-[#0A0A0A] text-text-secondary-light dark:text-text-secondary-dark'}`}
-          >
-            <Filter size={16} />
-            <span className="hidden sm:inline">高级筛选</span>
-          </button>
-        </div>
-      </div>
+            <Button variant="contained" onClick={applySearch}>
+              搜索
+            </Button>
+          </AdminFilterBar>
 
-      {showFilters && (
-        <div className="card-container p-4 mb-6 animate-fade-in-up flex flex-wrap gap-4 items-end bg-[#F8FBFF] dark:bg-[#111117]/80">
-          <div className="flex-1 min-w-[200px]">
-            <label className="block text-xs font-semibold text-text-secondary-light dark:text-text-secondary-dark mb-1 ml-1">用户组</label>
-            <select
-              className="input-field h-10 text-sm appearance-none py-0 disabled:opacity-60"
-              disabled
-              title="当前用户列表接口暂未提供用户组筛选"
+          {showFilters ? (
+            <AdminFilterBar
+              actions={
+                <Stack direction="row" spacing={1}>
+                  <Button variant="outlined" onClick={resetSearch}>
+                    重置
+                  </Button>
+                  <Button variant="contained" onClick={applySearch}>
+                    应用筛选
+                  </Button>
+                </Stack>
+              }
             >
-              <option value="">全部用户组</option>
-            </select>
-          </div>
-          <div className="flex-1 min-w-[200px]">
-            <label className="block text-xs font-semibold text-text-secondary-light dark:text-text-secondary-dark mb-1 ml-1">账号状态</label>
-            <select
-              className="input-field h-10 text-sm appearance-none py-0 disabled:opacity-60"
-              disabled
-              title="当前用户列表接口暂未提供账号状态筛选"
-            >
-              <option value="">全部状态</option>
-            </select>
-          </div>
-          <div className="flex gap-2">
-            <button
-              className="h-10 px-4 text-sm bg-white dark:bg-black border border-[#D9E3F2] dark:border-[#222233] rounded-lg hover:bg-black/5 dark:hover:bg-white/5 transition-colors"
-              onClick={resetSearch}
-            >
-              重置
-            </button>
-            <button className="h-10 px-4 text-sm bg-brand-light text-white rounded-lg hover:opacity-90 transition-opacity" onClick={applySearch}>
-              应用筛选
-            </button>
-          </div>
-        </div>
-      )}
+              <FormControl size="small" sx={{ minWidth: 180 }}>
+                <Select disabled displayEmpty value="" title="当前用户列表接口暂未提供用户组筛选">
+                  <MenuItem value="">全部用户组</MenuItem>
+                </Select>
+              </FormControl>
+              <FormControl size="small" sx={{ minWidth: 180 }}>
+                <Select disabled displayEmpty value="" title="当前用户列表接口暂未提供账号状态筛选">
+                  <MenuItem value="">全部状态</MenuItem>
+                </Select>
+              </FormControl>
+            </AdminFilterBar>
+          ) : null}
 
-      {statusMessage ? (
-        <div className="mb-4 rounded-lg border border-[#D9E3F2] dark:border-[#222233] bg-[#F8FBFF] dark:bg-[#111117] px-4 py-3 text-sm text-text-secondary-light dark:text-text-secondary-dark">
-          {statusMessage}
-        </div>
-      ) : null}
+          {statusMessage ? <Alert severity="info">{statusMessage}</Alert> : null}
 
-      <div className="card-container animate-fade-in-up" style={{ animationDelay: '100ms' }}>
-        {isLoading ? (
-          <div className="p-8 text-center text-text-muted-light">加载中...</div>
-        ) : isError ? (
-          <div className="p-8 text-center text-red-500">加载失败</div>
-        ) : (
-          <>
-            <div className="overflow-x-auto">
-              <table className="w-full text-left border-collapse">
-                <thead>
-                  <tr className="border-b border-[#D9E3F2] dark:border-[#222233]">
-                    <th className="px-6 py-4 text-sm font-semibold text-text-secondary-light dark:text-text-secondary-dark">
-                      <input type="checkbox" className="rounded border-gray-300 text-brand-light focus:ring-brand-light cursor-pointer" />
-                    </th>
-                    <th className="px-6 py-4 text-sm font-semibold text-text-secondary-light dark:text-text-secondary-dark">用户名</th>
-                    <th className="px-6 py-4 text-sm font-semibold text-text-secondary-light dark:text-text-secondary-dark">邮箱</th>
-                    <th className="px-6 py-4 text-sm font-semibold text-text-secondary-light dark:text-text-secondary-dark">用户组</th>
-                    <th className="px-6 py-4 text-sm font-semibold text-text-secondary-light dark:text-text-secondary-dark">状态</th>
-                    <th className="px-6 py-4 text-sm font-semibold text-text-secondary-light dark:text-text-secondary-dark text-right">操作</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {(data?.items || []).map((user) => (
-                    <tr key={user.id} className="border-b border-[#D9E3F2] dark:border-[#222233] hover:bg-[#F8FBFF] dark:hover:bg-[#1A1A24] transition-colors">
-                      <td className="px-6 py-4 text-sm">
-                        <input type="checkbox" className="rounded border-gray-300 text-brand-light focus:ring-brand-light cursor-pointer" />
-                      </td>
-                      <td className="px-6 py-4 text-sm font-medium text-text-primary-light dark:text-white">
-                        {user.username}
-                      </td>
-                      <td className="px-6 py-4 text-sm text-text-secondary-light dark:text-text-secondary-dark font-geist">{user.email}</td>
-                      <td className="px-6 py-4 text-sm text-text-secondary-light dark:text-text-secondary-dark">
-                        <span className="bg-black/5 dark:bg-white/5 px-2 py-1 rounded font-funnel">{roleLabels[user.role]}</span>
-                      </td>
-                      <td className="px-6 py-4 text-sm">
-                        <span className={`px-2 py-1 rounded-full text-xs font-semibold ${user.banned ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400' : 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'}`}>
-                          {user.banned ? '已封禁' : '正常'}
-                        </span>
-                      </td>
-                      <td className="px-6 py-4 text-right flex justify-end gap-2">
-                        <button
-                          className="text-brand-light hover:text-brand-dark transition-colors p-1"
-                          title="修改角色"
-                          onClick={() => {
-                            const nextRole = window.prompt('输入新角色：USER / MODERATOR / ADMIN', user.role)?.trim().toUpperCase();
-                            if (!nextRole) {
-                              return;
-                            }
-                            if (!roleOptions.includes(nextRole as AdminUserRecord['role'])) {
-                              setStatusMessage('角色只能是 USER、MODERATOR 或 ADMIN');
-                              return;
-                            }
-                            void runAction(() => updateAdminUserRole(user.id, nextRole as AdminUserRecord['role']), '角色已更新');
-                          }}
-                        >
-                          <Edit2 size={16} />
-                        </button>
-                        <button
-                          className="text-orange-500 hover:text-orange-600 transition-colors p-1"
-                          title="修改密码"
-                          onClick={() => {
-                            const newPassword = window.prompt(`输入 ${user.username} 的新密码`);
-                            if (!newPassword) {
-                              return;
-                            }
-                            void runAction(() => updateAdminUserPassword(user.id, newPassword), '密码已更新');
-                          }}
-                        >
-                          <Lock size={16} />
-                        </button>
-                        <button
-                          className="text-text-secondary-light hover:text-brand-light transition-colors p-1"
-                          title={user.banned ? '解封用户' : '封禁用户'}
-                          onClick={() => {
-                            if (window.confirm(`确认${user.banned ? '解封' : '封禁'}用户 ${user.username}？`)) {
-                              void runAction(() => updateAdminUserBanned(user.id, !user.banned), user.banned ? '用户已解封' : '用户已封禁');
-                            }
-                          }}
-                        >
-                          {user.banned ? '解封' : '封禁'}
-                        </button>
-                        <button
-                          className="text-text-secondary-light hover:text-brand-light transition-colors p-1"
-                          title="重置密码"
-                          onClick={() => {
-                            if (window.confirm(`确认重置 ${user.username} 的密码？`)) {
-                              void runAction(async () => {
-                                const result = await resetAdminUserPassword(user.id);
-                                window.alert(`新密码：${result.newPassword}`);
-                              }, '密码已重置');
-                            }
-                          }}
-                        >
-                          重置
-                        </button>
-                        <button
-                          className="text-text-secondary-light hover:text-brand-light transition-colors p-1"
-                          title="设置容量"
-                          onClick={() => {
-                            const quota = toPositiveNumber(window.prompt('输入存储容量字节数', String(user.storageQuotaBytes)));
-                            if (quota == null) {
-                              setStatusMessage('容量必须是正数');
-                              return;
-                            }
-                            void runAction(() => updateAdminUserStorageQuota(user.id, quota), '存储容量已更新');
-                          }}
-                        >
-                          容量
-                        </button>
-                        <button
-                          className="text-text-secondary-light hover:text-brand-light transition-colors p-1"
-                          title="设置最大上传"
-                          onClick={() => {
-                            const maxUpload = toPositiveNumber(window.prompt('输入最大上传字节数', String(user.maxUploadSizeBytes)));
-                            if (maxUpload == null) {
-                              setStatusMessage('最大上传大小必须是正数');
-                              return;
-                            }
-                            void runAction(() => updateAdminUserMaxUploadSize(user.id, maxUpload), '最大上传大小已更新');
-                          }}
-                        >
-                          上传
-                        </button>
-                        <button className="text-red-500 p-1 opacity-40 cursor-not-allowed" title="后端暂未提供删除用户接口" disabled>
-                          <Trash2 size={16} />
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-            
-            {/* Pagination */}
-            <div className="p-4 border-t border-[#D9E3F2] dark:border-[#222233] flex flex-col sm:flex-row justify-between items-center text-sm text-text-secondary-light dark:text-text-secondary-dark gap-4">
-              <div className="flex items-center gap-4">
-                <span>共 {data?.pagination?.total_items || 0} 条记录</span>
-                <select 
-                  className="bg-transparent border-none text-brand-light font-medium cursor-pointer outline-none hidden sm:block"
-                  value={pageSize}
-                  onChange={(e) => { setPageSize(Number(e.target.value)); setPage(1); }}
-                >
-                  <option value={10}>10 条/页</option>
-                  <option value={20}>20 条/页</option>
-                  <option value={50}>50 条/页</option>
-                </select>
-              </div>
-              <div className="flex gap-2">
-                <button 
-                  className="px-3 py-1 border border-[#D9E3F2] dark:border-[#222233] rounded hover:bg-black/5 dark:hover:bg-white/5 transition-colors disabled:opacity-50 disabled:cursor-not-allowed" 
-                  disabled={page <= 1}
-                  onClick={() => setPage(page - 1)}
-                >上一页</button>
-                <button className="px-3 py-1 border border-[#D9E3F2] dark:border-[#222233] rounded hover:bg-black/5 dark:hover:bg-white/5 transition-colors bg-brand-light text-white border-brand-light">{page}</button>
-                <button 
-                  className="px-3 py-1 border border-[#D9E3F2] dark:border-[#222233] rounded hover:bg-black/5 dark:hover:bg-white/5 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+          <AdminDataTable
+            rows={data?.items || []}
+            columns={columns}
+            getRowKey={(user) => user.id}
+            emptyText="暂无用户数据"
+          />
+
+          <Paper elevation={0} sx={{ border: '1px solid', borderColor: 'divider', borderRadius: 3, p: 2 }}>
+            <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2} justifyContent="space-between" alignItems={{ xs: 'flex-start', sm: 'center' }}>
+              <Stack direction="row" spacing={2} alignItems="center">
+                <Typography variant="body2" color="text.secondary">
+                  共 {data?.pagination?.total_items || 0} 条记录
+                </Typography>
+                <FormControl size="small" sx={{ minWidth: 120 }}>
+                  <Select value={String(pageSize)} onChange={(event) => { setPageSize(Number(event.target.value)); setPage(1); }}>
+                    <MenuItem value="10">10 条/页</MenuItem>
+                    <MenuItem value="20">20 条/页</MenuItem>
+                    <MenuItem value="50">50 条/页</MenuItem>
+                  </Select>
+                </FormControl>
+              </Stack>
+              <Stack direction="row" spacing={1}>
+                <Button variant="outlined" disabled={page <= 1} onClick={() => setPage(page - 1)}>
+                  上一页
+                </Button>
+                <Button variant="contained" disableElevation>
+                  {page}
+                </Button>
+                <Button
+                  variant="outlined"
                   disabled={!data?.pagination?.total_pages || page >= data.pagination.total_pages}
                   onClick={() => setPage(page + 1)}
-                >下一页</button>
-              </div>
-            </div>
-          </>
-        )}
-      </div>
+                >
+                  下一页
+                </Button>
+              </Stack>
+            </Stack>
+          </Paper>
+        </Stack>
+      </AdminPage>
+
+      <AdminConfirmDialog
+        open={Boolean(confirmState)}
+        title={confirmTitle}
+        description={confirmDescription}
+        confirmLabel={confirmLabel}
+        danger={confirmState?.type === 'ban' ? !confirmState.user.banned : false}
+        isSubmitting={isConfirmSubmitting}
+        onConfirm={() => void handleConfirm()}
+        onClose={() => setConfirmState(null)}
+      />
     </AdminLayout>
   );
 };

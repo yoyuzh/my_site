@@ -1,146 +1,201 @@
 import React from 'react';
+import { Alert, Box, Paper, Stack, Typography } from '@mui/material';
+import { Activity, AlertTriangle, FileText, HardDrive, Share2, Users } from 'lucide-react';
 import AdminLayout from '../../components/AdminLayout';
-import { Users, HardDrive, AlertTriangle, FileText, Share2, Activity } from 'lucide-react';
+import AdminPage from '../../components/admin/AdminPage';
+import AdminStatusBadge from '../../components/admin/AdminStatusBadge';
 import { useAdminSummary } from '../../api/queries';
 import { formatBytes, formatPercent } from '../../lib/format';
+
+type SummaryCardProps = {
+  icon: React.ReactNode;
+  label: string;
+  value: React.ReactNode;
+  tone?: 'info' | 'warning' | 'success' | 'danger' | 'neutral';
+};
+
+const SummaryCard: React.FC<SummaryCardProps> = ({ icon, label, value, tone = 'neutral' }) => {
+  const tones = {
+    info: { background: '#EFF6FF', color: '#2563EB' },
+    warning: { background: '#FEF3C7', color: '#D97706' },
+    success: { background: '#DCFCE7', color: '#16A34A' },
+    danger: { background: '#FEE2E2', color: '#DC2626' },
+    neutral: { background: '#F3F4F6', color: '#4B5563' },
+  } as const;
+
+  return (
+    <Paper
+      elevation={0}
+      sx={{
+        border: '1px solid',
+        borderColor: 'divider',
+        borderRadius: 3,
+        p: 2,
+        bgcolor: 'background.paper',
+      }}
+    >
+      <Stack direction="row" spacing={1.5} alignItems="center">
+        <Box
+          sx={{
+            width: 40,
+            height: 40,
+            borderRadius: 2,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            bgcolor: tones[tone].background,
+            color: tones[tone].color,
+            flexShrink: 0,
+          }}
+        >
+          {icon}
+        </Box>
+        <Box sx={{ minWidth: 0 }}>
+          <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
+            {label}
+          </Typography>
+          <Typography variant="h6" sx={{ fontWeight: 700, lineHeight: 1.2 }}>
+            {value}
+          </Typography>
+        </Box>
+      </Stack>
+    </Paper>
+  );
+};
 
 const AdminHome: React.FC = () => {
   const { data, isLoading, isError } = useAdminSummary();
 
   return (
     <AdminLayout title="管理面板">
-      {isLoading ? (
-        <div className="p-8 text-center text-text-muted-light">加载中...</div>
-      ) : isError ? (
-        <div className="p-8 text-center text-red-500">加载失败</div>
-      ) : (
-      <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
-        
-        {/* Trend Summary Area */}
-        <div className="lg:col-span-3 flex flex-col gap-6">
-          <div className="card-container p-8 animate-fade-in-up">
-            <div className="flex justify-between items-center mb-4">
-              <h3 className="text-[16px] font-semibold text-text-primary-light dark:text-white">趋势概览</h3>
-              <span className="text-xs text-text-muted-light dark:text-text-muted-dark bg-black/5 dark:bg-white/5 px-3 py-1 rounded-full font-geist">生成于 10 分钟前</span>
-            </div>
-            <hr className="border-[#D9E3F2] dark:border-[#222233] mb-6" />
-            
-            {/* Chart Placeholder */}
-            <div className="h-[350px] w-full flex flex-col items-center justify-center border border-dashed border-[#D9E3F2] dark:border-[#222233] rounded-lg bg-[#F8FBFF] dark:bg-[#111117]/50">
-              <Activity size={48} className="text-brand-light/30 dark:text-brand-dark/30 mb-4" />
-              <p className="text-text-secondary-light dark:text-text-secondary-dark font-medium">图表数据加载中...</p>
-              <p className="text-xs text-text-muted-light dark:text-text-muted-dark mt-2 font-geist">此处将渲染按日期统计的用户、文件和分享趋势图 (Recharts)</p>
-            </div>
-          </div>
-        </div>
+      <AdminPage
+        title="管理面板"
+        description="查看治理侧汇总指标、邀请码状态与当前离线任务占用情况。"
+        isLoading={isLoading}
+        isError={isError}
+        errorText="管理概览加载失败。"
+      >
+        <Stack spacing={2.5}>
+          <Box
+            sx={{
+              display: 'grid',
+              gridTemplateColumns: {
+                xs: '1fr',
+                md: 'repeat(2, minmax(0, 1fr))',
+                xl: 'repeat(5, minmax(0, 1fr))',
+              },
+              gap: 2,
+            }}
+          >
+            <SummaryCard icon={<Users size={18} />} label="总用户数" value={data?.totalUsers ?? 0} tone="info" />
+            <SummaryCard icon={<FileText size={18} />} label="文件总数" value={data?.totalFiles ?? 0} tone="warning" />
+            <SummaryCard icon={<Share2 size={18} />} label="分享下载总量" value={data?.shareDownloadCount ?? 0} tone="success" />
+            <SummaryCard icon={<FileText size={18} />} label="收藏文件" value={data?.favoriteFileCount ?? 0} tone="neutral" />
+            <SummaryCard icon={<Activity size={18} />} label="活跃任务" value={data?.activeTaskCount ?? 0} tone="danger" />
+          </Box>
 
-        {/* Summary Quick Stats Area */}
-        <div className="lg:col-span-1 flex flex-col gap-6">
-          <div className="card-container p-6 animate-fade-in-up" style={{ animationDelay: '100ms' }}>
-            <h3 className="text-[16px] font-semibold text-text-primary-light dark:text-white mb-4">系统状态汇总</h3>
-            <hr className="border-[#D9E3F2] dark:border-[#222233] mb-6" />
-            
-            <div className="space-y-6">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <div className="bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 p-2 rounded-lg">
-                    <Users size={20} />
-                  </div>
-                  <div>
-                    <p className="text-xs text-text-muted-light dark:text-text-muted-dark font-geist">总用户数</p>
-                    <p className="text-[15px] font-bold text-text-primary-light dark:text-white font-funnel">{data?.totalUsers ?? 0}</p>
-                  </div>
-                </div>
-              </div>
+          <Box
+            sx={{
+              display: 'grid',
+              gridTemplateColumns: { xs: '1fr', xl: 'minmax(0, 2fr) minmax(360px, 1fr)' },
+              gap: 2,
+            }}
+          >
+            <Paper
+              elevation={0}
+              sx={{
+                border: '1px solid',
+                borderColor: 'divider',
+                borderRadius: 3,
+                p: 3,
+                bgcolor: 'background.paper',
+              }}
+            >
+              <Stack direction="row" alignItems="center" justifyContent="space-between" spacing={2} sx={{ mb: 2 }}>
+                <Typography variant="h6" sx={{ fontWeight: 700 }}>
+                  趋势概览
+                </Typography>
+                <AdminStatusBadge label="生成于 10 分钟前" tone="neutral" />
+              </Stack>
+              <Box
+                sx={{
+                  minHeight: 320,
+                  border: '1px dashed',
+                  borderColor: 'divider',
+                  borderRadius: 3,
+                  bgcolor: 'action.hover',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: 1,
+                  textAlign: 'center',
+                  px: 3,
+                }}
+              >
+                <Activity size={44} />
+                <Typography variant="body1" sx={{ fontWeight: 600 }}>
+                  图表数据加载中...
+                </Typography>
+                <Typography variant="body2" color="text.secondary">
+                  此处将渲染按日期统计的用户、文件和分享趋势图。
+                </Typography>
+              </Box>
+            </Paper>
 
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <div className="bg-yellow-100 dark:bg-yellow-900/30 text-yellow-600 dark:text-yellow-500 p-2 rounded-lg">
-                    <FileText size={20} />
-                  </div>
-                  <div>
-                    <p className="text-xs text-text-muted-light dark:text-text-muted-dark font-geist">文件总数</p>
-                    <p className="text-[15px] font-bold text-text-primary-light dark:text-white font-funnel">{data?.totalFiles ?? 0}</p>
-                  </div>
-                </div>
-              </div>
+            <Stack spacing={2}>
+              <Paper
+                elevation={0}
+                sx={{
+                  border: '1px solid',
+                  borderColor: 'divider',
+                  borderRadius: 3,
+                  p: 2.5,
+                  bgcolor: 'background.paper',
+                }}
+              >
+                <Stack direction="row" spacing={1.5} alignItems="center" sx={{ mb: 2 }}>
+                  <HardDrive size={18} />
+                  <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>
+                    离线快传占用
+                  </Typography>
+                </Stack>
+                <Stack spacing={1}>
+                  <Stack direction="row" justifyContent="space-between" spacing={2}>
+                    <Typography variant="body2" color="text.secondary">
+                      占比
+                    </Typography>
+                    <Typography variant="body2" sx={{ fontWeight: 700 }}>
+                      {data ? formatPercent(data.offlineTransferStorageBytes, data.offlineTransferStorageLimitBytes) : '0%'}
+                    </Typography>
+                  </Stack>
+                  <Box sx={{ width: '100%', height: 8, borderRadius: 999, bgcolor: 'action.disabledBackground', overflow: 'hidden' }}>
+                    <Box
+                      sx={{
+                        width: data ? formatPercent(data.offlineTransferStorageBytes, data.offlineTransferStorageLimitBytes) : '0%',
+                        height: '100%',
+                        bgcolor: 'secondary.main',
+                      }}
+                    />
+                  </Box>
+                  <Typography variant="body2" color="text.secondary">
+                    当前累计存储：{data ? formatBytes(data.totalStorageBytes) : '-'}
+                  </Typography>
+                </Stack>
+              </Paper>
 
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <div className="bg-green-100 dark:bg-green-900/30 text-green-600 dark:text-green-400 p-2 rounded-lg">
-                    <Share2 size={20} />
-                  </div>
-                  <div>
-                    <p className="text-xs text-text-muted-light dark:text-text-muted-dark font-geist">分享下载总量</p>
-                    <p className="text-[15px] font-bold text-text-primary-light dark:text-white font-funnel">{data?.shareDownloadCount ?? 0}</p>
-                  </div>
-                </div>
-              </div>
-
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <div className="bg-pink-100 dark:bg-pink-900/30 text-pink-600 dark:text-pink-400 p-2 rounded-lg">
-                    <FileText size={20} />
-                  </div>
-                  <div>
-                    <p className="text-xs text-text-muted-light dark:text-text-muted-dark font-geist">收藏文件</p>
-                    <p className="text-[15px] font-bold text-text-primary-light dark:text-white font-funnel">{data?.favoriteFileCount ?? 0}</p>
-                  </div>
-                </div>
-              </div>
-
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <div className="bg-orange-100 dark:bg-orange-900/30 text-orange-600 dark:text-orange-400 p-2 rounded-lg">
-                    <Activity size={20} />
-                  </div>
-                  <div>
-                    <p className="text-xs text-text-muted-light dark:text-text-muted-dark font-geist">活跃任务</p>
-                    <p className="text-[15px] font-bold text-text-primary-light dark:text-white font-funnel">{data?.activeTaskCount ?? 0}</p>
-                  </div>
-                </div>
-              </div>
-
-              <div className="flex items-center justify-between pt-4 border-t border-[#D9E3F2] dark:border-[#222233]">
-                <div className="flex items-center gap-3 w-full">
-                  <div className="bg-purple-100 dark:bg-purple-900/30 text-purple-600 dark:text-purple-400 p-2 rounded-lg">
-                    <HardDrive size={20} />
-                  </div>
-                  <div className="w-full">
-                    <div className="flex justify-between items-center w-full">
-                       <p className="text-xs text-text-muted-light dark:text-text-muted-dark font-geist">离线快传占用</p>
-                       <p className="text-xs font-bold text-text-primary-light dark:text-white font-funnel">
-                         {data ? formatPercent(data.offlineTransferStorageBytes, data.offlineTransferStorageLimitBytes) : '0%'}
-                       </p>
-                    </div>
-                    <div className="w-full bg-gray-200 dark:bg-[#222233] rounded-full h-1.5 mt-1">
-                      <div className="bg-purple-500 h-1.5 rounded-full" style={{ width: `${data ? formatPercent(data.offlineTransferStorageBytes, data.offlineTransferStorageLimitBytes) : '0%'}` }}></div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-          
-          {/* Site URL Warning Component Placeholder */}
-          <div className="card-container p-6 border-orange-200 dark:border-orange-900/50 bg-orange-50/50 dark:bg-orange-900/10 animate-fade-in-up" style={{ animationDelay: '200ms' }}>
-             <div className="flex gap-3">
-                <AlertTriangle className="text-orange-500 flex-shrink-0" size={20} />
-                <div>
-                   <h4 className="text-sm font-bold text-orange-700 dark:text-orange-400 mb-1">当前邀请码</h4>
-                   <p className="text-xs text-orange-600/80 dark:text-orange-300/80 font-geist leading-relaxed">
-                     {data?.inviteCode ? `注册邀请码：${data.inviteCode}` : '后端未返回邀请码。'}
-                   </p>
-                   <p className="mt-3 text-xs font-semibold text-orange-700 dark:text-orange-400">
-                     当前累计存储：{data ? formatBytes(data.totalStorageBytes) : '-'}
-                   </p>
-                </div>
-             </div>
-          </div>
-        </div>
-
-      </div>
-      )}
+              <Alert severity="warning" icon={<AlertTriangle size={18} />}>
+                <Typography variant="subtitle2" sx={{ fontWeight: 700, mb: 0.5 }}>
+                  当前邀请码
+                </Typography>
+                <Typography variant="body2">
+                  {data?.inviteCode ? `注册邀请码：${data.inviteCode}` : '后端未返回邀请码。'}
+                </Typography>
+              </Alert>
+            </Stack>
+          </Box>
+        </Stack>
+      </AdminPage>
     </AdminLayout>
   );
 };
