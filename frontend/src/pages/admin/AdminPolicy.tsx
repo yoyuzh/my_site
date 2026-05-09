@@ -58,21 +58,11 @@ function buildPayload(policy: Partial<AdminStoragePolicy>): AdminStoragePolicyPa
   };
 }
 
-function uploadCapabilityBadges(policy: AdminStoragePolicy) {
-  return [
-    {
-      label: 'PROXY',
-      enabled: !policy.capabilities.directUpload,
-    },
-    {
-      label: 'DIRECT_SINGLE',
-      enabled: policy.capabilities.directUpload && !policy.capabilities.multipartUpload,
-    },
-    {
-      label: 'DIRECT_MULTIPART',
-      enabled: policy.capabilities.directUpload && policy.capabilities.multipartUpload,
-    },
-  ];
+function resolveUploadMode(policy: AdminStoragePolicy) {
+  if (!policy.capabilities.directUpload) {
+    return 'PROXY';
+  }
+  return policy.capabilities.multipartUpload ? 'DIRECT_MULTIPART' : 'DIRECT_SINGLE';
 }
 
 const AdminPolicy: React.FC = () => {
@@ -254,13 +244,11 @@ const AdminPolicy: React.FC = () => {
                       最大对象：{formatBytes(policy.maxSizeBytes)}
                     </Typography>
                     <Stack direction="row" spacing={0.75} useFlexGap flexWrap="wrap">
-                      {uploadCapabilityBadges(policy).map((capability) => (
-                        <AdminStatusBadge
-                          key={capability.label}
-                          label={capability.label}
-                          tone={capability.enabled ? 'success' : 'neutral'}
-                        />
-                      ))}
+                      <AdminStatusBadge label={`上传模式：${resolveUploadMode(policy)}`} tone="success" />
+                      <AdminStatusBadge
+                        label={policy.capabilities.directUpload ? '支持直传' : '代理上传'}
+                        tone={policy.capabilities.directUpload ? 'info' : 'neutral'}
+                      />
                     </Stack>
                     <Stack direction="row" spacing={0.75} useFlexGap flexWrap="wrap">
                       <AdminStatusBadge

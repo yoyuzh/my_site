@@ -1114,6 +1114,24 @@ class AdminControllerIntegrationTest {
     }
 
     @Test
+    void shouldRejectStoragePolicyMigrationWhenPrincipalUserDoesNotExist() throws Exception {
+        StoragePolicy sourcePolicy = storagePolicyRepository.findFirstByDefaultPolicyTrueOrderByIdAsc().orElseThrow();
+
+        mockMvc.perform(post("/api/admin/storage-policies/migrations")
+                        .with(user("missing-admin").roles("ADMIN"))
+                        .contentType("application/json")
+                        .content("""
+                                {
+                                  "sourcePolicyId": %d,
+                                  "targetPolicyId": %d,
+                                  "correlationId": "migration-missing-user"
+                                }
+                                """.formatted(sourcePolicy.getId(), sourcePolicy.getId())))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.code").value(1001));
+    }
+
+    @Test
     @WithMockUser(username = "portal-user", roles = "USER")
     void shouldRejectNonAdminUser() throws Exception {
         mockMvc.perform(get("/api/admin/users?page=0&size=10"))

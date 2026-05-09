@@ -1,12 +1,14 @@
 package com.yoyuzh.ops.admin.internal.web;
 
-import com.yoyuzh.boot.security.CustomUserDetailsService;
+import com.yoyuzh.identity.access.api.IdentityUserDirectoryApi;
 import com.yoyuzh.ops.admin.internal.application.AdminStoragePolicyMigrationInput;
 import com.yoyuzh.ops.admin.internal.application.AdminStorageGovernanceService;
 import com.yoyuzh.ops.admin.internal.application.AdminStoragePolicyUpsertInput;
 import com.yoyuzh.ops.admin.internal.application.AdminStoragePolicyResponse;
 import com.yoyuzh.ops.admin.internal.application.AdminStoragePolicyQueryService;
 import com.yoyuzh.shared.kernel.ApiResponse;
+import com.yoyuzh.shared.kernel.BusinessException;
+import com.yoyuzh.shared.kernel.ErrorCode;
 import com.yoyuzh.platform.job.api.BackgroundTaskResponse;
 import com.yoyuzh.platform.job.api.BackgroundTaskView;
 import jakarta.validation.Valid;
@@ -31,7 +33,7 @@ public class AdminStoragePolicyController {
 
     private final AdminStoragePolicyQueryService adminStoragePolicyQueryService;
     private final AdminStorageGovernanceService adminStorageGovernanceService;
-    private final CustomUserDetailsService userDetailsService;
+    private final IdentityUserDirectoryApi identityUserDirectoryApi;
 
     @GetMapping("/storage-policies")
     public ApiResponse<List<AdminStoragePolicyResponse>> storagePolicies() {
@@ -62,7 +64,9 @@ public class AdminStoragePolicyController {
     public ApiResponse<BackgroundTaskResponse> createStoragePolicyMigrationTask(
             @AuthenticationPrincipal UserDetails userDetails,
             @Valid @RequestBody AdminStoragePolicyMigrationCreateRequest request) {
-        Long userId = userDetailsService.loadUserId(userDetails.getUsername());
+        Long userId = identityUserDirectoryApi.findProfileByUsername(userDetails.getUsername())
+                .map(profile -> profile.id())
+                .orElseThrow(() -> new BusinessException(ErrorCode.NOT_LOGGED_IN, "用户不存在"));
         return ApiResponse.success(toTaskResponse(adminStorageGovernanceService.createStoragePolicyMigrationTask(userId, toInput(request))));
     }
 

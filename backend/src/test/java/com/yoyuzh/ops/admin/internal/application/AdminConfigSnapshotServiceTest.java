@@ -166,6 +166,17 @@ class AdminConfigSnapshotServiceTest {
         assertThat(response.webdav().enabled()).isFalse();
     }
 
+    @Test
+    void shouldExposeWebDavEnabledWhenRuntimeProviderIsWebDav() {
+        fileStorageProperties.setProvider("webdav");
+        when(storagePolicyAdminApi.readDefaultStoragePolicyAsAdmin())
+                .thenReturn(createStoragePolicy(7L, "Default WebDAV Storage"));
+
+        AdminFilesystemResponse response = adminConfigSnapshotService.getFilesystem();
+
+        assertThat(response.webdav().enabled()).isTrue();
+    }
+
     private StoragePolicyAdminView createStoragePolicy(Long id, String name) {
         return new StoragePolicyAdminView(
                 id,

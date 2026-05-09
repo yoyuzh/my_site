@@ -51,7 +51,7 @@ function parseDetails(detailsJson: string) {
   try {
     return JSON.stringify(JSON.parse(detailsJson), null, 2);
   } catch {
-    return detailsJson;
+    return '（详情解析失败，原始数据格式异常）';
   }
 }
 
