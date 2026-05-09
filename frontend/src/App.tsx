@@ -23,10 +23,7 @@ import DashboardUnderConstruction from './pages/DashboardUnderConstruction';
 import AdminHome from './pages/admin/AdminHome';
 import AdminUser from './pages/admin/AdminUser';
 import AdminSetting from './pages/admin/AdminSetting';
-import AdminGroup from './pages/admin/AdminGroup';
 import AdminPolicy from './pages/admin/AdminPolicy';
-import AdminNode from './pages/admin/AdminNode';
-import AdminOAuth from './pages/admin/AdminOAuth';
 import AdminFile from './pages/admin/AdminFile';
 import AdminBlob from './pages/admin/AdminBlob';
 import AdminTask from './pages/admin/AdminTask';
@@ -129,20 +126,26 @@ function App() {
           <Route path="/admin">
             <Route index element={<Navigate to="home" replace />} />
             <Route path="home" element={<RequireAdmin><AdminHome /></RequireAdmin>} />
-            <Route path="settings" element={<RequireAdmin><AdminSetting /></RequireAdmin>} />
-            <Route path="user" element={<RequireAdmin><AdminUser /></RequireAdmin>} />
-            
-            {/* Cloudreve Admin Routes */}
-            <Route path="group" element={<RequireAdmin><AdminGroup /></RequireAdmin>} />
-            <Route path="policy" element={<RequireAdmin><AdminPolicy /></RequireAdmin>} />
-            <Route path="node" element={<RequireAdmin><AdminNode /></RequireAdmin>} />
-            <Route path="oauth" element={<RequireAdmin><AdminOAuth /></RequireAdmin>} />
-            <Route path="file" element={<RequireAdmin><AdminFile /></RequireAdmin>} />
-            <Route path="blob" element={<RequireAdmin><AdminBlob /></RequireAdmin>} />
-            <Route path="task" element={<RequireAdmin><AdminTask /></RequireAdmin>} />
-            <Route path="share" element={<RequireAdmin><AdminShare /></RequireAdmin>} />
-            <Route path="filesystem" element={<RequireAdmin><AdminFileSystem /></RequireAdmin>} />
-
+            <Route path="system" element={<RequireAdmin><AdminFileSystem /></RequireAdmin>} />
+            <Route path="config" element={<RequireAdmin><AdminSetting /></RequireAdmin>} />
+            <Route path="settings" element={<Navigate to="/admin/config" replace />} />
+            <Route path="users" element={<RequireAdmin><AdminUser /></RequireAdmin>} />
+            <Route path="user" element={<Navigate to="/admin/users" replace />} />
+            <Route path="storage-policies" element={<RequireAdmin><AdminPolicy /></RequireAdmin>} />
+            <Route path="policy" element={<Navigate to="/admin/storage-policies" replace />} />
+            <Route path="files" element={<RequireAdmin><AdminFile /></RequireAdmin>} />
+            <Route path="file" element={<Navigate to="/admin/files" replace />} />
+            <Route path="file-blobs" element={<RequireAdmin><AdminBlob /></RequireAdmin>} />
+            <Route path="blob" element={<Navigate to="/admin/file-blobs" replace />} />
+            <Route path="tasks" element={<RequireAdmin><AdminTask /></RequireAdmin>} />
+            <Route path="task" element={<Navigate to="/admin/tasks" replace />} />
+            <Route path="shares" element={<RequireAdmin><AdminShare /></RequireAdmin>} />
+            <Route path="share" element={<Navigate to="/admin/shares" replace />} />
+            <Route path="filesystem" element={<Navigate to="/admin/system" replace />} />
+            <Route path="audits" element={<RequireAdmin><AdminUnderConstruction /></RequireAdmin>} />
+            <Route path="group" element={<RequireAdmin><AdminUnderConstruction /></RequireAdmin>} />
+            <Route path="node" element={<RequireAdmin><AdminUnderConstruction /></RequireAdmin>} />
+            <Route path="oauth" element={<RequireAdmin><AdminUnderConstruction /></RequireAdmin>} />
             <Route path="*" element={<RequireAdmin><AdminUnderConstruction /></RequireAdmin>} />
           </Route>
 
