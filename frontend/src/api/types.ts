@@ -32,6 +32,10 @@ export interface AdminListParams {
   entityType?: string;
 }
 
+export interface AdminPermissionResponse {
+  permissions: string[];
+}
+
 export interface UserCapacity {
   totalBytes: number;
   usedBytes: number;

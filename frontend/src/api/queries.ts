@@ -5,6 +5,7 @@ import {
   type AdminFileBlob,
   type AdminFilesystem,
   type AdminListParams,
+  type AdminPermissionResponse,
   type AdminSettings,
   type AdminShare,
   type AdminStoragePolicy,
@@ -153,6 +154,16 @@ export const useAdminSummary = () =>
     queryFn: () =>
       apiRequest<AdminSummary>({
         url: '/admin/summary',
+        method: 'GET',
+      }),
+  });
+
+export const useAdminPermissions = () =>
+  useQuery({
+    queryKey: ['adminPermissions'],
+    queryFn: () =>
+      apiRequest<AdminPermissionResponse>({
+        url: '/admin/permissions',
         method: 'GET',
       }),
   });
