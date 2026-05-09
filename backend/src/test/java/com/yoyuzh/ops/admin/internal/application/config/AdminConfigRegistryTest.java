@@ -3,6 +3,7 @@ package com.yoyuzh.ops.admin.internal.application.config;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
 
@@ -43,6 +44,28 @@ class AdminConfigRegistryTest {
                 .collect(Collectors.toSet());
 
         assertThat(keys).noneMatch(this::isStartupSecretKey);
+    }
+
+    @Test
+    void shouldExposeFrontendCompatibleSchemaForEditableAndNumericFields() {
+        Map<String, AdminConfigDefinition> definitionsByKey = registry.definitions().stream()
+                .collect(Collectors.toMap(AdminConfigDefinition::key, definition -> definition));
+
+        assertThat(definitionsByKey.get("registration.managementRoles").type()).isEqualTo("multi_select");
+        assertThat(definitionsByKey.get("transfer.offlineTransferStorageLimitBytes").type()).isEqualTo("number");
+        assertThat(definitionsByKey.get("queue.mediaMetadataFixedDelayMs").type()).isEqualTo("number");
+        assertThat(definitionsByKey.get("queue.mediaMetadataInitialDelayMs").type()).isEqualTo("number");
+    }
+
+    @Test
+    void shouldExposeCurrentInviteCodeAsReadOnlyDisplayField() {
+        AdminConfigDefinition definition = registry.definitions().stream()
+                .filter(candidate -> candidate.key().equals("registration.currentInviteCode"))
+                .findFirst()
+                .orElseThrow();
+
+        assertThat(definition.editable()).isFalse();
+        assertThat(definition.permissionCode()).isEqualTo("admin.settings.read");
     }
 
     private boolean isStartupSecretKey(String key) {

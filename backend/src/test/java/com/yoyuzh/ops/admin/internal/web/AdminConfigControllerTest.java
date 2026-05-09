@@ -1,6 +1,8 @@
 package com.yoyuzh.ops.admin.internal.web;
 
 import com.yoyuzh.boot.web.GlobalExceptionHandler;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.yoyuzh.ops.admin.internal.application.AdminConfigSnapshotService;
 import com.yoyuzh.ops.admin.internal.application.AdminRuntimeSettingsDefaults;
 import com.yoyuzh.ops.admin.api.AdminSettingsResponse;
@@ -13,10 +15,14 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.MvcResult;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -31,6 +37,7 @@ class AdminConfigControllerTest {
     private AdminRuntimeSettingsDefaults adminRuntimeSettingsDefaults;
 
     private MockMvc mockMvc;
+    private final ObjectMapper objectMapper = new ObjectMapper();
 
     @BeforeEach
     void setUp() {
@@ -79,14 +86,31 @@ class AdminConfigControllerTest {
                 true
         ));
 
-        mockMvc.perform(get("/api/admin/config/definitions"))
+        MvcResult result = mockMvc.perform(get("/api/admin/config/definitions"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value(0))
                 .andExpect(jsonPath("$.data").isArray())
-                .andExpect(jsonPath("$.data[0].key").value("registration.inviteCodeRequired"))
-                .andExpect(jsonPath("$.data[1].key").value("registration.currentInviteCode"))
-                .andExpect(jsonPath("$.data[10].key").value("server.storageProvider"))
-                .andExpect(jsonPath("$.data[11].key").value("server.redisEnabled"));
+                .andReturn();
+
+        Map<String, JsonNode> definitionsByKey = responseItemsByKey(result, "data");
+
+        assertThat(definitionsByKey).containsKeys(
+                "registration.inviteCodeRequired",
+                "registration.currentInviteCode",
+                "registration.managementRoles",
+                "transfer.offlineTransferStorageLimitBytes",
+                "queue.mediaMetadataFixedDelayMs",
+                "queue.mediaMetadataInitialDelayMs",
+                "server.storageProvider",
+                "server.redisEnabled"
+        );
+        assertThat(definitionsByKey.get("registration.currentInviteCode").path("editable").asBoolean()).isFalse();
+        assertThat(definitionsByKey.get("registration.currentInviteCode").path("permissionCode").asText())
+                .isEqualTo("admin.settings.read");
+        assertThat(definitionsByKey.get("registration.managementRoles").path("type").asText()).isEqualTo("multi_select");
+        assertThat(definitionsByKey.get("transfer.offlineTransferStorageLimitBytes").path("type").asText()).isEqualTo("number");
+        assertThat(definitionsByKey.get("queue.mediaMetadataFixedDelayMs").path("type").asText()).isEqualTo("number");
+        assertThat(definitionsByKey.get("queue.mediaMetadataInitialDelayMs").path("type").asText()).isEqualTo("number");
     }
 
     @Test
@@ -124,17 +148,47 @@ class AdminConfigControllerTest {
                 true
         ));
 
-        mockMvc.perform(get("/api/admin/config/snapshot"))
+        MvcResult result = mockMvc.perform(get("/api/admin/config/snapshot"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value(0))
                 .andExpect(jsonPath("$.data.fields").isArray())
-                .andExpect(jsonPath("$.data.fields[0].value").value(false))
-                .andExpect(jsonPath("$.data.fields[1].value").value("INV-CURRENT"))
-                .andExpect(jsonPath("$.data.fields[2].value[0]").value("ADMIN"))
-                .andExpect(jsonPath("$.data.fields[3].value").value(8589934592L))
-                .andExpect(jsonPath("$.data.fields[7].value").value("in-memory"))
-                .andExpect(jsonPath("$.data.fields[10].value").value("local"))
-                .andExpect(jsonPath("$.data.fields[11].value").value(false));
+                .andReturn();
+
+        Map<String, JsonNode> fieldsByKey = responseItemsByKey(result, "data.fields");
+
+        assertThat(fieldsByKey).containsKeys(
+                "registration.inviteCodeRequired",
+                "registration.currentInviteCode",
+                "registration.managementRoles",
+                "transfer.offlineTransferStorageLimitBytes",
+                "queue.backend",
+                "server.storageProvider",
+                "server.redisEnabled"
+        );
+        assertThat(fieldsByKey.get("registration.inviteCodeRequired").path("value").asBoolean()).isFalse();
+        assertThat(fieldsByKey.get("registration.currentInviteCode").path("value").asText()).isEqualTo("INV-CURRENT");
+        assertThat(fieldsByKey.get("registration.managementRoles").path("value").isArray()).isTrue();
+        assertThat(fieldsByKey.get("registration.managementRoles").path("value")).hasSize(1);
+        assertThat(fieldsByKey.get("registration.managementRoles").path("value").get(0).asText()).isEqualTo("ADMIN");
+        assertThat(fieldsByKey.get("transfer.offlineTransferStorageLimitBytes").path("value").asLong())
+                .isEqualTo(8589934592L);
+        assertThat(fieldsByKey.get("queue.backend").path("value").asText()).isEqualTo("in-memory");
+        assertThat(fieldsByKey.get("server.storageProvider").path("value").asText()).isEqualTo("local");
+        assertThat(fieldsByKey.get("server.redisEnabled").path("value").asBoolean()).isFalse();
+    }
+
+    private Map<String, JsonNode> responseItemsByKey(MvcResult result, String dataPath) throws Exception {
+        JsonNode root = objectMapper.readTree(result.getResponse().getContentAsString());
+        JsonNode items = root.at(pointer(dataPath));
+        Map<String, JsonNode> itemsByKey = new HashMap<>();
+        for (JsonNode item : items) {
+            itemsByKey.put(item.path("key").asText(), item);
+        }
+        return itemsByKey;
+    }
+
+    private String pointer(String dataPath) {
+        return "/" + dataPath.replace(".", "/");
     }
 
     private AdminSettingsResponse settingsResponse(boolean inviteCodeRequired,
