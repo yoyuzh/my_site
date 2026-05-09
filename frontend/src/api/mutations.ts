@@ -20,7 +20,6 @@ export interface AdminStoragePolicyPayload {
 export interface AdminSettingsUpdatePayload {
   registration?: {
     inviteCodeRequired: boolean;
-    currentInviteCode: string;
     managementRoles: string[];
   };
   transfer?: {

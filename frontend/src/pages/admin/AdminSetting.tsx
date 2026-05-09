@@ -23,6 +23,13 @@ type ConfigGroup = {
   fields: AdminConfigDefinition[];
 } & GroupPresentation;
 
+type TargetedSettingDirtyState = {
+  inviteCodeRequired: boolean;
+  inviteCode: boolean;
+  managementRoles: boolean;
+  offlineLimit: boolean;
+};
+
 const groupPresentationById: Record<string, GroupPresentation> = {
   registration: {
     label: '注册',
@@ -99,12 +106,20 @@ function findField(fields: AdminConfigDefinition[], key: string) {
   return fields.find((field) => field.key === key);
 }
 
+const cleanTargetedSettings: TargetedSettingDirtyState = {
+  inviteCodeRequired: false,
+  inviteCode: false,
+  managementRoles: false,
+  offlineLimit: false,
+};
+
 const AdminSetting: React.FC = () => {
   const [activeTab, setActiveTab] = useState<string>('');
   const [inviteCodeRequired, setInviteCodeRequired] = useState(false);
   const [inviteCode, setInviteCode] = useState('');
   const [managementRoles, setManagementRoles] = useState('ADMIN');
   const [offlineLimit, setOfflineLimit] = useState('');
+  const [targetedDirty, setTargetedDirty] = useState<TargetedSettingDirtyState>(cleanTargetedSettings);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const {
     data: snapshot,
@@ -134,11 +149,19 @@ const AdminSetting: React.FC = () => {
       return;
     }
 
-    setInviteCodeRequired(asBoolean(findField(fields, 'registration.inviteCodeRequired')?.value));
-    setInviteCode(asString(findField(fields, 'registration.currentInviteCode')?.value));
-    setManagementRoles(asStringArray(findField(fields, 'registration.managementRoles')?.value).join(', '));
-    setOfflineLimit(asNumberString(findField(fields, 'transfer.offlineTransferStorageLimitBytes')?.value));
-  }, [snapshot?.fields]);
+    if (!targetedDirty.inviteCodeRequired) {
+      setInviteCodeRequired(asBoolean(findField(fields, 'registration.inviteCodeRequired')?.value));
+    }
+    if (!targetedDirty.inviteCode) {
+      setInviteCode(asString(findField(fields, 'registration.currentInviteCode')?.value));
+    }
+    if (!targetedDirty.managementRoles) {
+      setManagementRoles(asStringArray(findField(fields, 'registration.managementRoles')?.value).join(', '));
+    }
+    if (!targetedDirty.offlineLimit) {
+      setOfflineLimit(asNumberString(findField(fields, 'transfer.offlineTransferStorageLimitBytes')?.value));
+    }
+  }, [snapshot?.fields, targetedDirty]);
 
   async function refreshSnapshot() {
     await refetch();
@@ -159,12 +182,16 @@ const AdminSetting: React.FC = () => {
       await updateAdminSettings({
         registration: {
           inviteCodeRequired,
-          currentInviteCode: inviteCode.trim(),
           managementRoles: roles,
         },
       });
       setStatusMessage('注册设置已保存');
       await refreshSnapshot();
+      setTargetedDirty((current) => ({
+        ...current,
+        inviteCodeRequired: false,
+        managementRoles: false,
+      }));
     } catch (error) {
       setStatusMessage(error instanceof Error ? error.message : '保存注册设置失败');
     }
@@ -175,6 +202,10 @@ const AdminSetting: React.FC = () => {
       await updateAdminInviteCode(inviteCode.trim());
       setStatusMessage('邀请码已保存');
       await refreshSnapshot();
+      setTargetedDirty((current) => ({
+        ...current,
+        inviteCode: false,
+      }));
     } catch (error) {
       setStatusMessage(error instanceof Error ? error.message : '保存邀请码失败');
     }
@@ -186,6 +217,10 @@ const AdminSetting: React.FC = () => {
       setInviteCode(result.inviteCode);
       setStatusMessage(`已生成新邀请码：${result.inviteCode}`);
       await refreshSnapshot();
+      setTargetedDirty((current) => ({
+        ...current,
+        inviteCode: false,
+      }));
     } catch (error) {
       setStatusMessage(error instanceof Error ? error.message : '生成邀请码失败');
     }
@@ -202,6 +237,10 @@ const AdminSetting: React.FC = () => {
       await updateOfflineTransferStorageLimit(nextLimit);
       setStatusMessage(`离线下载容量限制已更新为 ${formatBytes(nextLimit)}`);
       await refreshSnapshot();
+      setTargetedDirty((current) => ({
+        ...current,
+        offlineLimit: false,
+      }));
     } catch (error) {
       setStatusMessage(error instanceof Error ? error.message : '保存离线下载容量限制失败');
     }
@@ -213,7 +252,7 @@ const AdminSetting: React.FC = () => {
         <div className="mb-6">
           <h3 className="text-base font-bold text-text-primary-light dark:text-white">定向写入控制</h3>
           <p className="mt-1 text-sm text-text-muted-light dark:text-text-muted-dark">
-            通用配置写入尚未接通，当前继续使用现有注册设置接口。
+            这些注册项会立即写入现有治理配置。
           </p>
         </div>
 
@@ -231,7 +270,10 @@ const AdminSetting: React.FC = () => {
                   type="checkbox"
                   className="sr-only peer"
                   checked={inviteCodeRequired}
-                  onChange={(event) => setInviteCodeRequired(event.target.checked)}
+                  onChange={(event) => {
+                    setInviteCodeRequired(event.target.checked);
+                    setTargetedDirty((current) => ({ ...current, inviteCodeRequired: true }));
+                  }}
                 />
                 <div className="w-11 h-6 bg-[#D9E3F2] dark:bg-[#222233] peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-brand-light dark:peer-checked:bg-brand-dark"></div>
                 <span className="ml-3 text-sm font-medium text-text-secondary-light dark:text-text-secondary-dark">
@@ -247,7 +289,7 @@ const AdminSetting: React.FC = () => {
             <div className="md:col-span-1">
               <label className="block text-[14px] font-semibold text-text-primary-light dark:text-white mb-2">当前邀请码</label>
               <p className="text-[13px] text-text-muted-light dark:text-text-muted-dark leading-relaxed font-geist">
-                Schema 中该字段只读，这里继续走现有单独保存与轮换接口。
+                可单独保存，也可以生成新的邀请码。
               </p>
             </div>
             <div className="md:col-span-2 flex gap-2">
@@ -255,7 +297,10 @@ const AdminSetting: React.FC = () => {
                 type="text"
                 className="input-field flex-1"
                 value={inviteCode}
-                onChange={(event) => setInviteCode(event.target.value)}
+                onChange={(event) => {
+                  setInviteCode(event.target.value);
+                  setTargetedDirty((current) => ({ ...current, inviteCode: true }));
+                }}
               />
               <button
                 type="button"
@@ -288,7 +333,10 @@ const AdminSetting: React.FC = () => {
                 type="text"
                 className="input-field"
                 value={managementRoles}
-                onChange={(event) => setManagementRoles(event.target.value)}
+                onChange={(event) => {
+                  setManagementRoles(event.target.value);
+                  setTargetedDirty((current) => ({ ...current, managementRoles: true }));
+                }}
               />
             </div>
           </div>
@@ -322,7 +370,10 @@ const AdminSetting: React.FC = () => {
               min={1}
               className="input-field flex-1"
               value={offlineLimit}
-              onChange={(event) => setOfflineLimit(event.target.value)}
+              onChange={(event) => {
+                setOfflineLimit(event.target.value);
+                setTargetedDirty((current) => ({ ...current, offlineLimit: true }));
+              }}
             />
             <button
               type="button"
