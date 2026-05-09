@@ -159,7 +159,7 @@ const AdminShell: React.FC<AdminShellProps> = ({ children, title }) => {
                     </>
                   ) : null}
                 </div>
-                <h1 className="mt-1 truncate text-xl font-semibold text-slate-900 dark:text-white">{title}</h1>
+                <h1 className="mt-1 truncate text-xl font-semibold text-slate-900 dark:text-white">{resolvedTitle}</h1>
               </div>
 
               <div className="flex items-center gap-3">
