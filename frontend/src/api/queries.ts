@@ -1,6 +1,8 @@
 import { useQuery } from '@tanstack/react-query';
 import { apiRequest } from './client';
 import {
+  type AdminConfigDefinition,
+  type AdminConfigSnapshot,
   type AdminFile,
   type AdminFileBlob,
   type AdminFilesystem,
@@ -319,6 +321,26 @@ export const useAdminFilesystem = () =>
     queryFn: () =>
       apiRequest<AdminFilesystem>({
         url: '/admin/filesystem',
+        method: 'GET',
+      }),
+  });
+
+export const useAdminConfigDefinitions = () =>
+  useQuery({
+    queryKey: ['adminConfigDefinitions'],
+    queryFn: () =>
+      apiRequest<AdminConfigDefinition[]>({
+        url: '/admin/config/definitions',
+        method: 'GET',
+      }),
+  });
+
+export const useAdminConfigSnapshot = () =>
+  useQuery({
+    queryKey: ['adminConfigSnapshot'],
+    queryFn: () =>
+      apiRequest<AdminConfigSnapshot>({
+        url: '/admin/config/snapshot',
         method: 'GET',
       }),
   });

@@ -1,6 +1,7 @@
 import React from 'react';
 import {
   Alert,
+  Autocomplete,
   Box,
   Button,
   FormControlLabel,
@@ -44,6 +45,11 @@ function buildInitialValues(fields: AdminConfigField[]) {
 
     if (field.type === 'boolean') {
       accumulator[field.key] = false;
+      return accumulator;
+    }
+
+    if (field.type === 'multi_select') {
+      accumulator[field.key] = [];
       return accumulator;
     }
 
@@ -197,6 +203,7 @@ const supportedFieldTypes = new Set<AdminConfigField['type']>([
   'number',
   'boolean',
   'select',
+  'multi_select',
   'textarea',
 ]);
 
@@ -380,6 +387,37 @@ const AdminSchemaForm: React.FC<AdminSchemaFormProps> = ({ fields, readOnly = fa
                                   </MenuItem>
                                 ))}
                               </TextField>
+                            );
+                          }
+
+                          if (field.type === 'multi_select') {
+                            const selectedValues = Array.isArray(controllerField.value)
+                              ? controllerField.value.map((value) => String(value))
+                              : [];
+
+                            return (
+                              <Autocomplete
+                                multiple
+                                options={field.options ?? []}
+                                value={(field.options ?? []).filter((option) => selectedValues.includes(option.value))}
+                                onChange={(_, nextOptions) => {
+                                  controllerField.onChange(nextOptions.map((option) => option.value));
+                                }}
+                                disableCloseOnSelect
+                                disabled={disabled}
+                                getOptionLabel={(option) => option.label}
+                                isOptionEqualToValue={(option, value) => option.value === value.value}
+                                renderInput={(params) => (
+                                  <TextField
+                                    {...params}
+                                    fullWidth
+                                    size="small"
+                                    label={field.title}
+                                    error={fieldState.error != null}
+                                    helperText={fieldState.error?.message ?? helperText}
+                                  />
+                                )}
+                              />
                             );
                           }
 

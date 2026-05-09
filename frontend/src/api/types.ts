@@ -1,3 +1,9 @@
+import type {
+  AdminConfigFieldType,
+  AdminConfigOption,
+  AdminConfigValidationRules,
+} from '../components/admin/adminSchemaTypes';
+
 export interface PaginationResults {
   total_items: number;
   total_pages: number;
@@ -559,6 +565,31 @@ export interface AdminFilesystem {
   webdav: {
     enabled: boolean;
   };
+}
+
+export type AdminConfigSource = 'runtime' | 'environment' | 'database' | 'computed';
+
+export interface AdminConfigDefinition {
+  key: string;
+  group: string;
+  subgroup?: string | null;
+  title: string;
+  description?: string | null;
+  type: AdminConfigFieldType;
+  defaultValue?: unknown;
+  value?: unknown;
+  options?: AdminConfigOption[];
+  required: boolean;
+  editable: boolean;
+  sensitive: boolean;
+  restartRequired: boolean;
+  validationRules?: AdminConfigValidationRules;
+  permissionCode?: string | null;
+  source: AdminConfigSource;
+}
+
+export interface AdminConfigSnapshot {
+  fields: AdminConfigDefinition[];
 }
 
 export interface AdminSettings {
