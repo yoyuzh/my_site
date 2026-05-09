@@ -592,6 +592,18 @@ export interface AdminConfigSnapshot {
   fields: AdminConfigDefinition[];
 }
 
+export interface AdminConfigHistory {
+  id: number;
+  key: string;
+  beforeValue: unknown;
+  afterValue: unknown;
+  version: number;
+  reason: string;
+  actorUserId: number | null;
+  actorUsername: string;
+  createdAt: string;
+}
+
 export interface AdminSettings {
   registration: {
     inviteCodeRequired: boolean;

@@ -2,6 +2,7 @@ import { useQuery } from '@tanstack/react-query';
 import { apiRequest } from './client';
 import {
   type AdminConfigDefinition,
+  type AdminConfigHistory,
   type AdminConfigSnapshot,
   type AdminFile,
   type AdminFileBlob,
@@ -343,6 +344,23 @@ export const useAdminConfigSnapshot = () =>
         url: '/admin/config/snapshot',
         method: 'GET',
       }),
+  });
+
+export const useAdminConfigHistory = (key: string | null, page = 1, size = 10) =>
+  useQuery({
+    queryKey: ['adminConfigHistory', key, page, size],
+    queryFn: async () => {
+      const result = await apiRequest<QueryPage<AdminConfigHistory>>({
+        url: `/admin/config/values/${encodeURIComponent(key as string)}/history`,
+        method: 'GET',
+        params: {
+          page: toBackendPage({ page, page_size: size }),
+          size,
+        },
+      });
+      return normalizePage(result);
+    },
+    enabled: key != null,
   });
 
 export const useAdminSettings = () =>

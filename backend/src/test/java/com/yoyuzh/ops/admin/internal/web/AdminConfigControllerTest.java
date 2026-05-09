@@ -35,6 +35,8 @@ class AdminConfigControllerTest {
     private AdminConfigSnapshotService adminConfigSnapshotService;
     @Mock
     private AdminRuntimeSettingsDefaults adminRuntimeSettingsDefaults;
+    @Mock
+    private com.yoyuzh.ops.admin.internal.application.config.AdminConfigValueGovernanceService adminConfigValueGovernanceService;
 
     private MockMvc mockMvc;
     private final ObjectMapper objectMapper = new ObjectMapper();
@@ -44,7 +46,8 @@ class AdminConfigControllerTest {
         RuntimeAdminConfigSchemaApi adminConfigSchemaApi = new RuntimeAdminConfigSchemaApi(
                 new AdminConfigRegistry(),
                 adminConfigSnapshotService,
-                adminRuntimeSettingsDefaults
+                adminRuntimeSettingsDefaults,
+                adminConfigValueGovernanceService
         );
         mockMvc = MockMvcBuilders.standaloneSetup(new AdminConfigController(adminConfigSchemaApi))
                 .setControllerAdvice(new GlobalExceptionHandler())

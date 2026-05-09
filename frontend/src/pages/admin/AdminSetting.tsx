@@ -1,16 +1,16 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Image as ImageIcon, KeyRound, RefreshCw, Save, Server, Settings } from 'lucide-react';
+import { History, Image as ImageIcon, KeyRound, RefreshCw, Server, Settings } from 'lucide-react';
 import AdminLayout from '../../components/AdminLayout';
+import AdminConfirmDialog from '../../components/admin/AdminConfirmDialog';
 import AdminSchemaForm from '../../components/admin/AdminSchemaForm';
 import type { AdminConfigDefinition } from '../../api/types';
-import { useAdminConfigSnapshot } from '../../api/queries';
+import { useAdminConfigHistory, useAdminConfigSnapshot } from '../../api/queries';
 import {
+  rollbackAdminConfigValue,
   rotateAdminInviteCode,
+  updateAdminConfigValue,
   updateAdminInviteCode,
-  updateAdminSettings,
-  updateOfflineTransferStorageLimit,
 } from '../../api/mutations';
-import { formatBytes } from '../../lib/format';
 
 type GroupPresentation = {
   label: string;
@@ -24,10 +24,7 @@ type ConfigGroup = {
 } & GroupPresentation;
 
 type TargetedSettingDirtyState = {
-  inviteCodeRequired: boolean;
   inviteCode: boolean;
-  managementRoles: boolean;
-  offlineLimit: boolean;
 };
 
 const groupPresentationById: Record<string, GroupPresentation> = {
@@ -58,25 +55,25 @@ const groupPresentationById: Record<string, GroupPresentation> = {
   },
 };
 
-function parsePositiveBytes(value: string) {
-  const parsed = Number(value);
-  return Number.isFinite(parsed) && parsed > 0 ? Math.floor(parsed) : null;
-}
-
-function asBoolean(value: unknown, fallback = false) {
-  return typeof value === 'boolean' ? value : fallback;
-}
-
 function asString(value: unknown, fallback = '') {
   return typeof value === 'string' ? value : fallback;
 }
 
-function asStringArray(value: unknown) {
-  return Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string') : [];
+function isGenericWritableField(field: AdminConfigDefinition) {
+  return field.source === 'database' && field.editable;
 }
 
-function asNumberString(value: unknown, fallback = '') {
-  return typeof value === 'number' && Number.isFinite(value) ? String(value) : fallback;
+function formatConfigValue(value: unknown) {
+  if (Array.isArray(value)) {
+    return value.join(', ');
+  }
+  if (typeof value === 'boolean') {
+    return value ? '开启' : '关闭';
+  }
+  if (value == null) {
+    return '-';
+  }
+  return String(value);
 }
 
 function groupFields(fields: AdminConfigDefinition[]): ConfigGroup[] {
@@ -107,26 +104,28 @@ function findField(fields: AdminConfigDefinition[], key: string) {
 }
 
 const cleanTargetedSettings: TargetedSettingDirtyState = {
-  inviteCodeRequired: false,
   inviteCode: false,
-  managementRoles: false,
-  offlineLimit: false,
 };
 
 const AdminSetting: React.FC = () => {
   const [activeTab, setActiveTab] = useState<string>('');
-  const [inviteCodeRequired, setInviteCodeRequired] = useState(false);
   const [inviteCode, setInviteCode] = useState('');
-  const [managementRoles, setManagementRoles] = useState('ADMIN');
-  const [offlineLimit, setOfflineLimit] = useState('');
   const [targetedDirty, setTargetedDirty] = useState<TargetedSettingDirtyState>(cleanTargetedSettings);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
+  const [selectedHistoryKey, setSelectedHistoryKey] = useState<string | null>(null);
+  const [rollbackTarget, setRollbackTarget] = useState<{ key: string; version: number } | null>(null);
+  const [isRollingBack, setIsRollingBack] = useState(false);
   const {
     data: snapshot,
     isLoading,
     isError,
     refetch,
   } = useAdminConfigSnapshot();
+  const {
+    data: historyPage,
+    isLoading: isHistoryLoading,
+    refetch: refetchHistory,
+  } = useAdminConfigHistory(selectedHistoryKey, 1, 10);
 
   const groups = useMemo(() => groupFields(snapshot?.fields ?? []), [snapshot?.fields]);
   const activeGroup = useMemo(
@@ -144,22 +143,26 @@ const AdminSetting: React.FC = () => {
   }, [groups]);
 
   useEffect(() => {
+    if (!activeGroup) {
+      setSelectedHistoryKey(null);
+      return;
+    }
+    const writableKeys = activeGroup.fields.filter(isGenericWritableField).map((field) => field.key);
+    if (writableKeys.length === 0) {
+      setSelectedHistoryKey(null);
+      return;
+    }
+    setSelectedHistoryKey((current) => (current && writableKeys.includes(current) ? current : writableKeys[0]));
+  }, [activeGroup]);
+
+  useEffect(() => {
     const fields = snapshot?.fields;
     if (!fields) {
       return;
     }
 
-    if (!targetedDirty.inviteCodeRequired) {
-      setInviteCodeRequired(asBoolean(findField(fields, 'registration.inviteCodeRequired')?.value));
-    }
     if (!targetedDirty.inviteCode) {
       setInviteCode(asString(findField(fields, 'registration.currentInviteCode')?.value));
-    }
-    if (!targetedDirty.managementRoles) {
-      setManagementRoles(asStringArray(findField(fields, 'registration.managementRoles')?.value).join(', '));
-    }
-    if (!targetedDirty.offlineLimit) {
-      setOfflineLimit(asNumberString(findField(fields, 'transfer.offlineTransferStorageLimitBytes')?.value));
     }
   }, [snapshot?.fields, targetedDirty]);
 
@@ -167,33 +170,46 @@ const AdminSetting: React.FC = () => {
     await refetch();
   }
 
-  async function saveRegistration() {
-    const roles = managementRoles
-      .split(',')
-      .map((role) => role.trim())
-      .filter(Boolean);
-
-    if (roles.length === 0) {
-      setStatusMessage('管理角色不能为空');
+  async function saveGenericConfigValues(values: Record<string, unknown>) {
+    if (!activeGroup) {
+      return;
+    }
+    const writableKeys = new Set(activeGroup.fields.filter(isGenericWritableField).map((field) => field.key));
+    const updates = Object.entries(values).filter(([key]) => writableKeys.has(key));
+    if (updates.length === 0) {
+      setStatusMessage('当前分组没有可保存的通用配置');
       return;
     }
 
     try {
-      await updateAdminSettings({
-        registration: {
-          inviteCodeRequired,
-          managementRoles: roles,
-        },
-      });
-      setStatusMessage('注册设置已保存');
+      for (const [key, value] of updates) {
+        await updateAdminConfigValue(key, value, 'Updated from admin settings');
+      }
+      setStatusMessage('配置已保存');
       await refreshSnapshot();
-      setTargetedDirty((current) => ({
-        ...current,
-        inviteCodeRequired: false,
-        managementRoles: false,
-      }));
+      if (selectedHistoryKey) {
+        await refetchHistory();
+      }
     } catch (error) {
-      setStatusMessage(error instanceof Error ? error.message : '保存注册设置失败');
+      setStatusMessage(error instanceof Error ? error.message : '保存配置失败');
+    }
+  }
+
+  async function confirmRollback() {
+    if (!rollbackTarget) {
+      return;
+    }
+    setIsRollingBack(true);
+    try {
+      await rollbackAdminConfigValue(rollbackTarget.key, rollbackTarget.version);
+      setStatusMessage(`已回滚到版本 ${rollbackTarget.version}`);
+      setRollbackTarget(null);
+      await refreshSnapshot();
+      await refetchHistory();
+    } catch (error) {
+      setStatusMessage(error instanceof Error ? error.message : '回滚配置失败');
+    } finally {
+      setIsRollingBack(false);
     }
   }
 
@@ -226,68 +242,22 @@ const AdminSetting: React.FC = () => {
     }
   }
 
-  async function saveOfflineLimit() {
-    const nextLimit = parsePositiveBytes(offlineLimit);
-    if (nextLimit == null) {
-      setStatusMessage('离线下载容量限制必须是正数字节数');
-      return;
-    }
-
-    try {
-      await updateOfflineTransferStorageLimit(nextLimit);
-      setStatusMessage(`离线下载容量限制已更新为 ${formatBytes(nextLimit)}`);
-      await refreshSnapshot();
-      setTargetedDirty((current) => ({
-        ...current,
-        offlineLimit: false,
-      }));
-    } catch (error) {
-      setStatusMessage(error instanceof Error ? error.message : '保存离线下载容量限制失败');
-    }
-  }
-
   function renderRegistrationControls() {
     return (
       <div className="mt-6 rounded-2xl border border-[#D9E3F2] dark:border-[#222233] bg-white/70 dark:bg-[#0F1017] p-6">
         <div className="mb-6">
-          <h3 className="text-base font-bold text-text-primary-light dark:text-white">定向写入控制</h3>
+          <h3 className="text-base font-bold text-text-primary-light dark:text-white">邀请码</h3>
           <p className="mt-1 text-sm text-text-muted-light dark:text-text-muted-dark">
-            这些注册项会立即写入现有治理配置。
+            保存当前邀请码，或直接生成新的邀请码。
           </p>
         </div>
 
-        <form className="space-y-6" onSubmit={(event) => event.preventDefault()}>
+        <form onSubmit={(event) => event.preventDefault()}>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
             <div className="md:col-span-1">
-              <label className="block text-[14px] font-semibold text-text-primary-light dark:text-white mb-2">邀请码注册</label>
-              <p className="text-[13px] text-text-muted-light dark:text-text-muted-dark leading-relaxed font-geist">
-                控制新用户注册是否必须填写当前邀请码。
-              </p>
-            </div>
-            <div className="md:col-span-2 flex items-center">
-              <label className="relative inline-flex items-center cursor-pointer">
-                <input
-                  type="checkbox"
-                  className="sr-only peer"
-                  checked={inviteCodeRequired}
-                  onChange={(event) => {
-                    setInviteCodeRequired(event.target.checked);
-                    setTargetedDirty((current) => ({ ...current, inviteCodeRequired: true }));
-                  }}
-                />
-                <div className="w-11 h-6 bg-[#D9E3F2] dark:bg-[#222233] peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-brand-light dark:peer-checked:bg-brand-dark"></div>
-                <span className="ml-3 text-sm font-medium text-text-secondary-light dark:text-text-secondary-dark">
-                  {inviteCodeRequired ? '开启' : '关闭'}
-                </span>
+              <label className="block text-[14px] font-semibold text-text-primary-light dark:text-white mb-2">
+                当前邀请码
               </label>
-            </div>
-          </div>
-
-          <hr className="border-[#D9E3F2] dark:border-[#222233]" />
-
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            <div className="md:col-span-1">
-              <label className="block text-[14px] font-semibold text-text-primary-light dark:text-white mb-2">当前邀请码</label>
               <p className="text-[13px] text-text-muted-light dark:text-text-muted-dark leading-relaxed font-geist">
                 可单独保存，也可以生成新的邀请码。
               </p>
@@ -318,72 +288,77 @@ const AdminSetting: React.FC = () => {
               </button>
             </div>
           </div>
-
-          <hr className="border-[#D9E3F2] dark:border-[#222233]" />
-
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            <div className="md:col-span-1">
-              <label className="block text-[14px] font-semibold text-text-primary-light dark:text-white mb-2">管理角色</label>
-              <p className="text-[13px] text-text-muted-light dark:text-text-muted-dark leading-relaxed font-geist">
-                逗号分隔，保存时会写回现有注册治理配置。
-              </p>
-            </div>
-            <div className="md:col-span-2">
-              <input
-                type="text"
-                className="input-field"
-                value={managementRoles}
-                onChange={(event) => {
-                  setManagementRoles(event.target.value);
-                  setTargetedDirty((current) => ({ ...current, managementRoles: true }));
-                }}
-              />
-            </div>
-          </div>
-
-          <div className="pt-2 flex justify-end">
-            <button type="button" className="btn-primary flex items-center gap-2" onClick={() => void saveRegistration()}>
-              <Save size={18} /> 保存注册设置
-            </button>
-          </div>
         </form>
       </div>
     );
   }
 
-  function renderTransferControls(fields: AdminConfigDefinition[]) {
-    const snapshotLimit = findField(fields, 'transfer.offlineTransferStorageLimitBytes')?.value;
+  function renderHistoryPanel(fields: AdminConfigDefinition[]) {
+    const writableFields = fields.filter(isGenericWritableField);
+    if (writableFields.length === 0) {
+      return null;
+    }
+    const activeHistoryField = writableFields.find((field) => field.key === selectedHistoryKey) ?? writableFields[0];
 
     return (
-      <div className="mt-6 rounded-2xl border border-[#D9E3F2] dark:border-[#222233] bg-white/70 dark:bg-[#0F1017] p-6">
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-          <div className="md:col-span-1">
-            <label className="block text-[14px] font-semibold text-text-primary-light dark:text-white mb-2">离线下载容量限制</label>
-            <p className="text-[13px] text-text-muted-light dark:text-text-muted-dark leading-relaxed font-geist">
-              当前快照值：
-              {typeof snapshotLimit === 'number' ? ` ${formatBytes(snapshotLimit)}` : ' 未知'}
+      <div className="rounded-2xl border border-[#D9E3F2] dark:border-[#222233] bg-white/70 dark:bg-[#0F1017] p-6">
+        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3 mb-4">
+          <div>
+            <h3 className="text-base font-bold text-text-primary-light dark:text-white flex items-center gap-2">
+              <History size={18} /> 变更历史
+            </h3>
+            <p className="mt-1 text-sm text-text-muted-light dark:text-text-muted-dark">
+              查看可写配置的最近版本，并按需恢复。
             </p>
           </div>
-          <div className="md:col-span-2 flex gap-2">
-            <input
-              type="number"
-              min={1}
-              className="input-field flex-1"
-              value={offlineLimit}
-              onChange={(event) => {
-                setOfflineLimit(event.target.value);
-                setTargetedDirty((current) => ({ ...current, offlineLimit: true }));
-              }}
-            />
-            <button
-              type="button"
-              className="bg-white dark:bg-transparent border border-[#D9E3F2] dark:border-[#222233] px-4 rounded-lg text-sm font-semibold"
-              onClick={() => void saveOfflineLimit()}
-            >
-              保存限制
-            </button>
-          </div>
+          <select
+            className="input-field md:w-72"
+            value={activeHistoryField.key}
+            onChange={(event) => setSelectedHistoryKey(event.target.value)}
+          >
+            {writableFields.map((field) => (
+              <option key={field.key} value={field.key}>
+                {field.title}
+              </option>
+            ))}
+          </select>
         </div>
+
+        {isHistoryLoading ? (
+          <div className="py-6 text-sm text-text-muted-light dark:text-text-muted-dark">加载中...</div>
+        ) : historyPage?.items.length ? (
+          <div className="space-y-3">
+            {historyPage.items.map((item) => (
+              <div
+                key={item.id}
+                className="rounded-xl border border-[#D9E3F2] dark:border-[#222233] bg-white dark:bg-[#111117] px-4 py-3"
+              >
+                <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="text-sm font-semibold text-text-primary-light dark:text-white">
+                      版本 {item.version} · {item.actorUsername}
+                    </div>
+                    <div className="mt-1 text-xs text-text-muted-light dark:text-text-muted-dark">
+                      {new Date(item.createdAt).toLocaleString()}
+                    </div>
+                    <div className="mt-2 text-sm text-text-secondary-light dark:text-text-secondary-dark">
+                      {formatConfigValue(item.beforeValue)} → {formatConfigValue(item.afterValue)}
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    className="bg-white dark:bg-transparent border border-[#D9E3F2] dark:border-[#222233] px-3 py-2 rounded-lg text-sm font-semibold"
+                    onClick={() => setRollbackTarget({ key: item.key, version: item.version })}
+                  >
+                    回滚
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div className="py-6 text-sm text-text-muted-light dark:text-text-muted-dark">暂无变更历史</div>
+        )}
       </div>
     );
   }
@@ -413,10 +388,15 @@ const AdminSetting: React.FC = () => {
           <p className="mt-2 text-sm text-text-muted-light dark:text-text-muted-dark">{activeGroup.description}</p>
         </div>
 
-        <AdminSchemaForm fields={activeGroup.fields} readOnly />
+        <AdminSchemaForm
+          fields={activeGroup.fields}
+          readOnly={!activeGroup.fields.some(isGenericWritableField)}
+          onSubmit={activeGroup.fields.some(isGenericWritableField) ? (values) => void saveGenericConfigValues(values) : undefined}
+        />
+
+        {renderHistoryPanel(activeGroup.fields)}
 
         {activeGroup.id === 'registration' ? renderRegistrationControls() : null}
-        {activeGroup.id === 'transfer' ? renderTransferControls(activeGroup.fields) : null}
       </div>
     );
   }
@@ -454,6 +434,16 @@ const AdminSetting: React.FC = () => {
           <div className="card-container p-8 animate-fade-in-up">{renderActiveGroup()}</div>
         </div>
       </div>
+
+      <AdminConfirmDialog
+        open={rollbackTarget != null}
+        title="回滚配置"
+        description={rollbackTarget ? `确认恢复到版本 ${rollbackTarget.version}？` : ''}
+        confirmLabel="确认回滚"
+        isSubmitting={isRollingBack}
+        onConfirm={() => void confirmRollback()}
+        onClose={() => setRollbackTarget(null)}
+      />
     </AdminLayout>
   );
 };
