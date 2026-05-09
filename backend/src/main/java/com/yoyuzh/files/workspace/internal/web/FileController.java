@@ -4,9 +4,9 @@ import com.yoyuzh.boot.security.AuthenticatedUserPrincipal;
 import com.yoyuzh.boot.security.CustomUserDetailsService;
 import com.yoyuzh.shared.kernel.ApiResponse;
 import com.yoyuzh.shared.kernel.PageResponse;
-import com.yoyuzh.files.upload.CompleteUploadRequest;
-import com.yoyuzh.files.upload.InitiateUploadRequest;
-import com.yoyuzh.files.upload.InitiateUploadResponse;
+import com.yoyuzh.files.upload.api.CompleteUploadRequest;
+import com.yoyuzh.files.upload.api.InitiateUploadRequest;
+import com.yoyuzh.files.upload.api.InitiateUploadResponse;
 import com.yoyuzh.files.workspace.api.BatchFileOperationRequest;
 import com.yoyuzh.files.workspace.api.DownloadUrlResponse;
 import com.yoyuzh.files.workspace.api.FavoriteFileResponse;
@@ -19,6 +19,8 @@ import com.yoyuzh.files.workspace.api.WorkspaceTagResponse;
 import com.yoyuzh.files.workspace.api.WorkspaceArchiveListing;
 import com.yoyuzh.files.workspace.api.WorkspaceDownloadResult;
 import com.yoyuzh.files.workspace.api.WorkspaceMoveResult;
+import com.yoyuzh.files.workspace.api.WorkspaceMutationTaskApi;
+import com.yoyuzh.files.workspace.api.WorkspaceMutationTaskView;
 import com.yoyuzh.files.workspace.api.WorkspaceUserContext;
 import com.yoyuzh.files.workspace.internal.application.FileService;
 import com.yoyuzh.files.workspace.internal.application.FileViewerConfigService;
@@ -60,6 +62,7 @@ public class FileController {
     private final FileViewerConfigService fileViewerConfigService;
     private final WorkspaceRequestProbe workspaceRequestProbe;
     private final WorkspaceViewerTokenService workspaceViewerTokenService;
+    private final WorkspaceMutationTaskApi workspaceMutationTaskApi;
 
     @Operation(summary = "获取文件打开方式配置")
     @GetMapping("/viewers/config")
@@ -301,21 +304,13 @@ public class FileController {
 
     @Operation(summary = "批量删除文件")
     @PostMapping("/batch/delete")
-    public ApiResponse<Void> batchDelete(@AuthenticationPrincipal UserDetails principal,
-                                         @Valid @RequestBody BatchFileOperationRequest request) {
-        if (request.mode() == null) {
-            fileService.batchDelete(
-                    currentUserId(principal),
-                    request.fileIds()
-            );
-        } else {
-            fileService.batchDelete(
-                    currentUserId(principal),
-                    request.fileIds(),
-                    request.mode()
-            );
-        }
-        return ApiResponse.success();
+    public ApiResponse<WorkspaceMutationTaskView> batchDelete(@AuthenticationPrincipal UserDetails principal,
+                                                              @Valid @RequestBody BatchFileOperationRequest request) {
+        return ApiResponse.success(workspaceMutationTaskApi.enqueueDelete(
+                currentUserId(principal),
+                request.fileIds(),
+                request.mode()
+        ));
     }
 
     @Operation(summary = "收藏文件列表")
@@ -442,33 +437,39 @@ public class FileController {
 
     @Operation(summary = "重命名文件")
     @PatchMapping("/{fileId}/rename")
-    public ApiResponse<FileMetadataResponse> rename(@AuthenticationPrincipal UserDetails principal,
-                                                    @PathVariable Long fileId,
-                                                    @Valid @RequestBody RenameFileRequest request) {
-        return ApiResponse.success(
-                fileService.rename(currentUserId(principal), fileId, request.filename()));
+    public ApiResponse<WorkspaceMutationTaskView> rename(@AuthenticationPrincipal UserDetails principal,
+                                                         @PathVariable Long fileId,
+                                                         @Valid @RequestBody RenameFileRequest request) {
+        return ApiResponse.success(workspaceMutationTaskApi.enqueueRename(
+                currentUserId(principal),
+                fileId,
+                request.filename()
+        ));
     }
 
     @Operation(summary = "移动文件")
     @PatchMapping("/{fileId}/move")
-    public ApiResponse<WorkspaceMoveResult> move(@AuthenticationPrincipal UserDetails principal,
-                                                 @PathVariable Long fileId,
-                                                 @Valid @RequestBody MoveFileRequest request) {
-        return ApiResponse.success(
-                fileService.move(currentUserId(principal), fileId, request.resolvedTargetPath(), request.conflictStrategy()));
+    public ApiResponse<WorkspaceMutationTaskView> move(@AuthenticationPrincipal UserDetails principal,
+                                                       @PathVariable Long fileId,
+                                                       @Valid @RequestBody MoveFileRequest request) {
+        return ApiResponse.success(workspaceMutationTaskApi.enqueueMove(
+                currentUserId(principal),
+                List.of(fileId),
+                request.resolvedTargetPath(),
+                request.conflictStrategy()
+        ));
     }
 
     @Operation(summary = "批量移动文件")
     @PostMapping("/batch/move")
-    public ApiResponse<WorkspaceMoveResult> batchMove(@AuthenticationPrincipal UserDetails principal,
-                                                      @Valid @RequestBody BatchMoveFileRequest request) {
-        return ApiResponse.success(
-                fileService.batchMove(
-                        currentUserId(principal),
-                        request.fileIds(),
-                        request.targetPath(),
-                        request.conflictStrategy()
-                ));
+    public ApiResponse<WorkspaceMutationTaskView> batchMove(@AuthenticationPrincipal UserDetails principal,
+                                                            @Valid @RequestBody BatchMoveFileRequest request) {
+        return ApiResponse.success(workspaceMutationTaskApi.enqueueMove(
+                currentUserId(principal),
+                request.fileIds(),
+                request.targetPath(),
+                request.conflictStrategy()
+        ));
     }
 
     @Operation(summary = "更新文件外观")
@@ -496,11 +497,14 @@ public class FileController {
 
     @Operation(summary = "删除文件")
     @DeleteMapping("/{fileId}")
-    public ApiResponse<Void> delete(@AuthenticationPrincipal UserDetails principal,
-                                    @PathVariable Long fileId,
-                                    @RequestParam(defaultValue = "RECYCLE") FileDeleteMode mode) {
-        fileService.delete(currentUserId(principal), fileId, mode);
-        return ApiResponse.success();
+    public ApiResponse<WorkspaceMutationTaskView> delete(@AuthenticationPrincipal UserDetails principal,
+                                                         @PathVariable Long fileId,
+                                                         @RequestParam(defaultValue = "RECYCLE") FileDeleteMode mode) {
+        return ApiResponse.success(workspaceMutationTaskApi.enqueueDelete(
+                currentUserId(principal),
+                List.of(fileId),
+                mode
+        ));
     }
 
     @Operation(summary = "从回收站恢复文件")

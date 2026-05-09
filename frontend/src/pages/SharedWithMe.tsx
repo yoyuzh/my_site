@@ -21,6 +21,7 @@ import {
 } from '@mui/icons-material';
 import type { SavedShareItem, ShareItem } from '../api/types';
 import { UnifiedList, UnifiedListRow, UnifiedPageContent, UnifiedListColumn } from '../components/common/UnifiedPageContent';
+import { showToast } from '../components/files/WorkspaceActionToastHost';
 
 const columns: UnifiedListColumn[] = [
   { label: '名称/文件', flex: 1.5 },
@@ -41,7 +42,14 @@ const SharedWithMe: React.FC = () => {
   const deleteMutation = useMutation({
     mutationFn: deleteSavedShare,
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['sharedWithMe'] });
+      showToast({ message: '共享记录已移除', severity: 'success' });
+      if (savedShares.length <= 1 && page > 1) {
+        setPage((current) => Math.max(1, current - 1));
+      }
+      void queryClient.invalidateQueries({ queryKey: ['sharedWithMe'] });
+    },
+    onError: (error) => {
+      showToast({ message: error instanceof Error ? error.message : '移除共享记录失败', severity: 'error' });
     },
   });
 
@@ -117,7 +125,12 @@ const SharedWithMe: React.FC = () => {
                   </IconButton>
                 </Tooltip>
                 <Tooltip title="移除记录">
-                  <IconButton size="small" color="error" onClick={() => handleRemove(item.id)}>
+                  <IconButton
+                    size="small"
+                    color="error"
+                    onClick={() => handleRemove(item.id)}
+                    disabled={deleteMutation.isPending && deleteMutation.variables === item.id}
+                  >
                     <Delete sx={{ fontSize: 18 }} />
                   </IconButton>
                 </Tooltip>

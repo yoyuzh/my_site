@@ -6,7 +6,8 @@ import BackgroundEffects from '../components/BackgroundEffects';
 import BrandMark from '../components/BrandMark';
 import { register } from '../lib/auth';
 import { ApiError } from '../api/client';
-import { getDefaultSignedInRoute, getSession } from '../lib/session';
+import { useStoredSessionValidation } from '../hooks/useStoredSessionValidation';
+import { getDefaultSignedInRoute } from '../lib/session';
 
 const Register: React.FC = () => {
   const [form, setForm] = useState({
@@ -18,7 +19,7 @@ const Register: React.FC = () => {
     confirmPassword: '',
   });
   const navigate = useNavigate();
-  const session = getSession();
+  const { status: sessionStatus, session } = useStoredSessionValidation();
   const registerMutation = useMutation({
     mutationFn: register,
     onSuccess: (result) => {
@@ -26,7 +27,7 @@ const Register: React.FC = () => {
     },
   });
 
-  if (session) {
+  if (sessionStatus === 'authenticated' && session) {
     return <Navigate to={getDefaultSignedInRoute(session.user.role)} replace />;
   }
 
@@ -143,8 +144,8 @@ const Register: React.FC = () => {
               </p>
             ) : null}
 
-            <button className="btn-primary w-full mt-4 h-[50px]" disabled={registerMutation.isPending}>
-              {registerMutation.isPending ? '注册中...' : '注册'}
+            <button className="btn-primary w-full mt-4 h-[50px]" disabled={registerMutation.isPending || sessionStatus === 'checking'}>
+              {sessionStatus === 'checking' ? '正在检查登录状态...' : registerMutation.isPending ? '注册中...' : '注册'}
             </button>
           </form>
 

@@ -5,6 +5,7 @@ import com.yoyuzh.boot.security.CustomUserDetailsService;
 import com.yoyuzh.files.workspace.api.DownloadUrlResponse;
 import com.yoyuzh.files.workspace.api.FileDetailResponse;
 import com.yoyuzh.files.workspace.api.FavoriteFileResponse;
+import com.yoyuzh.files.workspace.api.WorkspaceMutationTaskApi;
 import com.yoyuzh.files.workspace.internal.application.FileViewerConfigService;
 import com.yoyuzh.files.workspace.internal.application.WorkspaceTagService;
 import com.yoyuzh.files.workspace.internal.application.FileService;
@@ -49,6 +50,7 @@ class FileProductCapabilityControllerTest {
     private WorkspaceTagService workspaceTagService;
     private FileViewerConfigService fileViewerConfigService;
     private WorkspaceViewerTokenService workspaceViewerTokenService;
+    private WorkspaceMutationTaskApi workspaceMutationTaskApi;
     private MockMvc mockMvc;
 
     @BeforeEach
@@ -58,6 +60,7 @@ class FileProductCapabilityControllerTest {
         workspaceTagService = mock(WorkspaceTagService.class);
         fileViewerConfigService = new FileViewerConfigService(true);
         workspaceViewerTokenService = mock(WorkspaceViewerTokenService.class);
+        workspaceMutationTaskApi = mock(WorkspaceMutationTaskApi.class);
         when(userDetailsService.loadUserId("alice")).thenReturn(7L);
         when(userDetailsService.loadUserByUsername("alice")).thenReturn(userPrincipal());
         when(workspaceTagService.listFileTags(eq(7L), eq(1L))).thenReturn(List.of());
@@ -67,7 +70,8 @@ class FileProductCapabilityControllerTest {
                         workspaceTagService,
                         fileViewerConfigService,
                         WorkspaceRequestProbe.disabled(),
-                        workspaceViewerTokenService
+                        workspaceViewerTokenService,
+                        workspaceMutationTaskApi
                 ))
                 .setCustomArgumentResolvers(authenticationPrincipalResolver())
                 .build();
@@ -163,7 +167,7 @@ class FileProductCapabilityControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value(0));
 
-        verify(fileService).batchDelete(eq(7L), eq(List.of(1L, 2L)));
+        verify(workspaceMutationTaskApi).enqueueDelete(eq(7L), eq(List.of(1L, 2L)), eq(null));
     }
 
     @Test

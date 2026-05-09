@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { Loader2, RefreshCw } from 'lucide-react';
+import type { FileItem } from '../../api/types';
 import { listFiles } from '../../lib/files';
 import { getSession } from '../../lib/session';
 import {
@@ -19,6 +20,12 @@ const TREE_PAGE_SIZE = 200;
 let cachedNodes: Record<string, WorkspaceFolderTreeNodeState> | null = null;
 let cachedTreeUserId: number | null = null;
 
+type DirectorySeed = {
+  path: string;
+  items: FileItem[] | null;
+  loading: boolean;
+};
+
 function createTreeNode(path: string): WorkspaceFolderTreeNodeState {
   return {
     path,
@@ -32,11 +39,10 @@ function getCurrentTreeUserId() {
   return getSession()?.user.id ?? null;
 }
 
-function createRootLoadingNodes() {
+function createRootInitialNodes() {
   return {
     [ROOT_PATH]: {
       ...createTreeNode(ROOT_PATH),
-      childrenStatus: 'loading' as const,
     },
   };
 }
@@ -48,7 +54,7 @@ function getInitialCachedNodes() {
     cachedTreeUserId = currentUserId;
   }
 
-  return cachedNodes ?? createRootLoadingNodes();
+  return cachedNodes ?? createRootInitialNodes();
 }
 
 function getLogicalPath(path: string, filename: string) {
@@ -68,6 +74,42 @@ function getNearestLoadedAncestorPath(path: string, nodes: Record<string, Worksp
     candidatePath = slashIndex <= 0 ? ROOT_PATH : candidatePath.slice(0, slashIndex);
   }
   return nodes[candidatePath] ? candidatePath : ROOT_PATH;
+}
+
+function applyDirectoryItems(
+  current: Record<string, WorkspaceFolderTreeNodeState>,
+  path: string,
+  items: FileItem[],
+) {
+  const normalizedPath = normalizeWorkspaceFolderPath(path);
+  const folders = items
+    .filter((item) => item.directory)
+    .map((item) => ({
+      path: normalizeWorkspaceFolderPath(getLogicalPath(item.path, item.filename)),
+      name: item.filename,
+      hasChildDirectory: item.hasChildDirectory,
+      customEmoji: item.customEmoji,
+      folderColor: item.folderColor,
+    }));
+  const next = { ...current };
+
+  next[normalizedPath] = {
+    ...(next[normalizedPath] ?? createTreeNode(normalizedPath)),
+    childPaths: folders.map((folder) => folder.path),
+    childrenStatus: folders.length > 0 ? 'has-folders' : 'empty',
+  };
+
+  for (const folder of folders) {
+    next[folder.path] = {
+      ...(next[folder.path] ?? createTreeNode(folder.path)),
+      name: folder.name,
+      childrenStatus: folder.hasChildDirectory ? 'has-folders' : 'empty',
+      customEmoji: folder.customEmoji,
+      folderColor: folder.folderColor,
+    };
+  }
+
+  return next;
 }
 
 function restoreExpandedPaths() {
@@ -102,7 +144,8 @@ const WorkspaceFolderTree: React.FC<{
   onNavigate?: () => void;
   registerDropTarget?: (el: HTMLElement | null, path: string) => void;
   activeDropTarget?: string | null;
-}> = ({ onNavigate, registerDropTarget, activeDropTarget }) => {
+  directorySeed?: DirectorySeed;
+}> = ({ onNavigate, registerDropTarget, activeDropTarget, directorySeed }) => {
   const location = useLocation();
   const navigate = useNavigate();
   const nodesRef = useRef<Record<string, WorkspaceFolderTreeNodeState>>({});
@@ -113,6 +156,11 @@ const WorkspaceFolderTree: React.FC<{
     ? getWorkspaceFolderPathFromSearchParams(searchParams)
     : null;
   const rootNode = nodes[ROOT_PATH];
+  const waitingForRootSeed =
+    directorySeed != null
+    && normalizeWorkspaceFolderPath(directorySeed.path) === ROOT_PATH
+    && directorySeed.loading
+    && rootNode?.childPaths == null;
 
   useEffect(() => {
     nodesRef.current = nodes;
@@ -129,7 +177,7 @@ const WorkspaceFolderTree: React.FC<{
 
       cachedNodes = null;
       cachedTreeUserId = nextUserId;
-      const rootNodes = createRootLoadingNodes();
+      const rootNodes = createRootInitialNodes();
       nodesRef.current = rootNodes;
       setNodes(rootNodes);
     };
@@ -173,36 +221,9 @@ const WorkspaceFolderTree: React.FC<{
 
     try {
       const result = await listFiles(normalizedPath, 0, TREE_PAGE_SIZE);
-      const folders = result.items
-        .filter((item) => item.directory)
-        .map((item) => {
-          return {
-            path: normalizeWorkspaceFolderPath(getLogicalPath(item.path, item.filename)),
-            name: item.filename,
-            hasChildDirectory: item.hasChildDirectory,
-            customEmoji: item.customEmoji,
-            folderColor: item.folderColor,
-          };
-        });
 
       setNodes((current) => {
-        const next = { ...current };
-        next[normalizedPath] = {
-          ...(next[normalizedPath] ?? createTreeNode(normalizedPath)),
-          childPaths: folders.map((folder) => folder.path),
-          childrenStatus: folders.length > 0 ? 'has-folders' : 'empty',
-        };
-
-        for (const folder of folders) {
-          next[folder.path] = {
-            ...(next[folder.path] ?? createTreeNode(folder.path)),
-            name: folder.name,
-            childrenStatus: folder.hasChildDirectory ? 'has-folders' : 'empty',
-            customEmoji: folder.customEmoji,
-            folderColor: folder.folderColor,
-          };
-        }
-
+        const next = applyDirectoryItems(current, normalizedPath, result.items);
         return next;
       });
     } catch {
@@ -249,12 +270,32 @@ const WorkspaceFolderTree: React.FC<{
   }
 
   useEffect(() => {
+    if (!directorySeed?.items) {
+      return;
+    }
+
+    const normalizedSeedPath = normalizeWorkspaceFolderPath(directorySeed.path);
+    setNodes((current) => {
+      const next = applyDirectoryItems(current, normalizedSeedPath, directorySeed.items ?? []);
+      nodesRef.current = next;
+      cachedNodes = next;
+      cachedTreeUserId = getCurrentTreeUserId();
+      return next;
+    });
+  }, [directorySeed?.items, directorySeed?.path]);
+
+  useEffect(() => {
     if (rootNode?.childPaths !== null) {
       return;
     }
 
+    const seedPath = directorySeed ? normalizeWorkspaceFolderPath(directorySeed.path) : null;
+    if (directorySeed && seedPath === ROOT_PATH && (directorySeed.loading || directorySeed.items)) {
+      return;
+    }
+
     void loadFolderChildren(ROOT_PATH);
-  }, [rootNode?.childPaths, rootNode?.childrenStatus]);
+  }, [directorySeed, rootNode?.childPaths, rootNode?.childrenStatus]);
 
   useEffect(() => {
     if (!currentPath) {
@@ -346,7 +387,7 @@ const WorkspaceFolderTree: React.FC<{
     );
   }
 
-  if (rootNode?.childrenStatus === 'loading' && !rootNode.childPaths) {
+  if ((rootNode?.childrenStatus === 'loading' && !rootNode.childPaths) || waitingForRootSeed) {
     return (
       <div className="ml-4 mt-2 flex items-center gap-2 px-2 py-2 text-xs text-slate-400 dark:text-slate-500">
         <Loader2 size={12} className="animate-spin" />

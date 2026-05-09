@@ -6,6 +6,18 @@ ALTER TABLE portal_user ADD COLUMN IF NOT EXISTS default_open_with_by_ext TEXT;
 ALTER TABLE portal_user ADD COLUMN IF NOT EXISTS role VARCHAR(32);
 ALTER TABLE portal_user ADD COLUMN IF NOT EXISTS banned BOOLEAN;
 ALTER TABLE portal_file ADD COLUMN IF NOT EXISTS is_recycle_root BOOLEAN;
+ALTER TABLE IF EXISTS portal_background_task ALTER COLUMN task_type ENUM(
+    'ARCHIVE',
+    'EXTRACT',
+    'SEARCH_INDEX_REBUILD',
+    'STORAGE_POLICY_MIGRATION',
+    'THUMBNAIL',
+    'MEDIA_META',
+    'WORKSPACE_MUTATION',
+    'REMOTE_DOWNLOAD',
+    'HLS_TRANSCODE',
+    'CLEANUP'
+);
 
 UPDATE portal_user
 SET display_name = username

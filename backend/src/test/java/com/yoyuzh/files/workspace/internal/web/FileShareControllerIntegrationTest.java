@@ -11,6 +11,7 @@ import com.yoyuzh.files.content.internal.infra.*;
 import com.yoyuzh.PortalBackendApplication;
 import com.yoyuzh.identity.access.internal.domain.User;
 import com.yoyuzh.identity.access.internal.infra.UserRepository;
+import com.yoyuzh.platform.job.internal.application.BackgroundTaskWorker;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -45,7 +46,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
                 "spring.datasource.password=",
                 "spring.jpa.hibernate.ddl-auto=create-drop",
                 "app.jwt.secret=0123456789abcdef0123456789abcdef",
-                "app.storage.root-dir=./target/test-storage-file-share"
+                "app.storage.root-dir=./target/test-storage-file-share",
+                "app.background-tasks.worker.lightweight-wakeup-enabled=false"
         }
 )
 @AutoConfigureMockMvc
@@ -67,6 +69,9 @@ class FileShareControllerIntegrationTest {
 
     @Autowired
     private FileShareLinkRepository fileShareLinkRepository;
+
+    @Autowired
+    private BackgroundTaskWorker backgroundTaskWorker;
 
     @BeforeEach
     void setUp() throws Exception {
@@ -292,11 +297,12 @@ class FileShareControllerIntegrationTest {
                                 {
                                   "path": "/下载"
                                 }
-                                """))
+                """))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.status").value("SUCCESS"))
-                .andExpect(jsonPath("$.data.items[0].filename").value("notes.txt"))
-                .andExpect(jsonPath("$.data.items[0].toPath").value("/下载/notes.txt"));
+                .andExpect(jsonPath("$.data.type").value("WORKSPACE_MUTATION"))
+                .andExpect(jsonPath("$.data.status").value("QUEUED"));
+
+        assertThat(backgroundTaskWorker.processQueuedTasks(1)).isEqualTo(1);
 
         mockMvc.perform(get("/api/files/list")
                         .with(user("alice"))

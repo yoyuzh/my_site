@@ -30,7 +30,7 @@ import com.yoyuzh.identity.access.api.UserSettingsResponse;
 import com.yoyuzh.identity.access.internal.domain.User;
 import com.yoyuzh.identity.access.internal.domain.UserRole;
 import com.yoyuzh.identity.access.internal.infra.UserRepository;
-import com.yoyuzh.files.upload.InitiateUploadResponse;
+import com.yoyuzh.files.upload.api.InitiateUploadResponse;
 import com.yoyuzh.files.workspace.api.WorkspaceBootstrapApi;
 import com.yoyuzh.files.workspace.api.WorkspaceUserContext;
 import com.yoyuzh.shared.kernel.BusinessException;

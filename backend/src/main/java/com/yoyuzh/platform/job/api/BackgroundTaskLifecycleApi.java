@@ -11,6 +11,8 @@ public interface BackgroundTaskLifecycleApi {
 
     BackgroundTaskView getOwnedTask(Long userId, Long id);
 
+    TaskProgressResponse getOwnedTaskProgress(Long userId, Long id);
+
     BackgroundTaskView cancelOwnedTask(Long userId, Long id);
 
     BackgroundTaskView retryOwnedTask(Long userId, Long id);

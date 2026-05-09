@@ -19,6 +19,7 @@ import {
   Video,
 } from 'lucide-react';
 import { useUserCapacity } from '../../api/queries';
+import type { FileItem } from '../../api/types';
 import { formatBytes } from '../../lib/format';
 import { WORKSPACE_FOLDER_TREE_SECTION_STORAGE_KEY } from '../../lib/workspace-folder-tree';
 import WorkspaceFolderTree from './WorkspaceFolderTree';
@@ -52,8 +53,13 @@ const WorkspaceSidebar: React.FC<{
   onNavigate?: () => void;
   registerDropTarget?: (el: HTMLElement | null, path: string) => void;
   activeDropTarget?: string | null;
+  workspaceDirectorySeed?: {
+    path: string;
+    items: FileItem[] | null;
+    loading: boolean;
+  };
   className?: string;
-}> = ({ onNavigate, registerDropTarget, activeDropTarget, className }) => {
+}> = ({ onNavigate, registerDropTarget, activeDropTarget, workspaceDirectorySeed, className }) => {
   const location = useLocation();
   const { data: capacity, isLoading, isError } = useUserCapacity();
   const [filesSectionCollapsed, setFilesSectionCollapsed] = useState(restoreFilesSectionCollapsed);
@@ -157,6 +163,7 @@ const WorkspaceSidebar: React.FC<{
                           onNavigate={onNavigate} 
                           registerDropTarget={registerDropTarget}
                           activeDropTarget={activeDropTarget}
+                          directorySeed={workspaceDirectorySeed}
                         />
                       )}
                     </>

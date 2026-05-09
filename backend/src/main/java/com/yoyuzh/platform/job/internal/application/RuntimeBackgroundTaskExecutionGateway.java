@@ -4,9 +4,11 @@ import com.yoyuzh.platform.job.internal.domain.BackgroundTask;
 import com.yoyuzh.platform.job.internal.application.BackgroundTaskExecutionGateway;
 import com.yoyuzh.platform.job.internal.application.BackgroundTaskExecutionService;
 import com.yoyuzh.platform.job.api.BackgroundTaskFailureCategory;
+import com.yoyuzh.platform.job.api.BackgroundTaskType;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
+import java.util.Collection;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -25,6 +27,11 @@ public class RuntimeBackgroundTaskExecutionGateway implements BackgroundTaskExec
     @Override
     public List<Long> findQueuedTaskIds(int limit) {
         return backgroundTaskExecutionService.findQueuedTaskIds(limit);
+    }
+
+    @Override
+    public List<Long> findQueuedTaskIdsByTypes(Collection<BackgroundTaskType> types, int limit) {
+        return backgroundTaskExecutionService.findQueuedTaskIdsByTypes(types, limit);
     }
 
     @Override

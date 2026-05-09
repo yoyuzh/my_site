@@ -7,6 +7,7 @@ import WorkspaceSidebar from './workspace/WorkspaceSidebar';
 import UploadTaskPanel from './files/UploadTaskPanel';
 import WorkspaceActionToastHost from './files/WorkspaceActionToastHost';
 import { useUploadPanelStore } from '../hooks/useUploadPanelStore';
+import type { FileItem } from '../api/types';
 
 interface DashboardLayoutProps {
   children: React.ReactNode;
@@ -15,6 +16,11 @@ interface DashboardLayoutProps {
   headerActions?: React.ReactNode;
   registerDropTarget?: (el: HTMLElement | null, path: string) => void;
   activeDropTarget?: string | null;
+  workspaceDirectorySeed?: {
+    path: string;
+    items: FileItem[] | null;
+    loading: boolean;
+  };
 }
 
 const DashboardLayout: React.FC<DashboardLayoutProps> = ({ 
@@ -24,6 +30,7 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({
   headerActions,
   registerDropTarget,
   activeDropTarget,
+  workspaceDirectorySeed,
 }) => {
   const [mobileOpen, setMobileOpen] = React.useState(false);
   const { open: panelOpen, set: setPanelOpen } = useUploadPanelStore();
@@ -39,6 +46,7 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({
             <WorkspaceSidebar 
                registerDropTarget={registerDropTarget}
                activeDropTarget={activeDropTarget}
+               workspaceDirectorySeed={workspaceDirectorySeed}
             />
           </div>
           <main className="flex h-full min-w-0 flex-1 flex-col page-enter">
@@ -104,6 +112,7 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({
                 onNavigate={() => setMobileOpen(false)} 
                 registerDropTarget={registerDropTarget}
                 activeDropTarget={activeDropTarget}
+                workspaceDirectorySeed={workspaceDirectorySeed}
                 className="w-full"
               />
             </div>

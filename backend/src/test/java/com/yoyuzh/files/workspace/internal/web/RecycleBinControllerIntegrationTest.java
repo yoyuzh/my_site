@@ -11,6 +11,7 @@ import com.yoyuzh.files.content.internal.infra.*;
 import com.yoyuzh.PortalBackendApplication;
 import com.yoyuzh.identity.access.internal.domain.User;
 import com.yoyuzh.identity.access.internal.infra.UserRepository;
+import com.yoyuzh.platform.job.internal.application.BackgroundTaskWorker;
 import com.jayway.jsonpath.JsonPath;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -41,7 +42,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
                 "spring.datasource.password=",
                 "spring.jpa.hibernate.ddl-auto=create-drop",
                 "app.jwt.secret=0123456789abcdef0123456789abcdef",
-                "app.storage.root-dir=./target/test-storage-recycle-bin"
+                "app.storage.root-dir=./target/test-storage-recycle-bin",
+                "app.background-tasks.worker.lightweight-wakeup-enabled=false"
         }
 )
 @AutoConfigureMockMvc
@@ -60,6 +62,9 @@ class RecycleBinControllerIntegrationTest {
 
     @Autowired
     private FileBlobRepository fileBlobRepository;
+
+    @Autowired
+    private BackgroundTaskWorker backgroundTaskWorker;
 
     private Long deletedFileId;
 
@@ -124,9 +129,13 @@ class RecycleBinControllerIntegrationTest {
     @Test
     void shouldDeleteListAndRestoreFileThroughRecycleBinApi() throws Exception {
         mockMvc.perform(delete("/api/files/{fileId}", deletedFileId)
-                        .with(user("alice")))
+                .with(user("alice")))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.code").value(0));
+                .andExpect(jsonPath("$.code").value(0))
+                .andExpect(jsonPath("$.data.type").value("WORKSPACE_MUTATION"))
+                .andExpect(jsonPath("$.data.status").value("QUEUED"));
+
+        assertThat(backgroundTaskWorker.processQueuedTasks(1)).isEqualTo(1);
 
         mockMvc.perform(get("/api/files/list")
                         .with(user("alice"))
@@ -181,9 +190,13 @@ class RecycleBinControllerIntegrationTest {
     void shouldPermanentlyDeleteActiveFileWhenDeleteModeIsPermanent() throws Exception {
         mockMvc.perform(delete("/api/files/{fileId}", deletedFileId)
                         .with(user("alice"))
-                        .param("mode", "PERMANENT"))
+                .param("mode", "PERMANENT"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.code").value(0));
+                .andExpect(jsonPath("$.code").value(0))
+                .andExpect(jsonPath("$.data.type").value("WORKSPACE_MUTATION"))
+                .andExpect(jsonPath("$.data.status").value("QUEUED"));
+
+        assertThat(backgroundTaskWorker.processQueuedTasks(1)).isEqualTo(1);
 
         mockMvc.perform(get("/api/files/list")
                         .with(user("alice"))
@@ -209,11 +222,14 @@ class RecycleBinControllerIntegrationTest {
         String recycleResponse = mockMvc.perform(delete("/api/files/{fileId}", deletedFileId)
                         .with(user("alice")))
                 .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.type").value("WORKSPACE_MUTATION"))
+                .andExpect(jsonPath("$.data.status").value("QUEUED"))
                 .andReturn()
                 .getResponse()
                 .getContentAsString();
 
         assertThat(recycleResponse).isNotEmpty();
+        assertThat(backgroundTaskWorker.processQueuedTasks(1)).isEqualTo(1);
 
         String listResponse = mockMvc.perform(get("/api/files/recycle-bin")
                         .with(user("alice"))

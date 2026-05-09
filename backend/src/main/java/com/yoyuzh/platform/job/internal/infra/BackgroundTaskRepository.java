@@ -66,6 +66,18 @@ public interface BackgroundTaskRepository extends JpaRepository<BackgroundTask, 
                                              @Param("now") LocalDateTime now,
                                              Pageable pageable);
 
+    @Query("""
+            select task.id from BackgroundTask task
+            where task.status = :status
+              and task.type in :types
+              and (task.nextRunAt is null or task.nextRunAt <= :now)
+            order by coalesce(task.nextRunAt, task.createdAt) asc, task.createdAt asc
+            """)
+    List<Long> findReadyTaskIdsByStatusAndTypeInOrder(@Param("status") BackgroundTaskStatus status,
+                                                      @Param("types") Collection<BackgroundTaskType> types,
+                                                      @Param("now") LocalDateTime now,
+                                                      Pageable pageable);
+
     @Modifying(clearAutomatically = true, flushAutomatically = true)
     @Query("""
             update BackgroundTask task

@@ -13,7 +13,7 @@ import com.yoyuzh.shared.kernel.BusinessException;
 import com.yoyuzh.files.workspace.api.WorkspaceDownloadOptions;
 import com.yoyuzh.files.workspace.api.WorkspaceDownloadResult;
 import com.yoyuzh.platform.storage.internal.infra.FileStorageProperties;
-import com.yoyuzh.files.upload.InitiateUploadRequest;
+import com.yoyuzh.files.upload.api.InitiateUploadRequest;
 import com.yoyuzh.files.content.api.FileContentStorage;
 import com.yoyuzh.files.workspace.api.FileMetadataResponse;
 import org.junit.jupiter.api.BeforeEach;

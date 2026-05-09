@@ -26,6 +26,7 @@ import {
 import { UnifiedList, UnifiedListRow, UnifiedPageContent, UnifiedListColumn } from '../components/common/UnifiedPageContent';
 import CloudreveFileTypeIcon from '../components/files/CloudreveFileTypeIcon';
 import type { RecycleBinItem } from '../api/types';
+import { showToast } from '../components/files/WorkspaceActionToastHost';
 
 const columns: UnifiedListColumn[] = [
   { label: '名称', flex: 1.5 },
@@ -45,16 +46,30 @@ const RecycleBin: React.FC = () => {
   const restoreMutation = useMutation({
     mutationFn: restoreRecycleBinItem,
     onSuccess: () => {
+      showToast({ message: '文件已恢复', severity: 'success' });
+      if (items.length <= 1 && page > 1) {
+        setPage((current) => Math.max(1, current - 1));
+      }
       void queryClient.invalidateQueries({ queryKey: ['recycleBin'] });
       void queryClient.invalidateQueries({ queryKey: ['files'] });
+    },
+    onError: (error) => {
+      showToast({ message: error instanceof Error ? error.message : '恢复失败', severity: 'error' });
     },
   });
 
   const deleteMutation = useMutation({
     mutationFn: deleteRecycleBinItem,
     onSuccess: () => {
+      showToast({ message: '文件已彻底删除', severity: 'success' });
+      if (items.length <= 1 && page > 1) {
+        setPage((current) => Math.max(1, current - 1));
+      }
       void queryClient.invalidateQueries({ queryKey: ['recycleBin'] });
       setDeleteConfirmId(null);
+    },
+    onError: (error) => {
+      showToast({ message: error instanceof Error ? error.message : '彻底删除失败', severity: 'error' });
     },
   });
 
@@ -122,6 +137,7 @@ const RecycleBin: React.FC = () => {
                     size="small"
                     color="error"
                     onClick={() => setDeleteConfirmId(item.id)}
+                    disabled={deleteMutation.isPending && deleteMutation.variables === item.id}
                   >
                     <DeleteForever sx={{ fontSize: 18 }} />
                   </IconButton>

@@ -6,7 +6,7 @@ import com.yoyuzh.identity.access.api.IdentityUserProfileSummary;
 import com.yoyuzh.transfer.api.RemoteDownloadApi;
 import com.yoyuzh.transfer.api.RemoteDownloadDetailResponse;
 import com.yoyuzh.transfer.internal.domain.DownloadEngineType;
-import com.yoyuzh.transfer.internal.domain.RemoteDownloadSourceType;
+import com.yoyuzh.transfer.api.RemoteDownloadSourceType;
 import com.yoyuzh.transfer.internal.domain.RemoteDownloadStatus;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;

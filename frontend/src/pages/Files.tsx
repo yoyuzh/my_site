@@ -46,7 +46,7 @@ import WorkspaceDragOverlay from '../components/files/WorkspaceDragOverlay';
 import CreateShareDialog from '../components/files/CreateShareDialog';
 import CreateRemoteDownloadDialog from '../components/files/CreateRemoteDownloadDialog';
 import { useFavoriteFiles, useFiles } from '../api/queries';
-import type { FileDeleteMode, FileDetail, FileItem, FileTag, FileViewerDefinition, MediaCategory, MoveResponse } from '../api/types';
+import type { BackgroundTask, FileDeleteMode, FileDetail, FileItem, FileTag, FileViewerDefinition, MediaCategory, MoveResponse } from '../api/types';
 import {
   addFileTag,
   batchDeleteFiles,
@@ -73,7 +73,7 @@ import {
 import { buildFolderUploadPlans } from '../lib/folder-uploads';
 import { useUploadQueue } from '../hooks/useUploadQueue';
 import { useUploadPanelStore } from '../hooks/useUploadPanelStore';
-import { showToast, updateToast, removeToast } from '../components/files/WorkspaceActionToastHost';
+import { showToast, updateToast } from '../components/files/WorkspaceActionToastHost';
 import {
   getAllFileViewers,
   getAvailableViewersForFile,
@@ -81,6 +81,7 @@ import {
   getRecommendedViewersForFile,
 } from '../lib/file-viewers';
 import { setDefaultViewerPreference } from '../lib/file-open-preferences';
+import { getTask, readTaskPublicState } from '../lib/tasks';
 import { useTheme as useAppTheme } from '../hooks/useTheme';
 import { useWorkspaceDragMove } from '../hooks/useWorkspaceDragMove';
 import {
@@ -102,11 +103,26 @@ type ContextMenuState = {
 };
 
 type SelectedFileMap = Record<string, FileItem>;
+type WorkspaceMoveTaskItem = {
+  fileId: number;
+  fromPath: string | null;
+  toPath: string | null;
+  skipped: boolean;
+};
+type WorkspaceTaskToastLabels = {
+  operation: 'RENAME' | 'MOVE' | 'DELETE';
+  success: string;
+  failed: string;
+  timeout: string;
+};
 
 const FILES_PAGE_SIZE = 30;
 const VIEW_MODE_STORAGE_KEY = 'cloudreve-files-view-mode';
 const SORT_BY_STORAGE_KEY = 'cloudreve-files-sort-by';
 const SORT_ORDER_STORAGE_KEY = 'cloudreve-files-sort-order';
+const WORKSPACE_TASK_REFRESH_DELAY_MS = 350;
+const WORKSPACE_TASK_REFRESH_ERROR_NOTICE_ATTEMPTS = 3;
+const WORKSPACE_TASK_TERMINAL_STATUSES = new Set(['COMPLETED', 'FAILED', 'CANCELLED']);
 const FOLDER_DOWNLOAD_MODE_LABELS: Record<FolderDownloadMode, string> = {
   'server-archive': '服务器端打包',
   'browser-archive': '浏览器打包',
@@ -535,6 +551,7 @@ const Files: React.FC<FilesProps> = ({ mediaCategory }) => {
   const lastBrowsingContextKeyRef = useRef<string | null>(null);
   const lastSelectedIndexRef = useRef(0);
   const keyboardSelectionAnchorRef = useRef<number | null>(null);
+  const workspaceTaskRefreshTimersRef = useRef<number[]>([]);
   const [search, setSearch] = useState('');
   const [currentPath, setCurrentPath] = useState(requestedPath);
   const [page, setPage] = useState(1);
@@ -668,18 +685,138 @@ const Files: React.FC<FilesProps> = ({ mediaCategory }) => {
     void queryClient.invalidateQueries({ queryKey: ['files'] });
   }
 
-  function summarizeMoveResult(result: MoveResponse) {
-    const successCount = result.items.filter((item) => !item.skipped).length;
-    const renamedCount = result.items.filter((item) => item.renamed).length;
-    const skippedCount = result.items.filter((item) => item.skipped).length;
-    const summary = [`成功 ${successCount} 个`];
-    if (renamedCount > 0) {
-      summary.push(`自动重命名 ${renamedCount} 个`);
+  useEffect(() => {
+    return () => {
+      workspaceTaskRefreshTimersRef.current.forEach((timerId) => window.clearTimeout(timerId));
+      workspaceTaskRefreshTimersRef.current = [];
+    };
+  }, []);
+
+  function refreshWorkspaceMutationViews(paths: string[]) {
+    const normalizedPaths = Array.from(new Set(paths.map(normalizeWorkspaceFolderPath)));
+    emitWorkspaceFolderTreeRefresh(normalizedPaths);
+    refreshCurrentListing();
+    void queryClient.invalidateQueries({ queryKey: ['files'] });
+  }
+
+  function updateWorkspaceTaskToast(
+    toastId: string | undefined,
+    task: BackgroundTask,
+    labels: WorkspaceTaskToastLabels | undefined,
+  ) {
+    if (!toastId || !labels) {
+      return;
     }
-    if (skippedCount > 0) {
-      summary.push(`跳过 ${skippedCount} 个`);
+
+    if (task.status === 'COMPLETED') {
+      updateToast(toastId, {
+        message: `${labels.success} #${task.id}`,
+        severity: 'success',
+        loading: false,
+        duration: labels.operation === 'MOVE' ? 8000 : 4000,
+        actions: labels.operation === 'MOVE'
+          ? [
+              {
+                label: '恢复',
+                icon: <RefreshCw size={14} />,
+                onClick: () => restoreCompletedMoveTask(task),
+              },
+            ]
+          : undefined,
+      });
+      return;
     }
-    return `移动完成：${summary.join('，')}`;
+
+    if (task.status === 'FAILED' || task.status === 'CANCELLED') {
+      updateToast(toastId, {
+        message: `${labels.failed} #${task.id}${task.errorMessage ? `：${task.errorMessage}` : ''}`,
+        severity: 'error',
+        loading: false,
+        duration: 6000,
+      });
+    }
+  }
+
+  function scheduleWorkspaceTaskRefresh(
+    task: BackgroundTask,
+    paths: string[],
+    toastId?: string,
+    toastLabels?: WorkspaceTaskToastLabels,
+  ) {
+    if (WORKSPACE_TASK_TERMINAL_STATUSES.has(task.status)) {
+      updateWorkspaceTaskToast(toastId, task, toastLabels);
+      refreshWorkspaceMutationViews(paths);
+      return;
+    }
+
+    let consecutiveErrors = 0;
+    let errorNoticeShown = false;
+    const pollTask = () => {
+      void getTask(task.id)
+        .then((latestTask) => {
+          consecutiveErrors = 0;
+          void queryClient.invalidateQueries({ queryKey: ['tasks'] });
+          if (WORKSPACE_TASK_TERMINAL_STATUSES.has(latestTask.status)) {
+            updateWorkspaceTaskToast(toastId, latestTask, toastLabels);
+            refreshWorkspaceMutationViews(paths);
+            return;
+          }
+          queueRefreshPoll();
+        })
+        .catch(() => {
+          consecutiveErrors += 1;
+          if (!errorNoticeShown && consecutiveErrors >= WORKSPACE_TASK_REFRESH_ERROR_NOTICE_ATTEMPTS && toastId && toastLabels) {
+            errorNoticeShown = true;
+            updateToast(toastId, {
+              message: `${toastLabels.timeout}，正在继续查询 #${task.id}`,
+              severity: 'warning',
+              loading: true,
+              duration: null,
+            });
+          }
+          queueRefreshPoll();
+        });
+    };
+    const queueRefreshPoll = () => {
+      const timerId = window.setTimeout(() => {
+        workspaceTaskRefreshTimersRef.current = workspaceTaskRefreshTimersRef.current.filter((id) => id !== timerId);
+        pollTask();
+      }, WORKSPACE_TASK_REFRESH_DELAY_MS);
+      workspaceTaskRefreshTimersRef.current.push(timerId);
+    };
+
+    queueRefreshPoll();
+  }
+
+  function getWorkspaceMutationRefreshPaths(items: FileItem[], targetPath?: string) {
+    const refreshPaths = new Set<string>([currentPath]);
+    items.forEach((item) => refreshPaths.add(getWorkspaceFolderParentPath(getLogicalPath(item))));
+    if (targetPath) {
+      refreshPaths.add(normalizeWorkspaceFolderPath(targetPath));
+    }
+    return Array.from(refreshPaths);
+  }
+
+  function removePendingWorkspaceRows(items: FileItem[]) {
+    const pendingIds = new Set(items.map((item) => item.id));
+    if (pendingIds.size === 0) {
+      return;
+    }
+
+    setAllRows((prev) => prev.filter((item) => !pendingIds.has(item.id)));
+    setSelectedById((prev) => {
+      const next = { ...prev };
+      pendingIds.forEach((id) => {
+        delete next[String(id)];
+      });
+      return next;
+    });
+    if (detailFileId != null && pendingIds.has(detailFileId)) {
+      setDetailFileId(null);
+      setDetail(null);
+      setDetailError(null);
+    }
+    setContextMenu(null);
   }
 
   const folderTagQueries = useQueries({
@@ -701,6 +838,19 @@ const Files: React.FC<FilesProps> = ({ mediaCategory }) => {
       }, {}),
     [folderTagQueries, visibleFolders],
   );
+  const workspaceDirectorySeed = useMemo(() => {
+    const canSeedDirectory =
+      !isCategoryMode
+      && search.trim() === ''
+      && data?.contextKey === activeQueryContextKey
+      && data.pagination.total_items === allRows.length;
+
+    return {
+      path: currentPath,
+      items: canSeedDirectory ? allRows : null,
+      loading: !isCategoryMode && search.trim() === '' && (isLoading || isFetching),
+    };
+  }, [activeQueryContextKey, allRows, currentPath, data, isCategoryMode, isFetching, isLoading, search]);
 
   const sortedRows = useMemo(() => {
     const sorted = [...allRows].sort((a, b) => {
@@ -1117,25 +1267,98 @@ const Files: React.FC<FilesProps> = ({ mediaCategory }) => {
     },
   });
 
+  function showWorkspaceTaskToast(message: string, task: BackgroundTask) {
+    return showToast({ message: `${message} #${task.id}`, severity: 'success', loading: true, duration: null });
+  }
+
+  function workspaceTaskToastLabels(operation: WorkspaceTaskToastLabels['operation']): WorkspaceTaskToastLabels {
+    const operationLabelMap: Record<WorkspaceTaskToastLabels['operation'], string> = {
+      RENAME: '重命名',
+      MOVE: '移动',
+      DELETE: '删除',
+    };
+    const label = operationLabelMap[operation];
+    return {
+      operation,
+      success: `${label}成功`,
+      failed: `${label}失败`,
+      timeout: `${label}仍在处理中`,
+    };
+  }
+
+  function readCompletedMoveTaskItems(task: BackgroundTask) {
+    const state = readTaskPublicState(task.publicStateJson);
+    const items = state?.items;
+    if (!Array.isArray(items)) {
+      return [];
+    }
+
+    return items.flatMap((item): WorkspaceMoveTaskItem[] => {
+      if (!item || typeof item !== 'object') {
+        return [];
+      }
+      const value = item as Partial<WorkspaceMoveTaskItem>;
+      if (typeof value.fileId !== 'number') {
+        return [];
+      }
+      return [{
+        fileId: value.fileId,
+        fromPath: typeof value.fromPath === 'string' ? value.fromPath : null,
+        toPath: typeof value.toPath === 'string' ? value.toPath : null,
+        skipped: value.skipped === true,
+      }];
+    });
+  }
+
+  async function restoreCompletedMoveTask(task: BackgroundTask) {
+    const restoreTargets = readCompletedMoveTaskItems(task)
+      .filter((item) => !item.skipped && item.fromPath && item.toPath);
+    const groupedByOriginalParent = new Map<string, number[]>();
+    restoreTargets.forEach((item) => {
+      const originalParentPath = getWorkspaceFolderParentPath(item.fromPath!);
+      groupedByOriginalParent.set(originalParentPath, [
+        ...(groupedByOriginalParent.get(originalParentPath) ?? []),
+        item.fileId,
+      ]);
+    });
+
+    if (groupedByOriginalParent.size === 0) {
+      showToast({ message: '没有可恢复的移动项', severity: 'warning' });
+      return;
+    }
+
+    try {
+      for (const [originalParentPath, fileIds] of groupedByOriginalParent.entries()) {
+        const restoreTask = fileIds.length === 1
+          ? await moveFile(fileIds[0], originalParentPath, 'AUTO_RENAME')
+          : await batchMoveFiles(fileIds, originalParentPath, 'AUTO_RENAME');
+        const toastId = showWorkspaceTaskToast('恢复处理中', restoreTask);
+        invalidateWorkspaceTasks();
+        scheduleWorkspaceTaskRefresh(
+          restoreTask,
+          [currentPath, originalParentPath],
+          toastId,
+          workspaceTaskToastLabels('MOVE'),
+        );
+      }
+    } catch (error) {
+      showToast({
+        message: isTimeoutError(error) ? '恢复任务超时' : (error instanceof Error ? error.message : '恢复失败'),
+        severity: 'error',
+      });
+    }
+  }
+
+  function invalidateWorkspaceTasks() {
+    void queryClient.invalidateQueries({ queryKey: ['tasks'] });
+  }
+
   const renameMutation = useMutation({
     mutationFn: ({ fileId, filename }: { fileId: number; filename: string; file: FileItem }) => renameFile(fileId, filename),
-    onSuccess: (result, variables) => {
-      const previousPath = getLogicalPath(variables.file);
-      const nextPath = getLogicalPath(result);
-      emitWorkspaceFolderTreeRefresh([
-        getWorkspaceFolderParentPath(previousPath),
-        getWorkspaceFolderParentPath(nextPath),
-      ]);
-
-      if (variables.file.directory) {
-        const nextCurrentPath = replaceLogicalPathPrefix(currentPath, previousPath, nextPath);
-        if (nextCurrentPath !== currentPath) {
-          handlePathChange(nextCurrentPath, { replaceUrl: true });
-          return;
-        }
-      }
-
-      refreshCurrentListing();
+    onSuccess: (task, variables) => {
+      const toastId = showWorkspaceTaskToast('重命名处理中', task);
+      invalidateWorkspaceTasks();
+      scheduleWorkspaceTaskRefresh(task, getWorkspaceMutationRefreshPaths([variables.file]), toastId, workspaceTaskToastLabels('RENAME'));
     },
   });
 
@@ -1164,144 +1387,33 @@ const Files: React.FC<FilesProps> = ({ mediaCategory }) => {
     refreshCurrentListing();
   }
 
-  function applyMoveResult(result: MoveResponse, sourceItems: FileItem[]) {
-    const affectedPaths = new Set<string>();
-    let nextCurrentPath: string | null = null;
-    let hasActualChange = false;
-
-    result.items.forEach((item) => {
-      if (!item.toPath || item.skipped) {
-        return;
-      }
-      const source = sourceItems.find((candidate) => candidate.id === item.fileId);
-      if (!source) {
-        return;
-      }
-      const previousPath = getLogicalPath(source);
-      affectedPaths.add(getWorkspaceFolderParentPath(previousPath));
-      affectedPaths.add(getWorkspaceFolderParentPath(item.toPath));
-      if (previousPath !== item.toPath || item.renamed) {
-        hasActualChange = true;
-      }
-
-      if (source.directory) {
-        const candidatePath = replaceLogicalPathPrefix(currentPath, previousPath, item.toPath);
-        if (candidatePath !== currentPath) {
-          nextCurrentPath = candidatePath;
-        }
-      }
-    });
-
-    if (affectedPaths.size > 0) {
-      emitWorkspaceFolderTreeRefresh(Array.from(affectedPaths));
-    }
-
-    if (nextCurrentPath && nextCurrentPath !== currentPath) {
-      handlePathChange(nextCurrentPath, { replaceUrl: true });
-      return;
-    }
-
-    if (!hasActualChange) {
-      return;
-    }
-
-    refreshCurrentListing();
-  }
-
   const moveMutation = useMutation({
     mutationFn: async ({ items, targetPath }: { items: FileItem[]; targetPath: string }) => {
       if (items.length === 1) {
-        return moveFile(items[0].id, targetPath);
+        return moveFile(items[0].id, targetPath, 'AUTO_RENAME');
       }
-      return batchMoveFiles(items.map((item) => item.id), targetPath);
+      return batchMoveFiles(items.map((item) => item.id), targetPath, 'AUTO_RENAME');
     },
     onMutate: () => {
       return { toastId: showToast({ message: '正在移动...', severity: 'info', loading: true, duration: null }) };
     },
-    onSuccess: (result, variables, context) => {
-      if (result.status === 'CONFLICT') {
-        if (context?.toastId) {
-          removeToast(context.toastId);
-        }
-        setMoveDialogState({
-          open: true,
-          items: variables.items,
-          targetPath: variables.targetPath,
-          initialConflictResult: result,
-        });
-        return;
-      }
-      if (result.status === 'INVALID_TARGET') {
-        if (context?.toastId) {
-          updateToast(context.toastId, {
-            message: result.message || '目标位置不可用',
-            severity: 'error',
-            loading: false,
-            duration: 5000,
-          });
-        }
-        return;
-      }
-      
-      applyMoveResult(result, variables.items);
-      
-      const targetPath = variables.targetPath;
+    onSuccess: (task, variables, context) => {
       if (context?.toastId) {
         updateToast(context.toastId, { 
-          message: '任务成功', 
+          message: `移动处理中 #${task.id}`,
           severity: 'success',
-          loading: false,
-          duration: 6000,
-          actions: [
-            {
-              label: '查看',
-              icon: <Eye size={14} />,
-              onClick: () => {
-                if (targetPath !== currentPath) {
-                  handlePathChange(targetPath);
-                } else {
-                  refreshCurrentListing();
-                }
-              },
-            },
-            {
-              label: '恢复',
-              icon: <RefreshCw size={14} />,
-              onClick: async () => {
-                const itemsToRestore = result.items.filter((item) => !item.skipped && item.fromPath);
-                if (itemsToRestore.length === 0) {
-                  return;
-                }
-
-                const restoreToastId = showToast({ message: '正在移动...', severity: 'info', loading: true, duration: null });
-                try {
-                  for (const item of itemsToRestore) {
-                    const restoreResult = await moveFile(item.fileId, getWorkspaceFolderParentPath(item.fromPath!));
-                    if (restoreResult.status !== 'SUCCESS') {
-                      throw new Error(restoreResult.message || '恢复失败');
-                    }
-                  }
-
-                  updateToast(restoreToastId, {
-                    message: '任务成功',
-                    severity: 'success',
-                    loading: false,
-                    duration: 5000,
-                  });
-                  refreshCurrentListing();
-                } catch (error) {
-                  updateToast(restoreToastId, {
-                    message: isTimeoutError(error) ? '任务超时' : (error instanceof Error ? error.message : '恢复失败'),
-                    severity: 'error',
-                    loading: false,
-                    duration: 5000,
-                  });
-                }
-              },
-            },
-          ],
+          loading: true,
+          duration: null,
         });
       }
+      removePendingWorkspaceRows(variables.items);
+      invalidateWorkspaceTasks();
+      scheduleWorkspaceTaskRefresh(
+        task,
+        getWorkspaceMutationRefreshPaths(variables.items, variables.targetPath),
+        context?.toastId,
+        workspaceTaskToastLabels('MOVE'),
+      );
     },
     onError: (error, variables, context) => {
       if (context?.toastId) {
@@ -1431,25 +1543,24 @@ const Files: React.FC<FilesProps> = ({ mediaCategory }) => {
     onMutate: () => {
       return { toastId: showToast({ message: '正在删除...', severity: 'info', loading: true, duration: null }) };
     },
-    onSuccess: (_, variables, context) => {
+    onSuccess: (task, variables, context) => {
       if (context?.toastId) {
         updateToast(context.toastId, {
-          message: '任务成功',
+          message: `删除处理中 #${task.id}`,
           severity: 'success',
-          loading: false,
-          duration: 5000,
+          loading: true,
+          duration: null,
         });
       }
 
-      const { fileIds } = variables;
-      emitWorkspaceFolderTreeRefresh(
-        Array.from(
-          new Set(
-            selectedFiles
-              .filter((file) => fileIds.includes(file.id))
-              .map((file) => normalizeWorkspaceFolderPath(file.path)),
-          ),
-        ),
+      const deletedFiles = deleteDialogState.files.filter((file) => variables.fileIds.includes(file.id));
+      removePendingWorkspaceRows(deletedFiles);
+      invalidateWorkspaceTasks();
+      scheduleWorkspaceTaskRefresh(
+        task,
+        getWorkspaceMutationRefreshPaths(deletedFiles),
+        context?.toastId,
+        workspaceTaskToastLabels('DELETE'),
       );
       setSelectedById({});
       setContextMenu(null);
@@ -1457,8 +1568,7 @@ const Files: React.FC<FilesProps> = ({ mediaCategory }) => {
       setDetail(null);
       setDetailError(null);
       setDeleteDialogState({ open: false, files: [] });
-      refreshCurrentListing();
-      void refetchFavorites();
+      void queryClient.invalidateQueries({ queryKey: ['tasks'] });
     },
     onError: (error, variables, context) => {
       if (context?.toastId) {
@@ -1512,6 +1622,9 @@ const Files: React.FC<FilesProps> = ({ mediaCategory }) => {
       if (blob) {
         triggerBlobDownload(blob, file.filename);
       }
+    },
+    onError: (error) => {
+      showToast({ message: error instanceof Error ? error.message : '下载失败', severity: 'error' });
     },
   });
 
@@ -2011,6 +2124,12 @@ const Files: React.FC<FilesProps> = ({ mediaCategory }) => {
   }
 
   function downloadFile(file: FileItem, mode: FolderDownloadMode = 'server-archive') {
+    if (downloadMutation.isPending || folderDownloadMutation.isPending) {
+      showToast({ message: '已有下载任务正在处理，请稍后再试', severity: 'warning' });
+      closeContextMenus();
+      return;
+    }
+
     if (file.directory) {
       closeContextMenus();
       folderDownloadMutation.mutate({ file, mode });
@@ -2186,6 +2305,7 @@ const Files: React.FC<FilesProps> = ({ mediaCategory }) => {
       hideHeader={true}
       registerDropTarget={registerDropTarget}
       activeDropTarget={activeDropTarget}
+      workspaceDirectorySeed={workspaceDirectorySeed}
     >
       <MuiThemeProvider theme={muiTheme}>
         <input
@@ -2235,10 +2355,7 @@ const Files: React.FC<FilesProps> = ({ mediaCategory }) => {
             activeDropTarget={activeDropTarget}
             search={search}
             onSearchChange={handleSearchChange}
-            onRefresh={() => {
-              setPage(1);
-              void refetch();
-            }}
+            onRefresh={refreshCurrentListing}
             onUploadClick={() => fileInputRef.current?.click()}
             onUploadFolderClick={() => folderInputRef.current?.click()}
             onCreateFolderClick={createFolder}
@@ -2248,6 +2365,8 @@ const Files: React.FC<FilesProps> = ({ mediaCategory }) => {
             sortBy={sortBy}
             sortOrder={sortOrder}
             onSortChange={(nextBy, nextOrder) => {
+              setAllRows(page === 1 && data?.contextKey === activeQueryContextKey ? data.items : []);
+              setPage(1);
               setSortBy(nextBy);
               setSortOrder(nextOrder);
             }}
@@ -2719,11 +2838,16 @@ const Files: React.FC<FilesProps> = ({ mediaCategory }) => {
           items={moveDialogState.items}
           currentPath={moveDialogState.targetPath}
           initialConflictResult={moveDialogState.initialConflictResult}
-          onSuccess={(result) => {
-            applyMoveResult(result, moveDialogState.items);
-            if (result.items.some((item) => item.renamed || item.skipped)) {
-              showToast({ message: summarizeMoveResult(result), severity: 'info' });
-            }
+          onSuccess={(task) => {
+            const toastId = showWorkspaceTaskToast('移动处理中', task);
+            removePendingWorkspaceRows(moveDialogState.items);
+            invalidateWorkspaceTasks();
+            scheduleWorkspaceTaskRefresh(
+              task,
+              getWorkspaceMutationRefreshPaths(moveDialogState.items, moveDialogState.targetPath),
+              toastId,
+              workspaceTaskToastLabels('MOVE'),
+            );
             setMoveDialogState({
               open: false,
               items: [],

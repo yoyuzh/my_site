@@ -1,7 +1,8 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { BrowserRouter as Router, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { ThemeProvider } from './hooks/useTheme';
-import { canAccessAdmin, getSession } from './lib/session';
+import { useStoredSessionValidation } from './hooks/useStoredSessionValidation';
+import { canAccessAdmin, getDefaultSignedInRoute } from './lib/session';
 import Login from './pages/Login';
 import Register from './pages/Register';
 import FileShare from './pages/FileShare';
@@ -42,22 +43,39 @@ const queryClient = new QueryClient({
   },
 });
 
+function AuthCheckFallback() {
+  return (
+    <div className="flex min-h-screen items-center justify-center bg-bg-light px-6 text-sm font-medium text-slate-500 dark:bg-bg-dark dark:text-slate-400">
+      正在校验登录状态...
+    </div>
+  );
+}
+
 function RequireAuth({ children }: { children: JSX.Element }) {
   const location = useLocation();
-  const session = getSession();
+  const { status } = useStoredSessionValidation();
 
-  if (!session) {
-    return <Navigate to="/login" replace state={{ from: location.pathname }} />;
+  if (status === 'checking') {
+    return <AuthCheckFallback />;
+  }
+
+  if (status !== 'authenticated') {
+    return <Navigate to="/login" replace state={{ from: `${location.pathname}${location.search}` }} />;
   }
 
   return children;
 }
 
 function RequireAdmin({ children }: { children: JSX.Element }) {
-  const session = getSession();
+  const location = useLocation();
+  const { status, session } = useStoredSessionValidation();
 
-  if (!session) {
-    return <Navigate to="/login" replace />;
+  if (status === 'checking') {
+    return <AuthCheckFallback />;
+  }
+
+  if (status !== 'authenticated' || !session) {
+    return <Navigate to="/login" replace state={{ from: `${location.pathname}${location.search}` }} />;
   }
 
   if (!canAccessAdmin(session.user.role)) {
@@ -68,9 +86,10 @@ function RequireAdmin({ children }: { children: JSX.Element }) {
 }
 
 function HomeRedirect() {
-  const session = getSession();
-  if (!session) return <Navigate to="/login" replace />;
-  return <Navigate to="/dashboard/files" replace />;
+  const { status, session } = useStoredSessionValidation();
+  if (status === 'checking') return <AuthCheckFallback />;
+  if (status !== 'authenticated' || !session) return <Navigate to="/login" replace />;
+  return <Navigate to={getDefaultSignedInRoute(session.user.role)} replace />;
 }
 
 function App() {

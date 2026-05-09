@@ -9,10 +9,9 @@ import com.yoyuzh.platform.job.api.BackgroundTaskType;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.yoyuzh.files.content.api.ContentBlobQueryApi;
 import com.yoyuzh.files.content.api.ContentBlobReference;
+import com.yoyuzh.files.search.api.FileMetadataWriteApi;
 import com.yoyuzh.files.workspace.api.WorkspaceFileQueryApi;
 import com.yoyuzh.files.workspace.api.WorkspaceFileSnapshot;
-import com.yoyuzh.files.search.FileMetadata;
-import com.yoyuzh.files.search.FileMetadataRepository;
 import com.yoyuzh.files.content.api.FileContentStorage;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -46,7 +45,7 @@ class MediaMetadataBackgroundTaskHandlerTest {
     @Mock
     private ContentBlobQueryApi contentBlobQueryApi;
     @Mock
-    private FileMetadataRepository fileMetadataRepository;
+    private FileMetadataWriteApi fileMetadataWriteApi;
     @Mock
     private FileContentStorage fileContentStorage;
 
@@ -57,7 +56,7 @@ class MediaMetadataBackgroundTaskHandlerTest {
         handler = new MediaMetadataBackgroundTaskHandler(
                 workspaceFileQueryApi,
                 contentBlobQueryApi,
-                fileMetadataRepository,
+                fileMetadataWriteApi,
                 fileContentStorage,
                 new BackgroundTaskStateManager(new ObjectMapper())
         );
@@ -73,11 +72,6 @@ class MediaMetadataBackgroundTaskHandlerTest {
         when(contentBlobQueryApi.findBlobReferenceById(100L))
                 .thenReturn(Optional.of(new ContentBlobReference(100L, "blobs/photo.png", "image/png", 64L)));
         when(fileContentStorage.readBlobStream("blobs/photo.png")).thenReturn(new ByteArrayInputStream(pngBytes));
-        when(fileMetadataRepository.findByFileIdAndName(11L, "media:contentType")).thenReturn(Optional.empty());
-        when(fileMetadataRepository.findByFileIdAndName(11L, "media:size")).thenReturn(Optional.empty());
-        when(fileMetadataRepository.findByFileIdAndName(11L, "media:width")).thenReturn(Optional.empty());
-        when(fileMetadataRepository.findByFileIdAndName(11L, "media:height")).thenReturn(Optional.empty());
-        when(fileMetadataRepository.save(any(FileMetadata.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
         BackgroundTaskHandlerResult result = handler.handle(task);
 
@@ -90,12 +84,12 @@ class MediaMetadataBackgroundTaskHandlerTest {
         verify(fileContentStorage).readBlobStream("blobs/photo.png");
         verify(fileContentStorage, never()).readBlob("blobs/photo.png");
 
-        ArgumentCaptor<FileMetadata> captor = ArgumentCaptor.forClass(FileMetadata.class);
-        verify(fileMetadataRepository, times(4)).save(captor.capture());
-        List<FileMetadata> saved = captor.getAllValues();
-        assertThat(saved).extracting(FileMetadata::getName)
+        ArgumentCaptor<String> nameCaptor = ArgumentCaptor.forClass(String.class);
+        ArgumentCaptor<String> valueCaptor = ArgumentCaptor.forClass(String.class);
+        verify(fileMetadataWriteApi, times(4)).upsertPublicMetadata(any(), nameCaptor.capture(), valueCaptor.capture());
+        assertThat(nameCaptor.getAllValues())
                 .containsExactly("media:contentType", "media:size", "media:width", "media:height");
-        assertThat(saved).extracting(FileMetadata::getValue)
+        assertThat(valueCaptor.getAllValues())
                 .containsExactly("image/png", "64", "2", "1");
     }
 
@@ -108,9 +102,6 @@ class MediaMetadataBackgroundTaskHandlerTest {
         when(contentBlobQueryApi.findBlobReferenceById(100L))
                 .thenReturn(Optional.of(new ContentBlobReference(100L, "blobs/movie.mp4", "video/mp4", 128L)));
         when(fileContentStorage.readBlobStream("blobs/movie.mp4")).thenReturn(new ByteArrayInputStream(new byte[] {0, 1, 2}));
-        when(fileMetadataRepository.findByFileIdAndName(12L, "media:contentType")).thenReturn(Optional.empty());
-        when(fileMetadataRepository.findByFileIdAndName(12L, "media:size")).thenReturn(Optional.empty());
-        when(fileMetadataRepository.save(any(FileMetadata.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
         BackgroundTaskHandlerResult result = handler.handle(task);
 
@@ -119,7 +110,7 @@ class MediaMetadataBackgroundTaskHandlerTest {
         assertThat(result.publicStatePatch()).containsEntry("mediaContentType", "video/mp4");
         assertThat(result.publicStatePatch()).containsEntry("mediaSize", 128L);
         assertThat(result.publicStatePatch()).doesNotContainKeys("mediaWidth", "mediaHeight");
-        verify(fileMetadataRepository, times(2)).save(any(FileMetadata.class));
+        verify(fileMetadataWriteApi, times(2)).upsertPublicMetadata(any(), any(), any());
         verify(fileContentStorage).readBlobStream("blobs/movie.mp4");
         verify(fileContentStorage, never()).readBlob("blobs/movie.mp4");
     }

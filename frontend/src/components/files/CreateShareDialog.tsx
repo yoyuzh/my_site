@@ -25,7 +25,7 @@ import {
   CloudUpload,
   AutoDelete,
 } from '@mui/icons-material';
-import { useMutation } from '@tanstack/react-query';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { createShare, buildFullShareUrl } from '../../lib/shares';
 import { formatDateTime } from '../../lib/format';
 import type { FileItem, ShareItem } from '../../api/types';
@@ -37,6 +37,7 @@ interface CreateShareDialogProps {
 }
 
 const CreateShareDialog: React.FC<CreateShareDialogProps> = ({ open, onClose, file }) => {
+  const queryClient = useQueryClient();
   const [shareName, setShareName] = useState('');
   const [usePassword, setUsePassword] = useState(false);
   const [password, setPassword] = useState('');
@@ -47,22 +48,36 @@ const CreateShareDialog: React.FC<CreateShareDialogProps> = ({ open, onClose, fi
   const [allowDownload, setAllowDownload] = useState(true);
   const [expireAfterConsume, setExpireAfterConsume] = useState(false);
   const [result, setResult] = useState<ShareItem | null>(null);
+  const [validationError, setValidationError] = useState('');
 
   const createMutation = useMutation({
     mutationFn: createShare,
     onSuccess: (data) => {
       setResult(data);
+      void queryClient.invalidateQueries({ queryKey: ['myShares'] });
     },
   });
 
   const handleCreate = () => {
     if (!file) return;
+    const trimmedPassword = password.trim();
+    const trimmedMaxDownloads = maxDownloads.trim();
+    const parsedMaxDownloads = trimmedMaxDownloads ? Number.parseInt(trimmedMaxDownloads, 10) : undefined;
+    if (usePassword && trimmedPassword.length < 4) {
+      setValidationError('提取密码至少需要 4 位');
+      return;
+    }
+    if (trimmedMaxDownloads && !/^[1-9]\d*$/.test(trimmedMaxDownloads)) {
+      setValidationError('最大下载/导入次数必须是大于 0 的整数');
+      return;
+    }
+    setValidationError('');
     createMutation.mutate({
       fileId: file.id,
       shareName: shareName.trim() || undefined,
-      password: usePassword ? password : undefined,
-      expiresAt: useExpiry ? new Date(expiresAt).toISOString() : undefined,
-      maxDownloads: maxDownloads ? parseInt(maxDownloads, 10) : undefined,
+      password: usePassword ? trimmedPassword : undefined,
+      expiresAt: useExpiry ? expiresAt : undefined,
+      maxDownloads: parsedMaxDownloads,
       allowImport,
       allowDownload,
       expireAfterConsume,
@@ -80,6 +95,8 @@ const CreateShareDialog: React.FC<CreateShareDialogProps> = ({ open, onClose, fi
     setAllowImport(true);
     setAllowDownload(true);
     setExpireAfterConsume(false);
+    setValidationError('');
+    createMutation.reset();
     onClose();
   };
 
@@ -278,19 +295,24 @@ const CreateShareDialog: React.FC<CreateShareDialogProps> = ({ open, onClose, fi
             />
           </Stack>
 
-          {createMutation.isError && (
-            <Alert severity="error">
-              创建分享失败: {createMutation.error instanceof Error ? createMutation.error.message : '未知错误'}
-            </Alert>
-          )}
-        </Stack>
-      </DialogContent>
+            {createMutation.isError && (
+              <Alert severity="error">
+                创建分享失败: {createMutation.error instanceof Error ? createMutation.error.message : '未知错误'}
+              </Alert>
+            )}
+            {validationError ? (
+              <Alert severity="error">
+                {validationError}
+              </Alert>
+            ) : null}
+          </Stack>
+        </DialogContent>
       <DialogActions sx={{ p: 2 }}>
         <Button onClick={handleClose}>取消</Button>
         <Button
           onClick={handleCreate}
           variant="contained"
-          disabled={createMutation.isPending || (usePassword && !password) || (useExpiry && !expiresAt)}
+          disabled={createMutation.isPending || (usePassword && !password.trim()) || (useExpiry && !expiresAt)}
         >
           {createMutation.isPending ? '创建中...' : '生成链接'}
         </Button>

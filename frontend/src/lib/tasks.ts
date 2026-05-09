@@ -12,6 +12,13 @@ export async function getTasks(page = 0, size = 20) {
   });
 }
 
+export async function getTask(taskId: number) {
+  return apiRequest<BackgroundTask>({
+    url: `/v2/tasks/${taskId}`,
+    method: 'GET',
+  });
+}
+
 export async function cancelTask(taskId: number) {
   return apiRequest<BackgroundTask>({
     url: `/v2/tasks/${taskId}`,
@@ -98,6 +105,7 @@ export function getTaskTypeLabel(type: string): string {
     STORAGE_POLICY_MIGRATION: '存储策略迁移',
     THUMBNAIL: '缩略图生成',
     MEDIA_META: '媒体元数据解析',
+    WORKSPACE_MUTATION: '文件变更',
     REMOTE_DOWNLOAD: '离线下载',
     HLS_TRANSCODE: '视频转码',
     CLEANUP: '清理任务',

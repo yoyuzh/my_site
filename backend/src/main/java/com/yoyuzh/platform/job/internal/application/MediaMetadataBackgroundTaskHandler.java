@@ -8,10 +8,9 @@ import com.yoyuzh.platform.job.api.BackgroundTaskType;
 
 import com.yoyuzh.files.content.api.ContentBlobQueryApi;
 import com.yoyuzh.files.content.api.ContentBlobReference;
+import com.yoyuzh.files.search.api.FileMetadataWriteApi;
 import com.yoyuzh.files.workspace.api.WorkspaceFileQueryApi;
 import com.yoyuzh.files.workspace.api.WorkspaceFileSnapshot;
-import com.yoyuzh.files.search.FileMetadata;
-import com.yoyuzh.files.search.FileMetadataRepository;
 import com.yoyuzh.files.content.api.FileContentStorage;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
@@ -35,18 +34,18 @@ public class MediaMetadataBackgroundTaskHandler implements BackgroundTaskHandler
 
     private final WorkspaceFileQueryApi workspaceFileQueryApi;
     private final ContentBlobQueryApi contentBlobQueryApi;
-    private final FileMetadataRepository fileMetadataRepository;
+    private final FileMetadataWriteApi fileMetadataWriteApi;
     private final FileContentStorage fileContentStorage;
     private final BackgroundTaskStateManager stateManager;
 
     public MediaMetadataBackgroundTaskHandler(WorkspaceFileQueryApi workspaceFileQueryApi,
-                                              FileMetadataRepository fileMetadataRepository,
+                                              FileMetadataWriteApi fileMetadataWriteApi,
                                               FileContentStorage fileContentStorage,
                                               BackgroundTaskStateManager stateManager) {
         this(
                 workspaceFileQueryApi,
                 blobId -> Optional.empty(),
-                fileMetadataRepository,
+                fileMetadataWriteApi,
                 fileContentStorage,
                 stateManager
         );
@@ -55,12 +54,12 @@ public class MediaMetadataBackgroundTaskHandler implements BackgroundTaskHandler
     @Autowired
     public MediaMetadataBackgroundTaskHandler(WorkspaceFileQueryApi workspaceFileQueryApi,
                                               ContentBlobQueryApi contentBlobQueryApi,
-                                              FileMetadataRepository fileMetadataRepository,
+                                              FileMetadataWriteApi fileMetadataWriteApi,
                                               FileContentStorage fileContentStorage,
                                               BackgroundTaskStateManager stateManager) {
         this.workspaceFileQueryApi = workspaceFileQueryApi;
         this.contentBlobQueryApi = contentBlobQueryApi;
-        this.fileMetadataRepository = fileMetadataRepository;
+        this.fileMetadataWriteApi = fileMetadataWriteApi;
         this.fileContentStorage = fileContentStorage;
         this.stateManager = stateManager;
     }
@@ -123,13 +122,7 @@ public class MediaMetadataBackgroundTaskHandler implements BackgroundTaskHandler
     }
 
     private void upsertMetadata(WorkspaceFileSnapshot file, String name, String value) {
-        FileMetadata metadata = fileMetadataRepository.findByFileIdAndName(file.id(), name)
-                .orElseGet(FileMetadata::new);
-        metadata.setFileId(file.id());
-        metadata.setName(name);
-        metadata.setValue(value == null ? "" : value);
-        metadata.setPublicVisible(true);
-        fileMetadataRepository.save(metadata);
+        fileMetadataWriteApi.upsertPublicMetadata(file.id(), name, value);
     }
 
     private Long readFileId(BackgroundTask task) {

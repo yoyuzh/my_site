@@ -26,6 +26,7 @@ import {
 import EditSharePolicyDialog from '../components/shares/EditSharePolicyDialog';
 import type { ShareItem } from '../api/types';
 import { UnifiedList, UnifiedListRow, UnifiedPageContent, UnifiedListColumn } from '../components/common/UnifiedPageContent';
+import { showToast } from '../components/files/WorkspaceActionToastHost';
 
 const columns: UnifiedListColumn[] = [
   { label: '名称/文件', flex: 1.5 },
@@ -45,7 +46,14 @@ const Shares: React.FC = () => {
   const deleteMutation = useMutation({
     mutationFn: deleteShare,
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['myShares'] });
+      showToast({ message: '分享已取消', severity: 'success' });
+      if (shares.length <= 1 && page > 1) {
+        setPage((current) => Math.max(1, current - 1));
+      }
+      void queryClient.invalidateQueries({ queryKey: ['myShares'] });
+    },
+    onError: (error) => {
+      showToast({ message: error instanceof Error ? error.message : '取消分享失败', severity: 'error' });
     },
   });
 
@@ -148,7 +156,12 @@ const Shares: React.FC = () => {
                   </IconButton>
                 </Tooltip>
                 <Tooltip title="取消分享">
-                  <IconButton size="small" color="error" onClick={() => handleCancelShare(share.id)}>
+                  <IconButton
+                    size="small"
+                    color="error"
+                    onClick={() => handleCancelShare(share.id)}
+                    disabled={deleteMutation.isPending && deleteMutation.variables === share.id}
+                  >
                     <Delete sx={{ fontSize: 18 }} />
                   </IconButton>
                 </Tooltip>

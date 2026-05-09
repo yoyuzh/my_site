@@ -12,7 +12,7 @@ import com.yoyuzh.transfer.api.RemoteDownloadDetailResponse;
 import com.yoyuzh.transfer.api.RemoteDownloadListItemResponse;
 import com.yoyuzh.transfer.api.SelectRemoteDownloadFilesCommand;
 import com.yoyuzh.transfer.internal.domain.RemoteDownloadCandidateFile;
-import com.yoyuzh.transfer.internal.domain.RemoteDownloadSourceType;
+import com.yoyuzh.transfer.api.RemoteDownloadSourceType;
 import com.yoyuzh.transfer.internal.domain.RemoteDownloadStatus;
 import com.yoyuzh.transfer.internal.domain.RemoteDownloadTask;
 import com.yoyuzh.transfer.internal.infra.RemoteDownloadTaskRepository;

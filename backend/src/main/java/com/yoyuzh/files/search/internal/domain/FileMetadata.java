@@ -1,4 +1,4 @@
-package com.yoyuzh.files.search;
+package com.yoyuzh.files.search.internal.domain;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;

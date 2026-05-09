@@ -14,18 +14,6 @@ class Task6SharingSearchArchitectureTest {
     private final JavaClasses classes = new ClassFileImporter().withImportOption(ImportOption.Predefined.DO_NOT_INCLUDE_TESTS).importPackages("com.yoyuzh");
 
     @Test
-    void legacySharingAndSearchServicesMustDependOnModuleApis() {
-        ArchRule searchRule = classes()
-                .that()
-                .haveFullyQualifiedName("com.yoyuzh.files.search.FileSearchService")
-                .should()
-                .dependOnClassesThat()
-                .haveFullyQualifiedName("com.yoyuzh.files.search.api.FileSearchApi");
-
-        searchRule.check(classes);
-    }
-
-    @Test
     void v2ControllersMustDependOnTargetSharingAndSearchApis() {
         ArchRule sharingControllerRule = classes()
                 .that()
@@ -159,6 +147,15 @@ class Task6SharingSearchArchitectureTest {
         ArchRule rule = noClasses()
                 .should()
                 .resideInAnyPackage("com.yoyuzh.files.share..");
+
+        rule.check(classes);
+    }
+
+    @Test
+    void filesSearchRuntimeClassesMustStayOutOfModuleRootPackage() {
+        ArchRule rule = noClasses()
+                .should()
+                .resideInAPackage("com.yoyuzh.files.search");
 
         rule.check(classes);
     }

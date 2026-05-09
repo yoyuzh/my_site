@@ -9,7 +9,7 @@ import com.yoyuzh.shared.kernel.ErrorCode;
 import com.yoyuzh.transfer.api.CreateRemoteDownloadCommand;
 import com.yoyuzh.transfer.api.RemoteDownloadDetailResponse;
 import com.yoyuzh.transfer.internal.domain.DownloadEngineType;
-import com.yoyuzh.transfer.internal.domain.RemoteDownloadSourceType;
+import com.yoyuzh.transfer.api.RemoteDownloadSourceType;
 import com.yoyuzh.transfer.internal.domain.RemoteDownloadStatus;
 import com.yoyuzh.transfer.internal.domain.RemoteDownloadTask;
 import com.yoyuzh.transfer.internal.infra.RemoteDownloadTaskRepository;

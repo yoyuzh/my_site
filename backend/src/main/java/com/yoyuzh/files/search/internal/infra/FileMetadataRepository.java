@@ -1,5 +1,6 @@
-package com.yoyuzh.files.search;
+package com.yoyuzh.files.search.internal.infra;
 
+import com.yoyuzh.files.search.internal.domain.FileMetadata;
 import org.springframework.data.jpa.repository.JpaRepository;
 
 import java.util.Optional;

@@ -1,5 +1,6 @@
 package com.yoyuzh.transfer.internal.domain;
 
+import com.yoyuzh.transfer.api.RemoteDownloadSourceType;
 import jakarta.persistence.CascadeType;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;

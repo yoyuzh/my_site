@@ -72,6 +72,13 @@ class Task3PlatformSeamArchitectureTest {
                 .dependOnClassesThat()
                 .resideInAnyPackage("com.yoyuzh.platform.job.internal.domain..");
 
+        ArchRule v2ApplicationServiceRule = noClasses()
+                .that()
+                .haveFullyQualifiedName("com.yoyuzh.platform.job.internal.web.BackgroundTaskV2Controller")
+                .should()
+                .dependOnClassesThat()
+                .resideInAnyPackage("com.yoyuzh.platform.job.internal.application..");
+
         ArchRule adminRule = classes()
                 .that()
                 .haveFullyQualifiedName("com.yoyuzh.ops.admin.internal.web.AdminTaskController")
@@ -177,6 +184,7 @@ class Task3PlatformSeamArchitectureTest {
         v2Rule.check(classes);
         v2LegacyRule.check(classes);
         v2DomainEntityRule.check(classes);
+        v2ApplicationServiceRule.check(classes);
         adminRule.check(classes);
         adminStorageServiceRule.check(classes);
         adminStorageControllerRule.check(classes);
@@ -189,5 +197,85 @@ class Task3PlatformSeamArchitectureTest {
         uploadPoliciesNoUploadPackageLeakRule.check(classes);
         fileStoragePolicyConsumersUseApiRule.check(classes);
         jobStorageMigrationUsesStorageApiRule.check(classes);
+    }
+
+    @Test
+    void platformJobModuleMustKeepLayerAndApiBoundaries() {
+        ArchRule apiRule = noClasses()
+                .that()
+                .resideInAPackage("com.yoyuzh.platform.job.api..")
+                .should()
+                .dependOnClassesThat()
+                .resideInAnyPackage(
+                        "com.yoyuzh.platform.job.internal..",
+                        "com.yoyuzh.files..",
+                        "com.yoyuzh.transfer..",
+                        "com.yoyuzh.ops..",
+                        "com.yoyuzh.identity.."
+                );
+
+        ArchRule webRule = noClasses()
+                .that()
+                .resideInAPackage("com.yoyuzh.platform.job.internal.web..")
+                .should()
+                .dependOnClassesThat()
+                .resideInAnyPackage(
+                        "com.yoyuzh.platform.job.internal.application..",
+                        "com.yoyuzh.platform.job.internal.domain..",
+                        "com.yoyuzh.platform.job.internal.infra..",
+                        "com.yoyuzh.files..",
+                        "com.yoyuzh.transfer..",
+                        "com.yoyuzh.ops.."
+                );
+
+        ArchRule applicationBusinessModuleRule = noClasses()
+                .that()
+                .resideInAPackage("com.yoyuzh.platform.job.internal.application..")
+                .should()
+                .dependOnClassesThat()
+                .resideInAnyPackage(
+                        "com.yoyuzh.files.workspace.internal..",
+                        "com.yoyuzh.files.content.internal..",
+                        "com.yoyuzh.files.upload.internal..",
+                        "com.yoyuzh.files.sharing.internal..",
+                        "com.yoyuzh.files.search.internal..",
+                        "com.yoyuzh.transfer.internal..",
+                        "com.yoyuzh.ops.admin.internal..",
+                        "com.yoyuzh.identity.access.internal.."
+                );
+
+        ArchRule domainRule = noClasses()
+                .that()
+                .resideInAPackage("com.yoyuzh.platform.job.internal.domain..")
+                .should()
+                .dependOnClassesThat()
+                .resideInAnyPackage(
+                        "com.yoyuzh.platform.job.internal.application..",
+                        "com.yoyuzh.platform.job.internal.infra..",
+                        "com.yoyuzh.platform.job.internal.web..",
+                        "com.yoyuzh.files..",
+                        "com.yoyuzh.transfer..",
+                        "com.yoyuzh.ops..",
+                        "com.yoyuzh.identity.."
+                );
+
+        ArchRule infraRule = noClasses()
+                .that()
+                .resideInAPackage("com.yoyuzh.platform.job.internal.infra..")
+                .should()
+                .dependOnClassesThat()
+                .resideInAnyPackage(
+                        "com.yoyuzh.platform.job.internal.application..",
+                        "com.yoyuzh.platform.job.internal.web..",
+                        "com.yoyuzh.files..",
+                        "com.yoyuzh.transfer..",
+                        "com.yoyuzh.ops.."
+                );
+
+        apiRule.check(classes);
+        webRule.check(classes);
+        applicationBusinessModuleRule.check(classes);
+        domainRule.check(classes);
+        infraRule.check(classes);
     }
 }

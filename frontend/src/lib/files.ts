@@ -2,6 +2,7 @@ import type { AxiosResponse } from 'axios';
 import { apiRequest } from '../api/client';
 import type {
   ArchiveListing,
+  BackgroundTask,
   DownloadUrlResponse,
   FavoriteFileResponse,
   FileDeleteMode,
@@ -107,7 +108,7 @@ export async function getFileDetail(fileId: number) {
 }
 
 export async function batchDeleteFiles(fileIds: number[], mode: FileDeleteMode = 'RECYCLE') {
-  return apiRequest<void>({
+  return apiRequest<BackgroundTask>({
     url: '/files/batch/delete',
     method: 'POST',
     data: {
@@ -139,7 +140,7 @@ export async function getThumbnail(fileId: number) {
 }
 
 export async function renameFile(fileId: number, filename: string) {
-  return apiRequest<FileItem>({
+  return apiRequest<BackgroundTask>({
     url: `/files/${fileId}/rename`,
     method: 'PATCH',
     data: { filename },
@@ -151,7 +152,7 @@ export async function moveFile(
   targetPath: string,
   conflictStrategy?: MoveConflictStrategy
 ) {
-  return apiRequest<MoveResponse>({
+  return apiRequest<BackgroundTask>({
     url: `/files/${fileId}/move`,
     method: 'PATCH',
     data: { targetPath, conflictStrategy },
@@ -163,7 +164,7 @@ export async function batchMoveFiles(
   targetPath: string,
   conflictStrategy?: MoveConflictStrategy
 ) {
-  return apiRequest<MoveResponse>({
+  return apiRequest<BackgroundTask>({
     url: '/files/batch/move',
     method: 'POST',
     data: { fileIds, targetPath, conflictStrategy },

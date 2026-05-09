@@ -11,7 +11,7 @@ import com.yoyuzh.files.workspace.internal.infra.StoredFileRepository;
 import com.yoyuzh.ops.admin.internal.application.AdminRuntimeSettingsService;
 import com.yoyuzh.shared.kernel.BusinessException;
 import com.yoyuzh.boot.security.AuthTokenInvalidationService;
-import com.yoyuzh.files.upload.InitiateUploadResponse;
+import com.yoyuzh.files.upload.api.InitiateUploadResponse;
 import com.yoyuzh.files.content.api.FileContentStorage;
 import com.yoyuzh.files.content.api.PreparedUpload;
 import com.yoyuzh.identity.access.api.AuthResponse;

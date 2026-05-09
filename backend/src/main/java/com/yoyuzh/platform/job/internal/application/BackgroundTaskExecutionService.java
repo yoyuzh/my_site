@@ -17,6 +17,7 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
 import java.time.LocalDateTime;
+import java.util.Collection;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -78,6 +79,18 @@ public class BackgroundTaskExecutionService {
         }
         return backgroundTaskRepository.findReadyTaskIdsByStatusOrder(
                 BackgroundTaskStatus.QUEUED,
+                LocalDateTime.now(),
+                PageRequest.of(0, limit)
+        );
+    }
+
+    public List<Long> findQueuedTaskIdsByTypes(Collection<BackgroundTaskType> types, int limit) {
+        if (limit <= 0 || types == null || types.isEmpty()) {
+            return List.of();
+        }
+        return backgroundTaskRepository.findReadyTaskIdsByStatusAndTypeInOrder(
+                BackgroundTaskStatus.QUEUED,
+                List.copyOf(types),
                 LocalDateTime.now(),
                 PageRequest.of(0, limit)
         );

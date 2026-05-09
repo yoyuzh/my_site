@@ -8,7 +8,6 @@ import com.yoyuzh.platform.job.api.BackgroundTaskLifecycleApi;
 import com.yoyuzh.platform.job.api.TaskProgressResponse;
 import com.yoyuzh.platform.job.api.BackgroundTaskType;
 import com.yoyuzh.platform.job.api.BackgroundTaskView;
-import com.yoyuzh.platform.job.internal.application.BackgroundTaskService;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
@@ -31,7 +30,6 @@ import org.springframework.web.bind.annotation.RestController;
 public class BackgroundTaskV2Controller {
 
     private final BackgroundTaskLifecycleApi backgroundTaskLifecycleApi;
-    private final BackgroundTaskService backgroundTaskService;
     private final CustomUserDetailsService userDetailsService;
 
     @GetMapping
@@ -54,7 +52,7 @@ public class BackgroundTaskV2Controller {
     @GetMapping("/{id}/progress")
     public ApiV2Response<TaskProgressResponse> progress(@AuthenticationPrincipal UserDetails userDetails,
                                                         @PathVariable Long id) {
-        return ApiV2Response.success(backgroundTaskService.getOwnedTaskProgress(currentUserId(userDetails), id));
+        return ApiV2Response.success(backgroundTaskLifecycleApi.getOwnedTaskProgress(currentUserId(userDetails), id));
     }
 
     @DeleteMapping("/{id}")

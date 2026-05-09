@@ -198,7 +198,10 @@ function redirectToLoginAfterAuthFailure(config: ApiRequestConfig) {
   if (config.authRequired === false || window.location.pathname === '/login') {
     return;
   }
-  window.location.assign('/login');
+  const from = `${window.location.pathname}${window.location.search}`;
+  const loginUrl = new URL('/login', window.location.origin);
+  loginUrl.searchParams.set('from', from);
+  window.location.assign(`${loginUrl.pathname}${loginUrl.search}`);
 }
 
 async function refreshAccessToken(session: PortalSession) {

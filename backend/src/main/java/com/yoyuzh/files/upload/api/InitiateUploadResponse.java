@@ -1,4 +1,4 @@
-package com.yoyuzh.files.upload;
+package com.yoyuzh.files.upload.api;
 
 import java.util.Map;
 

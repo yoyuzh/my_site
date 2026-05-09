@@ -1,12 +1,13 @@
 import React, { useEffect, useState } from 'react';
-import { Link, Navigate, useNavigate } from 'react-router-dom';
+import { Link, Navigate, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { useMutation } from '@tanstack/react-query';
 import Topbar from '../components/Topbar';
 import BackgroundEffects from '../components/BackgroundEffects';
 import BrandMark from '../components/BrandMark';
 import { defaultSiteRuntimeConfig, loadSiteRuntimeConfig, type SiteRuntimeConfig } from '../lib/site-config';
 import { login } from '../lib/auth';
-import { getDefaultSignedInRoute, getSession } from '../lib/session';
+import { useStoredSessionValidation } from '../hooks/useStoredSessionValidation';
+import { getDefaultSignedInRoute } from '../lib/session';
 import { ApiError } from '../api/client';
 
 const Login: React.FC = () => {
@@ -16,18 +17,24 @@ const Login: React.FC = () => {
     password: '',
   });
   const navigate = useNavigate();
-  const session = getSession();
+  const location = useLocation();
+  const [searchParams] = useSearchParams();
+  const { status: sessionStatus, session } = useStoredSessionValidation();
+  const requestedRedirectPath =
+    typeof location.state === 'object' && location.state && 'from' in location.state
+      ? (location.state as { from?: unknown }).from
+      : searchParams.get('from');
+  const redirectPath =
+    typeof requestedRedirectPath === 'string' && requestedRedirectPath.startsWith('/') && !requestedRedirectPath.startsWith('//')
+      ? requestedRedirectPath
+      : null;
 
   const loginMutation = useMutation({
     mutationFn: login,
     onSuccess: (result) => {
-      navigate(getDefaultSignedInRoute(result.user.role), { replace: true });
+      navigate(redirectPath ?? getDefaultSignedInRoute(result.user.role), { replace: true });
     },
   });
-
-  if (session) {
-    return <Navigate to={getDefaultSignedInRoute(session.user.role)} replace />;
-  }
 
   useEffect(() => {
     const controller = new AbortController();
@@ -47,6 +54,10 @@ const Login: React.FC = () => {
       controller.abort();
     };
   }, []);
+
+  if (sessionStatus === 'authenticated' && session) {
+    return <Navigate to={redirectPath ?? getDefaultSignedInRoute(session.user.role)} replace />;
+  }
 
   return (
     <div className="min-h-screen px-4 pb-6 pt-[88px] lg:px-6">
@@ -133,9 +144,9 @@ const Login: React.FC = () => {
                 <button
                   type="submit"
                   className="btn-primary mt-4 h-[50px] w-full disabled:opacity-70 dark:h-[48px] dark:rounded-[4px]"
-                  disabled={loginMutation.isPending}
+                  disabled={loginMutation.isPending || sessionStatus === 'checking'}
                 >
-                  {loginMutation.isPending ? '登录中...' : `登录到 ${siteConfig.siteName}`}
+                  {sessionStatus === 'checking' ? '正在检查登录状态...' : loginMutation.isPending ? '登录中...' : `登录到 ${siteConfig.siteName}`}
                 </button>
 
                 <p className="text-[12px] text-text-muted-light dark:text-text-muted-dark leading-relaxed">

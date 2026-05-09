@@ -76,4 +76,13 @@ class Task5UploadIngressArchitectureTest {
 
         rule.check(classes);
     }
+
+    @Test
+    void filesUploadRuntimeClassesMustStayOutOfModuleRootPackage() {
+        ArchRule rule = noClasses()
+                .should()
+                .resideInAPackage("com.yoyuzh.files.upload");
+
+        rule.check(classes);
+    }
 }

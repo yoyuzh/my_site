@@ -15,9 +15,11 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
@@ -66,6 +68,24 @@ class BackgroundTaskWorkerTest {
 
         assertThat(processedCount).isZero();
         verify(backgroundTaskHandler, never()).handle(any(BackgroundTask.class), any(BackgroundTaskProgressReporter.class));
+    }
+
+    @Test
+    void shouldProcessOnlyWorkspaceMutationTasksForLightweightWakeup() {
+        BackgroundTask task = createTask(9L, BackgroundTaskType.WORKSPACE_MUTATION, BackgroundTaskStatus.RUNNING);
+        when(backgroundTaskExecutionGateway.findQueuedTaskIdsByTypes(Set.of(BackgroundTaskType.WORKSPACE_MUTATION), 1))
+                .thenReturn(List.of(9L));
+        when(backgroundTaskExecutionGateway.claimQueuedTask(eq(9L), anyString(), anyLong())).thenReturn(Optional.of(task));
+        when(backgroundTaskHandler.supports(BackgroundTaskType.WORKSPACE_MUTATION)).thenReturn(true);
+        when(backgroundTaskHandler.handle(eq(task), any(BackgroundTaskProgressReporter.class)))
+                .thenReturn(new BackgroundTaskHandlerResult(Map.of("phase", "completed")));
+
+        int processedCount = backgroundTaskWorker.processQueuedTasksByTypes(Set.of(BackgroundTaskType.WORKSPACE_MUTATION), 1);
+
+        assertThat(processedCount).isEqualTo(1);
+        verify(backgroundTaskExecutionGateway).findQueuedTaskIdsByTypes(Set.of(BackgroundTaskType.WORKSPACE_MUTATION), 1);
+        verify(backgroundTaskExecutionGateway, never()).findQueuedTaskIds(anyInt());
+        verify(backgroundTaskExecutionGateway).markWorkerTaskProgress(eq(9L), anyString(), eq(Map.of("phase", "mutating-workspace")), anyLong());
     }
 
     @Test

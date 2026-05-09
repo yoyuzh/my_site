@@ -6,9 +6,9 @@ import com.yoyuzh.files.content.api.ContentBlobQueryApi;
 import com.yoyuzh.files.content.api.RegisteredContentFile;
 import com.yoyuzh.files.search.api.FileEventType;
 import com.yoyuzh.files.content.api.FileContentStorage;
-import com.yoyuzh.files.upload.CompleteUploadRequest;
-import com.yoyuzh.files.upload.InitiateUploadRequest;
-import com.yoyuzh.files.upload.InitiateUploadResponse;
+import com.yoyuzh.files.upload.api.CompleteUploadRequest;
+import com.yoyuzh.files.upload.api.InitiateUploadRequest;
+import com.yoyuzh.files.upload.api.InitiateUploadResponse;
 import com.yoyuzh.files.workspace.api.DownloadUrlResponse;
 import com.yoyuzh.files.workspace.api.FavoriteFileResponse;
 import com.yoyuzh.files.workspace.api.FileDeleteMode;
@@ -20,6 +20,7 @@ import com.yoyuzh.files.workspace.api.WorkspaceArchiveBuildProgressListener;
 import com.yoyuzh.files.workspace.api.WorkspaceArchiveExtractionResult;
 import com.yoyuzh.files.workspace.api.WorkspaceArchiveListing;
 import com.yoyuzh.files.workspace.api.WorkspaceArchiveSummary;
+import com.yoyuzh.files.workspace.api.WorkspaceBackgroundMutationApi;
 import com.yoyuzh.files.workspace.api.WorkspaceBootstrapApi;
 import com.yoyuzh.files.workspace.api.WorkspaceDownloadMetricsPort;
 import com.yoyuzh.files.workspace.api.WorkspaceDownloadOptions;
@@ -79,7 +80,7 @@ import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
 
 @Service
-public class FileService implements WorkspaceBootstrapApi, WorkspaceArchiveApi {
+public class FileService implements WorkspaceBootstrapApi, WorkspaceArchiveApi, WorkspaceBackgroundMutationApi {
     private static final List<String> DEFAULT_DIRECTORIES = List.of("下载", "文档", "图片");
     private static final long RECYCLE_BIN_RETENTION_DAYS = 10L;
     private static final String SECURE_LINK_SIGNATURE_ALGORITHM = "HmacSHA256";

@@ -4,7 +4,7 @@ import com.yoyuzh.transfer.api.RemoteDownloadExecutionApi;
 import com.yoyuzh.transfer.api.RemoteDownloadExecutionResult;
 import com.yoyuzh.transfer.internal.domain.DownloadEngineType;
 import com.yoyuzh.transfer.internal.domain.RemoteDownloadCandidateFile;
-import com.yoyuzh.transfer.internal.domain.RemoteDownloadSourceType;
+import com.yoyuzh.transfer.api.RemoteDownloadSourceType;
 import com.yoyuzh.transfer.internal.domain.RemoteDownloadStatus;
 import com.yoyuzh.transfer.internal.domain.RemoteDownloadTask;
 import com.yoyuzh.transfer.internal.infra.Aria2Client;

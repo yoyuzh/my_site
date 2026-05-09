@@ -5,6 +5,7 @@ import com.yoyuzh.platform.job.internal.domain.BackgroundTask;
 import com.yoyuzh.platform.job.internal.application.BackgroundTaskService;
 import com.yoyuzh.platform.job.api.BackgroundTaskLifecycleApi;
 import com.yoyuzh.platform.job.api.BackgroundTaskType;
+import com.yoyuzh.platform.job.api.TaskProgressResponse;
 import com.yoyuzh.platform.job.api.BackgroundTaskView;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
@@ -38,6 +39,11 @@ public class RuntimeBackgroundTaskLifecycleApi implements BackgroundTaskLifecycl
     @Override
     public BackgroundTaskView getOwnedTask(Long userId, Long id) {
         return toView(backgroundTaskService.getOwnedTask(userId, id));
+    }
+
+    @Override
+    public TaskProgressResponse getOwnedTaskProgress(Long userId, Long id) {
+        return backgroundTaskService.getOwnedTaskProgress(userId, id);
     }
 
     @Override

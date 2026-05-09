@@ -1,4 +1,4 @@
-package com.yoyuzh.transfer.internal.domain;
+package com.yoyuzh.transfer.api;
 
 public enum RemoteDownloadSourceType {
     HTTP,

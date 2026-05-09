@@ -1,7 +1,7 @@
 package com.yoyuzh.transfer.internal.web;
 
 import com.yoyuzh.transfer.api.CreateRemoteDownloadCommand;
-import com.yoyuzh.transfer.internal.domain.RemoteDownloadSourceType;
+import com.yoyuzh.transfer.api.RemoteDownloadSourceType;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import org.springframework.web.multipart.MultipartFile;

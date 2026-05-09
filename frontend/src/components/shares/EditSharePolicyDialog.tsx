@@ -23,6 +23,7 @@ import {
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { updateSharePolicy } from '../../lib/shares';
 import type { ShareItem } from '../../api/types';
+import { showToast } from '../files/WorkspaceActionToastHost';
 
 interface EditSharePolicyDialogProps {
   open: boolean;
@@ -37,6 +38,7 @@ const EditSharePolicyDialog: React.FC<EditSharePolicyDialogProps> = ({ open, onC
   const [expiresAt, setExpiresAt] = useState('');
   const [maxDownloads, setMaxDownloads] = useState<string>('');
   const [expireAfterConsume, setExpireAfterConsume] = useState(false);
+  const [validationError, setValidationError] = useState('');
 
   useEffect(() => {
     if (share && open) {
@@ -52,23 +54,35 @@ const EditSharePolicyDialog: React.FC<EditSharePolicyDialogProps> = ({ open, onC
       }
       setMaxDownloads(share.maxDownloads?.toString() || '');
       setExpireAfterConsume(share.expireAfterConsume);
+      setValidationError('');
+      updateMutation.reset();
     }
   }, [share, open]);
 
   const updateMutation = useMutation({
     mutationFn: (payload: any) => updateSharePolicy(share!.id, payload),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['myShares'] });
+      showToast({ message: '分享策略已更新', severity: 'success' });
+      void queryClient.invalidateQueries({ queryKey: ['myShares'] });
       onClose();
+    },
+    onError: (error) => {
+      showToast({ message: error instanceof Error ? error.message : '更新分享策略失败', severity: 'error' });
     },
   });
 
   const handleUpdate = () => {
     if (!share) return;
+    const trimmedMaxDownloads = maxDownloads.trim();
+    if (trimmedMaxDownloads && !/^[1-9]\d*$/.test(trimmedMaxDownloads)) {
+      setValidationError('最大下载/导入次数必须是大于 0 的整数');
+      return;
+    }
+    setValidationError('');
     updateMutation.mutate({
       password: password || '', // Empty string clears password in backend if not provided as null
-      expiresAt: useExpiry && expiresAt ? new Date(expiresAt).toISOString() : undefined,
-      maxDownloads: maxDownloads ? parseInt(maxDownloads, 10) : null,
+      expiresAt: useExpiry && expiresAt ? expiresAt : undefined,
+      maxDownloads: trimmedMaxDownloads ? Number.parseInt(trimmedMaxDownloads, 10) : null,
       expireAfterConsume,
     });
   };
@@ -147,6 +161,11 @@ const EditSharePolicyDialog: React.FC<EditSharePolicyDialogProps> = ({ open, onC
               更新失败: {updateMutation.error instanceof Error ? updateMutation.error.message : '未知错误'}
             </Alert>
           )}
+          {validationError ? (
+            <Alert severity="error">
+              {validationError}
+            </Alert>
+          ) : null}
         </Stack>
       </DialogContent>
       <DialogActions sx={{ p: 2 }}>

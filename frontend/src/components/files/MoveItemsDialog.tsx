@@ -1,5 +1,6 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
+  Alert,
   Dialog,
   DialogTitle,
   DialogContent,
@@ -30,7 +31,7 @@ import {
   Home,
   WarningAmber,
 } from '@mui/icons-material';
-import { FileItem, MoveConflictStrategy, MoveResponse } from '../../api/types';
+import { BackgroundTask, FileItem, MoveConflictStrategy, MoveResponse } from '../../api/types';
 import { listFiles, batchMoveFiles, moveFile } from '../../lib/files';
 import { getWorkspaceItemLogicalPath, normalizeWorkspaceFolderPath } from '../../lib/workspace-folder-tree';
 
@@ -40,7 +41,7 @@ interface MoveItemsDialogProps {
   items: FileItem[];
   currentPath: string;
   initialConflictResult?: MoveResponse | null;
-  onSuccess: (result: MoveResponse) => void;
+  onSuccess: (task: BackgroundTask) => void;
 }
 
 const MoveItemsDialog: React.FC<MoveItemsDialogProps> = ({
@@ -55,52 +56,73 @@ const MoveItemsDialog: React.FC<MoveItemsDialogProps> = ({
   const [targetContent, setTargetContent] = useState<FileItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [moving, setMoving] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [conflictResult, setConflictResult] = useState<MoveResponse | null>(null);
   const [conflictStrategy, setConflictStrategy] = useState<MoveConflictStrategy>('AUTO_RENAME');
+  const loadRequestIdRef = useRef(0);
 
   useEffect(() => {
     if (open) {
       setTargetPath(initialPath);
       setConflictResult(initialConflictResult ?? null);
+      setConflictStrategy('AUTO_RENAME');
+      setLoadError(null);
     }
   }, [initialConflictResult, initialPath, open]);
 
   useEffect(() => {
-    if (open) {
-      void loadContent(targetPath);
+    if (!open) {
+      return;
     }
-  }, [open, targetPath]);
 
-  async function loadContent(path: string) {
+    const requestId = loadRequestIdRef.current + 1;
+    loadRequestIdRef.current = requestId;
     setLoading(true);
-    try {
-      const result = await listFiles(path, 0, 1000);
-      setTargetContent(result.items);
-    } catch (error) {
-      console.error('Failed to load target content', error);
-    } finally {
-      setLoading(false);
-    }
-  }
+    setLoadError(null);
+    setTargetContent([]);
+
+    const loadTargetContent = async () => {
+      try {
+        const result = await listFiles(targetPath, 0, 1000);
+        if (loadRequestIdRef.current === requestId) {
+          setTargetContent(result.items);
+        }
+      } catch (error) {
+        console.error('Failed to load target content', error);
+        if (loadRequestIdRef.current === requestId) {
+          setTargetContent([]);
+          setLoadError(error instanceof Error ? error.message : '目标目录加载失败');
+        }
+      } finally {
+        if (loadRequestIdRef.current === requestId) {
+          setLoading(false);
+        }
+      }
+    };
+    void loadTargetContent();
+
+    return () => {
+      if (loadRequestIdRef.current === requestId) {
+        loadRequestIdRef.current += 1;
+      }
+    };
+  }, [open, targetPath]);
 
   async function handleMove(strategy?: MoveConflictStrategy) {
     setMoving(true);
     try {
-      let result: MoveResponse;
+      let task: BackgroundTask;
       const fileIds = items.map((i) => i.id);
+      const resolvedStrategy = strategy ?? 'AUTO_RENAME';
       
       if (fileIds.length === 1) {
-        result = await moveFile(fileIds[0], targetPath, strategy);
+        task = await moveFile(fileIds[0], targetPath, resolvedStrategy);
       } else {
-        result = await batchMoveFiles(fileIds, targetPath, strategy);
+        task = await batchMoveFiles(fileIds, targetPath, resolvedStrategy);
       }
 
-      if (result.status === 'CONFLICT') {
-        setConflictResult(result);
-      } else {
-        onSuccess(result);
-        onClose();
-      }
+      onSuccess(task);
+      onClose();
     } catch (error) {
       console.error('Move failed', error);
       alert(error instanceof Error ? error.message : '移动失败');
@@ -204,6 +226,10 @@ const MoveItemsDialog: React.FC<MoveItemsDialogProps> = ({
             <Stack alignItems="center" justifyContent="center" sx={{ height: '100%' }}>
               <CircularProgress size={32} />
             </Stack>
+          ) : loadError ? (
+            <Stack alignItems="center" justifyContent="center" sx={{ height: '100%', p: 3 }}>
+              <Alert severity="error" sx={{ width: '100%' }}>{loadError}</Alert>
+            </Stack>
           ) : (
             <List sx={{ py: 0 }}>
               {targetContent
@@ -265,7 +291,7 @@ const MoveItemsDialog: React.FC<MoveItemsDialogProps> = ({
         <Button onClick={onClose}>取消</Button>
         <Button
           variant="contained"
-          disabled={moving || loading}
+          disabled={moving || loading || Boolean(loadError)}
           onClick={() => handleMove()}
         >
           {moving ? <CircularProgress size={20} sx={{ mr: 1 }} /> : null}

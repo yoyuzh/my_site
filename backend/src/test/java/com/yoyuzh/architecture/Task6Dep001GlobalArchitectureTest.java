@@ -50,6 +50,30 @@ class Task6Dep001GlobalArchitectureTest {
     }
 
     @Test
+    void apiContractsMustNotDependOnInternalPackages() {
+        ArchRule rule = noClasses()
+                .that()
+                .resideInAnyPackage(
+                        "com.yoyuzh.identity.access.api..",
+                        "com.yoyuzh.platform.storage.api..",
+                        "com.yoyuzh.files.workspace.api..",
+                        "com.yoyuzh.files.sharing.api..",
+                        "com.yoyuzh.platform.job.api..",
+                        "com.yoyuzh.files.content.api..",
+                        "com.yoyuzh.files.search.api..",
+                        "com.yoyuzh.files.upload.api..",
+                        "com.yoyuzh.app.android.api..",
+                        "com.yoyuzh.ops.admin.api..",
+                        "com.yoyuzh.transfer.api.."
+                )
+                .should()
+                .dependOnClassesThat()
+                .resideInAnyPackage("com.yoyuzh..internal..");
+
+        rule.check(classes);
+    }
+
+    @Test
     void legacyFilesStoragePackageMustStayRemoved() {
         ArchRule rule = noClasses()
                 .should()
