@@ -40,7 +40,7 @@ export default {
         }
       },
       fontFamily: {
-        inter: ['Inter', 'sans-serif'],
+        inter: ['Inter', 'system-ui', '-apple-system', 'BlinkMacSystemFont', '"Segoe UI"', 'sans-serif'],
         funnel: ['Funnel Sans', 'sans-serif'],
         geist: ['Geist', 'sans-serif'],
       },

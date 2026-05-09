@@ -50,6 +50,13 @@ export async function cancelRemoteDownload(id: number) {
   });
 }
 
+export async function retryRemoteDownload(id: number) {
+  return apiRequest<RemoteDownloadDetail>({
+    url: `/transfer/remote-downloads/${id}/retry`,
+    method: 'POST',
+  });
+}
+
 export async function selectRemoteDownloadFiles(id: number, fileKeys: string[]) {
   return apiRequest<RemoteDownloadDetail>({
     url: `/transfer/remote-downloads/${id}/selection`,

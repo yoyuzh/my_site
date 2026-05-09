@@ -151,10 +151,12 @@ const WorkspaceFolderTree: React.FC<{
   const nodesRef = useRef<Record<string, WorkspaceFolderTreeNodeState>>({});
   const [nodes, setNodes] = useState<Record<string, WorkspaceFolderTreeNodeState>>(() => getInitialCachedNodes());
   const [expandedPaths, setExpandedPaths] = useState<string[]>(restoreExpandedPaths);
+  const [pendingPath, setPendingPath] = useState<string | null>(null);
   const searchParams = new URLSearchParams(location.search);
   const currentPath = location.pathname === '/dashboard/files'
     ? getWorkspaceFolderPathFromSearchParams(searchParams)
     : null;
+  const activePath = pendingPath ?? currentPath;
   const rootNode = nodes[ROOT_PATH];
   const waitingForRootSeed =
     directorySeed != null
@@ -302,6 +304,7 @@ const WorkspaceFolderTree: React.FC<{
       return;
     }
 
+    setPendingPath(null);
     void ensurePathVisible(currentPath);
   }, [currentPath]);
 
@@ -331,6 +334,7 @@ const WorkspaceFolderTree: React.FC<{
   }, [expandedPaths]);
 
   function handleSelect(path: string) {
+    setPendingPath(normalizeWorkspaceFolderPath(path));
     navigate(buildWorkspaceFilesHref(path));
     onNavigate?.();
   }
@@ -366,7 +370,7 @@ const WorkspaceFolderTree: React.FC<{
         key={path}
         node={node}
         depth={depth}
-        currentPath={currentPath}
+        currentPath={activePath}
         expanded={expanded}
         onSelect={handleSelect}
         onToggle={handleToggle}

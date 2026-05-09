@@ -315,6 +315,7 @@ export interface RemoteDownloadDetail {
   engineType: string;
   targetPath: string;
   sourceValue: string;
+  filename: string;
   downloadNodeId: string;
   selectedFileCount: number;
   importedFileCount: number;
@@ -333,6 +334,8 @@ export interface RemoteDownloadListItem {
   sourceType: RemoteDownloadSourceType;
   engineType: string;
   targetPath: string;
+  sourceValue: string;
+  filename: string;
   createdAt: string;
   updatedAt: string;
   finishedAt: string | null;

@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { formatBytes } from '../../lib/format';
-import { cancelRemoteDownload, selectRemoteDownloadFiles } from '../../lib/remote-downloads';
+import { cancelRemoteDownload, retryRemoteDownload, selectRemoteDownloadFiles } from '../../lib/remote-downloads';
 import {
   getRemoteDownloadPhaseLabel,
   getRemoteDownloadStatusLabel,
@@ -15,19 +15,21 @@ import {
 } from '../../lib/tasks';
 import type { RemoteDownloadDetail, TaskProgress, BackgroundTask } from '../../api/types';
 import { Box, Typography, Paper, LinearProgress, Button, Checkbox, FormControlLabel, Stack, Divider, alpha } from '@mui/material';
-import { Info, XCircle, CheckCircle2, FileStack, Globe, Server, Folder, FileCheck, AlertTriangle } from 'lucide-react';
+import { Info, XCircle, RotateCcw, FileStack, Globe, Server, Folder, FileCheck, AlertTriangle } from 'lucide-react';
 import { useTheme } from '../../hooks/useTheme';
 
 interface OfflineDownloadDetailPanelProps {
   task: BackgroundTask | null;
   remoteDownload: RemoteDownloadDetail | null;
   onCancelled?: (detail: RemoteDownloadDetail) => void;
+  onRetried?: (detail: RemoteDownloadDetail) => void;
 }
 
 const OfflineDownloadDetailPanel: React.FC<OfflineDownloadDetailPanelProps> = ({
   task,
   remoteDownload,
   onCancelled,
+  onRetried,
 }) => {
   const { theme } = useTheme();
   const isDark = theme === 'dark';
@@ -68,6 +70,17 @@ const OfflineDownloadDetailPanel: React.FC<OfflineDownloadDetailPanelProps> = ({
       void queryClient.invalidateQueries({ queryKey: ['remoteDownloads'] });
       void queryClient.invalidateQueries({ queryKey: ['remoteDownloadDetail'] });
       setSelectedFileKeys([]);
+    },
+  });
+
+  const retryMutation = useMutation({
+    mutationFn: (id: number) => retryRemoteDownload(id),
+    onSuccess: (detail) => {
+      queryClient.setQueryData(['remoteDownloadDetail', detail.id], detail);
+      onRetried?.(detail);
+      void queryClient.invalidateQueries({ queryKey: ['tasks'] });
+      void queryClient.invalidateQueries({ queryKey: ['remoteDownloads'] });
+      void queryClient.invalidateQueries({ queryKey: ['remoteDownloadDetail'] });
     },
   });
 
@@ -216,27 +229,54 @@ const OfflineDownloadDetailPanel: React.FC<OfflineDownloadDetailPanelProps> = ({
             <Typography variant="subtitle2" fontWeight={700} color="text.secondary" sx={{ textTransform: 'uppercase', letterSpacing: '0.05em' }}>
               任务详情
             </Typography>
-            {!isRemoteDownloadTerminalStatus(resolvedStatus) && (
-              <Button
-                variant="outlined"
-                color="error"
-                size="small"
-                startIcon={<XCircle size={14} />}
-                onClick={() => cancelMutation.mutate(remoteDownload.id)}
-                disabled={cancelMutation.isPending}
-                sx={{ borderRadius: 1.5, textTransform: 'none', px: 2 }}
-              >
-                {cancelMutation.isPending ? '取消中...' : '取消任务'}
-              </Button>
-            )}
+            <Stack direction="row" spacing={1}>
+              {isRemoteDownloadTerminalStatus(resolvedStatus) ? (
+                <Button
+                  variant="contained"
+                  size="small"
+                  startIcon={<RotateCcw size={14} />}
+                  onClick={() => retryMutation.mutate(remoteDownload.id)}
+                  disabled={retryMutation.isPending}
+                  sx={{ borderRadius: 1.5, textTransform: 'none', px: 2, boxShadow: 'none' }}
+                >
+                  {retryMutation.isPending ? '重新提交中...' : '重新下载'}
+                </Button>
+              ) : (
+                <Button
+                  variant="outlined"
+                  color="error"
+                  size="small"
+                  startIcon={<XCircle size={14} />}
+                  onClick={() => cancelMutation.mutate(remoteDownload.id)}
+                  disabled={cancelMutation.isPending}
+                  sx={{ borderRadius: 1.5, textTransform: 'none', px: 2 }}
+                >
+                  {cancelMutation.isPending ? '取消中...' : '取消任务'}
+                </Button>
+              )}
+            </Stack>
           </Box>
           
           <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: 2.5 }}>
+            <InfoItem icon={<FileStack size={16} />} label="文件名" value={remoteDownload.filename || '-'} />
             <InfoItem icon={<FileStack size={16} />} label="当前阶段" value={getRemoteDownloadPhaseLabel(resolvedPhase)} />
             <InfoItem icon={<Globe size={16} />} label="来源类型" value={getRemoteDownloadSourceLabel(String(taskState?.sourceType ?? remoteDownload.sourceType ?? ''))} />
             <InfoItem icon={<Server size={16} />} label="下载引擎" value={String(taskState?.engineType ?? remoteDownload.engineType ?? '-')} />
             <InfoItem icon={<Folder size={16} />} label="目标目录" value={remoteDownload.targetPath} />
             <InfoItem icon={<FileCheck size={16} />} label="已选/已导入" value={`${remoteDownload.selectedFileCount} / ${remoteDownload.importedFileCount}`} />
+          </Box>
+
+          <Box sx={{ mt: 3 }}>
+            <Typography variant="caption" color="text.secondary" fontWeight={600}>
+              下载地址
+            </Typography>
+            <Typography
+              variant="body2"
+              title={remoteDownload.sourceValue}
+              sx={{ mt: 0.5, maxWidth: '100%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+            >
+              {remoteDownload.sourceValue}
+            </Typography>
           </Box>
 
           {remoteDownload.failureMessage && (

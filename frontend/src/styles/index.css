@@ -33,6 +33,22 @@
     @apply bg-card-light dark:bg-card-dark border border-[#D9E3F2] dark:border-[#222233] rounded-[10px] shadow-card-light dark:shadow-card-dark overflow-hidden transition-all duration-300;
   }
 
+  .admin-secondary-button {
+    @apply border border-[#D9E3F2] bg-card-light text-text-secondary-light transition-colors hover:bg-black/5 dark:border-[#222233] dark:bg-[#0A0A0A] dark:text-text-secondary-dark dark:hover:bg-white/5;
+  }
+
+  .admin-filter-panel {
+    @apply border border-[#D9E3F2] bg-card-light dark:border-[#222233] dark:bg-[#111117];
+  }
+
+  .admin-muted-panel {
+    @apply border border-[#D9E3F2] bg-[#F8FBFF] dark:border-[#222233] dark:bg-black/20;
+  }
+
+  .admin-inline-code {
+    @apply bg-black/5 text-text-secondary-light dark:bg-white/5 dark:text-text-secondary-dark;
+  }
+
   .surface-shell {
     @apply rounded-[28px] border border-white/50 bg-white/70 backdrop-blur-xl dark:border-white/10;
   }

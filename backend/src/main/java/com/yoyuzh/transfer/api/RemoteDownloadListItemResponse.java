@@ -9,6 +9,8 @@ public record RemoteDownloadListItemResponse(
         String sourceType,
         String engineType,
         String targetPath,
+        String sourceValue,
+        String filename,
         Instant createdAt,
         Instant updatedAt,
         Instant finishedAt

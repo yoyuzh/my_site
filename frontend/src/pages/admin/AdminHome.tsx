@@ -1,8 +1,8 @@
 import React from 'react';
 import AdminLayout from '../../components/AdminLayout';
-import { Users, HardDrive, AlertTriangle, FileText, Share2, Activity } from 'lucide-react';
+import { Users, HardDrive, FileText, Share2, Activity } from 'lucide-react';
 import { useAdminSummary } from '../../api/queries';
-import { formatBytes, formatPercent } from '../../lib/format';
+import { formatPercent } from '../../lib/format';
 
 const AdminHome: React.FC = () => {
   const { data, isLoading, isError } = useAdminSummary();
@@ -16,7 +16,7 @@ const AdminHome: React.FC = () => {
       ) : (
       <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
         
-        {/* Trend Summary Area */}
+        {/* 趋势概览 */}
         <div className="lg:col-span-3 flex flex-col gap-6">
           <div className="card-container p-8 animate-fade-in-up">
             <div className="flex justify-between items-center mb-4">
@@ -25,16 +25,15 @@ const AdminHome: React.FC = () => {
             </div>
             <hr className="border-[#D9E3F2] dark:border-[#222233] mb-6" />
             
-            {/* Chart Placeholder */}
-            <div className="h-[350px] w-full flex flex-col items-center justify-center border border-dashed border-[#D9E3F2] dark:border-[#222233] rounded-lg bg-[#F8FBFF] dark:bg-[#111117]/50">
+            <div className="admin-muted-panel h-[350px] w-full flex flex-col items-center justify-center rounded-lg border-dashed">
               <Activity size={48} className="text-brand-light/30 dark:text-brand-dark/30 mb-4" />
               <p className="text-text-secondary-light dark:text-text-secondary-dark font-medium">图表数据加载中...</p>
-              <p className="text-xs text-text-muted-light dark:text-text-muted-dark mt-2 font-geist">此处将渲染按日期统计的用户、文件和分享趋势图 (Recharts)</p>
+              <p className="text-xs text-text-muted-light dark:text-text-muted-dark mt-2 font-geist">此处将渲染按日期统计的用户、文件和分享趋势图</p>
             </div>
           </div>
         </div>
 
-        {/* Summary Quick Stats Area */}
+        {/* 系统状态汇总 */}
         <div className="lg:col-span-1 flex flex-col gap-6">
           <div className="card-container p-6 animate-fade-in-up" style={{ animationDelay: '100ms' }}>
             <h3 className="text-[16px] font-semibold text-text-primary-light dark:text-white mb-4">系统状态汇总</h3>
@@ -113,29 +112,13 @@ const AdminHome: React.FC = () => {
                          {data ? formatPercent(data.offlineTransferStorageBytes, data.offlineTransferStorageLimitBytes) : '0%'}
                        </p>
                     </div>
-                    <div className="w-full bg-gray-200 dark:bg-[#222233] rounded-full h-1.5 mt-1">
+                    <div className="w-full bg-black/10 dark:bg-[#222233] rounded-full h-1.5 mt-1">
                       <div className="bg-purple-500 h-1.5 rounded-full" style={{ width: `${data ? formatPercent(data.offlineTransferStorageBytes, data.offlineTransferStorageLimitBytes) : '0%'}` }}></div>
                     </div>
                   </div>
                 </div>
               </div>
             </div>
-          </div>
-          
-          {/* Site URL Warning Component Placeholder */}
-          <div className="card-container p-6 border-orange-200 dark:border-orange-900/50 bg-orange-50/50 dark:bg-orange-900/10 animate-fade-in-up" style={{ animationDelay: '200ms' }}>
-             <div className="flex gap-3">
-                <AlertTriangle className="text-orange-500 flex-shrink-0" size={20} />
-                <div>
-                   <h4 className="text-sm font-bold text-orange-700 dark:text-orange-400 mb-1">当前邀请码</h4>
-                   <p className="text-xs text-orange-600/80 dark:text-orange-300/80 font-geist leading-relaxed">
-                     {data?.inviteCode ? `注册邀请码：${data.inviteCode}` : '后端未返回邀请码。'}
-                   </p>
-                   <p className="mt-3 text-xs font-semibold text-orange-700 dark:text-orange-400">
-                     当前累计存储：{data ? formatBytes(data.totalStorageBytes) : '-'}
-                   </p>
-                </div>
-             </div>
           </div>
         </div>
 

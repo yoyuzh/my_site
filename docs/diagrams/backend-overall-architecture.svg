@@ -1,0 +1,249 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="2600" height="1850" viewBox="0 0 2600 1850">
+  <defs>
+    <style>
+      .bg { fill: #f6f8fb; }
+      .title { font: 800 46px -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, "PingFang SC", "Microsoft YaHei", sans-serif; fill: #172033; }
+      .subtitle { font: 400 22px -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, "PingFang SC", "Microsoft YaHei", sans-serif; fill: #5a6678; }
+      .section-title { font: 800 26px -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, "PingFang SC", "Microsoft YaHei", sans-serif; fill: #273149; }
+      .box-title { font: 800 23px -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, "PingFang SC", "Microsoft YaHei", sans-serif; fill: #172033; }
+      .box-sub { font: 600 17px -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, "PingFang SC", "Microsoft YaHei", sans-serif; fill: #536174; }
+      .text { font: 400 17px -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, "PingFang SC", "Microsoft YaHei", sans-serif; fill: #374156; }
+      .tiny { font: 400 15px -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, "PingFang SC", "Microsoft YaHei", sans-serif; fill: #5b6677; }
+      .code { font: 600 15px "SFMono-Regular", Consolas, "Liberation Mono", monospace; fill: #303b50; }
+      .panel { fill: #ffffff; stroke: #d7deea; stroke-width: 2; rx: 24; }
+      .edge { fill: #fff6e8; stroke: #e1a43a; stroke-width: 2; rx: 16; }
+      .identity { fill: #eef8ff; stroke: #4d9fd0; stroke-width: 2; rx: 16; }
+      .files { fill: #effaf3; stroke: #4aa56f; stroke-width: 2; rx: 16; }
+      .platform { fill: #f2efff; stroke: #8a78df; stroke-width: 2; rx: 16; }
+      .ops { fill: #fff0f3; stroke: #d65d77; stroke-width: 2; rx: 16; }
+      .infra { fill: #edf2f7; stroke: #8492a8; stroke-width: 2; rx: 16; }
+      .app { fill: #f0fbff; stroke: #3f9dbf; stroke-width: 2; rx: 16; }
+      .kernel { fill: #fffdf0; stroke: #c3ae3d; stroke-width: 2; rx: 16; }
+      .store { fill: #f8fafc; stroke: #64748b; stroke-width: 2; rx: 14; }
+      .flow { fill: #ffffff; stroke: #cbd5e1; stroke-width: 1.8; rx: 16; }
+      .arrow { stroke: #536174; stroke-width: 3; fill: none; marker-end: url(#arrow); }
+      .arrow-soft { stroke: #8792a4; stroke-width: 2.3; fill: none; stroke-dasharray: 8 8; marker-end: url(#arrow-soft); }
+      .arrow-green { stroke: #2e8b5c; stroke-width: 3; fill: none; marker-end: url(#arrow-green); }
+      .arrow-purple { stroke: #7462d5; stroke-width: 3; fill: none; marker-end: url(#arrow-purple); }
+      .arrow-red { stroke: #c94d65; stroke-width: 3; fill: none; marker-end: url(#arrow-red); }
+    </style>
+    <marker id="arrow" markerWidth="13" markerHeight="13" refX="11" refY="6.5" orient="auto">
+      <path d="M1,1 L12,6.5 L1,12 Z" fill="#536174"/>
+    </marker>
+    <marker id="arrow-soft" markerWidth="13" markerHeight="13" refX="11" refY="6.5" orient="auto">
+      <path d="M1,1 L12,6.5 L1,12 Z" fill="#8792a4"/>
+    </marker>
+    <marker id="arrow-green" markerWidth="13" markerHeight="13" refX="11" refY="6.5" orient="auto">
+      <path d="M1,1 L12,6.5 L1,12 Z" fill="#2e8b5c"/>
+    </marker>
+    <marker id="arrow-purple" markerWidth="13" markerHeight="13" refX="11" refY="6.5" orient="auto">
+      <path d="M1,1 L12,6.5 L1,12 Z" fill="#7462d5"/>
+    </marker>
+    <marker id="arrow-red" markerWidth="13" markerHeight="13" refX="11" refY="6.5" orient="auto">
+      <path d="M1,1 L12,6.5 L1,12 Z" fill="#c94d65"/>
+    </marker>
+  </defs>
+
+  <rect class="bg" x="0" y="0" width="2600" height="1850"/>
+
+  <text class="title" x="88" y="78">my_site 后端总体架构图</text>
+  <text class="subtitle" x="88" y="116">模块化单体：HTTP 入口走各模块 internal.web；模块间 Java 调用只走 api；业务真相由各领域模块分别拥有</text>
+
+  <rect class="panel" x="70" y="155" width="2460" height="1035"/>
+  <text class="section-title" x="100" y="196">1. 模块职责与依赖边界</text>
+
+  <rect class="app" x="105" y="235" width="345" height="205"/>
+  <text class="box-title" x="130" y="272">客户端入口</text>
+  <text class="text" x="130" y="309">React/Vite 前端</text>
+  <text class="text" x="130" y="339">Android 客户端</text>
+  <text class="text" x="130" y="369">公开分享 / 传输页面</text>
+  <text class="tiny" x="130" y="405">通过 REST/SSE/Tus 调用后端</text>
+
+  <rect class="edge" x="535" y="225" width="395" height="225"/>
+  <text class="box-title" x="560" y="262">boot</text>
+  <text class="box-sub" x="560" y="292">启动与全局框架层</text>
+  <text class="text" x="560" y="330">Spring Boot 配置</text>
+  <text class="text" x="560" y="360">Security / JWT / CORS</text>
+  <text class="text" x="560" y="390">异常映射 / ApiV2Response</text>
+  <text class="tiny" x="560" y="422">不拥有业务规则和状态流转</text>
+
+  <rect class="identity" x="1015" y="225" width="395" height="225"/>
+  <text class="box-title" x="1040" y="262">identity.access</text>
+  <text class="box-sub" x="1040" y="292">身份、账号、会话、权限</text>
+  <text class="text" x="1040" y="330">注册 / 登录 / 刷新 token</text>
+  <text class="text" x="1040" y="360">用户资料 / 密码 / 头像</text>
+  <text class="text" x="1040" y="390">角色、账号状态、会话有效性</text>
+  <text class="code" x="1040" y="422">/api/auth/**, /api/user/**</text>
+
+  <rect class="files" x="105" y="525" width="395" height="250"/>
+  <text class="box-title" x="130" y="562">files.workspace</text>
+  <text class="box-sub" x="130" y="592">逻辑网盘树与文件节点</text>
+  <text class="text" x="130" y="630">目录、文件节点、路径合法性</text>
+  <text class="text" x="130" y="660">重命名 / 移动 / 复制 / 删除</text>
+  <text class="text" x="130" y="690">回收站、收藏、标签、列表</text>
+  <text class="tiny" x="130" y="724">最终 workspace node 创建归它</text>
+  <text class="code" x="130" y="754">/api/files/**</text>
+
+  <rect class="files" x="535" y="525" width="395" height="250"/>
+  <text class="box-title" x="560" y="562">files.content</text>
+  <text class="box-sub" x="560" y="592">物理内容、版本、派生资产</text>
+  <text class="text" x="560" y="630">ContentAsset / blob / version</text>
+  <text class="text" x="560" y="660">下载、预览、缩略图</text>
+  <text class="text" x="560" y="690">物理对象清理前置条件</text>
+  <text class="tiny" x="560" y="724">不决定目录路径和分享密码</text>
+  <text class="code" x="560" y="754">/api/v2/files/{id}/thumbnail</text>
+
+  <rect class="files" x="965" y="525" width="395" height="250"/>
+  <text class="box-title" x="990" y="562">files.upload</text>
+  <text class="box-sub" x="990" y="592">上传入口与上传会话</text>
+  <text class="text" x="990" y="630">创建 upload session</text>
+  <text class="text" x="990" y="660">PROXY / DIRECT / MULTIPART / Tus</text>
+  <text class="text" x="990" y="690">上传完成检查和入口编排</text>
+  <text class="tiny" x="990" y="724">不拥有最终文件树和内容真相</text>
+  <text class="code" x="990" y="754">/api/v2/files/upload-sessions/**</text>
+
+  <rect class="files" x="1395" y="525" width="395" height="250"/>
+  <text class="box-title" x="1420" y="562">files.sharing</text>
+  <text class="box-sub" x="1420" y="592">分享授权与公开访问规则</text>
+  <text class="text" x="1420" y="630">分享创建、密码、过期、配额</text>
+  <text class="text" x="1420" y="660">公开查看 / 下载 / 导入权限</text>
+  <text class="text" x="1420" y="690">访问记录、与我共享</text>
+  <text class="tiny" x="1420" y="724">不直接改 workspace 树</text>
+  <text class="code" x="1420" y="754">/api/v2/shares/**</text>
+
+  <rect class="files" x="1825" y="525" width="395" height="250"/>
+  <text class="box-title" x="1850" y="562">files.search</text>
+  <text class="box-sub" x="1850" y="592">文件搜索与事件读取模型</text>
+  <text class="text" x="1850" y="630">搜索查询、结果塑形</text>
+  <text class="text" x="1850" y="660">文件事件流 SSE</text>
+  <text class="text" x="1850" y="690">索引/检索编排</text>
+  <text class="tiny" x="1850" y="724">不能绕过其他模块 internal</text>
+  <text class="code" x="1850" y="754">/api/v2/files/search, /events</text>
+
+  <rect class="app" x="105" y="845" width="395" height="235"/>
+  <text class="box-title" x="130" y="882">transfer</text>
+  <text class="box-sub" x="130" y="912">在线/离线传输会话</text>
+  <text class="text" x="130" y="950">pickup code、join、signal</text>
+  <text class="text" x="130" y="980">离线文件接收、下载、导入</text>
+  <text class="text" x="130" y="1010">远程下载任务协调</text>
+  <text class="code" x="130" y="1048">/api/transfer/**</text>
+
+  <rect class="platform" x="535" y="845" width="395" height="235"/>
+  <text class="box-title" x="560" y="882">platform.job</text>
+  <text class="box-sub" x="560" y="912">统一异步任务平台</text>
+  <text class="text" x="560" y="950">任务生命周期、状态、进度</text>
+  <text class="text" x="560" y="980">worker、lease、heartbeat</text>
+  <text class="text" x="560" y="1010">重试、幂等、执行记录</text>
+  <text class="code" x="560" y="1048">/api/v2/tasks/**</text>
+
+  <rect class="platform" x="965" y="845" width="395" height="235"/>
+  <text class="box-title" x="990" y="882">platform.storage</text>
+  <text class="box-sub" x="990" y="912">存储治理与策略决策</text>
+  <text class="text" x="990" y="950">存储策略、对象落点</text>
+  <text class="text" x="990" y="980">上传能力矩阵和大小限制</text>
+  <text class="text" x="990" y="1010">策略迁移规则</text>
+  <text class="code" x="990" y="1048">/api/admin/storage-policies/**</text>
+
+  <rect class="ops" x="1395" y="845" width="395" height="235"/>
+  <text class="box-title" x="1420" y="882">ops.admin</text>
+  <text class="box-sub" x="1420" y="912">后台治理入口与审计</text>
+  <text class="text" x="1420" y="950">用户/文件/分享/任务治理</text>
+  <text class="text" x="1420" y="980">系统设置和审计入口</text>
+  <text class="text" x="1420" y="1010">只通过各模块 api 编排</text>
+  <text class="code" x="1420" y="1048">/api/admin/**</text>
+
+  <rect class="app" x="1825" y="845" width="395" height="235"/>
+  <text class="box-title" x="1850" y="882">app.android</text>
+  <text class="box-sub" x="1850" y="912">Android 客户端适配</text>
+  <text class="text" x="1850" y="950">版本信息、APK 下载</text>
+  <text class="text" x="1850" y="980">Android 端 DTO/兼容适配</text>
+  <text class="tiny" x="1850" y="1014">不能沉淀 Android 专属业务真相</text>
+  <text class="code" x="1850" y="1048">/api/app/android/**</text>
+
+  <rect class="kernel" x="2250" y="225" width="245" height="315"/>
+  <text class="box-title" x="2275" y="262">shared.kernel</text>
+  <text class="box-sub" x="2275" y="292">极小共享内核</text>
+  <text class="text" x="2275" y="330">BusinessException</text>
+  <text class="text" x="2275" y="360">ErrorCode</text>
+  <text class="text" x="2275" y="390">PageResponse</text>
+  <text class="tiny" x="2275" y="426">不放业务 DTO</text>
+  <text class="tiny" x="2275" y="452">不放模块 facade</text>
+
+  <rect class="infra" x="2250" y="585" width="245" height="315"/>
+  <text class="box-title" x="2275" y="622">infra</text>
+  <text class="box-sub" x="2275" y="652">全局技术能力</text>
+  <text class="text" x="2275" y="690">broker</text>
+  <text class="text" x="2275" y="720">cache</text>
+  <text class="text" x="2275" y="750">lock</text>
+  <text class="text" x="2275" y="780">client</text>
+  <text class="tiny" x="2275" y="816">不放业务实体/仓储抽象</text>
+
+  <rect class="store" x="2250" y="945" width="245" height="135"/>
+  <text class="box-title" x="2275" y="982">外部资源</text>
+  <text class="text" x="2275" y="1020">DB / H2 / MySQL</text>
+  <text class="text" x="2275" y="1050">OSS/S3/Local Storage</text>
+
+  <path class="arrow" d="M450 335 C485 335 500 335 535 335"/>
+  <path class="arrow" d="M930 335 C965 335 980 335 1015 335"/>
+  <path class="arrow-soft" d="M1210 450 C1210 490 1210 500 1210 525"/>
+  <path class="arrow-soft" d="M500 650 C515 650 520 650 535 650"/>
+  <path class="arrow-soft" d="M930 650 C945 650 950 650 965 650"/>
+  <path class="arrow-soft" d="M1360 650 C1375 650 1380 650 1395 650"/>
+  <path class="arrow-soft" d="M1790 650 C1805 650 1810 650 1825 650"/>
+  <path class="arrow-soft" d="M302 775 C302 810 302 825 302 845"/>
+  <path class="arrow-soft" d="M500 962 C515 962 520 962 535 962"/>
+  <path class="arrow-soft" d="M930 962 C945 962 950 962 965 962"/>
+  <path class="arrow-red" d="M1360 962 C1375 962 1380 962 1395 962"/>
+  <path class="arrow-soft" d="M1790 962 C1805 962 1810 962 1825 962"/>
+  <path class="arrow-soft" d="M2220 390 C2230 390 2238 390 2250 390"/>
+  <path class="arrow-soft" d="M2220 742 C2230 742 2238 742 2250 742"/>
+  <path class="arrow-soft" d="M2220 1012 C2230 1012 2238 1012 2250 1012"/>
+
+  <rect class="panel" x="70" y="1235" width="2460" height="520"/>
+  <text class="section-title" x="100" y="1276">2. 核心业务流程</text>
+
+  <rect class="flow" x="105" y="1320" width="560" height="175"/>
+  <text class="box-title" x="130" y="1356">A. 登录与身份校验</text>
+  <text class="text" x="130" y="1395">1. 前端调用 /api/auth/login 或 refresh</text>
+  <text class="text" x="130" y="1425">2. identity.access 校验账号、密码、状态、会话</text>
+  <text class="text" x="130" y="1455">3. boot.security 在后续请求中解析 JWT</text>
+  <text class="tiny" x="130" y="1484">其他模块只消费 userId/权限上下文，不复制登录规则</text>
+
+  <rect class="flow" x="715" y="1320" width="760" height="175"/>
+  <text class="box-title" x="740" y="1356">B. 文件上传入库</text>
+  <text class="text" x="740" y="1395">1. files.upload 创建上传会话，请 platform.storage 决定 PROXY/DIRECT/MULTIPART/Tus</text>
+  <text class="text" x="740" y="1425">2. 上传数据进入临时对象或最终对象，upload 只做入口过程控制</text>
+  <text class="text" x="740" y="1455">3. 完成后交给 files.content 注册内容，再由 files.workspace 创建正式节点</text>
+  <text class="tiny" x="740" y="1484">可触发 platform.job 做媒体元数据、缩略图、搜索索引等异步任务</text>
+
+  <rect class="flow" x="1525" y="1320" width="870" height="175"/>
+  <text class="box-title" x="1550" y="1356">C. 网盘文件操作</text>
+  <text class="text" x="1550" y="1395">1. 列表、mkdir、rename、move、copy、delete、restore 进入 files.workspace</text>
+  <text class="text" x="1550" y="1425">2. workspace 决定路径合法性、同目录重名、回收站生命周期和节点权限</text>
+  <text class="text" x="1550" y="1455">3. 需要下载/预览/缩略图时通过 files.content 读取物理内容</text>
+  <text class="tiny" x="1550" y="1484">搜索展示由 files.search 组织查询结果，不能绕过 workspace/content 的边界规则</text>
+
+  <rect class="flow" x="105" y="1535" width="560" height="175"/>
+  <text class="box-title" x="130" y="1571">D. 分享查看、下载、导入</text>
+  <text class="text" x="130" y="1610">1. files.sharing 管理 token、密码、过期、配额</text>
+  <text class="text" x="130" y="1640">2. 公开访问先由 sharing 判定可用性</text>
+  <text class="text" x="130" y="1670">3. 下载走 content；导入走 workspace/content</text>
+  <text class="tiny" x="130" y="1699">sharing 不直接改文件树，也不决定物理存储策略</text>
+
+  <rect class="flow" x="715" y="1535" width="760" height="175"/>
+  <text class="box-title" x="740" y="1571">E. 传输与远程下载</text>
+  <text class="text" x="740" y="1610">1. transfer 创建会话、pickup code、join、signals，决定接收资格</text>
+  <text class="text" x="740" y="1640">2. 离线/远程下载需要长耗时执行时提交 platform.job</text>
+  <text class="text" x="740" y="1670">3. 接收到文件后通过 content/workspace 完成导入</text>
+  <text class="tiny" x="740" y="1699">transfer 不拥有分享规则、workspace 生命周期或 storage 治理</text>
+
+  <rect class="flow" x="1525" y="1535" width="870" height="175"/>
+  <text class="box-title" x="1550" y="1571">F. 后台治理与异步任务</text>
+  <text class="text" x="1550" y="1610">1. ops.admin 提供 /api/admin/**，做治理入口、审计、设置和聚合查询</text>
+  <text class="text" x="1550" y="1640">2. 管理文件/用户/分享/任务/存储时分别调用 identity、files、platform 的 api</text>
+  <text class="text" x="1550" y="1670">3. platform.job 统一执行 archive/extract/media/search/storage migration 等任务</text>
+  <text class="tiny" x="1550" y="1699">admin 是治理编排，不是越权通道；job 是执行平台，不拥有业务真相</text>
+
+  <rect class="kernel" x="105" y="1780" width="2290" height="42"/>
+  <text class="tiny" x="130" y="1806">分层约束：每个模块内部一般是 api + internal.web + internal.application + internal.domain + internal.infra；Controller 属于 internal.web，模块间依赖只能走 api，不能依赖其他模块 internal。</text>
+</svg>

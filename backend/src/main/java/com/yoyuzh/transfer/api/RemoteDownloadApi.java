@@ -10,6 +10,8 @@ public interface RemoteDownloadApi {
 
     RemoteDownloadDetailResponse getOwned(Long userId, Long id);
 
+    RemoteDownloadDetailResponse retry(Long userId, Long id);
+
     RemoteDownloadDetailResponse selectFiles(Long userId, Long id, SelectRemoteDownloadFilesCommand command);
 
     RemoteDownloadDetailResponse cancel(Long userId, Long id);

@@ -64,6 +64,8 @@ public class RuntimeRemoteDownloadExecutionApi implements RemoteDownloadExecutio
                 phase,
                 downloaderTaskId,
                 false,
+                false,
+                null,
                 DEFAULT_POLL_DELAY_SECONDS
         );
     }
@@ -88,6 +90,8 @@ public class RuntimeRemoteDownloadExecutionApi implements RemoteDownloadExecutio
                     "failed",
                     task.getDownloaderTaskId(),
                     true,
+                    true,
+                    status.errorMessage(),
                     null
             );
         }
@@ -98,6 +102,8 @@ public class RuntimeRemoteDownloadExecutionApi implements RemoteDownloadExecutio
                 "downloading",
                 task.getDownloaderTaskId(),
                 false,
+                false,
+                null,
                 DEFAULT_POLL_DELAY_SECONDS
         );
     }
@@ -112,6 +118,8 @@ public class RuntimeRemoteDownloadExecutionApi implements RemoteDownloadExecutio
                     "failed",
                     task.getDownloaderTaskId(),
                     true,
+                    true,
+                    "qBittorrent task failed",
                     null
             );
         }
@@ -122,6 +130,8 @@ public class RuntimeRemoteDownloadExecutionApi implements RemoteDownloadExecutio
                     "awaiting-file-selection",
                     task.getDownloaderTaskId(),
                     false,
+                    false,
+                    null,
                     DEFAULT_POLL_DELAY_SECONDS
             );
         }
@@ -135,6 +145,8 @@ public class RuntimeRemoteDownloadExecutionApi implements RemoteDownloadExecutio
                         "fetching-metadata",
                         task.getDownloaderTaskId(),
                         false,
+                        false,
+                        null,
                         DEFAULT_POLL_DELAY_SECONDS
                 );
             }
@@ -147,6 +159,8 @@ public class RuntimeRemoteDownloadExecutionApi implements RemoteDownloadExecutio
                     "awaiting-file-selection",
                     task.getDownloaderTaskId(),
                     false,
+                    false,
+                    null,
                     DEFAULT_POLL_DELAY_SECONDS
             );
         }
@@ -160,6 +174,8 @@ public class RuntimeRemoteDownloadExecutionApi implements RemoteDownloadExecutio
                 "downloading",
                 task.getDownloaderTaskId(),
                 false,
+                false,
+                null,
                 DEFAULT_POLL_DELAY_SECONDS
         );
     }
@@ -208,6 +224,8 @@ public class RuntimeRemoteDownloadExecutionApi implements RemoteDownloadExecutio
                     "completed",
                     task.getDownloaderTaskId(),
                     true,
+                    false,
+                    null,
                     null
             );
         } catch (RuntimeException ex) {

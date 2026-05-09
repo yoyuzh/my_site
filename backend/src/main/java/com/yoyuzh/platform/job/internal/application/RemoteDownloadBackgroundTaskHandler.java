@@ -36,6 +36,11 @@ public class RemoteDownloadBackgroundTaskHandler implements BackgroundTaskHandle
         patch.put("engineType", result.engineType());
         patch.put("downloaderTaskId", result.downloaderTaskId());
         progressReporter.report(patch);
+        if (result.failed()) {
+            throw new IllegalStateException(result.failureMessage() == null || result.failureMessage().isBlank()
+                    ? "remote download failed"
+                    : result.failureMessage());
+        }
         if (result.completed()) {
             return new BackgroundTaskHandlerResult(patch);
         }

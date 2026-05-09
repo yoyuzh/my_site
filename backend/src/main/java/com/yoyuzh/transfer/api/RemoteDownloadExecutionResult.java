@@ -6,6 +6,8 @@ public record RemoteDownloadExecutionResult(
         String phase,
         String downloaderTaskId,
         boolean completed,
+        boolean failed,
+        String failureMessage,
         Long nextRunDelaySeconds
 ) {
 }

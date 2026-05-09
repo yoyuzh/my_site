@@ -45,6 +45,8 @@ class RemoteDownloadBackgroundTaskHandlerTest {
                 "downloading",
                 "gid-123",
                 false,
+                false,
+                null,
                 15L
         ));
 
@@ -68,6 +70,8 @@ class RemoteDownloadBackgroundTaskHandlerTest {
                 "fetching-metadata",
                 "hash-123",
                 false,
+                false,
+                null,
                 15L
         ));
 
@@ -81,6 +85,32 @@ class RemoteDownloadBackgroundTaskHandlerTest {
         assertThat(progressPatches).hasSize(1);
         assertThat(progressPatches.get(0)).containsEntry("phase", "fetching-metadata");
         verify(remoteDownloadExecutionApi).start(12L);
+    }
+
+    @Test
+    void shouldFailBackgroundTaskWhenRemoteDownloadFailed() {
+        when(remoteDownloadExecutionApi.start(13L)).thenReturn(new RemoteDownloadExecutionResult(
+                13L,
+                "ARIA2",
+                "failed",
+                "gid-456",
+                true,
+                true,
+                "Timeout.",
+                null
+        ));
+
+        List<Map<String, Object>> progressPatches = new ArrayList<>();
+
+        org.junit.jupiter.api.Assertions.assertThrows(
+                IllegalStateException.class,
+                () -> handler.handle(backgroundTask(13L), progressPatches::add)
+        );
+
+        assertThat(progressPatches).hasSize(1);
+        assertThat(progressPatches.get(0)).containsEntry("phase", "failed");
+        assertThat(progressPatches.get(0)).containsEntry("downloaderTaskId", "gid-456");
+        verify(remoteDownloadExecutionApi).start(13L);
     }
 
     private BackgroundTask backgroundTask(Long remoteDownloadId) {

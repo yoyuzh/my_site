@@ -68,7 +68,7 @@ export function getCacheControl(relativePath) {
     || relativePath.endsWith('.html')
     || FRONTEND_SPA_ALIASES.includes(normalizedPath)
   ) {
-    return 'no-cache';
+    return 'public,max-age=60,must-revalidate';
   }
 
   if (relativePath.startsWith('assets/')) {

@@ -5,11 +5,10 @@ import { Settings } from 'lucide-react';
 
 const AdminUnderConstruction: React.FC = () => {
   const location = useLocation();
-  const path = location.pathname.split('/').pop() || 'Feature';
-  const title = path.charAt(0).toUpperCase() + path.slice(1);
+  const title = location.pathname.split('/').pop() || '功能';
 
   return (
-    <AdminLayout title={`${title} Management`}>
+    <AdminLayout title={`${title} 管理`}>
       <div className="card-container p-10 text-center flex flex-col items-center justify-center min-h-[400px]">
         <div className="w-16 h-16 rounded-full bg-brand-light/10 text-brand-light flex items-center justify-center mb-4">
           <Settings size={32} />

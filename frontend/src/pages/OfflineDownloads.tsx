@@ -27,12 +27,12 @@ const OfflineDownloads: React.FC = () => {
   const isDark = theme === 'dark';
   const [selectedRemoteDownloadId, setSelectedRemoteDownloadId] = useState<number | null>(null);
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
-  const { data: tasksData, isLoading: tasksLoading, isError: tasksError } = useTasks(1, 100);
+  const { data: tasksData, isLoading: tasksLoading, isError: tasksError } = useTasks(1, 100, { refetchInterval: 3000 });
   const {
     data: remoteDownloads,
     isLoading: remoteDownloadsLoading,
     isError: remoteDownloadsError,
-  } = useRemoteDownloads();
+  } = useRemoteDownloads({ refetchInterval: 3000 });
 
   const remoteDownloadTaskMap = useMemo(() => {
     const entries =
@@ -57,7 +57,7 @@ const OfflineDownloads: React.FC = () => {
     [remoteDownloads, remoteDownloadTaskMap],
   );
 
-  const { data: selectedRemoteDownload } = useRemoteDownloadDetail(selectedRemoteDownloadId);
+  const { data: selectedRemoteDownload } = useRemoteDownloadDetail(selectedRemoteDownloadId, { refetchInterval: 3000 });
 
   const selectedListItem = useMemo(
     () => remoteDownloads?.find((item) => item.id === selectedRemoteDownloadId) ?? null,
@@ -99,6 +99,13 @@ const OfflineDownloads: React.FC = () => {
       (item) => item.id !== detail.id && ACTIVE_REMOTE_DOWNLOAD_STATUSES.has(getEffectiveStatus(item)),
     );
     setSelectedRemoteDownloadId(nextActive?.id ?? detail.id);
+  };
+
+  const handleRetried = (detail: RemoteDownloadDetail) => {
+    void queryClient.invalidateQueries({ queryKey: ['tasks'] });
+    void queryClient.invalidateQueries({ queryKey: ['remoteDownloads'] });
+    void queryClient.invalidateQueries({ queryKey: ['remoteDownloadDetail'] });
+    setSelectedRemoteDownloadId(detail.id);
   };
 
   const isLoading = tasksLoading || remoteDownloadsLoading;
@@ -165,6 +172,7 @@ const OfflineDownloads: React.FC = () => {
               task={selectedTask}
               remoteDownload={selectedRemoteDownload ?? null}
               onCancelled={handleCancelled}
+              onRetried={handleRetried}
             />
           </div>
         </div>

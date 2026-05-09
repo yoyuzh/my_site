@@ -20,7 +20,7 @@ const AdminLayout: React.FC<AdminLayoutProps> = ({ children, title }) => {
     { name: '用户组', path: '/admin/group', icon: <Shield size={20} /> },
     { name: '存储策略', path: '/admin/policy', icon: <Database size={20} /> },
     { name: '存储节点', path: '/admin/node', icon: <Server size={20} /> },
-    { name: 'OAuth配置', path: '/admin/oauth', icon: <Network size={20} /> },
+    { name: 'OAuth 配置', path: '/admin/oauth', icon: <Network size={20} /> },
     { name: '物理文件', path: '/admin/file', icon: <FileKey size={20} /> },
     { name: '文件记录', path: '/admin/blob', icon: <FolderKey size={20} /> },
     { name: '离线下载', path: '/admin/task', icon: <ListChecks size={20} /> },
@@ -38,7 +38,7 @@ const AdminLayout: React.FC<AdminLayoutProps> = ({ children, title }) => {
         <aside className={`fixed lg:static inset-y-0 left-0 z-40 w-64 bg-white/50 dark:bg-[#111117]/50 backdrop-blur-xl border-r border-[#D9E3F2] dark:border-[#222233] transform ${isMobileMenuOpen ? 'translate-x-0' : '-translate-x-full'} lg:translate-x-0 transition-transform duration-300 pt-[72px] lg:pt-0 flex flex-col`}>
           <nav className="p-4 space-y-1 flex-1 overflow-y-auto">
             <div className="mb-4 px-4 pb-2 border-b border-[#D9E3F2] dark:border-[#222233]">
-              <span className="text-xs font-bold tracking-wider text-text-muted-light dark:text-text-muted-dark uppercase">ADMINISTRATION</span>
+              <span className="text-xs font-bold tracking-wider text-text-muted-light dark:text-text-muted-dark">管理功能</span>
             </div>
             {navItems.map((item) => {
               const isActive = location.pathname === item.path || location.pathname.startsWith(item.path + '/');

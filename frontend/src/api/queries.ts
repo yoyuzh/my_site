@@ -107,23 +107,26 @@ export const useRecycleBin = (page = 1, size = 20) =>
     queryFn: async () => normalizePage(await listRecycleBin(Math.max(0, page - 1), size)),
   });
 
-export const useTasks = (page = 1, size = 20) =>
+export const useTasks = (page = 1, size = 20, options?: { refetchInterval?: number | false }) =>
   useQuery({
     queryKey: ['tasks', page, size],
     queryFn: async () => normalizePage(await getTasks(Math.max(0, page - 1), size)),
+    refetchInterval: options?.refetchInterval,
   });
 
-export const useRemoteDownloads = () =>
+export const useRemoteDownloads = (options?: { refetchInterval?: number | false }) =>
   useQuery<RemoteDownloadListItem[]>({
     queryKey: ['remoteDownloads'],
     queryFn: () => listRemoteDownloads(),
+    refetchInterval: options?.refetchInterval,
   });
 
-export const useRemoteDownloadDetail = (id: number | null) =>
+export const useRemoteDownloadDetail = (id: number | null, options?: { refetchInterval?: number | false }) =>
   useQuery<RemoteDownloadDetail>({
     queryKey: ['remoteDownloadDetail', id],
     queryFn: () => getRemoteDownload(id as number),
     enabled: id != null,
+    refetchInterval: options?.refetchInterval,
   });
 
 export const useMyShares = (page = 1, size = 20) =>

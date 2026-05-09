@@ -120,6 +120,12 @@ public class DefaultAria2Client implements Aria2Client {
         if (StringUtils.hasText(properties.getAria2().getDownloadDir())) {
             options.put("dir", properties.getAria2().getDownloadDir().trim());
         }
+        options.put("user-agent", "Mozilla/5.0");
+        options.put("disable-ipv6", "true");
+        options.put("connect-timeout", "15");
+        options.put("timeout", "60");
+        options.put("max-tries", "2");
+        options.put("retry-wait", "5");
         if (!options.isEmpty()) {
             params.add(options);
         }

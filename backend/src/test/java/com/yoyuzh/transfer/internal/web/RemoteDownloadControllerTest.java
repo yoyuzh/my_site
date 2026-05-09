@@ -30,6 +30,7 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -61,6 +62,7 @@ class RemoteDownloadControllerTest {
                 DownloadEngineType.ARIA2.name(),
                 "/downloads",
                 "https://example.com/demo.zip",
+                "demo.zip",
                 "local-default",
                 0,
                 0,
@@ -83,6 +85,40 @@ class RemoteDownloadControllerTest {
                 .andExpect(jsonPath("$.data.status").value("PENDING"))
                 .andExpect(jsonPath("$.data.engineType").value("ARIA2"))
                 .andExpect(jsonPath("$.data.targetPath").value("/downloads"));
+    }
+
+    @Test
+    void shouldRetryRemoteDownloadTask() throws Exception {
+        when(identityUserDirectoryApi.findProfileByUsername("alice"))
+                .thenReturn(java.util.Optional.of(new IdentityUserProfileSummary(7L, "alice", "alice@example.com")));
+        when(remoteDownloadApi.retry(7L, 11L)).thenReturn(new RemoteDownloadDetailResponse(
+                12L,
+                92L,
+                RemoteDownloadStatus.PENDING.name(),
+                RemoteDownloadSourceType.HTTP.name(),
+                DownloadEngineType.ARIA2.name(),
+                "/downloads",
+                "https://example.com/demo.zip",
+                "demo.zip",
+                "local-default",
+                0,
+                0,
+                null,
+                null,
+                List.of(),
+                Instant.parse("2026-04-26T09:00:00Z"),
+                Instant.parse("2026-04-26T09:00:00Z"),
+                null
+        ));
+
+        mockMvc.perform(post("/api/transfer/remote-downloads/{id}/retry", 11L)
+                        .with(user(userDetails()))
+                        .accept(MediaType.APPLICATION_JSON))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(0))
+                .andExpect(jsonPath("$.data.id").value(12))
+                .andExpect(jsonPath("$.data.backgroundTaskId").value(92))
+                .andExpect(jsonPath("$.data.status").value("PENDING"));
     }
 
     private UserDetails userDetails() {

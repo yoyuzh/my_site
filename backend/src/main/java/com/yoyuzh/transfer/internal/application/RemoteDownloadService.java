@@ -27,6 +27,7 @@ import java.util.Map;
 
 @Service
 public class RemoteDownloadService {
+    private static final long HISTORY_RETENTION_DAYS = 10L;
 
     private final RemoteDownloadTaskRepository remoteDownloadTaskRepository;
     private final BackgroundTaskLifecycleApi backgroundTaskLifecycleApi;
@@ -55,7 +56,8 @@ public class RemoteDownloadService {
 
     @Transactional(readOnly = true)
     public List<RemoteDownloadListItemResponse> listOwned(Long userId) {
-        return remoteDownloadTaskRepository.findByUserIdOrderByCreatedAtDesc(userId).stream()
+        Instant lowerBound = Instant.now().minusSeconds(HISTORY_RETENTION_DAYS * 24 * 60 * 60);
+        return remoteDownloadTaskRepository.findActiveOrRecentByUserId(userId, nonTerminalStatuses(), lowerBound).stream()
                 .map(this::toListItemResponse)
                 .toList();
     }
@@ -63,6 +65,22 @@ public class RemoteDownloadService {
     @Transactional(readOnly = true)
     public RemoteDownloadDetailResponse getOwned(Long userId, Long id) {
         return toDetailResponse(requireOwnedTask(userId, id));
+    }
+
+    @Transactional
+    public RemoteDownloadDetailResponse retry(Long userId, Long id) {
+        RemoteDownloadTask source = requireOwnedTask(userId, id);
+        RemoteDownloadTask retryTask = copyForRetry(source);
+        RemoteDownloadTask savedTask = remoteDownloadTaskRepository.save(retryTask);
+        BackgroundTaskView backgroundTask = backgroundTaskLifecycleApi.createQueuedTaskByUserId(
+                userId,
+                BackgroundTaskType.REMOTE_DOWNLOAD,
+                initialPublicState(savedTask),
+                initialPrivateState(savedTask),
+                correlationId(savedTask)
+        );
+        savedTask.setBackgroundTaskId(backgroundTask.id());
+        return toDetailResponse(remoteDownloadTaskRepository.save(savedTask));
     }
 
     @Transactional
@@ -218,6 +236,30 @@ public class RemoteDownloadService {
         };
     }
 
+    private RemoteDownloadTask copyForRetry(RemoteDownloadTask source) {
+        return switch (source.getSourceType()) {
+            case HTTP -> RemoteDownloadTask.createHttp(
+                    source.getUserId(),
+                    source.getTargetPath(),
+                    source.getSourceValue(),
+                    source.getDownloadNodeId()
+            );
+            case MAGNET -> RemoteDownloadTask.createMagnet(
+                    source.getUserId(),
+                    source.getTargetPath(),
+                    source.getSourceValue(),
+                    source.getDownloadNodeId()
+            );
+            case TORRENT_FILE -> RemoteDownloadTask.createTorrent(
+                    source.getUserId(),
+                    source.getTargetPath(),
+                    source.getSourceValue(),
+                    source.getSourceContent(),
+                    source.getDownloadNodeId()
+            );
+        };
+    }
+
     private String requireTextSource(String sourceValue, String message) {
         if (sourceValue == null || sourceValue.isBlank()) {
             throw new BusinessException(ErrorCode.INVALID_INPUT, message);
@@ -269,6 +311,8 @@ public class RemoteDownloadService {
                 task.getSourceType().name(),
                 task.getEngineType().name(),
                 task.getTargetPath(),
+                task.getSourceValue(),
+                resolveFilename(task),
                 task.getCreatedAt(),
                 task.getUpdatedAt(),
                 task.getFinishedAt()
@@ -284,6 +328,7 @@ public class RemoteDownloadService {
                 task.getEngineType().name(),
                 task.getTargetPath(),
                 task.getSourceValue(),
+                resolveFilename(task),
                 task.getDownloadNodeId(),
                 task.getSelectedFileCount(),
                 task.getImportedFileCount(),
@@ -296,6 +341,24 @@ public class RemoteDownloadService {
                 task.getUpdatedAt(),
                 task.getFinishedAt()
         );
+    }
+
+    private String resolveFilename(RemoteDownloadTask task) {
+        if (task.getSourceType() == RemoteDownloadSourceType.TORRENT_FILE) {
+            return task.getSourceValue();
+        }
+        String sourceValue = task.getSourceValue();
+        if (sourceValue == null || sourceValue.isBlank()) {
+            return "";
+        }
+        String trimmed = sourceValue.trim();
+        int queryIndex = trimmed.indexOf('?');
+        String withoutQuery = queryIndex >= 0 ? trimmed.substring(0, queryIndex) : trimmed;
+        int fragmentIndex = withoutQuery.indexOf('#');
+        String withoutFragment = fragmentIndex >= 0 ? withoutQuery.substring(0, fragmentIndex) : withoutQuery;
+        int slashIndex = withoutFragment.lastIndexOf('/');
+        String leaf = slashIndex >= 0 ? withoutFragment.substring(slashIndex + 1) : withoutFragment;
+        return leaf.isBlank() ? trimmed : leaf;
     }
 
     private RemoteDownloadCandidateFileResponse toCandidateResponse(RemoteDownloadCandidateFile candidateFile) {

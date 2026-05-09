@@ -17,7 +17,6 @@ import {
 import { useAdminSettings } from '../../api/queries';
 import {
   rotateAdminInviteCode,
-  updateAdminInviteCode,
   updateAdminSettings,
   updateOfflineTransferStorageLimit,
 } from '../../api/mutations';
@@ -36,16 +35,33 @@ const tabs = [
   { id: 'server', label: '服务', icon: <Server size={18} /> },
 ];
 
+const managementRoleOptions = [
+  { value: 'ADMIN', label: '管理员' },
+  { value: 'MODERATOR', label: '协管员' },
+  { value: 'USER', label: '普通用户' },
+];
+
 function parsePositiveBytes(value: string) {
   const parsed = Number(value);
   return Number.isFinite(parsed) && parsed > 0 ? Math.floor(parsed) : null;
+}
+
+function formatRuntimeValue(value: string) {
+  const labels: Record<string, string> = {
+    LOCAL: '本地存储',
+    S3_COMPATIBLE: 'S3 兼容存储',
+    OSS_SDK: 'OSS SDK',
+    MEMORY: '内存队列',
+    REDIS: 'Redis',
+  };
+  return labels[value] ?? value;
 }
 
 const AdminSetting: React.FC = () => {
   const [activeTab, setActiveTab] = useState('siteInfo');
   const [inviteCodeRequired, setInviteCodeRequired] = useState(false);
   const [inviteCode, setInviteCode] = useState('');
-  const [managementRoles, setManagementRoles] = useState('ADMIN');
+  const [managementRoles, setManagementRoles] = useState<string[]>(['ADMIN']);
   const [offlineLimit, setOfflineLimit] = useState('');
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const { data: settings, isLoading, isError, refetch } = useAdminSettings();
@@ -56,17 +72,12 @@ const AdminSetting: React.FC = () => {
     }
     setInviteCodeRequired(settings.registration.inviteCodeRequired);
     setInviteCode(settings.registration.currentInviteCode);
-    setManagementRoles(settings.registration.managementRoles.join(', '));
+    setManagementRoles(settings.registration.managementRoles.length > 0 ? settings.registration.managementRoles : ['ADMIN']);
     setOfflineLimit(String(settings.transfer.offlineTransferStorageLimitBytes));
   }, [settings]);
 
   async function saveRegistration() {
-    const roles = managementRoles
-      .split(',')
-      .map((role) => role.trim())
-      .filter(Boolean);
-
-    if (roles.length === 0) {
+    if (managementRoles.length === 0) {
       setStatusMessage('管理角色不能为空');
       return;
     }
@@ -76,7 +87,7 @@ const AdminSetting: React.FC = () => {
         registration: {
           inviteCodeRequired,
           currentInviteCode: inviteCode.trim(),
-          managementRoles: roles,
+          managementRoles,
         },
       });
       setStatusMessage('注册设置已保存');
@@ -86,14 +97,12 @@ const AdminSetting: React.FC = () => {
     }
   }
 
-  async function saveInviteCodeOnly() {
-    try {
-      await updateAdminInviteCode(inviteCode.trim());
-      setStatusMessage('邀请码已保存');
-      await refetch();
-    } catch (error) {
-      setStatusMessage(error instanceof Error ? error.message : '保存邀请码失败');
-    }
+  function toggleManagementRole(role: string) {
+    setManagementRoles((current) => (
+      current.includes(role)
+        ? current.filter((item) => item !== role)
+        : [...current, role]
+    ));
   }
 
   async function rotateInviteCodeNow() {
@@ -184,16 +193,12 @@ const AdminSetting: React.FC = () => {
 
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
               <div className="md:col-span-1">
-                <label className="block text-[14px] font-semibold text-text-primary-light dark:text-white mb-2">当前邀请码</label>
-                <p className="text-[13px] text-text-muted-light dark:text-text-muted-dark leading-relaxed font-geist">可单独保存，也可以一键重新生成。</p>
+                <label className="block text-[14px] font-semibold text-text-primary-light dark:text-white mb-2">邀请码</label>
+                <p className="text-[13px] text-text-muted-light dark:text-text-muted-dark leading-relaxed font-geist">只保留生成入口，生成后会自动替换当前邀请码。</p>
               </div>
-              <div className="md:col-span-2 flex gap-2">
-                <input type="text" className="input-field flex-1" value={inviteCode} onChange={(event) => setInviteCode(event.target.value)} />
-                <button type="button" className="bg-white dark:bg-transparent border border-[#D9E3F2] dark:border-[#222233] px-4 rounded-lg text-sm font-semibold" onClick={() => void saveInviteCodeOnly()}>
-                  保存邀请码
-                </button>
-                <button type="button" className="bg-brand-light/10 text-brand-light px-4 rounded-lg text-sm font-semibold" onClick={() => void rotateInviteCodeNow()}>
-                  生成
+              <div className="md:col-span-2">
+                <button type="button" className="bg-brand-light/10 text-brand-light px-4 py-3 rounded-lg text-sm font-semibold hover:bg-brand-light/20 transition-colors" onClick={() => void rotateInviteCodeNow()}>
+                  生成邀请码
                 </button>
               </div>
             </div>
@@ -203,10 +208,26 @@ const AdminSetting: React.FC = () => {
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
               <div className="md:col-span-1">
                 <label className="block text-[14px] font-semibold text-text-primary-light dark:text-white mb-2">管理角色</label>
-                <p className="text-[13px] text-text-muted-light dark:text-text-muted-dark leading-relaxed font-geist">逗号分隔，后端当前用于管理访问判定。</p>
+                <p className="text-[13px] text-text-muted-light dark:text-text-muted-dark leading-relaxed font-geist">选择哪些角色可以进入管理面板。</p>
               </div>
-              <div className="md:col-span-2">
-                <input type="text" className="input-field" value={managementRoles} onChange={(event) => setManagementRoles(event.target.value)} />
+              <div className="md:col-span-2 flex flex-wrap gap-2">
+                {managementRoleOptions.map((role) => {
+                  const selected = managementRoles.includes(role.value);
+                  return (
+                    <button
+                      key={role.value}
+                      type="button"
+                      className={`rounded-lg px-4 py-2 text-sm font-semibold transition-colors ${
+                        selected
+                          ? 'bg-brand-light text-white dark:bg-brand-dark'
+                          : 'admin-secondary-button'
+                      }`}
+                      onClick={() => toggleManagementRole(role.value)}
+                    >
+                      {role.label}
+                    </button>
+                  );
+                })}
               </div>
             </div>
 
@@ -219,7 +240,7 @@ const AdminSetting: React.FC = () => {
               </div>
               <div className="md:col-span-2 flex gap-2">
                 <input type="number" min={1} className="input-field flex-1" value={offlineLimit} onChange={(event) => setOfflineLimit(event.target.value)} />
-                <button type="button" className="bg-white dark:bg-transparent border border-[#D9E3F2] dark:border-[#222233] px-4 rounded-lg text-sm font-semibold" onClick={() => void saveOfflineLimit()}>
+                <button type="button" className="admin-secondary-button px-4 rounded-lg text-sm font-semibold" onClick={() => void saveOfflineLimit()}>
                   保存限制
                 </button>
               </div>
@@ -245,7 +266,7 @@ const AdminSetting: React.FC = () => {
 
     if (activeTab === 'queue') {
       return renderReadOnlyTab('队列', '队列配置当前为只读快照。', [
-        { label: '后端', value: settings.queue.backend },
+        { label: '队列后端', value: formatRuntimeValue(settings.queue.backend) },
         { label: '媒体任务间隔', value: `${settings.queue.mediaMetadataFixedDelayMs} ms` },
         { label: '媒体任务初始延迟', value: `${settings.queue.mediaMetadataInitialDelayMs} ms` },
       ]);
@@ -253,7 +274,7 @@ const AdminSetting: React.FC = () => {
 
     if (activeTab === 'server') {
       return renderReadOnlyTab('服务', '服务配置当前为只读快照。', [
-        { label: '存储提供方', value: settings.server.storageProvider },
+        { label: '存储提供方', value: formatRuntimeValue(settings.server.storageProvider) },
         { label: 'Redis', value: settings.server.redisEnabled ? '已启用' : '未启用' },
       ]);
     }
@@ -293,7 +314,7 @@ const AdminSetting: React.FC = () => {
 
         <div className="flex-1 max-w-4xl">
           {statusMessage && (
-            <div className="mb-4 rounded-lg border border-[#D9E3F2] dark:border-[#222233] bg-white dark:bg-[#111117] px-4 py-3 text-sm text-text-secondary-light dark:text-text-secondary-dark">
+            <div className="mb-4 rounded-lg border border-[#D9E3F2] dark:border-[#222233] bg-card-light dark:bg-[#111117] px-4 py-3 text-sm text-text-secondary-light dark:text-text-secondary-dark">
               {statusMessage}
             </div>
           )}

@@ -8,7 +8,7 @@ import {
 } from '../../lib/tasks';
 import type { BackgroundTask, RemoteDownloadListItem } from '../../api/types';
 import { Box, Typography, alpha, Collapse } from '@mui/material';
-import { ChevronDown, ChevronUp, Clock, FileText, Hash } from 'lucide-react';
+import { ChevronDown, ChevronUp, Clock, Folder, Globe, Hash, HardDrive } from 'lucide-react';
 import { useTheme } from '../../hooks/useTheme';
 
 interface OfflineDownloadTaskListProps {
@@ -137,18 +137,47 @@ const OfflineDownloadTaskList: React.FC<OfflineDownloadTaskListProps> = ({
             color: isSelected ? '#4F7CFF' : 'text.primary'
           }}
         >
-          {getRemoteDownloadStatusLabel(effectiveStatus)}
+          {task.filename || `离线下载 #${task.id}`}
         </Typography>
 
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 0.25 }}>
-          <Typography variant="caption" color="text.secondary" noWrap sx={{ maxWidth: '100%' }}>
-            {task.targetPath}
+        <Typography
+          variant="caption"
+          color="text.secondary"
+          title={task.sourceValue}
+          noWrap
+          sx={{ display: 'block', maxWidth: '100%', mb: 0.75 }}
+        >
+          {task.sourceValue}
+        </Typography>
+
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75, flexWrap: 'wrap', mb: 0.75 }}>
+          <Typography
+            variant="caption"
+            sx={{
+              px: 0.75,
+              py: 0.2,
+              borderRadius: 1,
+              bgcolor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(15,23,42,0.06)',
+              color: isSelected ? '#4F7CFF' : 'text.secondary',
+              fontWeight: 700,
+            }}
+          >
+            {getRemoteDownloadStatusLabel(effectiveStatus)}
+          </Typography>
+          <Typography variant="caption" color="text.disabled" sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.25 }}>
+            <Globe size={10} />
+            {getRemoteDownloadSourceLabel(task.sourceType)}
+          </Typography>
+          <Typography variant="caption" color="text.disabled" sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.25 }}>
+            <HardDrive size={10} />
+            {task.engineType}
           </Typography>
         </Box>
         
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+          <Folder size={10} className="text-text-muted-light dark:text-text-muted-dark" />
           <Typography variant="caption" color="text.disabled" sx={{ fontSize: '11px' }} noWrap>
-            {getRemoteDownloadSourceLabel(task.sourceType)} · {backgroundTask?.errorMessage || backgroundTask?.correlationId || '等待更多任务信息'}
+            {task.targetPath} · {backgroundTask?.errorMessage || backgroundTask?.correlationId || '等待更多任务信息'}
           </Typography>
         </Box>
       </Box>

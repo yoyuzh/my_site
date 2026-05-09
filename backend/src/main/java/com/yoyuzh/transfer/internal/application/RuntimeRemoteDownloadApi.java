@@ -46,6 +46,11 @@ public class RuntimeRemoteDownloadApi implements RemoteDownloadApi {
     }
 
     @Override
+    public RemoteDownloadDetailResponse retry(Long userId, Long id) {
+        return remoteDownloadService.retry(userId, id);
+    }
+
+    @Override
     public RemoteDownloadDetailResponse selectFiles(Long userId, Long id, SelectRemoteDownloadFilesCommand command) {
         RemoteDownloadTask task = remoteDownloadService.loadOwnedTask(userId, id);
         if (task.getEngineType() == DownloadEngineType.QBITTORRENT && hasDownloaderTaskId(task)) {

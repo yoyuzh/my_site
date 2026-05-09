@@ -48,6 +48,12 @@ public class RemoteDownloadController {
         return ApiResponse.success(remoteDownloadApi.getOwned(currentUserId(userDetails), id));
     }
 
+    @PostMapping("/{id}/retry")
+    public ApiResponse<RemoteDownloadDetailResponse> retry(@AuthenticationPrincipal UserDetails userDetails,
+                                                           @PathVariable Long id) {
+        return ApiResponse.success(remoteDownloadApi.retry(currentUserId(userDetails), id));
+    }
+
     @PostMapping("/{id}/selection")
     public ApiResponse<RemoteDownloadDetailResponse> selectFiles(@AuthenticationPrincipal UserDetails userDetails,
                                                                  @PathVariable Long id,

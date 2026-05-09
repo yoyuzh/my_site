@@ -28,6 +28,39 @@ function normalizeText(value: string | null | undefined) {
   return normalized ? normalized : null;
 }
 
+function formatStoragePolicyType(type: string) {
+  const labels: Record<string, string> = {
+    LOCAL: '本地存储',
+    S3_COMPATIBLE: 'S3 兼容存储',
+    OSS_SDK: 'OSS SDK',
+    WEBDAV: 'WebDAV',
+  };
+  return labels[type] ?? type;
+}
+
+function formatCredentialMode(mode: string) {
+  const labels: Record<string, string> = {
+    NONE: '无需凭证',
+    DOGECLOUD_TEMP: '多吉云临时凭证',
+    STATIC: '固定凭证',
+  };
+  return labels[mode] ?? mode;
+}
+
+function parseStoragePolicyTypeInput(value: string | null | undefined) {
+  const normalized = value?.trim();
+  if (!normalized) {
+    return 'LOCAL';
+  }
+  if (normalized === '本地存储') {
+    return 'LOCAL';
+  }
+  if (normalized === 'S3 兼容存储' || normalized === 'S3兼容存储') {
+    return 'S3_COMPATIBLE';
+  }
+  return normalized.toUpperCase();
+}
+
 function buildPayload(policy: Partial<AdminStoragePolicy>): AdminStoragePolicyPayload {
   const maxSizeBytes = policy.maxSizeBytes && policy.maxSizeBytes > 0
     ? policy.maxSizeBytes
@@ -66,9 +99,9 @@ const AdminPolicy: React.FC = () => {
     if (!name?.trim()) {
       return;
     }
-    const type = window.prompt('策略类型：LOCAL 或 S3_COMPATIBLE', 'LOCAL')?.trim() || 'LOCAL';
+    const type = parseStoragePolicyTypeInput(window.prompt('策略类型：本地存储 / S3 兼容存储', '本地存储'));
     if (type !== 'LOCAL' && type !== 'S3_COMPATIBLE') {
-      setStatusMessage('策略类型只能是 LOCAL 或 S3_COMPATIBLE');
+      setStatusMessage('策略类型只能是本地存储或 S3 兼容存储');
       return;
     }
     const maxSizeInput = window.prompt('最大对象大小（字节）', String(DEFAULT_CAPABILITIES.maxObjectSize));
@@ -156,7 +189,7 @@ const AdminPolicy: React.FC = () => {
       </div>
 
       {statusMessage && (
-        <div className="mb-4 rounded-lg border border-[#D9E3F2] dark:border-[#222233] bg-white dark:bg-[#111117] px-4 py-3 text-sm text-text-secondary-light dark:text-text-secondary-dark">
+        <div className="mb-4 rounded-lg border border-[#D9E3F2] dark:border-[#222233] bg-card-light dark:bg-[#111117] px-4 py-3 text-sm text-text-secondary-light dark:text-text-secondary-dark">
           {statusMessage}
         </div>
       )}
@@ -194,21 +227,21 @@ const AdminPolicy: React.FC = () => {
                   </div>
                   <h3 className="text-xl font-bold text-text-primary-light dark:text-white mb-2">{policy.name}</h3>
                   <div className="flex items-center gap-2 mb-4">
-                    <span className="bg-black/5 dark:bg-white/5 px-2 py-1 rounded text-xs font-bold text-text-secondary-light dark:text-text-secondary-dark">{policy.type}</span>
+                    <span className="bg-black/5 dark:bg-white/5 px-2 py-1 rounded text-xs font-bold text-text-secondary-light dark:text-text-secondary-dark">{formatStoragePolicyType(policy.type)}</span>
                     <span className="text-xs text-text-muted-light dark:text-text-muted-dark">
                       {policy.defaultPolicy ? '默认策略' : policy.enabled ? '已启用' : '已禁用'}
                     </span>
                   </div>
                   <div className="space-y-2 text-sm text-text-secondary-light dark:text-text-secondary-dark font-geist">
-                    <p className="break-all bg-gray-50 dark:bg-[#1A1A24] p-2 rounded">
+                    <p className="break-all admin-muted-panel p-2 rounded">
                       {policy.endpoint || policy.bucketName || policy.prefix || '本地默认存储'}
                     </p>
                     <p>最大对象：{formatBytes(policy.maxSizeBytes)}</p>
-                    <p>凭证模式：{policy.credentialMode}</p>
+                    <p>凭证模式：{formatCredentialMode(policy.credentialMode)}</p>
                     <p>更新时间：{formatDateTime(policy.updatedAt)}</p>
                   </div>
                 </div>
-                <div className="p-4 border-t border-[#D9E3F2] dark:border-[#222233] bg-[#F8FBFF] dark:bg-[#1A1A24]/50 flex justify-between items-center gap-2">
+                <div className="p-4 border-t border-[#D9E3F2] dark:border-[#222233] bg-card-light dark:bg-[#1A1A24]/50 flex justify-between items-center gap-2">
                    <button
                      className="text-sm font-semibold text-brand-light dark:text-brand-dark flex items-center gap-2 group"
                      onClick={() => void handleEdit(policy)}

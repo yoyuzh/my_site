@@ -7,6 +7,34 @@ import type { AdminTask as AdminTaskItem } from '../../api/types';
 import { formatDateTime } from '../../lib/format';
 import { readTaskProgressSnapshot, rebuildSearchIndex } from '../../lib/tasks';
 
+function formatTaskType(type: string) {
+  const labels: Record<string, string> = {
+    ARCHIVE: '压缩',
+    EXTRACT: '解压',
+    REMOTE_DOWNLOAD: '离线下载',
+    MEDIA_METADATA: '媒体元数据',
+    STORAGE_POLICY_MIGRATION: '存储迁移',
+    WORKSPACE_MUTATION: '文件操作',
+    SEARCH_INDEX_REBUILD: '搜索索引重建',
+  };
+  return labels[type] ?? type;
+}
+
+function formatTaskStatus(status: string) {
+  const labels: Record<string, string> = {
+    PENDING: '排队中',
+    QUEUED: '排队中',
+    RUNNING: '处理中',
+    PROCESSING: '处理中',
+    COMPLETED: '已完成',
+    SUCCESS: '已完成',
+    FAILED: '失败',
+    CANCELLED: '已取消',
+    CANCELED: '已取消',
+  };
+  return labels[status] ?? status;
+}
+
 const AdminTask: React.FC = () => {
   const [showFilters, setShowFilters] = useState(false);
   const [page, setPage] = useState(1);
@@ -39,7 +67,7 @@ const AdminTask: React.FC = () => {
         <div className="flex items-center gap-2 w-full md:w-auto">
           <button 
             onClick={() => setShowFilters(!showFilters)}
-            className={`border border-[#D9E3F2] dark:border-[#222233] h-10 px-3 rounded-lg transition-colors flex items-center justify-center gap-2 text-sm ${showFilters ? 'bg-brand-light/10 text-brand-light border-brand-light/30' : 'bg-white dark:bg-[#0A0A0A] text-text-secondary-light dark:text-text-secondary-dark'}`}
+            className={`border border-[#D9E3F2] dark:border-[#222233] h-10 px-3 rounded-lg transition-colors flex items-center justify-center gap-2 text-sm ${showFilters ? 'bg-brand-light/10 text-brand-light border-brand-light/30' : 'bg-card-light dark:bg-[#0A0A0A] text-text-secondary-light dark:text-text-secondary-dark'}`}
           >
             <Filter size={16} />
             <span className="hidden sm:inline">筛选</span>
@@ -48,7 +76,7 @@ const AdminTask: React.FC = () => {
       </div>
 
       {showFilters && (
-        <div className="card-container p-4 mb-6 animate-fade-in-up flex flex-wrap gap-4 items-end bg-[#F8FBFF] dark:bg-[#111117]/80">
+        <div className="card-container p-4 mb-6 animate-fade-in-up flex flex-wrap gap-4 items-end admin-filter-panel">
           <div className="flex-1 min-w-[200px]">
             <label className="block text-xs font-semibold text-text-secondary-light dark:text-text-secondary-dark mb-1 ml-1">任务状态</label>
             <select className="input-field h-10 text-sm appearance-none py-0">
@@ -71,7 +99,7 @@ const AdminTask: React.FC = () => {
             </select>
           </div>
           <div className="flex gap-2">
-            <button className="h-10 px-4 text-sm bg-white dark:bg-black border border-[#D9E3F2] dark:border-[#222233] rounded-lg hover:bg-black/5 dark:hover:bg-white/5 transition-colors">
+            <button className="h-10 px-4 text-sm admin-secondary-button rounded-lg hover:bg-black/5 dark:hover:bg-white/5 transition-colors">
               重置
             </button>
             <button className="h-10 px-4 text-sm bg-brand-light text-white rounded-lg hover:opacity-90 transition-opacity">
@@ -109,7 +137,7 @@ const AdminTask: React.FC = () => {
                     return (
                     <tr
                       key={task.id}
-                      className={`border-b border-[#D9E3F2] dark:border-[#222233] hover:bg-[#F8FBFF] dark:hover:bg-[#1A1A24] transition-colors cursor-pointer ${
+                      className={`border-b border-[#D9E3F2] dark:border-[#222233] hover:bg-black/5 dark:hover:bg-white/5 transition-colors cursor-pointer ${
                         selectedTaskId === task.id ? 'bg-brand-light/5 dark:bg-brand-dark/10' : ''
                       }`}
                       onClick={() => setSelectedTaskId(task.id)}
@@ -120,13 +148,13 @@ const AdminTask: React.FC = () => {
                       <td className="px-6 py-4 text-sm text-text-secondary-light dark:text-text-secondary-dark font-funnel">{task.id}</td>
                       <td className="px-6 py-4 text-sm font-medium text-text-primary-light dark:text-white flex items-center gap-3">
                         <ListChecks size={16} className="text-brand-light" />
-                        {task.type}
+                        {formatTaskType(task.type)}
                       </td>
                       <td className="px-6 py-4 text-sm text-text-secondary-light dark:text-text-secondary-dark">
                         <div className="flex items-center gap-2">
-                           <span className="bg-black/5 dark:bg-white/5 px-2 py-1 rounded font-funnel">{task.status}</span>
+                           <span className="bg-black/5 dark:bg-white/5 px-2 py-1 rounded font-funnel">{formatTaskStatus(task.status)}</span>
                            {(progress?.progressPercent || 0) > 0 && (
-                              <div className="w-16 bg-gray-200 dark:bg-[#222233] rounded-full h-1.5 hidden lg:block">
+                              <div className="w-16 bg-black/10 dark:bg-[#222233] rounded-full h-1.5 hidden lg:block">
                                 <div className="bg-brand-light dark:bg-brand-dark h-1.5 rounded-full" style={{ width: `${progress?.progressPercent ?? 0}%` }}></div>
                               </div>
                            )}
@@ -136,7 +164,7 @@ const AdminTask: React.FC = () => {
                         </p>
                       </td>
                       <td className="px-6 py-4 text-sm text-brand-light dark:text-brand-dark">
-                        {task.ownerUsername || task.ownerEmail || 'Unknown'}
+                        {task.ownerUsername || task.ownerEmail || '未知'}
                       </td>
                       <td className="px-6 py-4 text-sm text-text-secondary-light dark:text-text-secondary-dark font-geist">{formatDateTime(task.createdAt)}</td>
                       <td className="px-6 py-4 text-right">
@@ -156,7 +184,7 @@ const AdminTask: React.FC = () => {
                   <div>
                     <h3 className="text-lg font-semibold text-text-primary-light dark:text-white">任务详情 #{selectedTask.id}</h3>
                     <p className="text-sm text-text-secondary-light dark:text-text-secondary-dark">
-                      {selectedTask.type} · {selectedTask.status}
+                      {formatTaskType(selectedTask.type)} · {formatTaskStatus(selectedTask.status)}
                     </p>
                   </div>
                   <div className="text-sm text-text-secondary-light dark:text-text-secondary-dark lg:text-right">
@@ -164,7 +192,7 @@ const AdminTask: React.FC = () => {
                     <p>已处理 {selectedTaskProgress?.processedItems ?? 0} / {selectedTaskProgress?.totalItems ?? 0}</p>
                   </div>
                 </div>
-                <div className="mt-4 h-2 w-full rounded-full bg-[#E8EEF8] dark:bg-[#1D2330]">
+                <div className="mt-4 h-2 w-full rounded-full bg-black/10 dark:bg-[#1D2330]">
                   <div
                     className="h-2 rounded-full bg-brand-light transition-all dark:bg-brand-dark"
                     style={{ width: `${selectedTaskProgress?.progressPercent ?? 0}%` }}

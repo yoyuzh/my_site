@@ -111,6 +111,7 @@ class RuntimeRemoteDownloadApiTest {
                 "QBITTORRENT",
                 "/downloads",
                 "source",
+                "source",
                 "local-default",
                 0,
                 0,

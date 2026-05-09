@@ -15,16 +15,20 @@ import com.yoyuzh.transfer.internal.domain.RemoteDownloadTask;
 import com.yoyuzh.transfer.internal.infra.RemoteDownloadTaskRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import java.time.LocalDateTime;
+import java.time.Instant;
 import java.util.Optional;
+import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 class RemoteDownloadServiceTest {
@@ -85,6 +89,70 @@ class RemoteDownloadServiceTest {
         assertThat(response.engineType()).isEqualTo(DownloadEngineType.ARIA2.name());
         assertThat(response.backgroundTaskId()).isEqualTo(91L);
         assertThat(response.targetPath()).isEqualTo("/downloads");
+    }
+
+    @Test
+    void shouldCreateNewTaskWhenRetryingRemoteDownload() {
+        RemoteDownloadTask failedTask = RemoteDownloadTask.createHttp(
+                7L,
+                "/downloads",
+                "https://example.com/demo.zip",
+                "local-default"
+        );
+        setTaskId(failedTask, 31L);
+        failedTask.setStatus(RemoteDownloadStatus.FAILED);
+        failedTask.setFailureCode("2");
+        failedTask.setFailureMessage("Timeout.");
+        failedTask.setFinishedAt(Instant.parse("2026-05-09T08:00:00Z"));
+
+        when(remoteDownloadTaskRepository.findByIdAndUserId(31L, 7L)).thenReturn(Optional.of(failedTask));
+        when(remoteDownloadTaskRepository.save(any(RemoteDownloadTask.class)))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+        when(backgroundTaskLifecycleApi.createQueuedTaskByUserId(eq(7L), eq(BackgroundTaskType.REMOTE_DOWNLOAD), any(), any(), any()))
+                .thenReturn(new BackgroundTaskView(
+                        99L,
+                        BackgroundTaskType.REMOTE_DOWNLOAD,
+                        BackgroundTaskStatus.QUEUED,
+                        7L,
+                        "{}",
+                        "remote-download:7:retry",
+                        null,
+                        LocalDateTime.now(),
+                        LocalDateTime.now(),
+                        null
+                ));
+
+        RemoteDownloadDetailResponse response = remoteDownloadService.retry(7L, 31L);
+
+        assertThat(response.status()).isEqualTo(RemoteDownloadStatus.PENDING.name());
+        assertThat(response.backgroundTaskId()).isEqualTo(99L);
+        assertThat(response.sourceValue()).isEqualTo("https://example.com/demo.zip");
+        assertThat(response.targetPath()).isEqualTo("/downloads");
+        ArgumentCaptor<RemoteDownloadTask> savedTasks = ArgumentCaptor.forClass(RemoteDownloadTask.class);
+        verify(remoteDownloadTaskRepository, org.mockito.Mockito.times(2)).save(savedTasks.capture());
+        RemoteDownloadTask finalSavedTask = savedTasks.getAllValues().get(1);
+        assertThat(finalSavedTask).isNotSameAs(failedTask);
+        assertThat(finalSavedTask.getStatus()).isEqualTo(RemoteDownloadStatus.PENDING);
+        assertThat(finalSavedTask.getFailureCode()).isNull();
+        assertThat(finalSavedTask.getFailureMessage()).isNull();
+        assertThat(finalSavedTask.getFinishedAt()).isNull();
+        assertThat(finalSavedTask.getBackgroundTaskId()).isEqualTo(99L);
+    }
+
+    @Test
+    void shouldListOnlyRecentRemoteDownloads() {
+        RemoteDownloadTask recent = RemoteDownloadTask.createHttp(7L, "/downloads", "https://example.com/recent.zip", "local-default");
+        RemoteDownloadTask oldCompleted = RemoteDownloadTask.createHttp(7L, "/downloads", "https://example.com/old.zip", "local-default");
+        RemoteDownloadTask oldActive = RemoteDownloadTask.createHttp(7L, "/downloads", "https://example.com/active.zip", "local-default");
+        ReflectionTestUtils.setField(recent, "createdAt", Instant.now().minusSeconds(9 * 24 * 60 * 60));
+        ReflectionTestUtils.setField(oldCompleted, "createdAt", Instant.now().minusSeconds(11 * 24 * 60 * 60));
+        ReflectionTestUtils.setField(oldActive, "createdAt", Instant.now().minusSeconds(11 * 24 * 60 * 60));
+
+        when(remoteDownloadTaskRepository.findActiveOrRecentByUserId(eq(7L), any(), any()))
+                .thenReturn(List.of(oldActive, recent));
+
+        assertThat(remoteDownloadService.listOwned(7L)).hasSize(2);
+        verify(remoteDownloadTaskRepository).findActiveOrRecentByUserId(eq(7L), any(), any());
     }
 
     @Test

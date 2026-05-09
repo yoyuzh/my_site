@@ -23,10 +23,11 @@ test('buildObjectKey joins optional prefix with relative path', () => {
   assert.equal(buildObjectKey('portal', 'assets/index.js'), 'portal/assets/index.js');
 });
 
-test('getCacheControl keeps index uncached and assets immutable', () => {
-  assert.equal(getCacheControl('index.html'), 'no-cache');
+test('getCacheControl short-caches html entry points and keeps assets immutable', () => {
+  assert.equal(getCacheControl('index.html'), 'public,max-age=60,must-revalidate');
   assert.equal(getCacheControl('assets/index.js'), 'public,max-age=31536000,immutable');
-  assert.equal(getCacheControl('race/index.html'), 'public,max-age=300');
+  assert.equal(getCacheControl('dashboard/files'), 'public,max-age=60,must-revalidate');
+  assert.equal(getCacheControl('race/index.html'), 'public,max-age=60,must-revalidate');
 });
 
 test('getContentType resolves common frontend asset types', () => {
@@ -39,10 +40,10 @@ test('getContentType resolves common frontend asset types', () => {
 test('frontend spa aliases are uploaded as html entry points', () => {
   const aliases = getFrontendSpaAliasKeys();
 
-  assert.ok(aliases.includes('t/index.html'));
-  assert.ok(aliases.includes('overview'));
-  assert.ok(aliases.includes('transfer/index.html'));
-  assert.ok(aliases.includes('admin/users'));
+  assert.ok(aliases.includes('dashboard/files/index.html'));
+  assert.ok(aliases.includes('transfer/receive/index.html'));
+  assert.ok(aliases.includes('admin/user'));
+  assert.ok(aliases.includes('share/'));
   assert.equal(getFrontendSpaAliasContentType(), 'text/html; charset=utf-8');
 });
 

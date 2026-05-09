@@ -69,6 +69,23 @@ log_step() {
   printf '\n==> %s\n' "$1"
 }
 
+wait_for_remote_health() {
+  "${SSH_BASE[@]}" '
+    set -e
+    for attempt in $(seq 1 12); do
+      if curl --max-time 10 -fsS http://127.0.0.1:8080/api/v2/site/ping; then
+        exit 0
+      fi
+      echo "Backend health check not ready yet; retrying (${attempt}/12)..." >&2
+      sleep 5
+    done
+    echo "Backend health check failed after waiting for startup" >&2
+    systemctl --no-pager -l status my-site-api.service >&2 || true
+    journalctl -u my-site-api.service -n 80 --no-pager >&2 || true
+    exit 1
+  '
+}
+
 require_command bash
 require_command mvn
 require_command scp
@@ -140,8 +157,7 @@ log_step "Replacing remote jar and restarting service"
 "${SSH_BASE[@]}" "mv '${REMOTE_TMP_PATH}' '${REMOTE_JAR_PATH}' && systemctl restart '${SERVICE_NAME}' && systemctl is-active '${SERVICE_NAME}'"
 
 log_step "Verifying backend health"
-"${SSH_BASE[@]}" "curl --max-time 10 -sS http://127.0.0.1:8080/api/v2/site/ping"
+wait_for_remote_health
 
 log_step "Verifying public API health"
 curl --max-time 15 -sS -i https://api.yoyuzh.xyz/api/v2/site/ping
-

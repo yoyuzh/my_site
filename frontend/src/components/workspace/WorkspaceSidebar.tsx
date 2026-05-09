@@ -63,7 +63,17 @@ const WorkspaceSidebar: React.FC<{
   const location = useLocation();
   const { data: capacity, isLoading, isError } = useUserCapacity();
   const [filesSectionCollapsed, setFilesSectionCollapsed] = useState(restoreFilesSectionCollapsed);
+  const [pendingPath, setPendingPath] = useState<string | null>(null);
   const scrollContainerRef = useRef<HTMLDivElement | null>(null);
+
+  function handleNavigate(path: string) {
+    setPendingPath(path);
+    onNavigate?.();
+  }
+
+  useEffect(() => {
+    setPendingPath(null);
+  }, [location.pathname, location.search]);
 
   useEffect(() => {
     if (typeof window === 'undefined') {
@@ -116,8 +126,9 @@ const WorkspaceSidebar: React.FC<{
           <div className="space-y-1 pb-5">
             {items.map((item) => {
               const Icon = item.icon;
+              const activePath = pendingPath ?? location.pathname;
               const active =
-                location.pathname === item.path || location.pathname.startsWith(`${item.path}/`);
+                activePath === item.path || activePath.startsWith(`${item.path}/`);
               const isFilesItem = item.expandable === true;
 
               return (
@@ -137,7 +148,7 @@ const WorkspaceSidebar: React.FC<{
                       >
                         <Link
                           to={item.path}
-                          onClick={onNavigate}
+                          onClick={() => handleNavigate(item.path)}
                           className="flex min-w-0 flex-1 items-center gap-3"
                         >
                           <Icon size={16} />
@@ -170,7 +181,7 @@ const WorkspaceSidebar: React.FC<{
                   ) : (
                     <Link
                       to={item.path}
-                      onClick={onNavigate}
+                      onClick={() => handleNavigate(item.path)}
                       className={
                         active
                           ? 'sidebar-nav-item-active'
@@ -215,11 +226,11 @@ const WorkspaceSidebar: React.FC<{
               <div className="pt-1">
                 <Link
                   to="/admin/home"
-                  onClick={onNavigate}
+                  onClick={() => handleNavigate('/admin/home')}
                   className="sidebar-nav-item bg-brand-light/10 text-brand-light hover:bg-brand-light/20 dark:bg-brand-dark/15 dark:text-brand-dark dark:hover:bg-brand-dark/25"
                 >
                   <Activity size={18} strokeWidth={2} />
-                  <span className="text-sm font-semibold">管理面板 Admin</span>
+                  <span className="text-sm font-semibold">管理面板</span>
                 </Link>
               </div>
             </div>

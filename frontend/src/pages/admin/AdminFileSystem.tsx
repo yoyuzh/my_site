@@ -4,6 +4,17 @@ import { HardDrive, AlertTriangle, RefreshCw } from 'lucide-react';
 import { useAdminFilesystem } from '../../api/queries';
 import { formatBytes } from '../../lib/format';
 
+function formatRuntimeValue(value: string) {
+  const labels: Record<string, string> = {
+    LOCAL: '本地存储',
+    S3_COMPATIBLE: 'S3 兼容存储',
+    OSS_SDK: 'OSS SDK',
+    MEMORY: '内存',
+    REDIS: 'Redis',
+  };
+  return labels[value] ?? value;
+}
+
 const AdminFileSystem: React.FC = () => {
   const { data, isLoading, isError } = useAdminFilesystem();
 
@@ -46,7 +57,7 @@ const AdminFileSystem: React.FC = () => {
               <p className="text-xs text-text-muted-light dark:text-text-muted-dark">重新计算所有用户的使用量</p>
             </div>
           </div>
-          <button className="bg-white dark:bg-transparent border border-[#D9E3F2] dark:border-[#222233] text-text-primary-light dark:text-white font-semibold py-2 px-4 rounded-lg hover:bg-black/5 dark:hover:bg-white/5 transition-colors w-full text-sm disabled:opacity-50 disabled:cursor-not-allowed" disabled title="后端暂未提供容量校准接口">开始校准</button>
+          <button className="admin-secondary-button text-text-primary-light dark:text-text-primary-dark font-semibold py-2 px-4 rounded-lg hover:bg-black/5 dark:hover:bg-white/5 transition-colors w-full text-sm disabled:opacity-50 disabled:cursor-not-allowed" disabled title="后端暂未提供容量校准接口">开始校准</button>
         </div>
       </div>
       
@@ -58,28 +69,28 @@ const AdminFileSystem: React.FC = () => {
            <div className="p-6 text-center text-red-500">加载失败</div>
          ) : (
            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
-             <div className="rounded-lg bg-[#F8FBFF] dark:bg-black/20 p-4">
+             <div className="rounded-lg admin-muted-panel p-4">
                <p className="font-semibold text-text-primary-light dark:text-white mb-2">存储概览</p>
-               <p className="text-text-secondary-light dark:text-text-secondary-dark">存储提供方：{data.overview.storageProvider}</p>
+               <p className="text-text-secondary-light dark:text-text-secondary-dark">存储提供方：{formatRuntimeValue(data.overview.storageProvider)}</p>
                <p className="text-text-secondary-light dark:text-text-secondary-dark">文件：{data.overview.totalFiles}</p>
                <p className="text-text-secondary-light dark:text-text-secondary-dark">Blob：{data.overview.totalBlobs}</p>
                <p className="text-text-secondary-light dark:text-text-secondary-dark">实体：{data.overview.totalEntities}</p>
              </div>
-             <div className="rounded-lg bg-[#F8FBFF] dark:bg-black/20 p-4">
+             <div className="rounded-lg admin-muted-panel p-4">
                <p className="font-semibold text-text-primary-light dark:text-white mb-2">上传能力</p>
                <p className="text-text-secondary-light dark:text-text-secondary-dark">代理上传：{data.upload.proxyUpload ? '支持' : '不支持'}</p>
                <p className="text-text-secondary-light dark:text-text-secondary-dark">直传：{data.upload.directSingleUpload ? '支持' : '不支持'}</p>
                <p className="text-text-secondary-light dark:text-text-secondary-dark">分片直传：{data.upload.directMultipartUpload ? '支持' : '不支持'}</p>
                <p className="text-text-secondary-light dark:text-text-secondary-dark">最大文件：{formatBytes(data.upload.effectiveMaxFileSizeBytes)}</p>
              </div>
-             <div className="rounded-lg bg-[#F8FBFF] dark:bg-black/20 p-4">
+             <div className="rounded-lg admin-muted-panel p-4">
                <p className="font-semibold text-text-primary-light dark:text-white mb-2">媒体处理</p>
                <p className="text-text-secondary-light dark:text-text-secondary-dark">元数据提取：{data.mediaProcessing.metadataExtractionEnabled ? '开启' : '关闭'}</p>
                <p className="text-text-secondary-light dark:text-text-secondary-dark">原生缩略图：{data.mediaProcessing.nativeThumbnailSupport ? '支持' : '不支持'}</p>
              </div>
-             <div className="rounded-lg bg-[#F8FBFF] dark:bg-black/20 p-4">
+             <div className="rounded-lg admin-muted-panel p-4">
                <p className="font-semibold text-text-primary-light dark:text-white mb-2">缓存与 WebDAV</p>
-               <p className="text-text-secondary-light dark:text-text-secondary-dark">缓存后端：{data.cache.backend}</p>
+               <p className="text-text-secondary-light dark:text-text-secondary-dark">缓存后端：{formatRuntimeValue(data.cache.backend)}</p>
                <p className="text-text-secondary-light dark:text-text-secondary-dark">文件列表 TTL：{data.cache.filesListTtlSeconds}s</p>
                <p className="text-text-secondary-light dark:text-text-secondary-dark">目录版本 TTL：{data.cache.directoryVersionTtlSeconds}s</p>
                <p className="text-text-secondary-light dark:text-text-secondary-dark">WebDAV：{data.webdav.enabled ? '开启' : '关闭'}</p>

@@ -17,8 +17,10 @@ import java.net.URLConnection;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 
 @Service
 public class RemoteDownloadImportService {
@@ -35,11 +37,12 @@ public class RemoteDownloadImportService {
     public int importCompletedDownload(RemoteDownloadTask task, String outputPath, String savePath) {
         IdentityUserSnapshot user = identityUserDirectoryApi.findSnapshotById(task.getUserId())
                 .orElseThrow(() -> new IllegalStateException("remote download user not found"));
+        WorkspaceUserContext workspaceUser = workspaceUser(user);
         ImportPlan plan = task.getEngineType() == DownloadEngineType.ARIA2
-                ? buildAria2ImportPlan(task, outputPath)
-                : buildQbittorrentImportPlan(task, outputPath, savePath);
+                ? buildAria2ImportPlan(workspaceUser, task, outputPath)
+                : buildQbittorrentImportPlan(workspaceUser, task, outputPath, savePath);
         workspaceBootstrapApi.importExternalFilesAtomically(
-                workspaceUser(user),
+                workspaceUser,
                 plan.directories(),
                 plan.files(),
                 null
@@ -48,13 +51,14 @@ public class RemoteDownloadImportService {
         return plan.files().size();
     }
 
-    private ImportPlan buildAria2ImportPlan(RemoteDownloadTask task, String outputPath) {
+    private ImportPlan buildAria2ImportPlan(WorkspaceUserContext workspaceUser, RemoteDownloadTask task, String outputPath) {
         Path source = requireRegularFile(outputPath, "aria2 output path is invalid");
+        String targetPath = normalizeDirectoryPath(task.getTargetPath());
         return new ImportPlan(
                 List.of(),
                 List.of(new WorkspaceExternalFileImport(
-                        normalizeDirectoryPath(task.getTargetPath()),
-                        source.getFileName().toString(),
+                        targetPath,
+                        resolveAvailableFilename(workspaceUser, targetPath, source.getFileName().toString()),
                         guessContentType(source.getFileName().toString()),
                         fileSize(source),
                         () -> Files.newInputStream(source)
@@ -63,7 +67,10 @@ public class RemoteDownloadImportService {
         );
     }
 
-    private ImportPlan buildQbittorrentImportPlan(RemoteDownloadTask task, String outputPath, String savePath) {
+    private ImportPlan buildQbittorrentImportPlan(WorkspaceUserContext workspaceUser,
+                                                  RemoteDownloadTask task,
+                                                  String outputPath,
+                                                  String savePath) {
         List<RemoteDownloadCandidateFile> selectedFiles = task.getCandidateFiles().stream()
                 .filter(RemoteDownloadCandidateFile::isSelected)
                 .toList();
@@ -74,6 +81,8 @@ public class RemoteDownloadImportService {
         String targetRoot = normalizeDirectoryPath(task.getTargetPath());
         LinkedHashSet<String> directories = new LinkedHashSet<>();
         List<WorkspaceExternalFileImport> files = new ArrayList<>();
+        DirectoryNameTracker directoryNameTracker = new DirectoryNameTracker(workspaceUser);
+        DuplicateNameTracker fileNameTracker = new DuplicateNameTracker(workspaceUser);
         for (RemoteDownloadCandidateFile candidateFile : selectedFiles) {
             String relativePath = normalizeRelativePath(candidateFile.getRelativePath());
             Path source = sourceRoot.resolve(relativePath).normalize();
@@ -82,12 +91,15 @@ public class RemoteDownloadImportService {
             }
             requireRegularFile(source.toString(), "remote download source file is missing");
             String parentRelativePath = extractParentPath(relativePath);
+            String targetPath = StringUtils.hasText(parentRelativePath)
+                    ? directoryNameTracker.resolvePath(targetRoot, parentRelativePath, directories)
+                    : targetRoot;
             if (StringUtils.hasText(parentRelativePath)) {
-                collectParentDirectories(directories, targetRoot, parentRelativePath);
+                directories.add(targetPath);
             }
             files.add(new WorkspaceExternalFileImport(
-                    StringUtils.hasText(parentRelativePath) ? joinPath(targetRoot, parentRelativePath) : targetRoot,
-                    extractLeafName(relativePath),
+                    targetPath,
+                    fileNameTracker.resolve(targetPath, extractLeafName(relativePath)),
                     guessContentType(relativePath),
                     fileSize(source),
                     () -> Files.newInputStream(source)
@@ -149,14 +161,6 @@ public class RemoteDownloadImportService {
         }
     }
 
-    private void collectParentDirectories(LinkedHashSet<String> directories, String rootPath, String relativeParent) {
-        String current = "";
-        for (String segment : relativeParent.split("/")) {
-            current = StringUtils.hasText(current) ? current + "/" + segment : segment;
-            directories.add(joinPath(rootPath, current));
-        }
-    }
-
     private String normalizeDirectoryPath(String path) {
         if (!StringUtils.hasText(path)) {
             return "/";
@@ -210,6 +214,32 @@ public class RemoteDownloadImportService {
         return path.substring(separator + 1);
     }
 
+    private String resolveAvailableFilename(WorkspaceUserContext user, String path, String filename) {
+        return resolveAvailableFilename(user, path, filename, new LinkedHashSet<>());
+    }
+
+    private String resolveAvailableFilename(WorkspaceUserContext user, String path, String filename, LinkedHashSet<String> reservedNames) {
+        if (!reservedNames.contains(filename) && !workspaceBootstrapApi.existsNode(user, path, filename)) {
+            return filename;
+        }
+        NameParts nameParts = splitName(filename);
+        for (int counter = 1; counter <= 100; counter += 1) {
+            String candidate = nameParts.baseName() + "(" + counter + ")" + nameParts.extension();
+            if (!reservedNames.contains(candidate) && !workspaceBootstrapApi.existsNode(user, path, candidate)) {
+                return candidate;
+            }
+        }
+        throw new IllegalStateException("remote download target has too many duplicate names");
+    }
+
+    private NameParts splitName(String filename) {
+        int lastDot = filename.lastIndexOf('.');
+        if (lastDot > 0) {
+            return new NameParts(filename.substring(0, lastDot), filename.substring(lastDot));
+        }
+        return new NameParts(filename, "");
+    }
+
     private String guessContentType(String filename) {
         String contentType = URLConnection.guessContentTypeFromName(filename);
         return StringUtils.hasText(contentType) ? contentType : "application/octet-stream";
@@ -228,5 +258,57 @@ public class RemoteDownloadImportService {
             List<WorkspaceExternalFileImport> files,
             Path cleanupPath
     ) {
+    }
+
+    private record NameParts(String baseName, String extension) {
+    }
+
+    private final class DuplicateNameTracker {
+        private final WorkspaceUserContext user;
+        private final Map<String, LinkedHashSet<String>> reservedNamesByPath = new HashMap<>();
+
+        private DuplicateNameTracker(WorkspaceUserContext user) {
+            this.user = user;
+        }
+
+        private String resolve(String path, String filename) {
+            String normalizedPath = normalizeDirectoryPath(path);
+            LinkedHashSet<String> reservedNames = reservedNamesByPath.computeIfAbsent(normalizedPath, ignored -> new LinkedHashSet<>());
+            String resolved = resolveAvailableFilename(user, normalizedPath, filename, reservedNames);
+            reservedNames.add(resolved);
+            return resolved;
+        }
+    }
+
+    private final class DirectoryNameTracker {
+        private final WorkspaceUserContext user;
+        private final Map<String, String> resolvedPathByOriginalPath = new HashMap<>();
+        private final DuplicateNameTracker nameTracker;
+
+        private DirectoryNameTracker(WorkspaceUserContext user) {
+            this.user = user;
+            this.nameTracker = new DuplicateNameTracker(user);
+        }
+
+        private String resolvePath(String targetRoot, String relativeParent, LinkedHashSet<String> directories) {
+            String currentOriginalPath = normalizeDirectoryPath(targetRoot);
+            String currentResolvedPath = currentOriginalPath;
+            for (String segment : normalizeRelativePath(relativeParent).split("/")) {
+                String nextOriginalPath = joinPath(currentOriginalPath, segment);
+                String existingResolvedPath = resolvedPathByOriginalPath.get(nextOriginalPath);
+                if (existingResolvedPath != null) {
+                    currentOriginalPath = nextOriginalPath;
+                    currentResolvedPath = existingResolvedPath;
+                    directories.add(currentResolvedPath);
+                    continue;
+                }
+                String resolvedSegment = nameTracker.resolve(currentResolvedPath, segment);
+                currentOriginalPath = nextOriginalPath;
+                currentResolvedPath = joinPath(currentResolvedPath, resolvedSegment);
+                resolvedPathByOriginalPath.put(currentOriginalPath, currentResolvedPath);
+                directories.add(currentResolvedPath);
+            }
+            return currentResolvedPath;
+        }
     }
 }

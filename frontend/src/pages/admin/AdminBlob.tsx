@@ -42,7 +42,7 @@ const AdminBlob: React.FC = () => {
   }
 
   return (
-    <AdminLayout title="文件记录 (Entity)">
+    <AdminLayout title="文件记录">
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 gap-4">
         <div className="flex items-center gap-2">
            <button
@@ -59,7 +59,7 @@ const AdminBlob: React.FC = () => {
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-text-muted-light dark:text-text-muted-dark" size={16} />
             <input 
               type="text" 
-              placeholder="搜索 object key..."
+              placeholder="搜索 对象 Key..."
               className="input-field h-10 w-full text-sm pl-9"
               value={objectKeyDraft}
               onChange={(event) => setObjectKeyDraft(event.target.value)}
@@ -72,7 +72,7 @@ const AdminBlob: React.FC = () => {
           </div>
           <button 
             onClick={() => setShowFilters(!showFilters)}
-            className={`border border-[#D9E3F2] dark:border-[#222233] h-10 px-3 rounded-lg transition-colors flex items-center justify-center gap-2 text-sm ${showFilters ? 'bg-brand-light/10 text-brand-light border-brand-light/30' : 'bg-white dark:bg-[#0A0A0A] text-text-secondary-light dark:text-text-secondary-dark'}`}
+            className={`border border-[#D9E3F2] dark:border-[#222233] h-10 px-3 rounded-lg transition-colors flex items-center justify-center gap-2 text-sm ${showFilters ? 'bg-brand-light/10 text-brand-light border-brand-light/30' : 'bg-card-light dark:bg-[#0A0A0A] text-text-secondary-light dark:text-text-secondary-dark'}`}
           >
             <Filter size={16} />
             <span className="hidden sm:inline">筛选</span>
@@ -81,7 +81,7 @@ const AdminBlob: React.FC = () => {
       </div>
 
       {showFilters && (
-        <div className="card-container p-4 mb-6 animate-fade-in-up flex flex-wrap gap-4 items-end bg-[#F8FBFF] dark:bg-[#111117]/80">
+        <div className="card-container p-4 mb-6 animate-fade-in-up flex flex-wrap gap-4 items-end admin-filter-panel">
           <div className="flex-1 min-w-[200px]">
             <label className="block text-xs font-semibold text-text-secondary-light dark:text-text-secondary-dark mb-1 ml-1">存储策略</label>
             <input
@@ -110,7 +110,7 @@ const AdminBlob: React.FC = () => {
           </div>
           <div className="flex gap-2">
             <button
-              className="h-10 px-4 text-sm bg-white dark:bg-black border border-[#D9E3F2] dark:border-[#222233] rounded-lg hover:bg-black/5 dark:hover:bg-white/5 transition-colors"
+              className="h-10 px-4 text-sm admin-secondary-button rounded-lg hover:bg-black/5 dark:hover:bg-white/5 transition-colors"
               onClick={resetFilters}
             >
               重置
@@ -149,7 +149,7 @@ const AdminBlob: React.FC = () => {
                 </thead>
                 <tbody>
                   {(data?.items || []).map((blob: AdminFileBlob) => (
-                    <tr key={`${blob.entityType}-${blob.entityId}-${blob.blobId}`} className="border-b border-[#D9E3F2] dark:border-[#222233] hover:bg-[#F8FBFF] dark:hover:bg-[#1A1A24] transition-colors">
+                    <tr key={`${blob.entityType}-${blob.entityId}-${blob.blobId}`} className="border-b border-[#D9E3F2] dark:border-[#222233] hover:bg-black/5 dark:hover:bg-white/5 transition-colors">
                       <td className="px-6 py-4 text-sm">
                         <input type="checkbox" className="rounded border-gray-300 text-brand-light focus:ring-brand-light cursor-pointer" />
                       </td>
@@ -161,7 +161,7 @@ const AdminBlob: React.FC = () => {
                       </td>
                       <td className="px-6 py-4 text-sm font-medium text-text-primary-light dark:text-white flex items-center gap-3">
                         <FolderKey size={16} className="text-brand-light flex-shrink-0" />
-                        <span className="truncate max-w-xs font-geist">{blob.objectKey || '无 object key'}</span>
+                        <span className="truncate max-w-xs font-geist">{blob.objectKey || '无 对象 Key'}</span>
                       </td>
                       <td className="px-6 py-4 text-sm text-text-secondary-light dark:text-text-secondary-dark font-funnel">
                         {blob.size == null ? '-' : formatBytes(blob.size)}

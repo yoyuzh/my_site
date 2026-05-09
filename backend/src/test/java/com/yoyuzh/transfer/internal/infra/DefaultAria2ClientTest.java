@@ -30,7 +30,7 @@ class DefaultAria2ClientTest {
         assertThat(transport.url).isEqualTo("http://127.0.0.1:6800/jsonrpc");
         assertThat(transport.headers).containsEntry("Content-Type", "application/json");
         assertThat(transport.body).isEqualTo("""
-                {"jsonrpc":"2.0","id":"remote-download","method":"aria2.addUri","params":["token:aria2-secret",["https://example.com/demo.zip"],{"dir":"/downloads"}]}
+                {"jsonrpc":"2.0","id":"remote-download","method":"aria2.addUri","params":["token:aria2-secret",["https://example.com/demo.zip"],{"dir":"/downloads","user-agent":"Mozilla/5.0","disable-ipv6":"true","connect-timeout":"15","timeout":"60","max-tries":"2","retry-wait":"5"}]}
                 """.trim());
     }
 

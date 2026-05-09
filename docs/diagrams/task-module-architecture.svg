@@ -1,0 +1,219 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="2400" height="1600" viewBox="0 0 2400 1600">
+  <defs>
+    <style>
+      .bg { fill: #f7f9fc; }
+      .title { font: 700 44px -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, "PingFang SC", "Microsoft YaHei", sans-serif; fill: #182033; }
+      .subtitle { font: 400 22px -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, "PingFang SC", "Microsoft YaHei", sans-serif; fill: #5d667a; }
+      .lane-title { font: 700 24px -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, "PingFang SC", "Microsoft YaHei", sans-serif; fill: #263149; }
+      .box-title { font: 700 23px -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, "PingFang SC", "Microsoft YaHei", sans-serif; fill: #172033; }
+      .box-subtitle { font: 500 17px -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, "PingFang SC", "Microsoft YaHei", sans-serif; fill: #536074; }
+      .small { font: 400 17px -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, "PingFang SC", "Microsoft YaHei", sans-serif; fill: #374156; }
+      .tiny { font: 400 15px -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, "PingFang SC", "Microsoft YaHei", sans-serif; fill: #596579; }
+      .code { font: 500 15px "SFMono-Regular", Consolas, "Liberation Mono", monospace; fill: #2f3a4f; }
+      .lane { fill: #ffffff; stroke: #d9e0eb; stroke-width: 2; rx: 22; }
+      .module { fill: #eef5ff; stroke: #6aa2de; stroke-width: 2; rx: 16; }
+      .web { fill: #fff6e6; stroke: #e1a43a; stroke-width: 2; rx: 14; }
+      .api { fill: #eaf8f0; stroke: #49a56f; stroke-width: 2; rx: 14; }
+      .app { fill: #f2efff; stroke: #8f7be8; stroke-width: 2; rx: 14; }
+      .domain { fill: #fff0f3; stroke: #d45b75; stroke-width: 2; rx: 14; }
+      .infra { fill: #edf2f7; stroke: #8a99ad; stroke-width: 2; rx: 14; }
+      .external { fill: #f0fbff; stroke: #3f9dbf; stroke-width: 2; rx: 14; }
+      .state { fill: #fffdf0; stroke: #c8b13f; stroke-width: 2; rx: 14; }
+      .note { fill: #ffffff; stroke: #cbd5e1; stroke-width: 1.5; rx: 12; }
+      .arrow { stroke: #516078; stroke-width: 3; fill: none; marker-end: url(#arrow); }
+      .arrow-soft { stroke: #8a96aa; stroke-width: 2.4; fill: none; marker-end: url(#arrow-soft); stroke-dasharray: 8 8; }
+      .arrow-green { stroke: #2f8f61; stroke-width: 3; fill: none; marker-end: url(#arrow-green); }
+      .arrow-purple { stroke: #7562d6; stroke-width: 3; fill: none; marker-end: url(#arrow-purple); }
+      .arrow-red { stroke: #c94b65; stroke-width: 3; fill: none; marker-end: url(#arrow-red); }
+    </style>
+    <marker id="arrow" markerWidth="13" markerHeight="13" refX="11" refY="6.5" orient="auto">
+      <path d="M1,1 L12,6.5 L1,12 Z" fill="#516078"/>
+    </marker>
+    <marker id="arrow-soft" markerWidth="13" markerHeight="13" refX="11" refY="6.5" orient="auto">
+      <path d="M1,1 L12,6.5 L1,12 Z" fill="#8a96aa"/>
+    </marker>
+    <marker id="arrow-green" markerWidth="13" markerHeight="13" refX="11" refY="6.5" orient="auto">
+      <path d="M1,1 L12,6.5 L1,12 Z" fill="#2f8f61"/>
+    </marker>
+    <marker id="arrow-purple" markerWidth="13" markerHeight="13" refX="11" refY="6.5" orient="auto">
+      <path d="M1,1 L12,6.5 L1,12 Z" fill="#7562d6"/>
+    </marker>
+    <marker id="arrow-red" markerWidth="13" markerHeight="13" refX="11" refY="6.5" orient="auto">
+      <path d="M1,1 L12,6.5 L1,12 Z" fill="#c94b65"/>
+    </marker>
+  </defs>
+
+  <rect class="bg" x="0" y="0" width="2400" height="1600"/>
+
+  <text class="title" x="90" y="78">Task 模块架构图：platform.job</text>
+  <text class="subtitle" x="90" y="116">基于当前 backend 源码：/api/v2/tasks/**、BackgroundTask 生命周期、Worker 租约、Handler 分派与跨模块 API 协作</text>
+
+  <rect class="lane" x="70" y="155" width="2260" height="1015"/>
+  <text class="lane-title" x="100" y="195">1. 模块边界与运行主链路</text>
+
+  <rect class="external" x="105" y="235" width="310" height="250"/>
+  <text class="box-title" x="130" y="272">调用入口</text>
+  <text class="small" x="130" y="310">前端任务面板</text>
+  <text class="code" x="130" y="340">GET /api/v2/tasks</text>
+  <text class="code" x="130" y="368">GET /{id}/progress</text>
+  <text class="code" x="130" y="396">DELETE /{id}</text>
+  <text class="code" x="130" y="424">POST /{id}/retry</text>
+  <text class="tiny" x="130" y="456">创建：archive / extract / media-metadata</text>
+
+  <rect class="web" x="500" y="220" width="350" height="285"/>
+  <text class="box-title" x="525" y="258">internal.web</text>
+  <text class="box-subtitle" x="525" y="288">BackgroundTaskV2Controller</text>
+  <text class="small" x="525" y="327">HTTP 参数校验与响应适配</text>
+  <text class="small" x="525" y="357">从 UserDetails 解析 userId</text>
+  <text class="small" x="525" y="387">普通用户只查自己的任务</text>
+  <text class="small" x="525" y="417">搜索索引重建需要 admin</text>
+  <text class="code" x="525" y="458">ApiV2Response&lt;...&gt;</text>
+
+  <rect class="api" x="940" y="205" width="390" height="320"/>
+  <text class="box-title" x="965" y="243">api 契约层</text>
+  <text class="box-subtitle" x="965" y="273">对内稳定入口，只暴露结果视图</text>
+  <text class="code" x="965" y="314">BackgroundTaskLifecycleApi</text>
+  <text class="code" x="965" y="342">BackgroundTaskAdminQueryApi</text>
+  <text class="code" x="965" y="370">AsyncJobRetryPolicy</text>
+  <text class="small" x="965" y="410">DTO / enum</text>
+  <text class="tiny" x="985" y="440">BackgroundTaskView / Response</text>
+  <text class="tiny" x="985" y="467">TaskProgressResponse</text>
+  <text class="tiny" x="985" y="494">Type / Status / FailureCategory</text>
+
+  <rect class="app" x="1420" y="205" width="435" height="320"/>
+  <text class="box-title" x="1445" y="243">internal.application：用例编排</text>
+  <text class="code" x="1445" y="282">RuntimeBackgroundTaskLifecycleApi</text>
+  <text class="code" x="1445" y="310">BackgroundTaskService</text>
+  <text class="code" x="1445" y="338">BackgroundTaskExecutionService</text>
+  <text class="code" x="1445" y="366">BackgroundTaskStateManager</text>
+  <text class="small" x="1445" y="407">创建队列任务、查询、取消、手动重试</text>
+  <text class="small" x="1445" y="437">校验 fileId/path 与归属</text>
+  <text class="small" x="1445" y="467">租约刷新、失败分类、重试排期</text>
+
+  <rect class="domain" x="1940" y="205" width="330" height="320"/>
+  <text class="box-title" x="1965" y="243">internal.domain</text>
+  <text class="box-subtitle" x="1965" y="273">BackgroundTask 聚合</text>
+  <text class="small" x="1965" y="315">id / type / status / userId</text>
+  <text class="small" x="1965" y="345">publicStateJson</text>
+  <text class="small" x="1965" y="375">privateStateJson</text>
+  <text class="small" x="1965" y="405">attemptCount / maxAttempts</text>
+  <text class="small" x="1965" y="435">nextRunAt / finishedAt</text>
+  <text class="small" x="1965" y="465">leaseOwner / heartbeatAt</text>
+
+  <rect class="infra" x="1940" y="585" width="330" height="220"/>
+  <text class="box-title" x="1965" y="623">internal.infra</text>
+  <text class="box-subtitle" x="1965" y="653">BackgroundTaskRepository</text>
+  <text class="small" x="1965" y="694">portal_background_task</text>
+  <text class="tiny" x="1965" y="724">按 user/status/lease 建索引</text>
+  <text class="tiny" x="1965" y="752">correlation_id 唯一约束</text>
+  <text class="tiny" x="1965" y="780">claim / cancel / retry 使用条件更新</text>
+
+  <rect class="app" x="500" y="620" width="385" height="300"/>
+  <text class="box-title" x="525" y="658">Worker 调度器</text>
+  <text class="box-subtitle" x="525" y="688">BackgroundTaskWorker</text>
+  <text class="small" x="525" y="728">定时批处理 queued 任务</text>
+  <text class="small" x="525" y="758">轻量任务 WORKSPACE_MUTATION 唤醒池</text>
+  <text class="small" x="525" y="788">workerOwner = UUID</text>
+  <text class="small" x="525" y="818">默认 lease = 120s</text>
+  <text class="small" x="525" y="848">执行前写入 running phase</text>
+  <text class="tiny" x="525" y="884">Scheduled fixed-delay 默认 30000ms</text>
+
+  <rect class="app" x="980" y="620" width="390" height="300"/>
+  <text class="box-title" x="1005" y="658">执行网关</text>
+  <text class="box-subtitle" x="1005" y="688">RuntimeBackgroundTaskExecutionGateway</text>
+  <text class="small" x="1005" y="728">requeueExpiredRunningTasks</text>
+  <text class="small" x="1005" y="758">findQueuedTaskIds</text>
+  <text class="small" x="1005" y="788">claimQueuedTask</text>
+  <text class="small" x="1005" y="818">markProgress / completed</text>
+  <text class="small" x="1005" y="848">markRequeued / failed</text>
+  <text class="tiny" x="1005" y="884">所有写状态动作都经过 lease 校验</text>
+
+  <rect class="module" x="105" y="630" width="310" height="275"/>
+  <text class="box-title" x="130" y="668">其他模块提交任务</text>
+  <text class="code" x="130" y="705">files.workspace</text>
+  <text class="tiny" x="150" y="731">WorkspaceFileActivityService</text>
+  <text class="code" x="130" y="765">ops.admin</text>
+  <text class="tiny" x="150" y="791">AdminStorageGovernanceService</text>
+  <text class="small" x="130" y="832">只依赖 platform.job.api</text>
+  <text class="tiny" x="130" y="862">不能直接摸 internal / repository</text>
+
+  <rect class="app" x="1465" y="620" width="390" height="300"/>
+  <text class="box-title" x="1490" y="658">Handler 分派</text>
+  <text class="box-subtitle" x="1490" y="688">BackgroundTaskHandler</text>
+  <text class="small" x="1490" y="728">按 BackgroundTaskType.supports()</text>
+  <text class="small" x="1490" y="758">业务动作由目标模块 API 完成</text>
+  <text class="small" x="1490" y="788">handler 返回 completed 或 requeued</text>
+  <text class="small" x="1490" y="818">异常转 FailureCategory</text>
+  <text class="tiny" x="1490" y="854">platform.job 只管异步生命周期</text>
+  <text class="tiny" x="1490" y="882">不拥有文件/分享/转存业务真相</text>
+
+  <rect class="api" x="105" y="965" width="2165" height="160"/>
+  <text class="box-title" x="130" y="1003">任务状态机与重试语义</text>
+  <text class="small" x="130" y="1043">QUEUED → RUNNING → COMPLETED</text>
+  <text class="small" x="500" y="1043">QUEUED/RUNNING → CANCELLED</text>
+  <text class="small" x="930" y="1043">RUNNING → FAILED</text>
+  <text class="small" x="1240" y="1043">RUNNING → QUEUED(nextRunAt)</text>
+  <text class="small" x="1680" y="1043">FAILED → QUEUED(手动 retry)</text>
+  <text class="tiny" x="130" y="1084">FailureCategory：UNSUPPORTED_INPUT、DATA_STATE、TRANSIENT_INFRASTRUCTURE、RATE_LIMITED、UNKNOWN；后三类可自动重试。</text>
+  <text class="tiny" x="130" y="1112">默认 maxAttempts：ARCHIVE=4、EXTRACT=3、MEDIA_META=2、其他=1；lease 过期的 RUNNING 任务会被重新放回 QUEUED。</text>
+
+  <path class="arrow" d="M415 355 C450 355 465 355 500 355"/>
+  <path class="arrow-green" d="M850 360 C885 360 905 360 940 360"/>
+  <path class="arrow-green" d="M1330 360 C1365 360 1385 360 1420 360"/>
+  <path class="arrow" d="M1855 360 C1890 360 1905 360 1940 360"/>
+  <path class="arrow" d="M2105 525 L2105 585"/>
+  <path class="arrow-purple" d="M415 765 C450 765 465 765 500 765"/>
+  <path class="arrow-purple" d="M885 765 C920 765 945 765 980 765"/>
+  <path class="arrow-purple" d="M1370 765 C1405 765 1430 765 1465 765"/>
+  <path class="arrow-soft" d="M1660 620 C1660 540 1690 505 1750 505"/>
+  <path class="arrow-soft" d="M1175 620 C1175 560 1285 535 1440 505"/>
+  <path class="arrow-soft" d="M1855 765 C1885 765 1905 750 1940 730"/>
+
+  <rect class="lane" x="70" y="1215" width="2260" height="305"/>
+  <text class="lane-title" x="100" y="1255">2. Handler 与跨模块 API 依赖</text>
+
+  <rect class="state" x="105" y="1300" width="300" height="150"/>
+  <text class="box-title" x="130" y="1336">ARCHIVE</text>
+  <text class="code" x="130" y="1366">ArchiveBackgroundTaskHandler</text>
+  <text class="tiny" x="130" y="1398">IdentityUserDirectoryApi</text>
+  <text class="tiny" x="130" y="1424">WorkspaceArchiveApi</text>
+
+  <rect class="state" x="435" y="1300" width="300" height="150"/>
+  <text class="box-title" x="460" y="1336">EXTRACT</text>
+  <text class="code" x="460" y="1366">ExtractBackgroundTaskHandler</text>
+  <text class="tiny" x="460" y="1398">IdentityUserDirectoryApi</text>
+  <text class="tiny" x="460" y="1424">WorkspaceArchiveApi</text>
+
+  <rect class="state" x="765" y="1300" width="300" height="150"/>
+  <text class="box-title" x="790" y="1336">MEDIA_META</text>
+  <text class="code" x="790" y="1366">MediaMetadataBackgroundTaskHandler</text>
+  <text class="tiny" x="790" y="1398">WorkspaceFileQueryApi / ContentBlobQueryApi</text>
+  <text class="tiny" x="790" y="1424">FileContentStorage / FileMetadataRepository</text>
+
+  <rect class="state" x="1095" y="1300" width="300" height="150"/>
+  <text class="box-title" x="1120" y="1336">WORKSPACE_MUTATION</text>
+  <text class="code" x="1120" y="1366">WorkspaceMutationBackgroundTaskHandler</text>
+  <text class="tiny" x="1120" y="1398">WorkspaceBackgroundMutationApi</text>
+  <text class="tiny" x="1120" y="1424">轻量 worker 池可主动唤醒</text>
+
+  <rect class="state" x="1425" y="1300" width="300" height="150"/>
+  <text class="box-title" x="1450" y="1336">REMOTE_DOWNLOAD</text>
+  <text class="code" x="1450" y="1366">RemoteDownloadBackgroundTaskHandler</text>
+  <text class="tiny" x="1450" y="1398">RemoteDownloadExecutionApi</text>
+  <text class="tiny" x="1450" y="1424">transfer 拥有接收/下载业务规则</text>
+
+  <rect class="state" x="1755" y="1300" width="300" height="150"/>
+  <text class="box-title" x="1780" y="1336">STORAGE_POLICY_MIGRATION</text>
+  <text class="code" x="1780" y="1366">StoragePolicyMigrationBackgroundTaskHandler</text>
+  <text class="tiny" x="1780" y="1398">StoragePolicyQuery / BlobAccessApi</text>
+  <text class="tiny" x="1780" y="1424">ContentStoragePolicyMigrationApi</text>
+
+  <rect class="state" x="2085" y="1300" width="185" height="150"/>
+  <text class="box-title" x="2110" y="1336">SEARCH_INDEX</text>
+  <text class="code" x="2110" y="1366">NoopHandler</text>
+  <text class="tiny" x="2110" y="1398">当前只接受请求</text>
+  <text class="tiny" x="2110" y="1424">写 100% 完成状态</text>
+
+  <rect class="note" x="90" y="1538" width="2220" height="38"/>
+  <text class="tiny" x="110" y="1563">边界规则：platform.job 可以调度/运行其他模块任务，但只能通过 api 契约协作；它拥有任务生命周期、租约、重试、执行记录，不拥有文件/存储/分享/转存的业务真相。</text>
+</svg>

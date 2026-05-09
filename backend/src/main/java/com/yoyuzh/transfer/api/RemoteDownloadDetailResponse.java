@@ -11,6 +11,7 @@ public record RemoteDownloadDetailResponse(
         String engineType,
         String targetPath,
         String sourceValue,
+        String filename,
         String downloadNodeId,
         int selectedFileCount,
         int importedFileCount,
