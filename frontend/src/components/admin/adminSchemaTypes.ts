@@ -18,6 +18,14 @@ export type AdminConfigOption = {
   value: string;
 };
 
+export type AdminConfigValidationRules = Record<string, unknown> & {
+  min?: number;
+  max?: number;
+  minLength?: number;
+  maxLength?: number;
+  pattern?: string;
+};
+
 export type AdminConfigField = {
   key: string;
   group: string;
@@ -32,7 +40,7 @@ export type AdminConfigField = {
   editable: boolean;
   sensitive: boolean;
   restartRequired: boolean;
-  validationRules?: Record<string, unknown>;
+  validationRules?: AdminConfigValidationRules;
   permissionCode?: string | null;
   source: 'runtime' | 'environment' | 'database' | 'computed';
 };

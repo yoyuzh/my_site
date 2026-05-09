@@ -13,10 +13,10 @@ import {
 } from '@mui/material';
 import { Controller, useForm } from 'react-hook-form';
 import type { RegisterOptions } from 'react-hook-form';
-import type { AdminConfigField } from './adminSchemaTypes';
+import type { AdminConfigField, AdminConfigValidationRules } from './adminSchemaTypes';
 import AdminStatusBadge from './AdminStatusBadge';
 
-type AdminSchemaFormProps = {
+export type AdminSchemaFormProps = {
   fields: AdminConfigField[];
   readOnly?: boolean;
   onSubmit?: (values: Record<string, unknown>) => void;
@@ -50,6 +50,42 @@ function buildInitialValues(fields: AdminConfigField[]) {
     accumulator[field.key] = '';
     return accumulator;
   }, {});
+}
+
+function normalizeValue(value: unknown): unknown {
+  if (value instanceof Date) {
+    return value.toISOString();
+  }
+
+  if (Array.isArray(value)) {
+    return value.map(normalizeValue);
+  }
+
+  if (value && typeof value === 'object') {
+    return Object.keys(value as Record<string, unknown>)
+      .sort()
+      .reduce<Record<string, unknown>>((accumulator, key) => {
+        accumulator[key] = normalizeValue((value as Record<string, unknown>)[key]);
+        return accumulator;
+      }, {});
+  }
+
+  return value;
+}
+
+function createFieldSetSignature(fields: AdminConfigField[]) {
+  return JSON.stringify(
+    [...fields]
+      .map((field) => ({
+        key: field.key,
+        type: field.type,
+      }))
+      .sort((left, right) => left.key.localeCompare(right.key)),
+  );
+}
+
+function createInitialValuesSignature(initialValues: Record<string, unknown>) {
+  return JSON.stringify(normalizeValue(initialValues));
 }
 
 function groupFields(fields: AdminConfigField[]): FieldGroup[] {
@@ -86,43 +122,50 @@ function groupFields(fields: AdminConfigField[]): FieldGroup[] {
 function toValidationRules(field: AdminConfigField): RegisterOptions<Record<string, unknown>, string> {
   const rules: RegisterOptions<Record<string, unknown>, string> = {};
   const validationRules = field.validationRules ?? {};
+  const supportedRules: AdminConfigValidationRules = {
+    min: typeof validationRules.min === 'number' ? validationRules.min : undefined,
+    max: typeof validationRules.max === 'number' ? validationRules.max : undefined,
+    minLength: typeof validationRules.minLength === 'number' ? validationRules.minLength : undefined,
+    maxLength: typeof validationRules.maxLength === 'number' ? validationRules.maxLength : undefined,
+    pattern: typeof validationRules.pattern === 'string' ? validationRules.pattern : undefined,
+  };
 
   if (field.required) {
-    rules.required = `${field.title} is required.`;
+    rules.required = `请填写${field.title}`;
   }
 
-  if (typeof validationRules.min === 'number') {
+  if (typeof supportedRules.min === 'number') {
     rules.min = {
-      value: validationRules.min,
-      message: `${field.title} must be at least ${validationRules.min}.`,
+      value: supportedRules.min,
+      message: `${field.title}不能小于 ${supportedRules.min}`,
     };
   }
 
-  if (typeof validationRules.max === 'number') {
+  if (typeof supportedRules.max === 'number') {
     rules.max = {
-      value: validationRules.max,
-      message: `${field.title} must be at most ${validationRules.max}.`,
+      value: supportedRules.max,
+      message: `${field.title}不能大于 ${supportedRules.max}`,
     };
   }
 
-  if (typeof validationRules.minLength === 'number') {
+  if (typeof supportedRules.minLength === 'number') {
     rules.minLength = {
-      value: validationRules.minLength,
-      message: `${field.title} must be at least ${validationRules.minLength} characters.`,
+      value: supportedRules.minLength,
+      message: `${field.title}至少需要 ${supportedRules.minLength} 个字符`,
     };
   }
 
-  if (typeof validationRules.maxLength === 'number') {
+  if (typeof supportedRules.maxLength === 'number') {
     rules.maxLength = {
-      value: validationRules.maxLength,
-      message: `${field.title} must be at most ${validationRules.maxLength} characters.`,
+      value: supportedRules.maxLength,
+      message: `${field.title}最多允许 ${supportedRules.maxLength} 个字符`,
     };
   }
 
-  if (typeof validationRules.pattern === 'string' && validationRules.pattern.length > 0) {
+  if (typeof supportedRules.pattern === 'string' && supportedRules.pattern.length > 0) {
     rules.pattern = {
-      value: new RegExp(validationRules.pattern),
-      message: `${field.title} format is invalid.`,
+      value: new RegExp(supportedRules.pattern),
+      message: `${field.title}格式不正确`,
     };
   }
 
@@ -136,15 +179,15 @@ function getFieldHelperText(field: AdminConfigField, readOnly: boolean) {
     messages.push(field.description);
   }
   if (field.restartRequired) {
-    messages.push('Restart required after change.');
+    messages.push('修改后需要重启生效。');
   }
   if (!field.editable || readOnly) {
-    messages.push('Read-only field.');
+    messages.push('当前为只读字段。');
   }
   if (field.permissionCode) {
-    messages.push(`Permission: ${field.permissionCode}`);
+    messages.push(`权限标识：${field.permissionCode}`);
   }
-  messages.push(`Source: ${field.source}`);
+  messages.push(`来源：${field.source}`);
 
   return messages.join(' ');
 }
@@ -158,13 +201,36 @@ const supportedFieldTypes = new Set<AdminConfigField['type']>([
 ]);
 
 const AdminSchemaForm: React.FC<AdminSchemaFormProps> = ({ fields, readOnly = false, onSubmit }) => {
+  const initialValues = React.useMemo(() => buildInitialValues(fields), [fields]);
+  const fieldSetSignature = React.useMemo(() => createFieldSetSignature(fields), [fields]);
+  const initialValuesSignature = React.useMemo(() => createInitialValuesSignature(initialValues), [initialValues]);
   const form = useForm<Record<string, unknown>>({
-    defaultValues: buildInitialValues(fields),
+    defaultValues: initialValues,
   });
+  const baselineRef = React.useRef<{ fieldSetSignature: string; initialValuesSignature: string } | null>(null);
 
   React.useEffect(() => {
-    form.reset(buildInitialValues(fields));
-  }, [fields, form]);
+    const previousBaseline = baselineRef.current;
+    const nextBaseline = {
+      fieldSetSignature,
+      initialValuesSignature,
+    };
+
+    if (!previousBaseline) {
+      baselineRef.current = nextBaseline;
+      return;
+    }
+
+    const fieldSetChanged = previousBaseline.fieldSetSignature !== fieldSetSignature;
+    const initialValuesChanged = previousBaseline.initialValuesSignature !== initialValuesSignature;
+
+    if (!fieldSetChanged && !initialValuesChanged) {
+      return;
+    }
+
+    form.reset(initialValues, fieldSetChanged ? undefined : { keepDirtyValues: true });
+    baselineRef.current = nextBaseline;
+  }, [fieldSetSignature, form, initialValues, initialValuesSignature]);
 
   const groupedFields = groupFields(fields);
   const isFormReadOnly = readOnly || !onSubmit;
@@ -210,11 +276,12 @@ const AdminSchemaForm: React.FC<AdminSchemaFormProps> = ({ fields, readOnly = fa
 
                   if (!isSupported) {
                     return (
-                      <Paper
+                      <Box
                         key={field.key}
-                        variant="outlined"
                         sx={{
                           borderRadius: 2,
+                          border: '1px dashed',
+                          borderColor: 'warning.main',
                           px: 2,
                           py: 1.5,
                           bgcolor: 'action.hover',
@@ -225,14 +292,14 @@ const AdminSchemaForm: React.FC<AdminSchemaFormProps> = ({ fields, readOnly = fa
                             <Typography variant="subtitle2" sx={{ fontWeight: 700 }}>
                               {field.title}
                             </Typography>
-                            <AdminStatusBadge label={`Unsupported: ${field.type}`} tone="warning" />
-                            {field.restartRequired ? <AdminStatusBadge label="Restart required" tone="info" /> : null}
+                            <AdminStatusBadge label={`暂不支持：${field.type}`} tone="warning" />
+                            {field.restartRequired ? <AdminStatusBadge label="需要重启" tone="info" /> : null}
                           </Stack>
                           <Typography variant="body2" color="text.secondary">
-                            {field.description ?? 'This field type is not editable in the current admin form.'}
+                            {field.description ?? '当前表单暂不支持编辑该字段类型。'}
                           </Typography>
                           <Alert severity="warning" sx={{ borderRadius: 2 }}>
-                            This field is shown in read-only mode because `{field.type}` is not supported yet.
+                            当前以只读方式展示，因为暂不支持 `{field.type}` 类型。
                           </Alert>
                           <TextField
                             fullWidth
@@ -243,7 +310,7 @@ const AdminSchemaForm: React.FC<AdminSchemaFormProps> = ({ fields, readOnly = fa
                             InputProps={{ readOnly: true }}
                           />
                         </Stack>
-                      </Paper>
+                      </Box>
                     );
                   }
 
@@ -253,10 +320,10 @@ const AdminSchemaForm: React.FC<AdminSchemaFormProps> = ({ fields, readOnly = fa
                         <Typography variant="subtitle2" sx={{ fontWeight: 700 }}>
                           {field.title}
                         </Typography>
-                        {field.required ? <AdminStatusBadge label="Required" tone="info" /> : null}
-                        {field.sensitive ? <AdminStatusBadge label="Sensitive" tone="warning" /> : null}
-                        {field.restartRequired ? <AdminStatusBadge label="Restart required" tone="neutral" /> : null}
-                        {!field.editable ? <AdminStatusBadge label="Locked" tone="neutral" /> : null}
+                        {field.required ? <AdminStatusBadge label="必填" tone="info" /> : null}
+                        {field.sensitive ? <AdminStatusBadge label="敏感" tone="warning" /> : null}
+                        {field.restartRequired ? <AdminStatusBadge label="需要重启" tone="neutral" /> : null}
+                        {!field.editable ? <AdminStatusBadge label="已锁定" tone="neutral" /> : null}
                       </Stack>
 
                       <Controller
@@ -374,7 +441,7 @@ const AdminSchemaForm: React.FC<AdminSchemaFormProps> = ({ fields, readOnly = fa
       {onSubmit ? (
         <Box sx={{ display: 'flex', justifyContent: 'flex-end' }}>
           <Button type="submit" variant="contained" disabled={isFormReadOnly}>
-            Save changes
+            保存更改
           </Button>
         </Box>
       ) : null}

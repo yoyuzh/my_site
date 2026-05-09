@@ -8,7 +8,7 @@ import {
   DialogTitle,
 } from '@mui/material';
 
-type AdminConfirmDialogProps = {
+export type AdminConfirmDialogProps = {
   open: boolean;
   title: string;
   description: string;
@@ -43,7 +43,7 @@ const AdminConfirmDialog: React.FC<AdminConfirmDialogProps> = ({
       </DialogContent>
       <DialogActions sx={{ px: 3, pb: 3 }}>
         <Button onClick={handleClose} disabled={isSubmitting}>
-          Cancel
+          取消
         </Button>
         <Button
           onClick={onConfirm}
@@ -51,7 +51,7 @@ const AdminConfirmDialog: React.FC<AdminConfirmDialogProps> = ({
           color={danger ? 'error' : 'primary'}
           disabled={isSubmitting}
         >
-          {isSubmitting ? 'Working...' : confirmLabel}
+          {isSubmitting ? '处理中...' : confirmLabel}
         </Button>
       </DialogActions>
     </Dialog>

@@ -9,7 +9,7 @@ import {
   TableRow,
   Typography,
 } from '@mui/material';
-import { getCoreRowModel, useReactTable, type ColumnDef } from '@tanstack/react-table';
+import { flexRender, getCoreRowModel, useReactTable, type ColumnDef } from '@tanstack/react-table';
 
 export type AdminColumn<T> = {
   id: string;
@@ -29,7 +29,7 @@ function AdminDataTable<T>({
   rows,
   columns,
   getRowKey,
-  emptyText = 'No records found.',
+  emptyText = '暂无数据',
 }: AdminDataTableProps<T>) {
   const tableColumns = React.useMemo<ColumnDef<T>[]>(
     () =>
@@ -84,7 +84,7 @@ function AdminDataTable<T>({
                       whiteSpace: 'nowrap',
                     }}
                   >
-                    {header.isPlaceholder ? null : header.column.columnDef.header as React.ReactNode}
+                    {header.isPlaceholder ? null : flexRender(header.column.columnDef.header, header.getContext())}
                   </TableCell>
                 );
               })}
@@ -110,7 +110,7 @@ function AdminDataTable<T>({
                         borderBottomColor: 'divider',
                       }}
                     >
-                      {cell.renderValue() as React.ReactNode}
+                      {flexRender(cell.column.columnDef.cell, cell.getContext())}
                     </TableCell>
                   );
                 })}

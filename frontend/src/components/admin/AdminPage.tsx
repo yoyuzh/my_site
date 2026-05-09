@@ -1,7 +1,7 @@
 import React from 'react';
 import { Alert, Box, CircularProgress, Paper, Stack, Typography } from '@mui/material';
 
-type AdminPageProps = {
+export type AdminPageProps = {
   title: string;
   description?: string;
   toolbar?: React.ReactNode;
@@ -40,7 +40,7 @@ const AdminPage: React.FC<AdminPageProps> = ({
         <Stack spacing={1.5} alignItems="center">
           <CircularProgress size={28} />
           <Typography variant="body2" color="text.secondary">
-            Loading admin content...
+            加载中...
           </Typography>
         </Stack>
       </Paper>
@@ -48,7 +48,7 @@ const AdminPage: React.FC<AdminPageProps> = ({
   } else if (isError) {
     content = (
       <Alert severity="error" sx={{ borderRadius: 3 }}>
-        {errorText ?? 'Unable to load this admin view.'}
+        {errorText ?? '加载失败，请稍后重试。'}
       </Alert>
     );
   }
@@ -79,7 +79,7 @@ const AdminPage: React.FC<AdminPageProps> = ({
               variant="overline"
               sx={{ display: 'block', color: 'text.secondary', fontWeight: 700, letterSpacing: '0.08em' }}
             >
-              Admin Workspace
+              管理后台
             </Typography>
             <Typography variant="h5" sx={{ fontWeight: 700 }}>
               {title}

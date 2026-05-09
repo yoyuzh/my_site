@@ -3,7 +3,7 @@ import { Chip } from '@mui/material';
 
 export type AdminStatusTone = 'success' | 'warning' | 'danger' | 'info' | 'neutral';
 
-type AdminStatusBadgeProps = {
+export type AdminStatusBadgeProps = {
   label: React.ReactNode;
   tone?: AdminStatusTone;
 };
