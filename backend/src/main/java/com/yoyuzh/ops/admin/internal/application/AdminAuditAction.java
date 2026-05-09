@@ -18,38 +18,5 @@ public enum AdminAuditAction {
     STORAGE_POLICY_STATUS_UPDATED,
     STORAGE_POLICY_MIGRATION_REQUESTED,
     CONFIG_VALUE_UPDATED,
-    CONFIG_VALUE_ROLLED_BACK,
-
-    @Deprecated
-    UPDATE_REGISTRATION_INVITE_CODE,
-    @Deprecated
-    ROTATE_REGISTRATION_INVITE_CODE,
-    @Deprecated
-    UPDATE_OFFLINE_TRANSFER_STORAGE_LIMIT,
-    @Deprecated
-    UPDATE_USER_ROLE,
-    @Deprecated
-    UPDATE_USER_BANNED,
-    @Deprecated
-    UPDATE_USER_PASSWORD,
-    @Deprecated
-    RESET_USER_PASSWORD,
-    @Deprecated
-    UPDATE_USER_STORAGE_QUOTA,
-    @Deprecated
-    UPDATE_USER_MAX_UPLOAD_SIZE,
-    @Deprecated
-    DELETE_SHARE,
-    @Deprecated
-    DELETE_FILE,
-    @Deprecated
-    CREATE_STORAGE_POLICY,
-    @Deprecated
-    UPDATE_STORAGE_POLICY,
-    @Deprecated
-    UPDATE_STORAGE_POLICY_STATUS,
-    @Deprecated
-    CREATE_STORAGE_POLICY_MIGRATION_TASK,
-    @Deprecated
-    UPDATE_SYSTEM_SETTINGS
+    CONFIG_VALUE_ROLLED_BACK
 }

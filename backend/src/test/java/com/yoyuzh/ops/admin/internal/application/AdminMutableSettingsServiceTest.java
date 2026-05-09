@@ -17,6 +17,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -29,6 +30,8 @@ class AdminMutableSettingsServiceTest {
     @Mock
     private AdminMetricsService adminMetricsService;
     @Mock
+    private AdminAuditService adminAuditService;
+    @Mock
     private AdminRuntimeSettingsService adminRuntimeSettingsService;
     @Mock
     private AdminConfigSnapshotService adminConfigSnapshotService;
@@ -40,6 +43,7 @@ class AdminMutableSettingsServiceTest {
         adminMutableSettingsService = new AdminMutableSettingsService(
                 identityAdminSummaryApi,
                 adminMetricsService,
+                adminAuditService,
                 adminRuntimeSettingsService,
                 adminConfigSnapshotService
         );
@@ -92,6 +96,18 @@ class AdminMutableSettingsServiceTest {
                         && effective.server() == null
                 ));
         verify(adminMetricsService).updateOfflineTransferStorageLimit(2048L);
+        verify(adminAuditService).record(
+                eq(AdminAuditAction.SETTINGS_UPDATED),
+                eq("ADMIN_SETTINGS"),
+                eq(null),
+                eq("Updated admin settings"),
+                argThat(details ->
+                        Boolean.FALSE.equals(details.get("inviteCodeRequired"))
+                                && Integer.valueOf(1).equals(details.get("managementRoleCount"))
+                                && Long.valueOf(2048L).equals(details.get("offlineTransferStorageLimitBytes"))
+                                && Boolean.TRUE.equals(details.get("registrationUpdated"))
+                                && Boolean.TRUE.equals(details.get("transferUpdated")))
+        );
     }
 
     @Test
@@ -200,6 +216,13 @@ class AdminMutableSettingsServiceTest {
 
         assertThat(response.currentInviteCode()).isEqualTo("INV-NEXT-2026");
         verify(identityAdminSummaryApi).updateInviteCode("INV-NEXT-2026");
+        verify(adminAuditService).record(
+                eq(AdminAuditAction.INVITE_CODE_UPDATED),
+                eq("ADMIN_SETTINGS"),
+                eq(null),
+                eq("Updated registration invite code"),
+                eq(java.util.Map.of("inviteCodeLength", 13))
+        );
     }
 
     @Test
@@ -210,6 +233,13 @@ class AdminMutableSettingsServiceTest {
 
         assertThat(response.currentInviteCode()).isEqualTo("INV-ROTATED-2026");
         verify(identityAdminSummaryApi).rotateInviteCode();
+        verify(adminAuditService).record(
+                eq(AdminAuditAction.INVITE_CODE_ROTATED),
+                eq("ADMIN_SETTINGS"),
+                eq(null),
+                eq("Rotated registration invite code"),
+                eq(java.util.Map.of("inviteCodeLength", 16))
+        );
     }
 
     @Test
@@ -221,5 +251,12 @@ class AdminMutableSettingsServiceTest {
 
         assertThat(response).isSameAs(expected);
         verify(adminMetricsService).updateOfflineTransferStorageLimit(1024L);
+        verify(adminAuditService).record(
+                eq(AdminAuditAction.OFFLINE_TRANSFER_LIMIT_UPDATED),
+                eq("ADMIN_SETTINGS"),
+                eq(null),
+                eq("Updated offline transfer storage limit"),
+                eq(java.util.Map.of("offlineTransferStorageLimitBytes", 1024L))
+        );
     }
 }
