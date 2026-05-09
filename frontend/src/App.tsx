@@ -29,6 +29,7 @@ import AdminBlob from './pages/admin/AdminBlob';
 import AdminTask from './pages/admin/AdminTask';
 import AdminShare from './pages/admin/AdminShare';
 import AdminFileSystem from './pages/admin/AdminFileSystem';
+import AdminAudit from './pages/admin/AdminAudit';
 import AdminUnderConstruction from './pages/admin/AdminUnderConstruction';
 
 const queryClient = new QueryClient({
@@ -142,7 +143,7 @@ function App() {
             <Route path="shares" element={<RequireAdmin><AdminShare /></RequireAdmin>} />
             <Route path="share" element={<Navigate to="/admin/shares" replace />} />
             <Route path="filesystem" element={<Navigate to="/admin/system" replace />} />
-            <Route path="audits" element={<RequireAdmin><AdminUnderConstruction /></RequireAdmin>} />
+            <Route path="audits" element={<RequireAdmin><AdminAudit /></RequireAdmin>} />
             <Route path="group" element={<RequireAdmin><AdminUnderConstruction /></RequireAdmin>} />
             <Route path="node" element={<RequireAdmin><AdminUnderConstruction /></RequireAdmin>} />
             <Route path="oauth" element={<RequireAdmin><AdminUnderConstruction /></RequireAdmin>} />

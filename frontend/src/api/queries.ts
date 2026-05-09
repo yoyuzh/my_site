@@ -1,6 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { apiRequest } from './client';
 import {
+  type AdminAuditLog,
   type AdminConfigDefinition,
   type AdminConfigHistory,
   type AdminConfigSnapshot,
@@ -287,6 +288,27 @@ export const useAdminTasks = (params: AdminListParams) =>
           page: toBackendPage(params),
           size: params.page_size,
           userQuery: params.userQuery ?? '',
+        },
+      });
+      return normalizePage(result);
+    },
+    placeholderData: (previousData) => previousData,
+  });
+
+export const useAdminAudits = (params: AdminListParams) =>
+  useQuery({
+    queryKey: ['adminAudits', params],
+    queryFn: async () => {
+      const result = await apiRequest<QueryPage<AdminAuditLog>>({
+        url: '/admin/audits',
+        method: 'GET',
+        params: {
+          page: toBackendPage(params),
+          size: params.page_size,
+          actorQuery: params.actorQuery ?? '',
+          actionType: params.actionType ?? '',
+          targetType: params.targetType ?? '',
+          targetId: params.targetId,
         },
       });
       return normalizePage(result);

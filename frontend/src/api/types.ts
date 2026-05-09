@@ -28,6 +28,10 @@ export interface AdminListParams {
   page_size: number;
   query?: string;
   userQuery?: string;
+  actorQuery?: string;
+  actionType?: string;
+  targetType?: string;
+  targetId?: number;
   ownerQuery?: string;
   fileName?: string;
   token?: string;
@@ -602,6 +606,19 @@ export interface AdminConfigHistory {
   reason: string;
   actorUserId: number | null;
   actorUsername: string;
+  createdAt: string;
+}
+
+export interface AdminAuditLog {
+  id: number;
+  actorUserId: number | null;
+  actorUsername: string;
+  actorAuthorities: string;
+  actionType: string;
+  targetType: string;
+  targetId: number | null;
+  summary: string;
+  detailsJson: string;
   createdAt: string;
 }
 
