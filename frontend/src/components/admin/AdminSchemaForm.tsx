@@ -207,10 +207,12 @@ const AdminSchemaForm: React.FC<AdminSchemaFormProps> = ({ fields, readOnly = fa
   const form = useForm<Record<string, unknown>>({
     defaultValues: initialValues,
   });
-  useFormState({
+  const fieldNames = React.useMemo(() => fields.map((field) => field.key), [fields]);
+  const { dirtyFields } = useFormState({
     control: form.control,
-    name: fields.map((field) => field.key),
+    name: fieldNames,
   });
+  void dirtyFields;
   const baselineRef = React.useRef<{ fieldSetSignature: string; initialValuesSignature: string } | null>(null);
 
   React.useEffect(() => {
