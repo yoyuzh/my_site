@@ -58,6 +58,23 @@ function buildPayload(policy: Partial<AdminStoragePolicy>): AdminStoragePolicyPa
   };
 }
 
+function uploadCapabilityBadges(policy: AdminStoragePolicy) {
+  return [
+    {
+      label: 'PROXY',
+      enabled: !policy.capabilities.directUpload,
+    },
+    {
+      label: 'DIRECT_SINGLE',
+      enabled: policy.capabilities.directUpload && !policy.capabilities.multipartUpload,
+    },
+    {
+      label: 'DIRECT_MULTIPART',
+      enabled: policy.capabilities.directUpload && policy.capabilities.multipartUpload,
+    },
+  ];
+}
+
 const AdminPolicy: React.FC = () => {
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
@@ -154,7 +171,7 @@ const AdminPolicy: React.FC = () => {
     <AdminLayout title="存储策略">
       <AdminPage
         title="存储策略"
-        description="维护存储策略、对象大小上限与启停状态。"
+        description="维护存储策略、上传能力、迁移任务入口与启停状态。"
         isLoading={isLoading}
         isError={isError}
         errorText="存储策略加载失败。"
@@ -219,7 +236,14 @@ const AdminPolicy: React.FC = () => {
                   </Typography>
                   <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap" sx={{ mt: 1.5, mb: 2 }}>
                     <AdminStatusBadge label={policy.type} tone="neutral" />
-                    <AdminStatusBadge label={policy.defaultPolicy ? '默认策略' : policy.enabled ? '已启用' : '已禁用'} tone={policy.defaultPolicy ? 'info' : policy.enabled ? 'success' : 'warning'} />
+                    <AdminStatusBadge
+                      label={policy.defaultPolicy ? '默认策略' : '非默认'}
+                      tone={policy.defaultPolicy ? 'info' : 'neutral'}
+                    />
+                    <AdminStatusBadge
+                      label={policy.enabled ? '已启用' : '已禁用'}
+                      tone={policy.enabled ? 'success' : 'warning'}
+                    />
                   </Stack>
 
                   <Stack spacing={1}>
@@ -229,6 +253,25 @@ const AdminPolicy: React.FC = () => {
                     <Typography variant="body2" color="text.secondary">
                       最大对象：{formatBytes(policy.maxSizeBytes)}
                     </Typography>
+                    <Stack direction="row" spacing={0.75} useFlexGap flexWrap="wrap">
+                      {uploadCapabilityBadges(policy).map((capability) => (
+                        <AdminStatusBadge
+                          key={capability.label}
+                          label={capability.label}
+                          tone={capability.enabled ? 'success' : 'neutral'}
+                        />
+                      ))}
+                    </Stack>
+                    <Stack direction="row" spacing={0.75} useFlexGap flexWrap="wrap">
+                      <AdminStatusBadge
+                        label={policy.capabilities.requiresCors ? '需要 CORS' : '无需 CORS'}
+                        tone={policy.capabilities.requiresCors ? 'warning' : 'success'}
+                      />
+                      <AdminStatusBadge
+                        label={policy.capabilities.signedDownloadUrl ? '签名下载' : '代理下载'}
+                        tone={policy.capabilities.signedDownloadUrl ? 'success' : 'neutral'}
+                      />
+                    </Stack>
                     <Typography variant="body2" color="text.secondary">
                       凭证模式：{policy.credentialMode}
                     </Typography>

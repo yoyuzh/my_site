@@ -547,6 +547,7 @@ export interface AdminFilesystem {
     totalBlobs: number;
     totalEntities: number;
   };
+  defaultPolicy: AdminStoragePolicy;
   upload: {
     proxyUpload: boolean;
     directSingleUpload: boolean;

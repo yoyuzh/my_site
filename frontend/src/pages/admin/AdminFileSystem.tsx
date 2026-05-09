@@ -70,12 +70,13 @@ const ActionCard: React.FC<ActionCardProps> = ({
 
 const AdminFileSystem: React.FC = () => {
   const { data, isLoading, isError } = useAdminFilesystem();
+  const defaultPolicy = data?.defaultPolicy;
 
   return (
     <AdminLayout title="文件系统">
       <AdminPage
-        title="文件系统"
-        description="查看存储快照、上传能力与底层治理能力占位。"
+        title="系统状态"
+        description="查看默认存储策略、上传能力、缓存与媒体处理状态。"
         isLoading={isLoading}
         isError={isError}
         errorText="文件系统信息加载失败。"
@@ -158,12 +159,25 @@ const AdminFileSystem: React.FC = () => {
               <Paper elevation={0} sx={{ p: 2, bgcolor: 'action.hover', borderRadius: 3 }}>
                 <Stack spacing={1}>
                   <Typography variant="subtitle2" sx={{ fontWeight: 700 }}>
-                    上传能力
+                    默认策略上传能力
+                  </Typography>
+                  <Typography variant="body2" color="text.secondary">
+                    {defaultPolicy?.name ?? '未配置默认策略'}
                   </Typography>
                   <Stack direction="row" spacing={0.75} useFlexGap flexWrap="wrap">
-                    <AdminStatusBadge label={data?.upload.proxyUpload ? '支持代理上传' : '不支持代理上传'} tone={data?.upload.proxyUpload ? 'success' : 'neutral'} />
-                    <AdminStatusBadge label={data?.upload.directSingleUpload ? '支持直传' : '不支持直传'} tone={data?.upload.directSingleUpload ? 'success' : 'neutral'} />
-                    <AdminStatusBadge label={data?.upload.directMultipartUpload ? '支持分片直传' : '不支持分片直传'} tone={data?.upload.directMultipartUpload ? 'success' : 'neutral'} />
+                    <AdminStatusBadge label="PROXY" tone={data?.upload.proxyUpload ? 'success' : 'neutral'} />
+                    <AdminStatusBadge label="DIRECT_SINGLE" tone={data?.upload.directSingleUpload ? 'success' : 'neutral'} />
+                    <AdminStatusBadge label="DIRECT_MULTIPART" tone={data?.upload.directMultipartUpload ? 'success' : 'neutral'} />
+                  </Stack>
+                  <Stack direction="row" spacing={0.75} useFlexGap flexWrap="wrap">
+                    <AdminStatusBadge
+                      label={defaultPolicy?.capabilities.requiresCors ? '需要 CORS' : '无需 CORS'}
+                      tone={defaultPolicy?.capabilities.requiresCors ? 'warning' : 'success'}
+                    />
+                    <AdminStatusBadge
+                      label={defaultPolicy?.capabilities.signedDownloadUrl ? '签名下载' : '代理下载'}
+                      tone={defaultPolicy?.capabilities.signedDownloadUrl ? 'success' : 'neutral'}
+                    />
                   </Stack>
                   <Typography variant="body2" color="text.secondary">
                     最大文件：{formatBytes(data?.upload.effectiveMaxFileSizeBytes ?? 0)}

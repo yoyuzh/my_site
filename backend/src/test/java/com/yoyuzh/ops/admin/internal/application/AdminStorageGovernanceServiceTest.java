@@ -68,6 +68,13 @@ class AdminStorageGovernanceServiceTest {
         assertThat(response.id()).isEqualTo(9L);
         assertThat(response.name()).isEqualTo("Archive Bucket");
         assertThat(response.enabled()).isTrue();
+        verify(adminAuditService).record(
+                eq(AdminAuditAction.STORAGE_POLICY_CREATED),
+                eq("STORAGE_POLICY"),
+                eq(9L),
+                eq("Created storage policy"),
+                eq(Map.of("name", "Archive Bucket", "enabled", true))
+        );
     }
 
     @Test
@@ -97,6 +104,13 @@ class AdminStorageGovernanceServiceTest {
         assertThat(response.id()).isEqualTo(7L);
         assertThat(response.name()).isEqualTo("Hot Bucket");
         assertThat(response.credentialMode()).isEqualTo(StoragePolicyCredentialMode.DOGECLOUD_TEMP);
+        verify(adminAuditService).record(
+                eq(AdminAuditAction.STORAGE_POLICY_UPDATED),
+                eq("STORAGE_POLICY"),
+                eq(7L),
+                eq("Updated storage policy"),
+                eq(Map.of("name", "Hot Bucket", "enabled", true))
+        );
     }
 
     @Test
@@ -148,6 +162,17 @@ class AdminStorageGovernanceServiceTest {
         assertThat(task.publicStateJson()).contains("\"candidateEntityCount\":5");
         assertThat(task.publicStateJson()).contains("\"candidateStoredFileCount\":8");
         assertThat(task.publicStateJson()).contains("\"migrationPerformed\":false");
+        verify(adminAuditService).record(
+                eq(AdminAuditAction.STORAGE_POLICY_MIGRATION_REQUESTED),
+                eq("STORAGE_POLICY"),
+                eq(3L),
+                eq("Requested storage policy migration"),
+                eq(Map.of(
+                        "sourcePolicyId", 3L,
+                        "targetPolicyId", 4L,
+                        "correlationId", "migration-1"
+                ))
+        );
     }
 
     private StoragePolicyAdminView storagePolicyView(Long id, String name, boolean enabled, boolean defaultPolicy) {
