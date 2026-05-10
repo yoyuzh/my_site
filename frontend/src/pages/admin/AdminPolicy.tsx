@@ -4,6 +4,11 @@ import { ArrowRight, Database, Edit2, Plus, Power, Trash2 } from 'lucide-react';
 import AdminLayout from '../../components/AdminLayout';
 import AdminPage from '../../components/admin/AdminPage';
 import AdminStatusBadge from '../../components/admin/AdminStatusBadge';
+import {
+  localizeAdminValue,
+  localizeStoragePolicyType,
+  localizeUploadMode,
+} from '../../components/admin/adminDisplayText';
 import { useAdminPolicies } from '../../api/queries';
 import {
   createAdminStoragePolicy,
@@ -65,6 +70,10 @@ function resolveUploadMode(policy: AdminStoragePolicy) {
   return policy.capabilities.multipartUpload ? 'DIRECT_MULTIPART' : 'DIRECT_SINGLE';
 }
 
+function formatUploadMode(policy: AdminStoragePolicy) {
+  return localizeUploadMode(resolveUploadMode(policy));
+}
+
 const AdminPolicy: React.FC = () => {
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
@@ -76,9 +85,14 @@ const AdminPolicy: React.FC = () => {
     if (!name?.trim()) {
       return;
     }
-    const type = window.prompt('策略类型：LOCAL 或 S3_COMPATIBLE', 'LOCAL')?.trim() || 'LOCAL';
+    const typeInput = window.prompt('策略类型：本地存储 或 S3 兼容存储', '本地存储')?.trim() || '本地存储';
+    const type = typeInput === '本地存储'
+      ? 'LOCAL'
+      : typeInput === 'S3 兼容存储'
+        ? 'S3_COMPATIBLE'
+        : typeInput.toUpperCase();
     if (type !== 'LOCAL' && type !== 'S3_COMPATIBLE') {
-      setStatusMessage('策略类型只能是 LOCAL 或 S3_COMPATIBLE');
+      setStatusMessage('策略类型只能是本地存储或 S3 兼容存储');
       return;
     }
     const maxSizeInput = window.prompt('最大对象大小（字节）', String(DEFAULT_CAPABILITIES.maxObjectSize));
@@ -113,9 +127,9 @@ const AdminPolicy: React.FC = () => {
     if (!name?.trim()) {
       return;
     }
-    const bucketName = window.prompt('Bucket 名称（本地策略可留空）', policy.bucketName ?? '') ?? '';
-    const endpoint = window.prompt('Endpoint（本地策略可留空）', policy.endpoint ?? '') ?? '';
-    const region = window.prompt('Region（本地策略可留空）', policy.region ?? '') ?? '';
+    const bucketName = window.prompt('存储桶名称（本地策略可留空）', policy.bucketName ?? '') ?? '';
+    const endpoint = window.prompt('服务端点（本地策略可留空）', policy.endpoint ?? '') ?? '';
+    const region = window.prompt('地域（本地策略可留空）', policy.region ?? '') ?? '';
     const prefix = window.prompt('对象前缀（可留空）', policy.prefix ?? '') ?? '';
     const maxSizeInput = window.prompt('最大对象大小（字节）', String(policy.maxSizeBytes));
     const maxSizeBytes = Number(maxSizeInput);
@@ -225,7 +239,7 @@ const AdminPolicy: React.FC = () => {
                     {policy.name}
                   </Typography>
                   <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap" sx={{ mt: 1.5, mb: 2 }}>
-                    <AdminStatusBadge label={policy.type} tone="neutral" />
+                    <AdminStatusBadge label={localizeStoragePolicyType(policy.type)} tone="neutral" />
                     <AdminStatusBadge
                       label={policy.defaultPolicy ? '默认策略' : '非默认'}
                       tone={policy.defaultPolicy ? 'info' : 'neutral'}
@@ -244,7 +258,7 @@ const AdminPolicy: React.FC = () => {
                       最大对象：{formatBytes(policy.maxSizeBytes)}
                     </Typography>
                     <Stack direction="row" spacing={0.75} useFlexGap flexWrap="wrap">
-                      <AdminStatusBadge label={`上传模式：${resolveUploadMode(policy)}`} tone="success" />
+                      <AdminStatusBadge label={`上传模式：${formatUploadMode(policy)}`} tone="success" />
                       <AdminStatusBadge
                         label={policy.capabilities.directUpload ? '支持直传' : '代理上传'}
                         tone={policy.capabilities.directUpload ? 'info' : 'neutral'}
@@ -261,7 +275,7 @@ const AdminPolicy: React.FC = () => {
                       />
                     </Stack>
                     <Typography variant="body2" color="text.secondary">
-                      凭证模式：{policy.credentialMode}
+                      凭证模式：{localizeAdminValue(policy.credentialMode)}
                     </Typography>
                     <Typography variant="body2" color="text.secondary">
                       更新时间：{formatDateTime(policy.updatedAt)}

@@ -3,13 +3,13 @@ import { History, Image as ImageIcon, KeyRound, RefreshCw, Server, Settings } fr
 import AdminLayout from '../../components/AdminLayout';
 import AdminConfirmDialog from '../../components/admin/AdminConfirmDialog';
 import AdminSchemaForm from '../../components/admin/AdminSchemaForm';
+import { localizeAdminConfigField } from '../../components/admin/adminDisplayText';
 import type { AdminConfigDefinition } from '../../api/types';
 import { useAdminConfigHistory, useAdminConfigSnapshot } from '../../api/queries';
 import {
   rollbackAdminConfigValue,
   rotateAdminInviteCode,
   updateAdminConfigValue,
-  updateAdminInviteCode,
 } from '../../api/mutations';
 
 type GroupPresentation = {
@@ -22,10 +22,6 @@ type ConfigGroup = {
   id: string;
   fields: AdminConfigDefinition[];
 } & GroupPresentation;
-
-type TargetedSettingDirtyState = {
-  inviteCode: boolean;
-};
 
 const groupPresentationById: Record<string, GroupPresentation> = {
   registration: {
@@ -55,12 +51,8 @@ const groupPresentationById: Record<string, GroupPresentation> = {
   },
 };
 
-function asString(value: unknown, fallback = '') {
-  return typeof value === 'string' ? value : fallback;
-}
-
 function isGenericWritableField(field: AdminConfigDefinition) {
-  return field.source === 'database' && field.editable;
+  return field.source === 'database' && field.editable && field.key !== 'registration.currentInviteCode';
 }
 
 function formatConfigValue(value: unknown) {
@@ -79,7 +71,7 @@ function formatConfigValue(value: unknown) {
 function groupFields(fields: AdminConfigDefinition[]): ConfigGroup[] {
   const grouped = new Map<string, AdminConfigDefinition[]>();
 
-  for (const field of fields) {
+  for (const field of fields.map(localizeAdminConfigField)) {
     const existing = grouped.get(field.group);
     if (existing) {
       existing.push(field);
@@ -99,18 +91,8 @@ function groupFields(fields: AdminConfigDefinition[]): ConfigGroup[] {
   }));
 }
 
-function findField(fields: AdminConfigDefinition[], key: string) {
-  return fields.find((field) => field.key === key);
-}
-
-const cleanTargetedSettings: TargetedSettingDirtyState = {
-  inviteCode: false,
-};
-
 const AdminSetting: React.FC = () => {
   const [activeTab, setActiveTab] = useState<string>('');
-  const [inviteCode, setInviteCode] = useState('');
-  const [targetedDirty, setTargetedDirty] = useState<TargetedSettingDirtyState>(cleanTargetedSettings);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [selectedHistoryKey, setSelectedHistoryKey] = useState<string | null>(null);
   const [rollbackTarget, setRollbackTarget] = useState<{ key: string; version: number } | null>(null);
@@ -155,17 +137,6 @@ const AdminSetting: React.FC = () => {
     setSelectedHistoryKey((current) => (current && writableKeys.includes(current) ? current : writableKeys[0]));
   }, [activeGroup]);
 
-  useEffect(() => {
-    const fields = snapshot?.fields;
-    if (!fields) {
-      return;
-    }
-
-    if (!targetedDirty.inviteCode) {
-      setInviteCode(asString(findField(fields, 'registration.currentInviteCode')?.value));
-    }
-  }, [snapshot?.fields, targetedDirty]);
-
   async function refreshSnapshot() {
     await refetch();
   }
@@ -183,7 +154,7 @@ const AdminSetting: React.FC = () => {
 
     try {
       for (const [key, value] of updates) {
-        await updateAdminConfigValue(key, value, 'Updated from admin settings');
+        await updateAdminConfigValue(key, value, '通过管理面板更新配置');
       }
       setStatusMessage('配置已保存');
       await refreshSnapshot();
@@ -213,30 +184,11 @@ const AdminSetting: React.FC = () => {
     }
   }
 
-  async function saveInviteCodeOnly() {
-    try {
-      await updateAdminInviteCode(inviteCode.trim());
-      setStatusMessage('邀请码已保存');
-      await refreshSnapshot();
-      setTargetedDirty((current) => ({
-        ...current,
-        inviteCode: false,
-      }));
-    } catch (error) {
-      setStatusMessage(error instanceof Error ? error.message : '保存邀请码失败');
-    }
-  }
-
   async function rotateInviteCodeNow() {
     try {
       const result = await rotateAdminInviteCode();
-      setInviteCode(result.inviteCode);
       setStatusMessage(`已生成新邀请码：${result.inviteCode}`);
       await refreshSnapshot();
-      setTargetedDirty((current) => ({
-        ...current,
-        inviteCode: false,
-      }));
     } catch (error) {
       setStatusMessage(error instanceof Error ? error.message : '生成邀请码失败');
     }
@@ -245,50 +197,21 @@ const AdminSetting: React.FC = () => {
   function renderRegistrationControls() {
     return (
       <div className="mt-6 rounded-2xl border border-[#D9E3F2] dark:border-[#222233] bg-white/70 dark:bg-[#0F1017] p-6">
-        <div className="mb-6">
-          <h3 className="text-base font-bold text-text-primary-light dark:text-white">邀请码</h3>
-          <p className="mt-1 text-sm text-text-muted-light dark:text-text-muted-dark">
-            保存当前邀请码，或直接生成新的邀请码。
-          </p>
-        </div>
-
-        <form onSubmit={(event) => event.preventDefault()}>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            <div className="md:col-span-1">
-              <label className="block text-[14px] font-semibold text-text-primary-light dark:text-white mb-2">
-                当前邀请码
-              </label>
-              <p className="text-[13px] text-text-muted-light dark:text-text-muted-dark leading-relaxed font-geist">
-                可单独保存，也可以生成新的邀请码。
-              </p>
-            </div>
-            <div className="md:col-span-2 flex gap-2">
-              <input
-                type="text"
-                className="input-field flex-1"
-                value={inviteCode}
-                onChange={(event) => {
-                  setInviteCode(event.target.value);
-                  setTargetedDirty((current) => ({ ...current, inviteCode: true }));
-                }}
-              />
-              <button
-                type="button"
-                className="bg-white dark:bg-transparent border border-[#D9E3F2] dark:border-[#222233] px-4 rounded-lg text-sm font-semibold"
-                onClick={() => void saveInviteCodeOnly()}
-              >
-                保存邀请码
-              </button>
-              <button
-                type="button"
-                className="bg-brand-light/10 text-brand-light px-4 rounded-lg text-sm font-semibold"
-                onClick={() => void rotateInviteCodeNow()}
-              >
-                生成
-              </button>
-            </div>
+        <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+          <div>
+            <h3 className="text-base font-bold text-text-primary-light dark:text-white">邀请码</h3>
+            <p className="mt-1 text-sm text-text-muted-light dark:text-text-muted-dark">
+              生成新的注册邀请码，旧邀请码会立即失效。
+            </p>
           </div>
-        </form>
+          <button
+            type="button"
+            className="bg-brand-light/10 text-brand-light px-4 py-2 rounded-lg text-sm font-semibold dark:bg-brand-dark/20 dark:text-brand-dark"
+            onClick={() => void rotateInviteCodeNow()}
+          >
+            生成邀请码
+          </button>
+        </div>
       </div>
     );
   }
@@ -402,7 +325,7 @@ const AdminSetting: React.FC = () => {
   }
 
   return (
-    <AdminLayout title="参数设置">
+    <AdminLayout title="配置中心">
       <div className="flex flex-col lg:flex-row gap-8">
         <aside className="w-full lg:w-64 flex-shrink-0">
           <div className="card-container p-2">

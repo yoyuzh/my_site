@@ -3,13 +3,19 @@ import { useLocation } from 'react-router-dom';
 import AdminLayout from '../../components/AdminLayout';
 import { Settings } from 'lucide-react';
 
+const titleByPath: Record<string, string> = {
+  group: '用户组',
+  node: '存储节点',
+  oauth: '第三方登录',
+};
+
 const AdminUnderConstruction: React.FC = () => {
   const location = useLocation();
-  const path = location.pathname.split('/').pop() || 'Feature';
-  const title = path.charAt(0).toUpperCase() + path.slice(1);
+  const path = location.pathname.split('/').pop() || '';
+  const title = titleByPath[path] ?? '管理功能';
 
   return (
-    <AdminLayout title={`${title} Management`}>
+    <AdminLayout title={title}>
       <div className="card-container p-10 text-center flex flex-col items-center justify-center min-h-[400px]">
         <div className="w-16 h-16 rounded-full bg-brand-light/10 text-brand-light flex items-center justify-center mb-4">
           <Settings size={32} />

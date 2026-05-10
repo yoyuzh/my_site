@@ -44,6 +44,14 @@ const roleTones: Record<AdminUserRecord['role'], 'danger' | 'warning' | 'neutral
 };
 
 const roleOptions: AdminUserRecord['role'][] = ['USER', 'MODERATOR', 'ADMIN'];
+const roleInputLabels: Record<string, AdminUserRecord['role']> = {
+  USER: 'USER',
+  普通用户: 'USER',
+  MODERATOR: 'MODERATOR',
+  协管员: 'MODERATOR',
+  ADMIN: 'ADMIN',
+  管理员: 'ADMIN',
+};
 
 function toPositiveNumber(value: string | null) {
   if (value == null || value.trim() === '') {
@@ -169,15 +177,16 @@ const AdminUser: React.FC = () => {
               size="small"
               color="inherit"
               onClick={() => {
-                const nextRole = window.prompt('输入新角色：USER / MODERATOR / ADMIN', user.role)?.trim().toUpperCase();
-                if (!nextRole) {
+                const nextRoleInput = window.prompt('输入新角色：普通用户 / 协管员 / 管理员', roleLabels[user.role])?.trim();
+                if (!nextRoleInput) {
                   return;
                 }
-                if (!roleOptions.includes(nextRole as AdminUserRecord['role'])) {
-                  setStatusMessage('角色只能是 USER、MODERATOR 或 ADMIN');
+                const nextRole = roleInputLabels[nextRoleInput] ?? roleInputLabels[nextRoleInput.toUpperCase()];
+                if (!nextRole || !roleOptions.includes(nextRole)) {
+                  setStatusMessage('角色只能是普通用户、协管员或管理员');
                   return;
                 }
-                void runAction(() => updateAdminUserRole(user.id, nextRole as AdminUserRecord['role']), '角色已更新');
+                void runAction(() => updateAdminUserRole(user.id, nextRole), '角色已更新');
               }}
             >
               <Edit2 size={16} />

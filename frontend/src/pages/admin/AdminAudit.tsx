@@ -18,6 +18,7 @@ import AdminDataTable from '../../components/admin/AdminDataTable';
 import AdminFilterBar from '../../components/admin/AdminFilterBar';
 import AdminPage from '../../components/admin/AdminPage';
 import AdminStatusBadge from '../../components/admin/AdminStatusBadge';
+import { localizeAuditAction, localizeAuditTarget } from '../../components/admin/adminDisplayText';
 import { useAdminAudits } from '../../api/queries';
 import type { AdminAuditLog } from '../../api/types';
 import { formatDateTime } from '../../lib/format';
@@ -40,7 +41,8 @@ function formatTarget(audit: AdminAuditLog) {
   if (!audit.targetType) {
     return '-';
   }
-  return audit.targetId == null ? audit.targetType : `${audit.targetType} #${audit.targetId}`;
+  const targetType = localizeAuditTarget(audit.targetType);
+  return audit.targetId == null ? targetType : `${targetType} #${audit.targetId}`;
 }
 
 function parseDetails(detailsJson: string) {
@@ -117,7 +119,7 @@ const AdminAudit: React.FC = () => {
           <Stack spacing={0.75}>
             <Stack direction="row" spacing={1} alignItems="center">
               <Shield size={16} />
-              <AdminStatusBadge label={audit.actionType} tone={auditTone(audit.actionType)} />
+              <AdminStatusBadge label={localizeAuditAction(audit.actionType)} tone={auditTone(audit.actionType)} />
             </Stack>
             <Typography variant="caption" color="text.secondary">
               {audit.summary || '无摘要'}
@@ -130,7 +132,7 @@ const AdminAudit: React.FC = () => {
         header: '操作者',
         accessor: (audit) => (
           <Stack spacing={0.5}>
-            <Typography variant="body2">{audit.actorUsername || 'System'}</Typography>
+            <Typography variant="body2">{audit.actorUsername || '系统'}</Typography>
             <Typography variant="caption" color="text.secondary">
               {audit.actorUserId == null ? '系统操作' : `用户 #${audit.actorUserId}`}
             </Typography>
@@ -144,7 +146,7 @@ const AdminAudit: React.FC = () => {
           <Stack spacing={0.5}>
             <Typography variant="body2">{formatTarget(audit)}</Typography>
             <Typography variant="caption" color="text.secondary">
-              {audit.targetType || '无目标类型'}
+              {audit.targetType ? localizeAuditTarget(audit.targetType) : '无目标类型'}
             </Typography>
           </Stack>
         ),
@@ -229,14 +231,14 @@ const AdminAudit: React.FC = () => {
             >
               <TextField
                 size="small"
-                placeholder="动作类型，例如 USER_STATUS_UPDATED"
+                placeholder="动作类型，例如：更新用户状态"
                 value={actionDraft}
                 onChange={(event) => setActionDraft(event.target.value)}
                 sx={{ minWidth: { xs: '100%', md: 260 } }}
               />
               <TextField
                 size="small"
-                placeholder="目标类型，例如 STORAGE_POLICY"
+                placeholder="目标类型，例如：存储策略"
                 value={targetDraft}
                 onChange={(event) => setTargetDraft(event.target.value)}
                 sx={{ minWidth: { xs: '100%', md: 240 } }}
@@ -244,7 +246,7 @@ const AdminAudit: React.FC = () => {
               <TextField
                 size="small"
                 type="number"
-                placeholder="目标 ID"
+                placeholder="目标编号"
                 value={targetIdDraft}
                 onChange={(event) => setTargetIdDraft(event.target.value)}
                 sx={{ minWidth: { xs: '100%', md: 160 } }}
@@ -268,7 +270,7 @@ const AdminAudit: React.FC = () => {
                       审计详情 #{selectedAudit.id}
                     </Typography>
                     <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap" sx={{ mt: 1 }}>
-                      <AdminStatusBadge label={selectedAudit.actionType} tone={auditTone(selectedAudit.actionType)} />
+                      <AdminStatusBadge label={localizeAuditAction(selectedAudit.actionType)} tone={auditTone(selectedAudit.actionType)} />
                       <AdminStatusBadge label={formatTarget(selectedAudit)} tone="neutral" />
                     </Stack>
                   </Box>
@@ -277,7 +279,7 @@ const AdminAudit: React.FC = () => {
                       {formatDateTime(selectedAudit.createdAt)}
                     </Typography>
                     <Typography variant="body2" color="text.secondary">
-                      {selectedAudit.actorUsername || 'System'}
+                      {selectedAudit.actorUsername || '系统'}
                     </Typography>
                   </Stack>
                 </Stack>

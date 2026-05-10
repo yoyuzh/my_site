@@ -15,9 +15,13 @@ function isActivePath(pathname: string, path: string) {
   return pathname === path || pathname.startsWith(`${path}/`);
 }
 
+const ADMIN_SIDEBAR_SCROLL_STORAGE_KEY = 'admin-sidebar-scroll-top';
+let lastAdminSidebarScrollTop = 0;
+
 const AdminShell: React.FC<AdminShellProps> = ({ children, title }) => {
   const location = useLocation();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = React.useState(false);
+  const navScrollRef = React.useRef<HTMLDivElement | null>(null);
 
   const flatItems = adminNavGroups.flatMap((group) => group.items);
   const activeItem = flatItems.find((item) => isActivePath(location.pathname, item.path));
@@ -30,6 +34,46 @@ const AdminShell: React.FC<AdminShellProps> = ({ children, title }) => {
   React.useEffect(() => {
     setIsMobileMenuOpen(false);
   }, [location.pathname]);
+
+  React.useLayoutEffect(() => {
+    if (typeof window === 'undefined') {
+      return;
+    }
+
+    const storedScrollTop = window.sessionStorage.getItem(ADMIN_SIDEBAR_SCROLL_STORAGE_KEY);
+    const nextScrollTop = storedScrollTop ? Number(storedScrollTop) : lastAdminSidebarScrollTop;
+    if (!navScrollRef.current || !Number.isFinite(nextScrollTop) || nextScrollTop <= 0) {
+      return;
+    }
+
+    const element = navScrollRef.current;
+    element.scrollTop = nextScrollTop;
+    requestAnimationFrame(() => {
+      element.scrollTop = nextScrollTop;
+    });
+  }, [location.pathname]);
+
+  React.useEffect(() => {
+    if (typeof window === 'undefined') {
+      return;
+    }
+
+    const element = navScrollRef.current;
+    if (!element) {
+      return;
+    }
+
+    const handleScroll = () => {
+      lastAdminSidebarScrollTop = element.scrollTop;
+      window.sessionStorage.setItem(ADMIN_SIDEBAR_SCROLL_STORAGE_KEY, String(element.scrollTop));
+    };
+
+    element.addEventListener('scroll', handleScroll, { passive: true });
+    return () => {
+      handleScroll();
+      element.removeEventListener('scroll', handleScroll);
+    };
+  }, []);
 
   React.useEffect(() => {
     if (!isMobileMenuOpen) {
@@ -46,6 +90,14 @@ const AdminShell: React.FC<AdminShellProps> = ({ children, title }) => {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [isMobileMenuOpen]);
 
+  function rememberSidebarScroll() {
+    const scrollTop = navScrollRef.current?.scrollTop ?? lastAdminSidebarScrollTop;
+    lastAdminSidebarScrollTop = scrollTop;
+    if (typeof window !== 'undefined') {
+      window.sessionStorage.setItem(ADMIN_SIDEBAR_SCROLL_STORAGE_KEY, String(scrollTop));
+    }
+  }
+
   return (
     <div className="min-h-screen bg-[#EEF3FB] text-text-primary-light transition-colors duration-300 dark:bg-[#090B10] dark:text-text-primary-dark">
       <Topbar meta={`管理中心 · ${resolvedTitle}`} />
@@ -59,7 +111,7 @@ const AdminShell: React.FC<AdminShellProps> = ({ children, title }) => {
             isMobileMenuOpen ? 'opacity-100' : 'pointer-events-none opacity-0',
           )}
           onClick={() => setIsMobileMenuOpen(false)}
-          aria-label="Close admin navigation"
+          aria-label="关闭管理中心导航"
           aria-hidden={!isMobileMenuOpen}
           tabIndex={isMobileMenuOpen ? 0 : -1}
         />
@@ -78,22 +130,22 @@ const AdminShell: React.FC<AdminShellProps> = ({ children, title }) => {
           <div className="flex h-full flex-col">
             <div className="flex items-center justify-between border-b border-slate-200/70 px-5 py-4 dark:border-white/10 lg:hidden">
               <div>
-                <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-slate-400">Admin</p>
+                <p className="text-[11px] font-semibold tracking-[0.18em] text-slate-400">管理中心</p>
                 <p className="mt-1 text-sm font-semibold text-slate-900 dark:text-white">治理导航</p>
               </div>
               <button
                 type="button"
                 onClick={() => setIsMobileMenuOpen(false)}
                 className="flex h-10 w-10 items-center justify-center rounded-full text-slate-500 transition-colors hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-white/5"
-                aria-label="Close admin navigation"
+                aria-label="关闭管理中心导航"
               >
                 <X size={18} />
               </button>
             </div>
 
-            <div className="flex-1 overflow-y-auto px-4 py-5">
+            <div ref={navScrollRef} className="flex-1 overflow-y-auto px-4 py-5">
               <div className="rounded-3xl border border-slate-200/70 bg-slate-50/85 px-4 py-4 dark:border-white/10 dark:bg-white/[0.03]">
-                <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-slate-400">Admin Console</p>
+                <p className="text-[11px] font-semibold tracking-[0.18em] text-slate-400">治理控制台</p>
                 <p className="mt-2 text-sm font-semibold text-slate-900 dark:text-white">
                   面向治理路径的集中入口
                 </p>
@@ -114,7 +166,10 @@ const AdminShell: React.FC<AdminShellProps> = ({ children, title }) => {
                           <Link
                             key={item.path}
                             to={item.path}
-                            onClick={() => setIsMobileMenuOpen(false)}
+                            onClick={() => {
+                              rememberSidebarScroll();
+                              setIsMobileMenuOpen(false);
+                            }}
                             className={clsx(
                               'flex items-center gap-3 rounded-2xl px-3 py-3 text-sm font-medium transition-all',
                               isActive
@@ -173,7 +228,7 @@ const AdminShell: React.FC<AdminShellProps> = ({ children, title }) => {
                   type="button"
                   onClick={() => setIsMobileMenuOpen(true)}
                   className="inline-flex h-11 w-11 items-center justify-center rounded-full border border-slate-200/70 bg-white text-slate-700 shadow-sm transition-colors hover:bg-slate-50 dark:border-white/10 dark:bg-white/5 dark:text-slate-200 dark:hover:bg-white/10 lg:hidden"
-                  aria-label="Open admin navigation"
+                  aria-label="打开管理中心导航"
                   aria-expanded={isMobileMenuOpen}
                   aria-controls={mobileNavId}
                 >

@@ -138,7 +138,7 @@ const AdminFile: React.FC = () => {
         header: '所属用户',
         accessor: (file) => (
           <Stack spacing={0.5}>
-            <Typography variant="body2">{file.ownerUsername || 'Unknown'}</Typography>
+            <Typography variant="body2">{file.ownerUsername || '未知用户'}</Typography>
             <Typography variant="caption" color="text.secondary">
               {file.ownerEmail || '无邮箱'}
             </Typography>

@@ -17,6 +17,7 @@ import AdminDataTable from '../../components/admin/AdminDataTable';
 import AdminFilterBar from '../../components/admin/AdminFilterBar';
 import AdminPage from '../../components/admin/AdminPage';
 import AdminStatusBadge from '../../components/admin/AdminStatusBadge';
+import { localizeTaskStatus, localizeTaskType } from '../../components/admin/adminDisplayText';
 import { useAdminTasks } from '../../api/queries';
 import type { AdminTask as AdminTaskItem } from '../../api/types';
 import { formatDateTime } from '../../lib/format';
@@ -74,7 +75,7 @@ const AdminTask: React.FC = () => {
           <Stack direction="row" spacing={1.5} alignItems="center">
             <ListChecks size={16} />
             <Typography variant="body2" sx={{ fontWeight: 700 }}>
-              {task.type}
+              {localizeTaskType(task.type)}
             </Typography>
           </Stack>
         ),
@@ -88,7 +89,7 @@ const AdminTask: React.FC = () => {
           return (
             <Stack spacing={0.75}>
               <Stack direction="row" spacing={1} alignItems="center" useFlexGap flexWrap="wrap">
-                <AdminStatusBadge label={task.status} tone={getTaskStatusTone(task.status)} />
+                <AdminStatusBadge label={localizeTaskStatus(task.status)} tone={getTaskStatusTone(task.status)} />
                 {(progress?.progressPercent || 0) > 0 ? (
                   <Typography variant="caption" color="text.secondary">
                     {progress?.progressPercent ?? 0}%
@@ -105,7 +106,7 @@ const AdminTask: React.FC = () => {
       {
         id: 'owner',
         header: '创建者',
-        accessor: (task) => <Typography variant="body2">{task.ownerUsername || task.ownerEmail || 'Unknown'}</Typography>,
+        accessor: (task) => <Typography variant="body2">{task.ownerUsername || task.ownerEmail || '未知用户'}</Typography>,
       },
       {
         id: 'createdAt',
@@ -209,8 +210,8 @@ const AdminTask: React.FC = () => {
                       任务详情 #{selectedTask.id}
                     </Typography>
                     <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap" sx={{ mt: 1 }}>
-                      <AdminStatusBadge label={selectedTask.type} tone="neutral" />
-                      <AdminStatusBadge label={selectedTask.status} tone={getTaskStatusTone(selectedTask.status)} />
+                      <AdminStatusBadge label={localizeTaskType(selectedTask.type)} tone="neutral" />
+                      <AdminStatusBadge label={localizeTaskStatus(selectedTask.status)} tone={getTaskStatusTone(selectedTask.status)} />
                     </Stack>
                   </Box>
                   <Stack spacing={0.5} alignItems={{ xs: 'flex-start', lg: 'flex-end' }}>

@@ -81,12 +81,12 @@ const AdminBlob: React.FC = () => {
       },
       {
         id: 'objectKey',
-        header: '物理文件路径/Hash',
+        header: '物理文件路径/哈希',
         accessor: (blob) => (
           <Stack direction="row" spacing={1.5} alignItems="center">
             <FolderKey size={16} />
             <Typography variant="body2" noWrap>
-              {blob.objectKey || '无 object key'}
+              {blob.objectKey || '无对象键'}
             </Typography>
           </Stack>
         ),
@@ -122,7 +122,7 @@ const AdminBlob: React.FC = () => {
         header: '状态',
         accessor: (blob) => (
           <Stack direction="row" spacing={0.75} useFlexGap flexWrap="wrap">
-            <AdminStatusBadge label={blob.blobMissing ? 'Blob 缺失' : 'Blob 正常'} tone={blob.blobMissing ? 'danger' : 'success'} />
+            <AdminStatusBadge label={blob.blobMissing ? '内容块缺失' : '内容块正常'} tone={blob.blobMissing ? 'danger' : 'success'} />
             <AdminStatusBadge label={blob.orphanRisk ? '孤儿风险' : '引用正常'} tone={blob.orphanRisk ? 'warning' : 'neutral'} />
             <AdminStatusBadge label={blob.referenceMismatch ? '引用不一致' : '引用一致'} tone={blob.referenceMismatch ? 'warning' : 'neutral'} />
           </Stack>
@@ -143,10 +143,10 @@ const AdminBlob: React.FC = () => {
   );
 
   return (
-    <AdminLayout title="文件记录 (Entity)">
+    <AdminLayout title="文件实体记录">
       <AdminPage
-        title="文件记录 (Entity)"
-        description="查看实体与底层 blob 关联、引用风险和策略归属。"
+        title="文件实体记录"
+        description="查看文件实体与底层内容块关联、引用风险和策略归属。"
         isLoading={isLoading}
         isError={isError}
         errorText="文件实体列表加载失败。"
@@ -171,7 +171,7 @@ const AdminBlob: React.FC = () => {
           >
             <TextField
               size="small"
-              placeholder="搜索 object key..."
+              placeholder="搜索对象键..."
               value={objectKeyDraft}
               onChange={(event) => setObjectKeyDraft(event.target.value)}
               onKeyDown={(event) => {
@@ -210,7 +210,7 @@ const AdminBlob: React.FC = () => {
                 size="small"
                 type="number"
                 inputProps={{ min: 1 }}
-                placeholder="输入策略 ID"
+                placeholder="输入策略编号"
                 value={policyDraft}
                 onChange={(event) => setPolicyDraft(event.target.value)}
                 sx={{ minWidth: 180 }}

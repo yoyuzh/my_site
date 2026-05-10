@@ -16,6 +16,7 @@ import { Controller, useForm, useFormState } from 'react-hook-form';
 import type { RegisterOptions } from 'react-hook-form';
 import type { AdminConfigField, AdminConfigValidationRules } from './adminSchemaTypes';
 import AdminStatusBadge from './AdminStatusBadge';
+import { localizeAdminConfigSource, localizeAdminGroup } from './adminDisplayText';
 
 export type AdminSchemaFormProps = {
   fields: AdminConfigField[];
@@ -98,8 +99,8 @@ function groupFields(fields: AdminConfigField[]): FieldGroup[] {
   const grouped: FieldGroup[] = [];
 
   for (const field of fields) {
-    const groupName = field.group;
-    const subgroupName = field.subgroup ?? 'General';
+    const groupName = localizeAdminGroup(field.group);
+    const subgroupName = field.subgroup ?? '通用';
 
     let group = grouped.find((entry) => entry.name === groupName);
     if (!group) {
@@ -190,10 +191,7 @@ function getFieldHelperText(field: AdminConfigField, readOnly: boolean) {
   if (!field.editable || readOnly) {
     messages.push('当前为只读字段。');
   }
-  if (field.permissionCode) {
-    messages.push(`权限标识：${field.permissionCode}`);
-  }
-  messages.push(`来源：${field.source}`);
+  messages.push(`来源：${localizeAdminConfigSource(field.source)}`);
 
   return messages.join(' ');
 }
@@ -275,7 +273,7 @@ const AdminSchemaForm: React.FC<AdminSchemaFormProps> = ({ fields, readOnly = fa
 
             {group.items.map((subgroup) => (
               <Stack key={`${group.name}-${subgroup.label}`} spacing={2}>
-                {subgroup.label !== 'General' ? (
+                {subgroup.label !== '通用' ? (
                   <Typography variant="subtitle2" color="text.secondary" sx={{ fontWeight: 700 }}>
                     {subgroup.label}
                   </Typography>

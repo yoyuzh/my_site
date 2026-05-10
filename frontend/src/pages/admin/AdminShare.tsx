@@ -131,7 +131,7 @@ const AdminShare: React.FC = () => {
         header: '所属用户',
         accessor: (share) => (
           <Stack spacing={0.5}>
-            <Typography variant="body2">{share.ownerUsername || 'Unknown'}</Typography>
+            <Typography variant="body2">{share.ownerUsername || '未知用户'}</Typography>
             <Typography variant="caption" color="text.secondary">
               {share.ownerEmail || '无邮箱'}
             </Typography>

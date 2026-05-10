@@ -4,6 +4,7 @@ import { AlertTriangle, HardDrive, RefreshCw } from 'lucide-react';
 import AdminLayout from '../../components/AdminLayout';
 import AdminPage from '../../components/admin/AdminPage';
 import AdminStatusBadge from '../../components/admin/AdminStatusBadge';
+import { localizeAdminValue, localizeUploadMode } from '../../components/admin/adminDisplayText';
 import { useAdminFilesystem } from '../../api/queries';
 import { formatBytes } from '../../lib/format';
 
@@ -142,13 +143,13 @@ const AdminFileSystem: React.FC = () => {
                     存储概览
                   </Typography>
                   <Typography variant="body2" color="text.secondary">
-                    存储提供方：{data?.overview.storageProvider}
+                    存储提供方：{data?.overview.storageProvider ? localizeAdminValue(data.overview.storageProvider) : '-'}
                   </Typography>
                   <Typography variant="body2" color="text.secondary">
                     文件：{data?.overview.totalFiles}
                   </Typography>
                   <Typography variant="body2" color="text.secondary">
-                    Blob：{data?.overview.totalBlobs}
+                    内容块：{data?.overview.totalBlobs}
                   </Typography>
                   <Typography variant="body2" color="text.secondary">
                     实体：{data?.overview.totalEntities}
@@ -165,9 +166,9 @@ const AdminFileSystem: React.FC = () => {
                     {defaultPolicy?.name ?? '未配置默认策略'}
                   </Typography>
                   <Stack direction="row" spacing={0.75} useFlexGap flexWrap="wrap">
-                    <AdminStatusBadge label="PROXY" tone={data?.upload.proxyUpload ? 'success' : 'neutral'} />
-                    <AdminStatusBadge label="DIRECT_SINGLE" tone={data?.upload.directSingleUpload ? 'success' : 'neutral'} />
-                    <AdminStatusBadge label="DIRECT_MULTIPART" tone={data?.upload.directMultipartUpload ? 'success' : 'neutral'} />
+                    <AdminStatusBadge label={localizeUploadMode('PROXY')} tone={data?.upload.proxyUpload ? 'success' : 'neutral'} />
+                    <AdminStatusBadge label={localizeUploadMode('DIRECT_SINGLE')} tone={data?.upload.directSingleUpload ? 'success' : 'neutral'} />
+                    <AdminStatusBadge label={localizeUploadMode('DIRECT_MULTIPART')} tone={data?.upload.directMultipartUpload ? 'success' : 'neutral'} />
                   </Stack>
                   <Stack direction="row" spacing={0.75} useFlexGap flexWrap="wrap">
                     <AdminStatusBadge
@@ -205,7 +206,7 @@ const AdminFileSystem: React.FC = () => {
                     缓存与 WebDAV
                   </Typography>
                   <Typography variant="body2" color="text.secondary">
-                    缓存后端：{data?.cache.backend}
+                    缓存后端：{data?.cache.backend ? localizeAdminValue(data.cache.backend) : '-'}
                   </Typography>
                   <Typography variant="body2" color="text.secondary">
                     文件列表 TTL：{data?.cache.filesListTtlSeconds}s
