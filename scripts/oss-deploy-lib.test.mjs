@@ -42,6 +42,8 @@ test('frontend spa aliases are uploaded as html entry points', () => {
 
   assert.ok(aliases.includes('dashboard/files/index.html'));
   assert.ok(aliases.includes('transfer/receive/index.html'));
+  assert.ok(aliases.includes('admin/config'));
+  assert.ok(aliases.includes('admin/storage-policies/index.html'));
   assert.ok(aliases.includes('admin/user'));
   assert.ok(aliases.includes('share/'));
   assert.equal(getFrontendSpaAliasContentType(), 'text/html; charset=utf-8');
