@@ -194,6 +194,35 @@ class DevH2PreinitScriptTest {
         }
     }
 
+    @Test
+    void createsAdminAuditLogTableForDevH2() throws Exception {
+        try (Connection connection = DriverManager.getConnection(
+                "jdbc:h2:mem:dev_h2_preinit_audit_test;MODE=MySQL;DB_CLOSE_DELAY=-1",
+                "sa",
+                ""
+        )) {
+            executeDevPreinitScript(connection);
+
+            try (Statement statement = connection.createStatement();
+                 ResultSet columns = statement.executeQuery("""
+                         SELECT COLUMN_NAME
+                         FROM INFORMATION_SCHEMA.COLUMNS
+                         WHERE TABLE_NAME = 'PORTAL_ADMIN_AUDIT_LOG'
+                           AND COLUMN_NAME IN ('ACTOR_USERNAME', 'ACTION_TYPE', 'DETAILS_JSON', 'CREATED_AT')
+                         ORDER BY COLUMN_NAME
+                         """)) {
+                StringBuilder actualColumns = new StringBuilder();
+                while (columns.next()) {
+                    if (!actualColumns.isEmpty()) {
+                        actualColumns.append(",");
+                    }
+                    actualColumns.append(columns.getString(1));
+                }
+                assertEquals("ACTION_TYPE,ACTOR_USERNAME,CREATED_AT,DETAILS_JSON", actualColumns.toString());
+            }
+        }
+    }
+
     private static void executeDevPreinitScript(Connection connection) throws Exception {
         ScriptUtils.executeSqlScript(
                 connection,

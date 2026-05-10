@@ -1,6 +1,22 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
+import {
+  Button,
+  FormControl,
+  InputAdornment,
+  MenuItem,
+  Paper,
+  Select,
+  Stack,
+  TextField,
+  Typography,
+} from '@mui/material';
+import { Filter, FolderKey, Search, Trash2 } from 'lucide-react';
 import AdminLayout from '../../components/AdminLayout';
-import { FolderKey, Search, Filter, Trash2 } from 'lucide-react';
+import type { AdminColumn } from '../../components/admin/AdminDataTable';
+import AdminDataTable from '../../components/admin/AdminDataTable';
+import AdminFilterBar from '../../components/admin/AdminFilterBar';
+import AdminPage from '../../components/admin/AdminPage';
+import AdminStatusBadge from '../../components/admin/AdminStatusBadge';
 import { useAdminBlobs } from '../../api/queries';
 import { formatBytes, formatDateTime } from '../../lib/format';
 import type { AdminFileBlob } from '../../api/types';
@@ -41,26 +57,121 @@ const AdminBlob: React.FC = () => {
     setPage(1);
   }
 
-  return (
-    <AdminLayout title="文件记录">
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 gap-4">
-        <div className="flex items-center gap-2">
-           <button
-             className="bg-red-500/10 text-red-500 hover:bg-red-500/20 px-4 py-2 rounded-lg text-sm h-10 transition-colors font-medium disabled:opacity-50 disabled:cursor-not-allowed"
-             disabled
-             title="后端暂未提供批量删除文件实体接口"
-           >
-            批量删除
-          </button>
-        </div>
+  const columns = useMemo<AdminColumn<AdminFileBlob>[]>(
+    () => [
+      {
+        id: 'select',
+        header: '',
+        accessor: () => <input type="checkbox" className="rounded border-gray-300 text-brand-light focus:ring-brand-light cursor-pointer" />,
+      },
+      {
+        id: 'entityId',
+        header: '#',
+        accessor: (blob) => <Typography variant="body2" color="text.secondary">#{blob.entityId}</Typography>,
+      },
+      {
+        id: 'storagePolicy',
+        header: '存储策略',
+        accessor: (blob) => (
+          <AdminStatusBadge
+            label={blob.storagePolicyId == null ? '未绑定策略' : `#${blob.storagePolicyId}`}
+            tone={blob.storagePolicyId == null ? 'warning' : 'neutral'}
+          />
+        ),
+      },
+      {
+        id: 'objectKey',
+        header: '物理文件路径/哈希',
+        accessor: (blob) => (
+          <Stack direction="row" spacing={1.5} alignItems="center">
+            <FolderKey size={16} />
+            <Typography variant="body2" noWrap>
+              {blob.objectKey || '无对象键'}
+            </Typography>
+          </Stack>
+        ),
+      },
+      {
+        id: 'size',
+        header: '大小',
+        accessor: (blob) => (
+          <Stack spacing={0.5}>
+            <Typography variant="body2">{blob.size == null ? '-' : formatBytes(blob.size)}</Typography>
+            <Typography variant="caption" color="text.secondary">
+              {blob.contentType || blob.entityType}
+            </Typography>
+          </Stack>
+        ),
+      },
+      {
+        id: 'references',
+        header: '引用计数',
+        accessor: (blob) => (
+          <Stack spacing={0.5}>
+            <Typography variant="body2" sx={{ fontWeight: 700 }}>
+              {blob.referenceCount ?? blob.linkedStoredFileCount}
+            </Typography>
+            <Typography variant="caption" color="text.secondary">
+              {blob.createdAt ? formatDateTime(blob.createdAt) : '-'}
+            </Typography>
+          </Stack>
+        ),
+      },
+      {
+        id: 'flags',
+        header: '状态',
+        accessor: (blob) => (
+          <Stack direction="row" spacing={0.75} useFlexGap flexWrap="wrap">
+            <AdminStatusBadge label={blob.blobMissing ? '内容块缺失' : '内容块正常'} tone={blob.blobMissing ? 'danger' : 'success'} />
+            <AdminStatusBadge label={blob.orphanRisk ? '孤儿风险' : '引用正常'} tone={blob.orphanRisk ? 'warning' : 'neutral'} />
+            <AdminStatusBadge label={blob.referenceMismatch ? '引用不一致' : '引用一致'} tone={blob.referenceMismatch ? 'warning' : 'neutral'} />
+          </Stack>
+        ),
+      },
+      {
+        id: 'actions',
+        header: '操作',
+        accessor: () => (
+          <Button size="small" color="error" disabled title="后端暂未提供删除文件实体接口">
+            <Trash2 size={16} />
+          </Button>
+        ),
+        className: 'text-right',
+      },
+    ],
+    [],
+  );
 
-        <div className="flex items-center gap-2 w-full md:w-auto">
-          <div className="relative flex-1 md:w-64">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-text-muted-light dark:text-text-muted-dark" size={16} />
-            <input 
-              type="text" 
-              placeholder="搜索 对象 Key..."
-              className="input-field h-10 w-full text-sm pl-9"
+  return (
+    <AdminLayout title="文件实体记录">
+      <AdminPage
+        title="文件实体记录"
+        description="查看文件实体与底层内容块关联、引用风险和策略归属。"
+        isLoading={isLoading}
+        isError={isError}
+        errorText="文件实体列表加载失败。"
+        toolbar={
+          <Button variant="outlined" color="error" disabled title="后端暂未提供批量删除文件实体接口">
+            批量删除
+          </Button>
+        }
+      >
+        <Stack spacing={2}>
+          <AdminFilterBar
+            actions={
+              <Button
+                variant={showFilters ? 'contained' : 'outlined'}
+                startIcon={<Filter size={16} />}
+                onClick={() => setShowFilters((value) => !value)}
+              >
+                筛选
+              </Button>
+            }
+            summary={`共 ${data?.pagination?.total_items || 0} 条记录`}
+          >
+            <TextField
+              size="small"
+              placeholder="搜索对象键..."
               value={objectKeyDraft}
               onChange={(event) => setObjectKeyDraft(event.target.value)}
               onKeyDown={(event) => {
@@ -68,157 +179,97 @@ const AdminBlob: React.FC = () => {
                   applyFilters();
                 }
               }}
+              sx={{ minWidth: { xs: '100%', md: 280 } }}
+              InputProps={{
+                startAdornment: (
+                  <InputAdornment position="start">
+                    <Search size={16} />
+                  </InputAdornment>
+                ),
+              }}
             />
-          </div>
-          <button 
-            onClick={() => setShowFilters(!showFilters)}
-            className={`border border-[#D9E3F2] dark:border-[#222233] h-10 px-3 rounded-lg transition-colors flex items-center justify-center gap-2 text-sm ${showFilters ? 'bg-brand-light/10 text-brand-light border-brand-light/30' : 'bg-card-light dark:bg-[#0A0A0A] text-text-secondary-light dark:text-text-secondary-dark'}`}
-          >
-            <Filter size={16} />
-            <span className="hidden sm:inline">筛选</span>
-          </button>
-        </div>
-      </div>
+            <Button variant="contained" onClick={applyFilters}>
+              搜索
+            </Button>
+          </AdminFilterBar>
 
-      {showFilters && (
-        <div className="card-container p-4 mb-6 animate-fade-in-up flex flex-wrap gap-4 items-end admin-filter-panel">
-          <div className="flex-1 min-w-[200px]">
-            <label className="block text-xs font-semibold text-text-secondary-light dark:text-text-secondary-dark mb-1 ml-1">存储策略</label>
-            <input
-              type="number"
-              min={1}
-              placeholder="输入策略 ID"
-              className="input-field h-10 text-sm py-0"
-              value={policyDraft}
-              onChange={(event) => setPolicyDraft(event.target.value)}
-            />
-          </div>
-          <div className="flex-1 min-w-[200px]">
-             <label className="block text-xs font-semibold text-text-secondary-light dark:text-text-secondary-dark mb-1 ml-1">上传者 ID</label>
-             <input
-               type="text"
-               placeholder="输入用户名或邮箱"
-               className="input-field h-10 text-sm py-0"
-               value={userDraft}
-               onChange={(event) => setUserDraft(event.target.value)}
-               onKeyDown={(event) => {
-                 if (event.key === 'Enter') {
-                   applyFilters();
-                 }
-               }}
-             />
-          </div>
-          <div className="flex gap-2">
-            <button
-              className="h-10 px-4 text-sm admin-secondary-button rounded-lg hover:bg-black/5 dark:hover:bg-white/5 transition-colors"
-              onClick={resetFilters}
+          {showFilters ? (
+            <AdminFilterBar
+              actions={
+                <Stack direction="row" spacing={1}>
+                  <Button variant="outlined" onClick={resetFilters}>
+                    重置
+                  </Button>
+                  <Button variant="contained" onClick={applyFilters}>
+                    应用
+                  </Button>
+                </Stack>
+              }
             >
-              重置
-            </button>
-            <button
-              className="h-10 px-4 text-sm bg-brand-light text-white rounded-lg hover:opacity-90 transition-opacity"
-              onClick={applyFilters}
-            >
-              应用
-            </button>
-          </div>
-        </div>
-      )}
+              <TextField
+                size="small"
+                type="number"
+                inputProps={{ min: 1 }}
+                placeholder="输入策略编号"
+                value={policyDraft}
+                onChange={(event) => setPolicyDraft(event.target.value)}
+                sx={{ minWidth: 180 }}
+              />
+              <TextField
+                size="small"
+                placeholder="输入用户名或邮箱"
+                value={userDraft}
+                onChange={(event) => setUserDraft(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter') {
+                    applyFilters();
+                  }
+                }}
+                sx={{ minWidth: 220 }}
+              />
+            </AdminFilterBar>
+          ) : null}
 
-      <div className="card-container animate-fade-in-up">
-        {isLoading ? (
-          <div className="p-8 text-center text-text-muted-light">加载中...</div>
-        ) : isError ? (
-          <div className="p-8 text-center text-red-500">加载失败</div>
-        ) : (
-          <>
-            <div className="overflow-x-auto">
-              <table className="w-full text-left border-collapse">
-                <thead>
-                  <tr className="border-b border-[#D9E3F2] dark:border-[#222233]">
-                    <th className="px-6 py-4 text-sm font-semibold text-text-secondary-light dark:text-text-secondary-dark">
-                      <input type="checkbox" className="rounded border-gray-300 text-brand-light focus:ring-brand-light cursor-pointer" />
-                    </th>
-                    <th className="px-6 py-4 text-sm font-semibold text-text-secondary-light dark:text-text-secondary-dark">#</th>
-                    <th className="px-6 py-4 text-sm font-semibold text-text-secondary-light dark:text-text-secondary-dark">存储策略</th>
-                    <th className="px-6 py-4 text-sm font-semibold text-text-secondary-light dark:text-text-secondary-dark">物理文件路径/Hash</th>
-                    <th className="px-6 py-4 text-sm font-semibold text-text-secondary-light dark:text-text-secondary-dark">大小</th>
-                    <th className="px-6 py-4 text-sm font-semibold text-text-secondary-light dark:text-text-secondary-dark">引用计数</th>
-                    <th className="px-6 py-4 text-sm font-semibold text-text-secondary-light dark:text-text-secondary-dark text-right">操作</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {(data?.items || []).map((blob: AdminFileBlob) => (
-                    <tr key={`${blob.entityType}-${blob.entityId}-${blob.blobId}`} className="border-b border-[#D9E3F2] dark:border-[#222233] hover:bg-black/5 dark:hover:bg-white/5 transition-colors">
-                      <td className="px-6 py-4 text-sm">
-                        <input type="checkbox" className="rounded border-gray-300 text-brand-light focus:ring-brand-light cursor-pointer" />
-                      </td>
-                      <td className="px-6 py-4 text-sm text-text-secondary-light dark:text-text-secondary-dark font-funnel">{blob.entityId}</td>
-                      <td className="px-6 py-4 text-sm text-text-secondary-light dark:text-text-secondary-dark">
-                         <span className="bg-black/5 dark:bg-white/5 px-2 py-1 rounded font-funnel">
-                           {blob.storagePolicyId == null ? '未绑定策略' : `#${blob.storagePolicyId}`}
-                         </span>
-                      </td>
-                      <td className="px-6 py-4 text-sm font-medium text-text-primary-light dark:text-white flex items-center gap-3">
-                        <FolderKey size={16} className="text-brand-light flex-shrink-0" />
-                        <span className="truncate max-w-xs font-geist">{blob.objectKey || '无 对象 Key'}</span>
-                      </td>
-                      <td className="px-6 py-4 text-sm text-text-secondary-light dark:text-text-secondary-dark font-funnel">
-                        {blob.size == null ? '-' : formatBytes(blob.size)}
-                        <div className="mt-1 text-xs text-text-muted-light dark:text-text-muted-dark">{blob.contentType || blob.entityType}</div>
-                      </td>
-                      <td className="px-6 py-4 text-sm font-bold text-brand-light dark:text-brand-dark font-funnel">
-                        {blob.referenceCount ?? blob.linkedStoredFileCount}
-                        <div className="mt-1 text-xs text-text-muted-light dark:text-text-muted-dark font-normal">
-                          {blob.createdAt ? formatDateTime(blob.createdAt) : '-'}
-                        </div>
-                      </td>
-                      <td className="px-6 py-4 text-right flex justify-end gap-2">
-                        <button
-                          className="text-red-500 hover:text-red-600 transition-colors p-1 disabled:opacity-50 disabled:cursor-not-allowed"
-                          title="后端暂未提供删除文件实体接口"
-                          disabled
-                        >
-                          <Trash2 size={16} />
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+          <AdminDataTable
+            rows={data?.items || []}
+            columns={columns}
+            getRowKey={(blob) => `${blob.entityType}-${blob.entityId}-${blob.blobId}`}
+            emptyText="暂无文件实体记录"
+          />
 
-            {/* Pagination */}
-            <div className="p-4 border-t border-[#D9E3F2] dark:border-[#222233] flex flex-col sm:flex-row justify-between items-center text-sm text-text-secondary-light dark:text-text-secondary-dark gap-4">
-              <div className="flex items-center gap-4">
-                <span>共 {data?.pagination?.total_items || 0} 条记录</span>
-                <select 
-                  className="bg-transparent border-none text-brand-light font-medium cursor-pointer outline-none hidden sm:block"
-                  value={pageSize}
-                  onChange={(e) => { setPageSize(Number(e.target.value)); setPage(1); }}
-                >
-                  <option value={10}>10 条/页</option>
-                  <option value={20}>20 条/页</option>
-                  <option value={50}>50 条/页</option>
-                </select>
-              </div>
-              <div className="flex gap-2">
-                <button 
-                  className="px-3 py-1 border border-[#D9E3F2] dark:border-[#222233] rounded hover:bg-black/5 dark:hover:bg-white/5 transition-colors disabled:opacity-50 disabled:cursor-not-allowed" 
-                  disabled={page <= 1}
-                  onClick={() => setPage(page - 1)}
-                >上一页</button>
-                <button className="px-3 py-1 border border-[#D9E3F2] dark:border-[#222233] rounded hover:bg-black/5 dark:hover:bg-white/5 transition-colors bg-brand-light text-white border-brand-light">{page}</button>
-                <button 
-                  className="px-3 py-1 border border-[#D9E3F2] dark:border-[#222233] rounded hover:bg-black/5 dark:hover:bg-white/5 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+          <Paper elevation={0} sx={{ border: '1px solid', borderColor: 'divider', borderRadius: 3, p: 2 }}>
+            <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2} justifyContent="space-between" alignItems={{ xs: 'flex-start', sm: 'center' }}>
+              <Stack direction="row" spacing={2} alignItems="center">
+                <Typography variant="body2" color="text.secondary">
+                  共 {data?.pagination?.total_items || 0} 条记录
+                </Typography>
+                <FormControl size="small" sx={{ minWidth: 120 }}>
+                  <Select value={String(pageSize)} onChange={(event) => { setPageSize(Number(event.target.value)); setPage(1); }}>
+                    <MenuItem value="10">10 条/页</MenuItem>
+                    <MenuItem value="20">20 条/页</MenuItem>
+                    <MenuItem value="50">50 条/页</MenuItem>
+                  </Select>
+                </FormControl>
+              </Stack>
+              <Stack direction="row" spacing={1}>
+                <Button variant="outlined" disabled={page <= 1} onClick={() => setPage(page - 1)}>
+                  上一页
+                </Button>
+                <Button variant="contained" disableElevation>
+                  {page}
+                </Button>
+                <Button
+                  variant="outlined"
                   disabled={!data?.pagination?.total_pages || page >= data.pagination.total_pages}
                   onClick={() => setPage(page + 1)}
-                >下一页</button>
-              </div>
-            </div>
-          </>
-        )}
-      </div>
+                >
+                  下一页
+                </Button>
+              </Stack>
+            </Stack>
+          </Paper>
+        </Stack>
+      </AdminPage>
     </AdminLayout>
   );
 };

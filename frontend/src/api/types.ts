@@ -1,3 +1,9 @@
+import type {
+  AdminConfigFieldType,
+  AdminConfigOption,
+  AdminConfigValidationRules,
+} from '../components/admin/adminSchemaTypes';
+
 export interface PaginationResults {
   total_items: number;
   total_pages: number;
@@ -22,6 +28,10 @@ export interface AdminListParams {
   page_size: number;
   query?: string;
   userQuery?: string;
+  actorQuery?: string;
+  actionType?: string;
+  targetType?: string;
+  targetId?: number;
   ownerQuery?: string;
   fileName?: string;
   token?: string;
@@ -30,6 +40,10 @@ export interface AdminListParams {
   storagePolicyId?: number;
   objectKey?: string;
   entityType?: string;
+}
+
+export interface AdminPermissionResponse {
+  permissions: string[];
 }
 
 export interface UserCapacity {
@@ -540,6 +554,7 @@ export interface AdminFilesystem {
     totalBlobs: number;
     totalEntities: number;
   };
+  defaultPolicy: AdminStoragePolicy;
   upload: {
     proxyUpload: boolean;
     directSingleUpload: boolean;
@@ -558,6 +573,56 @@ export interface AdminFilesystem {
   webdav: {
     enabled: boolean;
   };
+}
+
+export type AdminConfigSource = 'runtime' | 'environment' | 'database' | 'computed';
+
+export interface AdminConfigDefinition {
+  key: string;
+  group: string;
+  subgroup?: string | null;
+  title: string;
+  description?: string | null;
+  type: AdminConfigFieldType;
+  defaultValue?: unknown;
+  value?: unknown;
+  options?: AdminConfigOption[];
+  required: boolean;
+  editable: boolean;
+  sensitive: boolean;
+  restartRequired: boolean;
+  validationRules?: AdminConfigValidationRules;
+  permissionCode?: string | null;
+  source: AdminConfigSource;
+}
+
+export interface AdminConfigSnapshot {
+  fields: AdminConfigDefinition[];
+}
+
+export interface AdminConfigHistory {
+  id: number;
+  key: string;
+  beforeValue: unknown;
+  afterValue: unknown;
+  version: number;
+  reason: string;
+  actorUserId: number | null;
+  actorUsername: string;
+  createdAt: string;
+}
+
+export interface AdminAuditLog {
+  id: number;
+  actorUserId: number | null;
+  actorUsername: string;
+  actorAuthorities: string;
+  actionType: string;
+  targetType: string;
+  targetId: number | null;
+  summary: string;
+  detailsJson: string;
+  createdAt: string;
 }
 
 export interface AdminSettings {

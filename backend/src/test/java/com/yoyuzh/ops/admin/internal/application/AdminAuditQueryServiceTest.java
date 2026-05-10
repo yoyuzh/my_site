@@ -37,19 +37,19 @@ class AdminAuditQueryServiceTest {
         entity.setActorUserId(1L);
         entity.setActorUsername("service-admin");
         entity.setActorAuthorities("ROLE_ADMIN");
-        entity.setActionType("UPDATE_USER_ROLE");
+        entity.setActionType("USER_ROLE_UPDATED");
         entity.setTargetType("USER");
         entity.setTargetId(2L);
         entity.setSummary("Updated user role");
         entity.setDetailsJson("{\"role\":\"ADMIN\"}");
-        when(adminAuditLogRepository.search(eq("service-admin"), eq("UPDATE_USER_ROLE"), eq("USER"), eq(2L), any()))
+        when(adminAuditLogRepository.search(eq("service-admin"), eq("USER_ROLE_UPDATED"), eq("USER"), eq(2L), any()))
                 .thenReturn(new PageImpl<>(List.of(entity)));
 
         PageResponse<AdminAuditLogResponse> response = adminAuditQueryService.listAuditLogs(
                 0,
                 10,
                 "service-admin",
-                "UPDATE_USER_ROLE",
+                "USER_ROLE_UPDATED",
                 "USER",
                 2L
         );
@@ -58,12 +58,12 @@ class AdminAuditQueryServiceTest {
         assertThat(response.items()).hasSize(1);
         AdminAuditLogResponse item = response.items().get(0);
         assertThat(item.actorUsername()).isEqualTo("service-admin");
-        assertThat(item.actionType()).isEqualTo("UPDATE_USER_ROLE");
+        assertThat(item.actionType()).isEqualTo("USER_ROLE_UPDATED");
         assertThat(item.targetType()).isEqualTo("USER");
         assertThat(item.targetId()).isEqualTo(2L);
         assertThat(item.summary()).isEqualTo("Updated user role");
         assertThat(item.detailsJson()).contains("\"role\":\"ADMIN\"");
-        verify(adminAuditLogRepository).search(eq("service-admin"), eq("UPDATE_USER_ROLE"), eq("USER"), eq(2L), any());
+        verify(adminAuditLogRepository).search(eq("service-admin"), eq("USER_ROLE_UPDATED"), eq("USER"), eq(2L), any());
     }
 
     @Test

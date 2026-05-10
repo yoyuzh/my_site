@@ -34,12 +34,11 @@ public class AdminMutableSettingsService {
             adminMetricsService.updateOfflineTransferStorageLimit(request.transfer().offlineTransferStorageLimitBytes());
         }
         AdminSettingsResponse response = adminConfigSnapshotService.getSettings();
-
         adminAuditService.record(
-                AdminAuditAction.UPDATE_SYSTEM_SETTINGS,
-                "SYSTEM_SETTING",
+                AdminAuditAction.SETTINGS_UPDATED,
+                "ADMIN_SETTINGS",
                 null,
-                "Updated admin settings snapshot",
+                "Updated admin settings",
                 buildSettingsAuditDetails(response, request)
         );
         return response;
@@ -49,37 +48,38 @@ public class AdminMutableSettingsService {
     public AdminRegistrationInviteCodeResponse updateRegistrationInviteCode(String inviteCode) {
         String normalizedInviteCode = inviteCode == null ? "" : inviteCode.trim();
         String currentInviteCode = identityAdminSummaryApi.updateInviteCode(normalizedInviteCode);
+        AdminRegistrationInviteCodeResponse response = new AdminRegistrationInviteCodeResponse(currentInviteCode);
         adminAuditService.record(
-                AdminAuditAction.UPDATE_REGISTRATION_INVITE_CODE,
-                "SYSTEM_SETTING",
+                AdminAuditAction.INVITE_CODE_UPDATED,
+                "ADMIN_SETTINGS",
                 null,
                 "Updated registration invite code",
                 Map.of("inviteCodeLength", currentInviteCode.length())
         );
-        return new AdminRegistrationInviteCodeResponse(currentInviteCode);
+        return response;
     }
 
     @Transactional
     public AdminRegistrationInviteCodeResponse rotateRegistrationInviteCode() {
         String currentInviteCode = identityAdminSummaryApi.rotateInviteCode();
+        AdminRegistrationInviteCodeResponse response = new AdminRegistrationInviteCodeResponse(currentInviteCode);
         adminAuditService.record(
-                AdminAuditAction.ROTATE_REGISTRATION_INVITE_CODE,
-                "SYSTEM_SETTING",
+                AdminAuditAction.INVITE_CODE_ROTATED,
+                "ADMIN_SETTINGS",
                 null,
                 "Rotated registration invite code",
                 Map.of("inviteCodeLength", currentInviteCode.length())
         );
-        return new AdminRegistrationInviteCodeResponse(currentInviteCode);
+        return response;
     }
 
     @Transactional
     public AdminOfflineTransferStorageLimitResponse updateOfflineTransferStorageLimit(long offlineTransferStorageLimitBytes) {
-        AdminOfflineTransferStorageLimitResponse response = adminMetricsService.updateOfflineTransferStorageLimit(
-                offlineTransferStorageLimitBytes
-        );
+        AdminOfflineTransferStorageLimitResponse response =
+                adminMetricsService.updateOfflineTransferStorageLimit(offlineTransferStorageLimitBytes);
         adminAuditService.record(
-                AdminAuditAction.UPDATE_OFFLINE_TRANSFER_STORAGE_LIMIT,
-                "SYSTEM_SETTING",
+                AdminAuditAction.OFFLINE_TRANSFER_LIMIT_UPDATED,
+                "ADMIN_SETTINGS",
                 null,
                 "Updated offline transfer storage limit",
                 Map.of("offlineTransferStorageLimitBytes", response.offlineTransferStorageLimitBytes())
@@ -113,7 +113,6 @@ public class AdminMutableSettingsService {
         details.put("inviteCodeRequired", response.registration().inviteCodeRequired());
         details.put("managementRoleCount", response.registration().managementRoles().size());
         details.put("offlineTransferStorageLimitBytes", response.transfer().offlineTransferStorageLimitBytes());
-        details.put("readOnlySectionsIgnored", true);
         details.put("registrationUpdated", request.registration() != null);
         details.put("transferUpdated", request.transfer() != null);
         return details;

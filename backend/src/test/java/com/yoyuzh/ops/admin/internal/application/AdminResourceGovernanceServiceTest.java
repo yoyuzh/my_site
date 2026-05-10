@@ -50,7 +50,7 @@ class AdminResourceGovernanceServiceTest {
 
         verify(sharingApi).deleteShareAsAdmin(5L);
         verify(adminAuditService).record(
-                eq(AdminAuditAction.DELETE_SHARE),
+                eq(AdminAuditAction.SHARE_DELETED),
                 eq("SHARE"),
                 eq(5L),
                 eq("Deleted share link"),
@@ -86,7 +86,7 @@ class AdminResourceGovernanceServiceTest {
 
         verify(workspaceAdminGovernanceApi).deleteFileAsAdmin(10L);
         verify(adminAuditService).record(
-                eq(AdminAuditAction.DELETE_FILE),
+                eq(AdminAuditAction.FILE_DELETED),
                 eq("FILE"),
                 eq(10L),
                 eq("Deleted file"),

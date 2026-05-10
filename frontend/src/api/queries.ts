@@ -1,10 +1,15 @@
 import { useQuery } from '@tanstack/react-query';
 import { apiRequest } from './client';
 import {
+  type AdminAuditLog,
+  type AdminConfigDefinition,
+  type AdminConfigHistory,
+  type AdminConfigSnapshot,
   type AdminFile,
   type AdminFileBlob,
   type AdminFilesystem,
   type AdminListParams,
+  type AdminPermissionResponse,
   type AdminSettings,
   type AdminShare,
   type AdminStoragePolicy,
@@ -160,6 +165,16 @@ export const useAdminSummary = () =>
       }),
   });
 
+export const useAdminPermissions = () =>
+  useQuery({
+    queryKey: ['adminPermissions'],
+    queryFn: () =>
+      apiRequest<AdminPermissionResponse>({
+        url: '/admin/permissions',
+        method: 'GET',
+      }),
+  });
+
 export const useAdminUsers = (params: AdminListParams) =>
   useQuery({
     queryKey: ['adminUsers', params],
@@ -283,6 +298,27 @@ export const useAdminTasks = (params: AdminListParams) =>
     placeholderData: (previousData) => previousData,
   });
 
+export const useAdminAudits = (params: AdminListParams) =>
+  useQuery({
+    queryKey: ['adminAudits', params],
+    queryFn: async () => {
+      const result = await apiRequest<QueryPage<AdminAuditLog>>({
+        url: '/admin/audits',
+        method: 'GET',
+        params: {
+          page: toBackendPage(params),
+          size: params.page_size,
+          actorQuery: params.actorQuery ?? '',
+          actionType: params.actionType ?? '',
+          targetType: params.targetType ?? '',
+          targetId: params.targetId,
+        },
+      });
+      return normalizePage(result);
+    },
+    placeholderData: (previousData) => previousData,
+  });
+
 export const useAdminShares = (params: AdminListParams) =>
   useQuery({
     queryKey: ['adminShares', params],
@@ -313,6 +349,43 @@ export const useAdminFilesystem = () =>
         url: '/admin/filesystem',
         method: 'GET',
       }),
+  });
+
+export const useAdminConfigDefinitions = () =>
+  useQuery({
+    queryKey: ['adminConfigDefinitions'],
+    queryFn: () =>
+      apiRequest<AdminConfigDefinition[]>({
+        url: '/admin/config/definitions',
+        method: 'GET',
+      }),
+  });
+
+export const useAdminConfigSnapshot = () =>
+  useQuery({
+    queryKey: ['adminConfigSnapshot'],
+    queryFn: () =>
+      apiRequest<AdminConfigSnapshot>({
+        url: '/admin/config/snapshot',
+        method: 'GET',
+      }),
+  });
+
+export const useAdminConfigHistory = (key: string | null, page = 1, size = 10) =>
+  useQuery({
+    queryKey: ['adminConfigHistory', key, page, size],
+    queryFn: async () => {
+      const result = await apiRequest<QueryPage<AdminConfigHistory>>({
+        url: `/admin/config/values/${encodeURIComponent(key as string)}/history`,
+        method: 'GET',
+        params: {
+          page: toBackendPage({ page, page_size: size }),
+          size,
+        },
+      });
+      return normalizePage(result);
+    },
+    enabled: key != null,
   });
 
 export const useAdminSettings = () =>

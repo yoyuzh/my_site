@@ -25,6 +25,7 @@ import com.yoyuzh.platform.job.internal.infra.BackgroundTaskRepository;
 import com.yoyuzh.platform.job.api.BackgroundTaskStatus;
 import com.yoyuzh.platform.job.api.BackgroundTaskType;
 import com.yoyuzh.ops.admin.api.AdminSettingsUpdateRequest;
+import com.yoyuzh.ops.admin.internal.infra.AdminAuditLogEntity;
 import com.yoyuzh.ops.admin.internal.infra.AdminAuditLogRepository;
 import com.yoyuzh.ops.admin.internal.infra.AdminMetricsStateRepository;
 import com.yoyuzh.ops.admin.internal.infra.AdminRuntimeSettingsStateRepository;
@@ -41,6 +42,7 @@ import org.springframework.test.web.servlet.MockMvc;
 import java.time.LocalDateTime;
 import java.time.LocalDate;
 import java.time.LocalTime;
+import java.util.List;
 import java.nio.file.Files;
 import java.nio.file.Path;
 
@@ -525,6 +527,40 @@ class AdminControllerIntegrationTest {
                 .andExpect(jsonPath("$.data.transfer.offlineTransferStorageLimitBytes").isNumber())
                 .andExpect(jsonPath("$.data.site.supported").value(false))
                 .andExpect(jsonPath("$.data.queue.backend").value("in-memory"));
+    }
+
+    @Test
+    @WithMockUser(username = "service-admin", roles = "ADMIN")
+    void shouldRecordSingleCanonicalAuditRowForSettingsWrite() throws Exception {
+        mockMvc.perform(put("/api/admin/settings")
+                        .contentType("application/json")
+                        .content("""
+                                {
+                                  "registration": {
+                                    "inviteCodeRequired": false,
+                                    "managementRoles": ["ADMIN"]
+                                  }
+                                }
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(0));
+
+        mockMvc.perform(get("/api/admin/audits?page=0&size=10&actionType=SETTINGS_UPDATED&targetType=ADMIN_SETTINGS")
+                        .with(user("service-admin").roles("ADMIN")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(0))
+                .andExpect(jsonPath("$.data.total").value(1))
+                .andExpect(jsonPath("$.data.items[0].actorUsername").value("service-admin"))
+                .andExpect(jsonPath("$.data.items[0].actionType").value("SETTINGS_UPDATED"))
+                .andExpect(jsonPath("$.data.items[0].targetType").value("ADMIN_SETTINGS"))
+                .andExpect(jsonPath("$.data.items[0].targetId").isEmpty())
+                .andExpect(jsonPath("$.data.items[0].summary").value("Updated admin settings"));
+
+        List<AdminAuditLogEntity> auditLogs = adminAuditLogRepository.findAll();
+        assertThat(auditLogs).hasSize(1);
+        assertThat(auditLogs.get(0).getActionType()).isEqualTo("SETTINGS_UPDATED");
+        assertThat(auditLogs.get(0).getTargetType()).isEqualTo("ADMIN_SETTINGS");
+        assertThat(auditLogs.get(0).getTargetId()).isNull();
     }
 
     @Test
@@ -1078,6 +1114,24 @@ class AdminControllerIntegrationTest {
     }
 
     @Test
+    void shouldRejectStoragePolicyMigrationWhenPrincipalUserDoesNotExist() throws Exception {
+        StoragePolicy sourcePolicy = storagePolicyRepository.findFirstByDefaultPolicyTrueOrderByIdAsc().orElseThrow();
+
+        mockMvc.perform(post("/api/admin/storage-policies/migrations")
+                        .with(user("missing-admin").roles("ADMIN"))
+                        .contentType("application/json")
+                        .content("""
+                                {
+                                  "sourcePolicyId": %d,
+                                  "targetPolicyId": %d,
+                                  "correlationId": "migration-missing-user"
+                                }
+                                """.formatted(sourcePolicy.getId(), sourcePolicy.getId())))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.code").value(1001));
+    }
+
+    @Test
     @WithMockUser(username = "portal-user", roles = "USER")
     void shouldRejectNonAdminUser() throws Exception {
         mockMvc.perform(get("/api/admin/users?page=0&size=10"))
@@ -1108,13 +1162,13 @@ class AdminControllerIntegrationTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.role").value("ADMIN"));
 
-        mockMvc.perform(get("/api/admin/audits?page=0&size=10&actionType=UPDATE_USER_ROLE&targetType=USER")
+        mockMvc.perform(get("/api/admin/audits?page=0&size=10&actionType=USER_ROLE_UPDATED&targetType=USER")
                         .with(user("service-admin").roles("ADMIN")))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value(0))
                 .andExpect(jsonPath("$.data.total").value(1))
                 .andExpect(jsonPath("$.data.items[0].actorUsername").value("service-admin"))
-                .andExpect(jsonPath("$.data.items[0].actionType").value("UPDATE_USER_ROLE"))
+                .andExpect(jsonPath("$.data.items[0].actionType").value("USER_ROLE_UPDATED"))
                 .andExpect(jsonPath("$.data.items[0].targetType").value("USER"))
                 .andExpect(jsonPath("$.data.items[0].targetId").value(portalUser.getId()))
                 .andExpect(jsonPath("$.data.items[0].summary").value("Updated user role"));

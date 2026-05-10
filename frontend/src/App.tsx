@@ -23,15 +23,13 @@ const DashboardUnderConstruction = lazy(() => import('./pages/DashboardUnderCons
 const AdminHome = lazy(() => import('./pages/admin/AdminHome'));
 const AdminUser = lazy(() => import('./pages/admin/AdminUser'));
 const AdminSetting = lazy(() => import('./pages/admin/AdminSetting'));
-const AdminGroup = lazy(() => import('./pages/admin/AdminGroup'));
 const AdminPolicy = lazy(() => import('./pages/admin/AdminPolicy'));
-const AdminNode = lazy(() => import('./pages/admin/AdminNode'));
-const AdminOAuth = lazy(() => import('./pages/admin/AdminOAuth'));
 const AdminFile = lazy(() => import('./pages/admin/AdminFile'));
 const AdminBlob = lazy(() => import('./pages/admin/AdminBlob'));
 const AdminTask = lazy(() => import('./pages/admin/AdminTask'));
 const AdminShare = lazy(() => import('./pages/admin/AdminShare'));
 const AdminFileSystem = lazy(() => import('./pages/admin/AdminFileSystem'));
+const AdminAudit = lazy(() => import('./pages/admin/AdminAudit'));
 const AdminUnderConstruction = lazy(() => import('./pages/admin/AdminUnderConstruction'));
 
 const queryClient = new QueryClient({
@@ -108,50 +106,56 @@ function App() {
               <Route path="/share/:id" element={<FileShare />} />
               <Route path="/transfer/receive" element={<TransferReceive />} />
 
-            {/* 用户工作台路由 */}
-            <Route path="/dashboard">
-              <Route index element={<Navigate to="files" replace />} />
-              <Route path="files" element={<RequireAuth><Files key="files-directory" /></RequireAuth>} />
-              <Route path="images" element={<RequireAuth><Files key="files-image" mediaCategory="image" /></RequireAuth>} />
-              <Route path="videos" element={<RequireAuth><Files key="files-video" mediaCategory="video" /></RequireAuth>} />
-              <Route path="music" element={<RequireAuth><Files key="files-audio" mediaCategory="audio" /></RequireAuth>} />
-              <Route path="documents" element={<RequireAuth><Files key="files-document" mediaCategory="document" /></RequireAuth>} />
-              <Route path="shared-with-me" element={<RequireAuth><SharedWithMe /></RequireAuth>} />
-              <Route path="tasks" element={<RequireAuth><Tasks /></RequireAuth>} />
-              <Route path="shares" element={<RequireAuth><Shares /></RequireAuth>} />
-              <Route path="recycle-bin" element={<RequireAuth><RecycleBin /></RequireAuth>} />
-              <Route path="connections" element={<RequireAuth><DashboardUnderConstruction /></RequireAuth>} />
-              <Route path="offline-downloads" element={<RequireAuth><OfflineDownloads /></RequireAuth>} />
-              <Route path="transfer-send" element={<RequireAuth><TransferSend /></RequireAuth>} />
-              <Route path="settings" element={<RequireAuth><AccountSettings /></RequireAuth>} />
-            </Route>
+              {/* 用户工作台路由 */}
+              <Route path="/dashboard">
+                <Route index element={<Navigate to="files" replace />} />
+                <Route path="files" element={<RequireAuth><Files key="files-directory" /></RequireAuth>} />
+                <Route path="images" element={<RequireAuth><Files key="files-image" mediaCategory="image" /></RequireAuth>} />
+                <Route path="videos" element={<RequireAuth><Files key="files-video" mediaCategory="video" /></RequireAuth>} />
+                <Route path="music" element={<RequireAuth><Files key="files-audio" mediaCategory="audio" /></RequireAuth>} />
+                <Route path="documents" element={<RequireAuth><Files key="files-document" mediaCategory="document" /></RequireAuth>} />
+                <Route path="shared-with-me" element={<RequireAuth><SharedWithMe /></RequireAuth>} />
+                <Route path="tasks" element={<RequireAuth><Tasks /></RequireAuth>} />
+                <Route path="shares" element={<RequireAuth><Shares /></RequireAuth>} />
+                <Route path="recycle-bin" element={<RequireAuth><RecycleBin /></RequireAuth>} />
+                <Route path="connections" element={<RequireAuth><DashboardUnderConstruction /></RequireAuth>} />
+                <Route path="offline-downloads" element={<RequireAuth><OfflineDownloads /></RequireAuth>} />
+                <Route path="transfer-send" element={<RequireAuth><TransferSend /></RequireAuth>} />
+                <Route path="settings" element={<RequireAuth><AccountSettings /></RequireAuth>} />
+              </Route>
 
-            {/* 管理后台路由 */}
-            <Route path="/admin">
-              <Route index element={<Navigate to="home" replace />} />
-              <Route path="home" element={<RequireAdmin><AdminHome /></RequireAdmin>} />
-              <Route path="settings" element={<RequireAdmin><AdminSetting /></RequireAdmin>} />
-              <Route path="user" element={<RequireAdmin><AdminUser /></RequireAdmin>} />
+              {/* 管理后台路由 */}
+              <Route path="/admin">
+                <Route index element={<Navigate to="home" replace />} />
+                <Route path="home" element={<RequireAdmin><AdminHome /></RequireAdmin>} />
+                <Route path="system" element={<RequireAdmin><AdminFileSystem /></RequireAdmin>} />
+                <Route path="config" element={<RequireAdmin><AdminSetting /></RequireAdmin>} />
+                <Route path="settings" element={<Navigate to="/admin/config" replace />} />
+                <Route path="users" element={<RequireAdmin><AdminUser /></RequireAdmin>} />
+                <Route path="user" element={<Navigate to="/admin/users" replace />} />
+                <Route path="storage-policies" element={<RequireAdmin><AdminPolicy /></RequireAdmin>} />
+                <Route path="policy" element={<Navigate to="/admin/storage-policies" replace />} />
+                <Route path="files" element={<RequireAdmin><AdminFile /></RequireAdmin>} />
+                <Route path="file" element={<Navigate to="/admin/files" replace />} />
+                <Route path="file-blobs" element={<RequireAdmin><AdminBlob /></RequireAdmin>} />
+                <Route path="blob" element={<Navigate to="/admin/file-blobs" replace />} />
+                <Route path="tasks" element={<RequireAdmin><AdminTask /></RequireAdmin>} />
+                <Route path="task" element={<Navigate to="/admin/tasks" replace />} />
+                <Route path="shares" element={<RequireAdmin><AdminShare /></RequireAdmin>} />
+                <Route path="share" element={<Navigate to="/admin/shares" replace />} />
+                <Route path="filesystem" element={<Navigate to="/admin/system" replace />} />
+                <Route path="audits" element={<RequireAdmin><AdminAudit /></RequireAdmin>} />
+                <Route path="group" element={<RequireAdmin><AdminUnderConstruction /></RequireAdmin>} />
+                <Route path="node" element={<RequireAdmin><AdminUnderConstruction /></RequireAdmin>} />
+                <Route path="oauth" element={<RequireAdmin><AdminUnderConstruction /></RequireAdmin>} />
+                <Route path="*" element={<RequireAdmin><AdminUnderConstruction /></RequireAdmin>} />
+              </Route>
 
-              {/* 管理功能路由 */}
-              <Route path="group" element={<RequireAdmin><AdminGroup /></RequireAdmin>} />
-              <Route path="policy" element={<RequireAdmin><AdminPolicy /></RequireAdmin>} />
-              <Route path="node" element={<RequireAdmin><AdminNode /></RequireAdmin>} />
-              <Route path="oauth" element={<RequireAdmin><AdminOAuth /></RequireAdmin>} />
-              <Route path="file" element={<RequireAdmin><AdminFile /></RequireAdmin>} />
-              <Route path="blob" element={<RequireAdmin><AdminBlob /></RequireAdmin>} />
-              <Route path="task" element={<RequireAdmin><AdminTask /></RequireAdmin>} />
-              <Route path="share" element={<RequireAdmin><AdminShare /></RequireAdmin>} />
-              <Route path="filesystem" element={<RequireAdmin><AdminFileSystem /></RequireAdmin>} />
-
-              <Route path="*" element={<RequireAdmin><AdminUnderConstruction /></RequireAdmin>} />
-            </Route>
-
-            {/* 默认入口 */}
-            <Route path="/" element={<HomeRedirect />} />
-          </Routes>
-        </Suspense>
-      </Router>
+              {/* 默认入口 */}
+              <Route path="/" element={<HomeRedirect />} />
+            </Routes>
+          </Suspense>
+        </Router>
       </ThemeProvider>
     </QueryClientProvider>
   );

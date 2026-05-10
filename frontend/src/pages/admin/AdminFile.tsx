@@ -1,6 +1,25 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
+import {
+  Alert,
+  Box,
+  Button,
+  FormControl,
+  InputAdornment,
+  MenuItem,
+  Paper,
+  Select,
+  Stack,
+  TextField,
+  Typography,
+} from '@mui/material';
+import { FileKey, Filter, Import, Search, Trash2 } from 'lucide-react';
 import AdminLayout from '../../components/AdminLayout';
-import { FileKey, Search, Trash2, Filter, Import } from 'lucide-react';
+import type { AdminColumn } from '../../components/admin/AdminDataTable';
+import AdminConfirmDialog from '../../components/admin/AdminConfirmDialog';
+import AdminDataTable from '../../components/admin/AdminDataTable';
+import AdminFilterBar from '../../components/admin/AdminFilterBar';
+import AdminPage from '../../components/admin/AdminPage';
+import AdminStatusBadge from '../../components/admin/AdminStatusBadge';
 import { useAdminFiles } from '../../api/queries';
 import { deleteAdminFile } from '../../api/mutations';
 import { formatBytes, formatDateTime } from '../../lib/format';
@@ -25,6 +44,8 @@ const AdminFile: React.FC = () => {
   const [ownerDraft, setOwnerDraft] = useState('');
   const [ownerQuery, setOwnerQuery] = useState('');
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
+  const [fileToDelete, setFileToDelete] = useState<AdminFileItem | null>(null);
+  const [isDeleteSubmitting, setIsDeleteSubmitting] = useState(false);
   const { data, isLoading, isError, refetch } = useAdminFiles({
     page,
     page_size: pageSize,
@@ -46,47 +67,150 @@ const AdminFile: React.FC = () => {
     setPage(1);
   }
 
-  async function handleDelete(file: AdminFileItem) {
-    if (!window.confirm(`确认删除「${file.filename}」？此操作会删除用户文件记录。`)) {
+  async function handleDelete() {
+    if (!fileToDelete) {
       return;
     }
 
+    setIsDeleteSubmitting(true);
     try {
-      await deleteAdminFile(file.id);
-      setStatusMessage(`已删除文件：${file.filename}`);
+      await deleteAdminFile(fileToDelete.id);
+      setStatusMessage(`已删除文件：${fileToDelete.filename}`);
       await refetch();
+      setFileToDelete(null);
     } catch (error) {
       setStatusMessage(error instanceof Error ? error.message : '删除文件失败');
+    } finally {
+      setIsDeleteSubmitting(false);
     }
   }
 
+  const columns = useMemo<AdminColumn<AdminFileItem>[]>(
+    () => [
+      {
+        id: 'select',
+        header: '',
+        accessor: () => <input type="checkbox" className="rounded border-gray-300 text-brand-light focus:ring-brand-light cursor-pointer" />,
+      },
+      {
+        id: 'id',
+        header: '#',
+        accessor: (file) => <Typography variant="body2" color="text.secondary">#{file.id}</Typography>,
+      },
+      {
+        id: 'file',
+        header: '文件',
+        accessor: (file) => (
+          <Stack direction="row" spacing={1.5} alignItems="center">
+            <FileKey size={16} />
+            <Box sx={{ minWidth: 0 }}>
+              <Typography variant="body2" sx={{ fontWeight: 700 }} noWrap>
+                {file.filename}
+              </Typography>
+              <Typography variant="caption" color="text.secondary">
+                {file.directory ? '目录条目' : '文件条目'}
+              </Typography>
+            </Box>
+          </Stack>
+        ),
+      },
+      {
+        id: 'path',
+        header: '路径 / 类型',
+        accessor: (file) => (
+          <Stack spacing={0.5}>
+            <Typography variant="body2" noWrap>
+              {file.path}
+            </Typography>
+            <Typography variant="caption" color="text.secondary">
+              {renderFileKind(file)}
+            </Typography>
+          </Stack>
+        ),
+      },
+      {
+        id: 'size',
+        header: '大小',
+        accessor: (file) => <Typography variant="body2">{file.directory ? '-' : formatBytes(file.size)}</Typography>,
+      },
+      {
+        id: 'owner',
+        header: '所属用户',
+        accessor: (file) => (
+          <Stack spacing={0.5}>
+            <Typography variant="body2">{file.ownerUsername || '未知用户'}</Typography>
+            <Typography variant="caption" color="text.secondary">
+              {file.ownerEmail || '无邮箱'}
+            </Typography>
+          </Stack>
+        ),
+      },
+      {
+        id: 'status',
+        header: '状态',
+        accessor: (file) => (
+          <Stack direction="row" spacing={0.75} useFlexGap flexWrap="wrap">
+            <AdminStatusBadge label={file.favorite ? '已收藏' : '未收藏'} tone={file.favorite ? 'warning' : 'neutral'} />
+            <AdminStatusBadge label={file.thumbnailAvailable ? '有缩略图' : '无缩略图'} tone={file.thumbnailAvailable ? 'success' : 'neutral'} />
+          </Stack>
+        ),
+      },
+      {
+        id: 'createdAt',
+        header: '创建时间',
+        accessor: (file) => <Typography variant="body2">{formatDateTime(file.createdAt)}</Typography>,
+      },
+      {
+        id: 'actions',
+        header: '操作',
+        accessor: (file) => (
+          <Box sx={{ display: 'flex', justifyContent: 'flex-end' }}>
+            <Button size="small" color="error" onClick={() => setFileToDelete(file)}>
+              <Trash2 size={16} />
+            </Button>
+          </Box>
+        ),
+        className: 'text-right',
+      },
+    ],
+    [],
+  );
+
   return (
     <AdminLayout title="物理文件">
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 gap-4">
-        <div className="flex items-center gap-2">
-          <button
-            className="admin-secondary-button border border-[#BFD2F7] dark:border-[#222233] text-brand-light dark:text-white font-semibold py-2 px-4 rounded-lg transition-all duration-300 hover:bg-brand-light/5 text-sm h-10 flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
-            disabled
-            title="后端暂未提供导入外部目录接口"
+      <AdminPage
+        title="物理文件"
+        description="查看文件条目、所属用户、收藏与缩略图状态，并执行治理侧删除。"
+        isLoading={isLoading}
+        isError={isError}
+        errorText="文件列表加载失败。"
+        toolbar={
+          <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap">
+            <Button variant="outlined" startIcon={<Import size={16} />} disabled title="后端暂未提供导入外部目录接口">
+              导入外部目录
+            </Button>
+            <Button variant="outlined" color="error" disabled title="后端暂未提供批量删除文件接口">
+              批量删除
+            </Button>
+          </Stack>
+        }
+      >
+        <Stack spacing={2}>
+          <AdminFilterBar
+            actions={
+              <Button
+                variant={showFilters ? 'contained' : 'outlined'}
+                startIcon={<Filter size={16} />}
+                onClick={() => setShowFilters((value) => !value)}
+              >
+                筛选
+              </Button>
+            }
+            summary={`共 ${data?.pagination?.total_items || 0} 条记录`}
           >
-            <Import size={16} /> 导入外部目录
-          </button>
-          <button
-            className="bg-red-500/10 text-red-500 hover:bg-red-500/20 px-4 py-2 rounded-lg text-sm h-10 transition-colors font-medium disabled:opacity-50 disabled:cursor-not-allowed"
-            disabled
-            title="后端暂未提供批量删除文件接口"
-          >
-            批量删除
-          </button>
-        </div>
-        
-        <div className="flex items-center gap-2 w-full md:w-auto">
-          <div className="relative flex-1 md:w-64">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-text-muted-light dark:text-text-muted-dark" size={16} />
-            <input 
-              type="text" 
-              placeholder="搜索文件名..." 
-              className="input-field h-10 w-full text-sm pl-9"
+            <TextField
+              size="small"
+              placeholder="搜索文件名..."
               value={searchDraft}
               onChange={(event) => setSearchDraft(event.target.value)}
               onKeyDown={(event) => {
@@ -94,202 +218,116 @@ const AdminFile: React.FC = () => {
                   applyFilters();
                 }
               }}
-            />
-          </div>
-          <button 
-            onClick={() => setShowFilters(!showFilters)}
-            className={`border border-[#D9E3F2] dark:border-[#222233] h-10 px-3 rounded-lg transition-colors flex items-center justify-center gap-2 text-sm ${showFilters ? 'bg-brand-light/10 text-brand-light border-brand-light/30' : 'bg-card-light dark:bg-[#0A0A0A] text-text-secondary-light dark:text-text-secondary-dark'}`}
-          >
-            <Filter size={16} />
-            <span className="hidden sm:inline">筛选</span>
-          </button>
-        </div>
-      </div>
-
-      {showFilters && (
-        <div className="card-container p-4 mb-6 animate-fade-in-up flex flex-wrap gap-4 items-end admin-filter-panel">
-          <div className="flex-1 min-w-[150px]">
-            <label className="block text-xs font-semibold text-text-secondary-light dark:text-text-secondary-dark mb-1 ml-1">存储策略</label>
-            <select
-              className="input-field h-10 text-sm appearance-none py-0 disabled:opacity-60"
-              disabled
-              title="当前文件列表接口暂未提供存储策略筛选"
-            >
-              <option value="">全部策略</option>
-            </select>
-          </div>
-          <div className="flex-1 min-w-[150px]">
-            <label className="block text-xs font-semibold text-text-secondary-light dark:text-text-secondary-dark mb-1 ml-1">所属用户</label>
-            <input
-              type="text"
-              placeholder="输入用户名或邮箱"
-              className="input-field h-10 text-sm py-0"
-              value={ownerDraft}
-              onChange={(event) => setOwnerDraft(event.target.value)}
-              onKeyDown={(event) => {
-                if (event.key === 'Enter') {
-                  applyFilters();
-                }
+              sx={{ minWidth: { xs: '100%', md: 280 } }}
+              InputProps={{
+                startAdornment: (
+                  <InputAdornment position="start">
+                    <Search size={16} />
+                  </InputAdornment>
+                ),
               }}
             />
-          </div>
-          <div className="flex-1 min-w-[150px]">
-            <label className="block text-xs font-semibold text-text-secondary-light dark:text-text-secondary-dark mb-1 ml-1">包含直链</label>
-            <select
-              className="input-field h-10 text-sm appearance-none py-0 disabled:opacity-60"
-              disabled
-              title="当前文件列表接口暂未提供直链筛选"
-            >
-              <option value="">全部</option>
-            </select>
-          </div>
-          <div className="flex-1 min-w-[150px]">
-            <label className="block text-xs font-semibold text-text-secondary-light dark:text-text-secondary-dark mb-1 ml-1">已分享</label>
-            <select
-              className="input-field h-10 text-sm appearance-none py-0 disabled:opacity-60"
-              disabled
-              title="当前文件列表接口暂未提供分享状态筛选"
-            >
-              <option value="">全部</option>
-            </select>
-          </div>
-          <div className="flex gap-2">
-            <button
-              className="h-10 px-4 text-sm admin-secondary-button rounded-lg hover:bg-black/5 dark:hover:bg-white/5 transition-colors"
-              onClick={resetFilters}
-            >
-              重置
-            </button>
-            <button
-              className="h-10 px-4 text-sm bg-brand-light text-white rounded-lg hover:opacity-90 transition-opacity"
-              onClick={applyFilters}
-            >
-              应用
-            </button>
-          </div>
-        </div>
-      )}
+            <Button variant="contained" onClick={applyFilters}>
+              搜索
+            </Button>
+          </AdminFilterBar>
 
-      {statusMessage && (
-        <div className="mb-4 rounded-lg border border-[#D9E3F2] dark:border-[#222233] bg-card-light dark:bg-[#111117] px-4 py-3 text-sm text-text-secondary-light dark:text-text-secondary-dark">
-          {statusMessage}
-        </div>
-      )}
+          {showFilters ? (
+            <AdminFilterBar
+              actions={
+                <Stack direction="row" spacing={1}>
+                  <Button variant="outlined" onClick={resetFilters}>
+                    重置
+                  </Button>
+                  <Button variant="contained" onClick={applyFilters}>
+                    应用
+                  </Button>
+                </Stack>
+              }
+            >
+              <FormControl size="small" sx={{ minWidth: 160 }}>
+                <Select disabled displayEmpty value="" title="当前文件列表接口暂未提供存储策略筛选">
+                  <MenuItem value="">全部策略</MenuItem>
+                </Select>
+              </FormControl>
+              <TextField
+                size="small"
+                placeholder="输入用户名或邮箱"
+                value={ownerDraft}
+                onChange={(event) => setOwnerDraft(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter') {
+                    applyFilters();
+                  }
+                }}
+                sx={{ minWidth: 200 }}
+              />
+              <FormControl size="small" sx={{ minWidth: 140 }}>
+                <Select disabled displayEmpty value="" title="当前文件列表接口暂未提供直链筛选">
+                  <MenuItem value="">包含直链</MenuItem>
+                </Select>
+              </FormControl>
+              <FormControl size="small" sx={{ minWidth: 140 }}>
+                <Select disabled displayEmpty value="" title="当前文件列表接口暂未提供分享状态筛选">
+                  <MenuItem value="">已分享</MenuItem>
+                </Select>
+              </FormControl>
+            </AdminFilterBar>
+          ) : null}
 
-      <div className="card-container animate-fade-in-up">
-        {isLoading ? (
-          <div className="p-8 text-center text-text-muted-light">加载中...</div>
-        ) : isError ? (
-          <div className="p-8 text-center text-red-500">加载失败</div>
-        ) : (
-          <>
-            <div className="overflow-x-auto">
-              <table className="w-full text-left border-collapse">
-                <thead>
-                  <tr className="border-b border-[#D9E3F2] dark:border-[#222233]">
-                    <th className="px-6 py-4 text-sm font-semibold text-text-secondary-light dark:text-text-secondary-dark">
-                      <input type="checkbox" className="rounded border-gray-300 text-brand-light focus:ring-brand-light cursor-pointer" />
-                    </th>
-                    <th className="px-6 py-4 text-sm font-semibold text-text-secondary-light dark:text-text-secondary-dark">#</th>
-                    <th className="px-6 py-4 text-sm font-semibold text-text-secondary-light dark:text-text-secondary-dark">文件</th>
-                    <th className="px-6 py-4 text-sm font-semibold text-text-secondary-light dark:text-text-secondary-dark">路径 / 类型</th>
-                    <th className="px-6 py-4 text-sm font-semibold text-text-secondary-light dark:text-text-secondary-dark">大小</th>
-                    <th className="px-6 py-4 text-sm font-semibold text-text-secondary-light dark:text-text-secondary-dark">所属用户</th>
-                    <th className="px-6 py-4 text-sm font-semibold text-text-secondary-light dark:text-text-secondary-dark">状态</th>
-                    <th className="px-6 py-4 text-sm font-semibold text-text-secondary-light dark:text-text-secondary-dark">创建时间</th>
-                    <th className="px-6 py-4 text-sm font-semibold text-text-secondary-light dark:text-text-secondary-dark text-right">操作</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {(data?.items || []).map((file: AdminFileItem) => (
-                    <tr key={file.id} className="border-b border-[#D9E3F2] dark:border-[#222233] hover:bg-black/5 dark:hover:bg-white/5 transition-colors">
-                      <td className="px-6 py-4 text-sm">
-                        <input type="checkbox" className="rounded border-gray-300 text-brand-light focus:ring-brand-light cursor-pointer" />
-                      </td>
-                      <td className="px-6 py-4 text-sm text-text-secondary-light dark:text-text-secondary-dark font-funnel">{file.id}</td>
-                      <td className="px-6 py-4 text-sm font-medium text-text-primary-light dark:text-white flex items-center gap-3">
-                        <FileKey size={16} className="text-brand-light" />
-                        <div className="min-w-0">
-                          <span className="truncate max-w-xs font-geist block">{file.filename}</span>
-                          <span className="truncate max-w-xs text-xs text-text-muted-light dark:text-text-muted-dark block">
-                            {file.directory ? '目录条目' : '文件条目'}
-                          </span>
-                        </div>
-                      </td>
-                      <td className="px-6 py-4 text-sm text-text-secondary-light dark:text-text-secondary-dark">
-                        <div className="truncate max-w-[260px]">{file.path}</div>
-                        <div className="mt-1 text-xs text-text-muted-light dark:text-text-muted-dark">
-                          {renderFileKind(file)}
-                        </div>
-                      </td>
-                      <td className="px-6 py-4 text-sm text-text-secondary-light dark:text-text-secondary-dark font-funnel">
-                        {file.directory ? '-' : formatBytes(file.size)}
-                      </td>
-                      <td className="px-6 py-4 text-sm text-brand-light dark:text-brand-dark">
-                        <div>{file.ownerUsername || '未知'}</div>
-                        <div className="mt-1 text-xs text-text-muted-light dark:text-text-muted-dark">
-                          {file.ownerEmail || '无邮箱'}
-                        </div>
-                      </td>
-                      <td className="px-6 py-4 text-sm text-text-secondary-light dark:text-text-secondary-dark">
-                        <div className="flex flex-wrap gap-2">
-                          <span className={`px-2 py-1 rounded-full text-xs font-medium ${file.favorite ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300' : 'bg-black/5 text-text-secondary-light dark:bg-white/5 dark:text-text-secondary-dark'}`}>
-                            {file.favorite ? '已收藏' : '未收藏'}
-                          </span>
-                          <span className={`px-2 py-1 rounded-full text-xs font-medium ${file.thumbnailAvailable ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300' : 'bg-black/5 text-text-secondary-light dark:bg-white/5 dark:text-text-secondary-dark'}`}>
-                            {file.thumbnailAvailable ? '有缩略图' : '无缩略图'}
-                          </span>
-                        </div>
-                      </td>
-                      <td className="px-6 py-4 text-sm text-text-secondary-light dark:text-text-secondary-dark font-geist">
-                        {formatDateTime(file.createdAt)}
-                      </td>
-                      <td className="px-6 py-4 text-right flex justify-end gap-2">
-                        <button
-                          className="text-red-500 hover:text-red-600 transition-colors p-1"
-                          title="删除"
-                          onClick={() => void handleDelete(file)}
-                        >
-                          <Trash2 size={16} />
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+          {statusMessage ? <Alert severity="info">{statusMessage}</Alert> : null}
 
-            {/* Pagination */}
-            <div className="p-4 border-t border-[#D9E3F2] dark:border-[#222233] flex flex-col sm:flex-row justify-between items-center text-sm text-text-secondary-light dark:text-text-secondary-dark gap-4">
-              <div className="flex items-center gap-4">
-                <span>共 {data?.pagination?.total_items || 0} 条记录</span>
-                <select 
-                  className="bg-transparent border-none text-brand-light font-medium cursor-pointer outline-none hidden sm:block"
-                  value={pageSize}
-                  onChange={(e) => { setPageSize(Number(e.target.value)); setPage(1); }}
-                >
-                  <option value={10}>10 条/页</option>
-                  <option value={20}>20 条/页</option>
-                  <option value={50}>50 条/页</option>
-                </select>
-              </div>
-              <div className="flex gap-2">
-                <button 
-                  className="px-3 py-1 border border-[#D9E3F2] dark:border-[#222233] rounded hover:bg-black/5 dark:hover:bg-white/5 transition-colors disabled:opacity-50 disabled:cursor-not-allowed" 
-                  disabled={page <= 1}
-                  onClick={() => setPage(page - 1)}
-                >上一页</button>
-                <button className="px-3 py-1 border border-[#D9E3F2] dark:border-[#222233] rounded hover:bg-black/5 dark:hover:bg-white/5 transition-colors bg-brand-light text-white border-brand-light">{page}</button>
-                <button 
-                  className="px-3 py-1 border border-[#D9E3F2] dark:border-[#222233] rounded hover:bg-black/5 dark:hover:bg-white/5 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+          <AdminDataTable
+            rows={data?.items || []}
+            columns={columns}
+            getRowKey={(file) => file.id}
+            emptyText="暂无文件记录"
+          />
+
+          <Paper elevation={0} sx={{ border: '1px solid', borderColor: 'divider', borderRadius: 3, p: 2 }}>
+            <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2} justifyContent="space-between" alignItems={{ xs: 'flex-start', sm: 'center' }}>
+              <Stack direction="row" spacing={2} alignItems="center">
+                <Typography variant="body2" color="text.secondary">
+                  共 {data?.pagination?.total_items || 0} 条记录
+                </Typography>
+                <FormControl size="small" sx={{ minWidth: 120 }}>
+                  <Select value={String(pageSize)} onChange={(event) => { setPageSize(Number(event.target.value)); setPage(1); }}>
+                    <MenuItem value="10">10 条/页</MenuItem>
+                    <MenuItem value="20">20 条/页</MenuItem>
+                    <MenuItem value="50">50 条/页</MenuItem>
+                  </Select>
+                </FormControl>
+              </Stack>
+              <Stack direction="row" spacing={1}>
+                <Button variant="outlined" disabled={page <= 1} onClick={() => setPage(page - 1)}>
+                  上一页
+                </Button>
+                <Button variant="contained" disableElevation>
+                  {page}
+                </Button>
+                <Button
+                  variant="outlined"
                   disabled={!data?.pagination?.total_pages || page >= data.pagination.total_pages}
                   onClick={() => setPage(page + 1)}
-                >下一页</button>
-              </div>
-            </div>
-          </>
-        )}
-      </div>
+                >
+                  下一页
+                </Button>
+              </Stack>
+            </Stack>
+          </Paper>
+        </Stack>
+      </AdminPage>
+
+      <AdminConfirmDialog
+        open={Boolean(fileToDelete)}
+        title="删除文件"
+        description={fileToDelete ? `确认删除「${fileToDelete.filename}」？此操作会删除用户文件记录。` : ''}
+        confirmLabel="确认删除"
+        danger
+        isSubmitting={isDeleteSubmitting}
+        onConfirm={() => void handleDelete()}
+        onClose={() => setFileToDelete(null)}
+      />
     </AdminLayout>
   );
 };

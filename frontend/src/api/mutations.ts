@@ -1,5 +1,5 @@
 import { apiRequest } from './client';
-import type { AdminSettings, AdminStoragePolicy, AdminUser, StoragePolicyCapabilities } from './types';
+import type { AdminConfigDefinition, AdminSettings, AdminStoragePolicy, AdminUser, StoragePolicyCapabilities } from './types';
 
 export type AdminUserRole = AdminUser['role'];
 
@@ -20,7 +20,6 @@ export interface AdminStoragePolicyPayload {
 export interface AdminSettingsUpdatePayload {
   registration?: {
     inviteCodeRequired: boolean;
-    currentInviteCode: string;
     managementRoles: string[];
   };
   transfer?: {
@@ -118,6 +117,21 @@ export function updateAdminSettings(payload: AdminSettingsUpdatePayload) {
     url: '/admin/settings',
     method: 'PUT',
     data: payload,
+  });
+}
+
+export function updateAdminConfigValue(key: string, value: unknown, reason?: string) {
+  return apiRequest<AdminConfigDefinition>({
+    url: `/admin/config/values/${encodeURIComponent(key)}`,
+    method: 'PATCH',
+    data: { value, reason },
+  });
+}
+
+export function rollbackAdminConfigValue(key: string, version: number) {
+  return apiRequest<AdminConfigDefinition>({
+    url: `/admin/config/values/${encodeURIComponent(key)}/rollback/${version}`,
+    method: 'POST',
   });
 }
 
