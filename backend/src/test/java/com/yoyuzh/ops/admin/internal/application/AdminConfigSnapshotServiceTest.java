@@ -102,7 +102,7 @@ class AdminConfigSnapshotServiceTest {
         assertThat(response.queue().mediaMetadataInitialDelayMs()).isEqualTo(25000L);
         assertThat(response.server().storageProvider()).isEqualTo("s3");
         assertThat(response.server().redisEnabled()).isTrue();
-        assertThat(response.server().writeSupported()).isFalse();
+        assertThat(response.server().writeSupported()).isTrue();
     }
 
     @Test

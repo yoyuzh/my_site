@@ -405,7 +405,7 @@ class AdminControllerIntegrationTest {
                 .andExpect(jsonPath("$.data.appearance.writeSupported").value(false))
                 .andExpect(jsonPath("$.data.server.storageProvider").value("local"))
                 .andExpect(jsonPath("$.data.server.redisEnabled").value(false))
-                .andExpect(jsonPath("$.data.server.writeSupported").value(false));
+                .andExpect(jsonPath("$.data.server.writeSupported").value(true));
 
         mockMvc.perform(get("/api/admin/filesystem"))
                 .andExpect(status().isOk())
@@ -489,7 +489,7 @@ class AdminControllerIntegrationTest {
                 .andExpect(jsonPath("$.data.queue.mediaMetadataInitialDelayMs").value(15000))
                 .andExpect(jsonPath("$.data.appearance.supported").value(false))
                 .andExpect(jsonPath("$.data.server.storageProvider").value("local"))
-                .andExpect(jsonPath("$.data.server.redisEnabled").value(false));
+                .andExpect(jsonPath("$.data.server.redisEnabled").value(true));
 
         mockMvc.perform(get("/api/admin/settings"))
                 .andExpect(status().isOk())
@@ -498,7 +498,8 @@ class AdminControllerIntegrationTest {
                 .andExpect(jsonPath("$.data.registration.currentInviteCode").value(originalInviteCode))
                 .andExpect(jsonPath("$.data.userSession.accessExpirationSeconds").value(900))
                 .andExpect(jsonPath("$.data.queue.backend").value("in-memory"))
-                .andExpect(jsonPath("$.data.server.storageProvider").value("local"));
+                .andExpect(jsonPath("$.data.server.storageProvider").value("local"))
+                .andExpect(jsonPath("$.data.server.redisEnabled").value(true));
     }
 
     @Test

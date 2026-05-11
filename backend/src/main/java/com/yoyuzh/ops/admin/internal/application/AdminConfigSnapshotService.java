@@ -67,7 +67,7 @@ public class AdminConfigSnapshotService {
                 new AdminSettingsResponse.ServerSection(
                         state.serverStorageProvider(),
                         state.serverRedisEnabled(),
-                        false
+                        true
                 )
         );
     }

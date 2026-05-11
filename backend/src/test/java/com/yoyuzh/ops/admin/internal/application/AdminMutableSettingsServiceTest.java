@@ -66,6 +66,24 @@ class AdminMutableSettingsServiceTest {
                 new AdminSettingsUpdateRequest.ServerSection("s3", true)
         );
         when(identityAdminSummaryApi.currentInviteCode()).thenReturn("INV-CURRENT");
+        when(adminRuntimeSettingsService.snapshot()).thenReturn(new AdminRuntimeSettingsService.State(
+                false,
+                true,
+                java.util.List.of("MODERATOR", "ADMIN"),
+                900L,
+                1209600L,
+                false,
+                60L,
+                true,
+                false,
+                false,
+                "in-memory",
+                3000L,
+                15000L,
+                false,
+                "local",
+                false
+        ));
         AdminSettingsResponse expected = new AdminSettingsResponse(
                 new AdminSettingsResponse.SiteSection(true, true),
                 new AdminSettingsResponse.RegistrationSection(false, "INV-CURRENT", java.util.List.of("ADMIN"), true),
@@ -93,7 +111,9 @@ class AdminMutableSettingsServiceTest {
                         && effective.mediaProcessing() == null
                         && effective.queue() == null
                         && effective.appearance() == null
-                        && effective.server() == null
+                        && effective.server() != null
+                        && effective.server().storageProvider().equals("local")
+                        && effective.server().redisEnabled()
                 ));
         verify(adminMetricsService).updateOfflineTransferStorageLimit(2048L);
         verify(adminAuditService).record(
@@ -105,8 +125,10 @@ class AdminMutableSettingsServiceTest {
                         Boolean.FALSE.equals(details.get("inviteCodeRequired"))
                                 && Integer.valueOf(1).equals(details.get("managementRoleCount"))
                                 && Long.valueOf(2048L).equals(details.get("offlineTransferStorageLimitBytes"))
+                                && Boolean.TRUE.equals(details.get("redisEnabled"))
                                 && Boolean.TRUE.equals(details.get("registrationUpdated"))
-                                && Boolean.TRUE.equals(details.get("transferUpdated")))
+                                && Boolean.TRUE.equals(details.get("transferUpdated"))
+                                && Boolean.TRUE.equals(details.get("serverUpdated")))
         );
     }
 

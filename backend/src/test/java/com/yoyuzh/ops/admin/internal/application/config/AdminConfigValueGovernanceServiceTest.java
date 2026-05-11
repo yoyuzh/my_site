@@ -119,6 +119,38 @@ class AdminConfigValueGovernanceServiceTest {
     }
 
     @Test
+    void shouldUpdateRedisConfigThroughRealSettingsService() {
+        when(adminConfigSnapshotService.getSettings())
+                .thenReturn(settings(false, List.of("ADMIN"), 1024L, false))
+                .thenReturn(settings(false, List.of("ADMIN"), 1024L, true))
+                .thenReturn(settings(false, List.of("ADMIN"), 1024L, true));
+        when(adminRuntimeSettingsDefaults.create()).thenReturn(defaults());
+        when(adminConfigValueRepository.findByConfigKeyForUpdate("server.redisEnabled"))
+                .thenReturn(Optional.empty());
+        when(adminConfigValueRepository.save(any(AdminConfigValueEntity.class)))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+
+        AdminConfigDefinitionResponse response = service.updateValue(
+                "server.redisEnabled",
+                new AdminConfigUpdateRequest(true, "enable redis")
+        );
+
+        assertThat(response.key()).isEqualTo("server.redisEnabled");
+        assertThat(response.value()).isEqualTo(true);
+        assertThat(response.editable()).isTrue();
+        assertThat(response.source()).isEqualTo("database");
+        verify(adminMutableSettingsService).updateSettings(argThat(request ->
+                request.server() != null
+                        && request.server().redisEnabled()
+                        && request.server().storageProvider().equals("local")
+        ));
+        ArgumentCaptor<AdminConfigChangeLogEntity> changeCaptor = ArgumentCaptor.forClass(AdminConfigChangeLogEntity.class);
+        verify(adminConfigChangeLogRepository).save(changeCaptor.capture());
+        assertThat(changeCaptor.getValue().getBeforeValueJson()).isEqualTo("false");
+        assertThat(changeCaptor.getValue().getAfterValueJson()).isEqualTo("true");
+    }
+
+    @Test
     void shouldRejectUnknownConfigKey() {
         assertThatThrownBy(() -> service.updateValue(
                 "missing.key",
@@ -230,6 +262,13 @@ class AdminConfigValueGovernanceServiceTest {
     }
 
     private AdminSettingsResponse settings(boolean inviteRequired, List<String> managementRoles, long offlineLimit) {
+        return settings(inviteRequired, managementRoles, offlineLimit, false);
+    }
+
+    private AdminSettingsResponse settings(boolean inviteRequired,
+                                           List<String> managementRoles,
+                                           long offlineLimit,
+                                           boolean redisEnabled) {
         return new AdminSettingsResponse(
                 new AdminSettingsResponse.SiteSection(false, false),
                 new AdminSettingsResponse.RegistrationSection(
@@ -243,7 +282,7 @@ class AdminConfigValueGovernanceServiceTest {
                 new AdminSettingsResponse.MediaProcessingSection(true, false, false, false),
                 new AdminSettingsResponse.QueueSection("in-memory", 3000L, 15000L, false),
                 new AdminSettingsResponse.AppearanceSection(false, false),
-                new AdminSettingsResponse.ServerSection("local", false, false)
+                new AdminSettingsResponse.ServerSection("local", redisEnabled, true)
         );
     }
 }

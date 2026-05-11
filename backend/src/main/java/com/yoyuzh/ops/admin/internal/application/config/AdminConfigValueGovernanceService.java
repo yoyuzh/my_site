@@ -42,6 +42,7 @@ public class AdminConfigValueGovernanceService {
     private static final String REGISTRATION_INVITE_REQUIRED_KEY = "registration.inviteCodeRequired";
     private static final String REGISTRATION_MANAGEMENT_ROLES_KEY = "registration.managementRoles";
     private static final String TRANSFER_OFFLINE_LIMIT_KEY = "transfer.offlineTransferStorageLimitBytes";
+    private static final String SERVER_REDIS_ENABLED_KEY = "server.redisEnabled";
     private static final String TARGET_TYPE = "ADMIN_CONFIG";
 
     private final AdminConfigRegistry adminConfigRegistry;
@@ -190,6 +191,22 @@ public class AdminConfigValueGovernanceService {
             adminMutableSettingsService.updateOfflineTransferStorageLimit(((Number) nextValue).longValue());
             return;
         }
+        if (SERVER_REDIS_ENABLED_KEY.equals(key)) {
+            adminMutableSettingsService.updateSettings(new AdminSettingsUpdateRequest(
+                    null,
+                    null,
+                    null,
+                    null,
+                    null,
+                    null,
+                    null,
+                    new AdminSettingsUpdateRequest.ServerSection(
+                            current.server().storageProvider(),
+                            (Boolean) nextValue
+                    )
+            ));
+            return;
+        }
         throw new BusinessException(ErrorCode.INVALID_INPUT, "config key does not support generic writes");
     }
 
@@ -228,7 +245,8 @@ public class AdminConfigValueGovernanceService {
     private boolean supportsGenericWrite(String key) {
         return REGISTRATION_INVITE_REQUIRED_KEY.equals(key)
                 || REGISTRATION_MANAGEMENT_ROLES_KEY.equals(key)
-                || TRANSFER_OFFLINE_LIMIT_KEY.equals(key);
+                || TRANSFER_OFFLINE_LIMIT_KEY.equals(key)
+                || SERVER_REDIS_ENABLED_KEY.equals(key);
     }
 
     private Object normalizeValue(AdminConfigDefinition definition, Object value) {

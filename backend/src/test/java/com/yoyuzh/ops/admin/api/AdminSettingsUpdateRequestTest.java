@@ -7,7 +7,7 @@ import org.junit.jupiter.api.Test;
 class AdminSettingsUpdateRequestTest {
 
     @Test
-    void shouldReportWritableSectionsOnlyForRegistrationOrTransfer() {
+    void shouldReportWritableSectionsOnlyForRegistrationTransferOrServer() {
         assertThat(new AdminSettingsUpdateRequest(
                 null,
                 null,
@@ -50,6 +50,17 @@ class AdminSettingsUpdateRequestTest {
                 null,
                 null,
                 null
+        ).hasWritableSections()).isTrue();
+
+        assertThat(new AdminSettingsUpdateRequest(
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                new AdminSettingsUpdateRequest.ServerSection("local", true)
         ).hasWritableSections()).isTrue();
     }
 }

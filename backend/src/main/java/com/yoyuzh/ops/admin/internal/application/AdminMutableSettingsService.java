@@ -104,7 +104,12 @@ public class AdminMutableSettingsService {
                 null,
                 null,
                 null,
-                null
+                request.server() == null
+                        ? null
+                        : new AdminSettingsUpdateRequest.ServerSection(
+                                adminRuntimeSettingsService.snapshot().serverStorageProvider(),
+                                request.server().redisEnabled()
+                        )
         );
     }
 
@@ -113,8 +118,10 @@ public class AdminMutableSettingsService {
         details.put("inviteCodeRequired", response.registration().inviteCodeRequired());
         details.put("managementRoleCount", response.registration().managementRoles().size());
         details.put("offlineTransferStorageLimitBytes", response.transfer().offlineTransferStorageLimitBytes());
+        details.put("redisEnabled", response.server().redisEnabled());
         details.put("registrationUpdated", request.registration() != null);
         details.put("transferUpdated", request.transfer() != null);
+        details.put("serverUpdated", request.server() != null);
         return details;
     }
 }

@@ -229,12 +229,12 @@ public class AdminConfigRegistry {
                     settings -> settings.server().redisEnabled(),
                     List.of(),
                     true,
-                    false,
+                    true,
                     false,
                     false,
                     Map.of(),
-                    AdminPermissionCode.ADMIN_SETTINGS_READ.code(),
-                    "environment"
+                    AdminPermissionCode.ADMIN_SETTINGS_WRITE.code(),
+                    "database"
             )
     );
 

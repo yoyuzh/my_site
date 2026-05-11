@@ -229,7 +229,7 @@ class AdminConfigControllerTest {
                         false
                 ),
                 new AdminSettingsResponse.AppearanceSection(false, false),
-                new AdminSettingsResponse.ServerSection(storageProvider, redisEnabled, false)
+                new AdminSettingsResponse.ServerSection(storageProvider, redisEnabled, true)
         );
     }
 }

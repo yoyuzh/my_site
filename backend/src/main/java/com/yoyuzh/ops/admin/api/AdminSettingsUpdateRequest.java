@@ -28,7 +28,7 @@ public record AdminSettingsUpdateRequest(
 ) {
 
     public boolean hasWritableSections() {
-        return registration != null || transfer != null;
+        return registration != null || transfer != null || server != null;
     }
 
     public record SiteSection(
