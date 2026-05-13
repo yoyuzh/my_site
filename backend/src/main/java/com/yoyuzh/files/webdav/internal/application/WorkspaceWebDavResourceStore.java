@@ -95,7 +95,7 @@ public class WorkspaceWebDavResourceStore implements WebDavResourceStore {
 
     @Override
     public void copy(WebDavPrincipal principal, String fromPath, String toPath, boolean overwrite) {
-        workspacePathWriteApi.copyByPath(principal.userId(), fromPath, toPath, bytes -> { });
+        workspacePathWriteApi.copyByPath(principal.userId(), fromPath, toPath, overwrite, bytes -> { });
     }
 
     @Override
@@ -105,6 +105,7 @@ public class WorkspaceWebDavResourceStore implements WebDavResourceStore {
 
     @Override
     public void delete(WebDavPrincipal principal, String path) {
+        // Workspace lifecycle owns recursive directory recycle semantics.
         workspacePathWriteApi.recycleByPath(principal.userId(), path);
     }
 

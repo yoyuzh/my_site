@@ -33,6 +33,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.inOrder;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -204,10 +205,65 @@ class RuntimeWorkspacePathWriteApiTest {
         when(workspaceLifecycleApi.copy(eq(7L), eq(20L), eq("/Archive"), any(WorkspaceQuotaGuard.class)))
                 .thenReturn(copied);
 
-        WorkspaceLifecycleResult result = api.copyByPath(7L, "/Docs/a.txt", "/Archive/a.txt", bytes -> { });
+        WorkspaceLifecycleResult result = api.copyByPath(7L, "/Docs/a.txt", "/Archive/a.txt", false, bytes -> { });
 
         assertThat(result.toPath()).isEqualTo("/Archive/a.txt");
         verify(workspaceLifecycleApi).copy(eq(7L), eq(20L), eq("/Archive"), any(WorkspaceQuotaGuard.class));
+    }
+
+    @Test
+    void shouldOverwriteExistingTargetBeforeCopyByPath() {
+        RuntimeWorkspacePathWriteApi api = createApi();
+        StoredFile source = file(20L, 7L, "/Docs", "a.txt", false);
+        StoredFile target = file(30L, 7L, "/Archive", "a.txt", false);
+        when(storedFileRepository.findByUserIdAndPathAndFilename(7L, "/Docs", "a.txt"))
+                .thenReturn(Optional.of(source));
+        when(storedFileRepository.findByUserIdAndPathAndFilename(7L, "/Archive", "a.txt"))
+                .thenReturn(Optional.of(target));
+        WorkspaceLifecycleResult recycled = new WorkspaceLifecycleResult(
+                fileResponse(30L, "/Archive", "a.txt", 5L),
+                "/Archive/a.txt",
+                "/.recycle/a.txt",
+                List.of("/Archive")
+        );
+        when(workspaceLifecycleApi.recycle(7L, 30L)).thenReturn(recycled);
+        WorkspaceLifecycleResult copied = new WorkspaceLifecycleResult(
+                fileResponse(31L, "/Archive", "a.txt", 5L),
+                "/Docs/a.txt",
+                "/Archive/a.txt",
+                List.of("/Archive")
+        );
+        when(workspaceLifecycleApi.copy(eq(7L), eq(20L), eq("/Archive"), any(WorkspaceQuotaGuard.class)))
+                .thenReturn(copied);
+
+        WorkspaceLifecycleResult result = api.copyByPath(7L, "/Docs/a.txt", "/Archive/a.txt", true, bytes -> { });
+
+        assertThat(result.toPath()).isEqualTo("/Archive/a.txt");
+        var ordered = inOrder(workspaceLifecycleApi);
+        ordered.verify(workspaceLifecycleApi).recycle(7L, 30L);
+        ordered.verify(workspaceLifecycleApi).copy(eq(7L), eq(20L), eq("/Archive"), any(WorkspaceQuotaGuard.class));
+    }
+
+    @Test
+    void shouldNotRecycleSourceWhenCopyTargetIsSameNode() {
+        RuntimeWorkspacePathWriteApi api = createApi();
+        StoredFile source = file(20L, 7L, "/Docs", "a.txt", false);
+        when(storedFileRepository.findByUserIdAndPathAndFilename(7L, "/Docs", "a.txt"))
+                .thenReturn(Optional.of(source));
+        WorkspaceLifecycleResult copied = new WorkspaceLifecycleResult(
+                fileResponse(31L, "/Docs", "a.txt", 5L),
+                "/Docs/a.txt",
+                "/Docs/a.txt",
+                List.of("/Docs")
+        );
+        when(workspaceLifecycleApi.copy(eq(7L), eq(20L), eq("/Docs"), any(WorkspaceQuotaGuard.class)))
+                .thenReturn(copied);
+
+        WorkspaceLifecycleResult result = api.copyByPath(7L, "/Docs/a.txt", "/Docs/a.txt", true, bytes -> { });
+
+        assertThat(result.toPath()).isEqualTo("/Docs/a.txt");
+        verify(workspaceLifecycleApi, never()).recycle(7L, 20L);
+        verify(workspaceLifecycleApi).copy(eq(7L), eq(20L), eq("/Docs"), any(WorkspaceQuotaGuard.class));
     }
 
     @Test

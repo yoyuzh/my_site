@@ -22,8 +22,9 @@ const WebDavAccessPanel: React.FC<WebDavAccessPanelProps> = ({ username, onMessa
   const credentialMutation = useMutation({
     mutationFn: issueWebDavCredential,
     onSuccess: (credential) => {
-      queryClient.setQueryData(['webDavCredential'], credential);
-      setIssuedPassword(credential.plaintextPassword ?? null);
+      const { plaintextPassword, ...safeCredential } = credential;
+      queryClient.setQueryData(['webDavCredential'], safeCredential);
+      setIssuedPassword(plaintextPassword ?? null);
       onMessage?.({ type: 'success', text: 'WebDAV 访问密码已生成' });
     },
     onError: (error) => {

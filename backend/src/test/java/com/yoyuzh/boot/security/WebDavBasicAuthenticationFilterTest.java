@@ -104,6 +104,9 @@ class WebDavBasicAuthenticationFilterTest {
         verify(filterChain).doFilter(request, response);
         assertThat(SecurityContextHolder.getContext().getAuthentication()).isNotNull();
         assertThat(SecurityContextHolder.getContext().getAuthentication().getName()).isEqualTo("alice");
+        assertThat(SecurityContextHolder.getContext().getAuthentication().getPrincipal())
+                .isInstanceOfSatisfying(AuthenticatedUserPrincipal.class, principal ->
+                        assertThat(principal.getPassword()).isEmpty());
     }
 
     private MockHttpServletRequest request(String requestUri) {

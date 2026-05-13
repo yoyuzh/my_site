@@ -73,7 +73,7 @@ public class WebDavCredential {
         return id;
     }
 
-    public void setId(Long id) {
+    void setId(Long id) {
         this.id = id;
     }
 
@@ -81,7 +81,7 @@ public class WebDavCredential {
         return userId;
     }
 
-    public void setUserId(Long userId) {
+    void setUserId(Long userId) {
         this.userId = userId;
     }
 
@@ -89,7 +89,7 @@ public class WebDavCredential {
         return passwordHash;
     }
 
-    public void setPasswordHash(String passwordHash) {
+    void setPasswordHash(String passwordHash) {
         this.passwordHash = passwordHash;
     }
 
@@ -97,7 +97,7 @@ public class WebDavCredential {
         return enabled;
     }
 
-    public void setEnabled(boolean enabled) {
+    void setEnabled(boolean enabled) {
         this.enabled = enabled;
     }
 
@@ -105,7 +105,7 @@ public class WebDavCredential {
         return createdAt;
     }
 
-    public void setCreatedAt(LocalDateTime createdAt) {
+    void setCreatedAt(LocalDateTime createdAt) {
         this.createdAt = createdAt;
     }
 
@@ -113,7 +113,7 @@ public class WebDavCredential {
         return updatedAt;
     }
 
-    public void setUpdatedAt(LocalDateTime updatedAt) {
+    void setUpdatedAt(LocalDateTime updatedAt) {
         this.updatedAt = updatedAt;
     }
 }

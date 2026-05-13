@@ -91,7 +91,7 @@ public class WebDavBasicAuthenticationFilter extends OncePerRequestFilter {
         AuthenticatedUserPrincipal principal = new AuthenticatedUserPrincipal(
                 authenticatedUser.id(),
                 authenticatedUser.username(),
-                authenticatedUser.passwordHash(),
+                "",
                 authenticatedUser.storageQuotaBytes(),
                 authenticatedUser.maxUploadSizeBytes(),
                 List.of(new SimpleGrantedAuthority("ROLE_" + authenticatedUser.role().name())),

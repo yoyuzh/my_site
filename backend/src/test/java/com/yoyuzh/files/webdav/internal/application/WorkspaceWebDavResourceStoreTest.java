@@ -4,6 +4,7 @@ import com.yoyuzh.files.workspace.api.FileMetadataResponse;
 import com.yoyuzh.files.workspace.api.WorkspacePathDownloadApi;
 import com.yoyuzh.files.workspace.api.WorkspacePathNodeApi;
 import com.yoyuzh.files.workspace.api.WorkspacePathWriteApi;
+import com.yoyuzh.files.workspace.api.WorkspaceQuotaGuard;
 import com.yoyuzh.shared.kernel.PageResponse;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -15,6 +16,9 @@ import java.util.List;
 import java.util.stream.IntStream;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -51,6 +55,26 @@ class WorkspaceWebDavResourceStoreTest {
                 .extracting(WebDavStoredResource::path)
                 .hasSize(1001)
                 .contains("/Docs/file-0000.txt", "/Docs/last.txt");
+    }
+
+    @Test
+    void shouldPassOverwriteFlagToCopyByPath() {
+        WorkspaceWebDavResourceStore store = new WorkspaceWebDavResourceStore(
+                workspacePathNodeApi,
+                workspacePathDownloadApi,
+                workspacePathWriteApi
+        );
+        WebDavPrincipal principal = new WebDavPrincipal(7L, "alice", 1024L, 512L);
+
+        store.copy(principal, "/Docs/a.txt", "/Archive/a.txt", true);
+
+        verify(workspacePathWriteApi).copyByPath(
+                eq(7L),
+                eq("/Docs/a.txt"),
+                eq("/Archive/a.txt"),
+                eq(true),
+                any(WorkspaceQuotaGuard.class)
+        );
     }
 
     private FileMetadataResponse file(Long id, String path, String filename) {

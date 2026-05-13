@@ -106,11 +106,20 @@ public class RuntimeWorkspacePathWriteApi implements WorkspacePathWriteApi {
     public WorkspaceLifecycleResult copyByPath(Long userId,
                                                String fromLogicalPath,
                                                String toLogicalPath,
+                                               boolean overwrite,
                                                WorkspaceQuotaGuard quotaGuard) {
         String fromPath = normalizeLogicalPath(fromLogicalPath);
         String toPath = normalizeLogicalPath(toLogicalPath);
         StoredFile source = requireExisting(userId, fromPath);
         String targetParentPath = workspacePathPolicy.extractParentPath(toPath);
+        String targetFilename = workspacePathPolicy.extractLeafName(toPath);
+        StoredFile target = findExisting(userId, targetParentPath, targetFilename);
+        if (target != null && !target.getId().equals(source.getId())) {
+            if (!overwrite) {
+                throw new BusinessException(ErrorCode.DUPLICATE_NAME, "目标文件已存在");
+            }
+            workspaceLifecycleApi.recycle(userId, target.getId());
+        }
         return workspaceLifecycleApi.copy(userId, source.getId(), targetParentPath, quotaGuard);
     }
 

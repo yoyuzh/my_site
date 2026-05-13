@@ -9,6 +9,7 @@ public interface WorkspacePathWriteApi {
     WorkspaceLifecycleResult copyByPath(Long userId,
                                         String fromLogicalPath,
                                         String toLogicalPath,
+                                        boolean overwrite,
                                         WorkspaceQuotaGuard quotaGuard);
 
     WorkspaceMoveResult moveByPath(Long userId, String fromLogicalPath, String toLogicalPath, boolean overwrite);

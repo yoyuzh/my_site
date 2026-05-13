@@ -4,12 +4,17 @@ import com.yoyuzh.files.webdav.internal.application.WebDavPrincipal;
 import com.yoyuzh.files.webdav.internal.application.WebDavReadResult;
 import com.yoyuzh.files.webdav.internal.application.WebDavResourceStore;
 import com.yoyuzh.files.webdav.internal.application.WebDavStoredResource;
+import jakarta.servlet.ReadListener;
+import jakarta.servlet.ServletInputStream;
 import org.junit.jupiter.api.Test;
 import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.mock.web.MockHttpServletResponse;
 
 import java.io.ByteArrayInputStream;
+import java.io.IOException;
 import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
+import java.util.Arrays;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
@@ -23,14 +28,14 @@ class WebDavProtocolDispatcherTest {
     private final WebDavPrincipal principal = new WebDavPrincipal(7L, "alice", 1024L, 512L);
 
     @Test
-    void optionsShouldAdvertiseLevelThreeWebDavMethods() throws Exception {
+    void optionsShouldAdvertiseSupportedWebDavLevels() throws Exception {
         WebDavProtocolDispatcher dispatcher = new WebDavProtocolDispatcher(new FakeStore());
         MockHttpServletResponse response = new MockHttpServletResponse();
 
         dispatcher.dispatch(principal, request("OPTIONS", "/dav"), response);
 
         assertThat(response.getStatus()).isEqualTo(200);
-        assertThat(response.getHeader("DAV")).isEqualTo("1,2,3");
+        assertThat(response.getHeader("DAV")).isEqualTo("1,2");
         assertThat(response.getHeader("MS-Author-Via")).isEqualTo("DAV");
         assertThat(response.getHeader("Allow")).contains("PROPFIND", "COPY", "LOCK", "UNLOCK");
         assertThat(response.getHeader("Allow")).doesNotContain("PROPPATCH");
@@ -103,7 +108,7 @@ class WebDavProtocolDispatcherTest {
     }
 
     @Test
-    void lockShouldBlockOtherUsersAndUnlockWithToken() throws Exception {
+    void lockShouldNotBlockOtherUsersWithSameLogicalPath() throws Exception {
         FakeStore store = new FakeStore();
         store.resources.add(resource("/Docs/a.txt", false));
         WebDavProtocolDispatcher dispatcher = new WebDavProtocolDispatcher(store);
@@ -112,18 +117,38 @@ class WebDavProtocolDispatcherTest {
         dispatcher.dispatch(principal, request("LOCK", "/dav/Docs/a.txt"), lockResponse);
 
         String lockToken = lockResponse.getHeader("Lock-Token");
-        assertThat(lockResponse.getStatus()).isEqualTo(200);
+        assertThat(lockResponse.getStatus()).isEqualTo(201);
         assertThat(lockToken).startsWith("<urn:uuid:");
 
         MockHttpServletRequest putRequest = request("PUT", "/dav/Docs/a.txt");
         putRequest.setContent("changed".getBytes(UTF_8));
-        MockHttpServletResponse blockedPut = new MockHttpServletResponse();
-        dispatcher.dispatch(new WebDavPrincipal(8L, "bob", 1024L, 512L), putRequest, blockedPut);
+        MockHttpServletResponse otherUserPut = new MockHttpServletResponse();
+        dispatcher.dispatch(new WebDavPrincipal(8L, "bob", 1024L, 512L), putRequest, otherUserPut);
 
-        assertThat(blockedPut.getStatus()).isEqualTo(423);
+        assertThat(otherUserPut.getStatus()).isEqualTo(204);
 
         MockHttpServletRequest unlockRequest = request("UNLOCK", "/dav/Docs/a.txt");
         unlockRequest.addHeader("Lock-Token", lockToken);
+        MockHttpServletResponse unlockResponse = new MockHttpServletResponse();
+        dispatcher.dispatch(principal, unlockRequest, unlockResponse);
+
+        assertThat(unlockResponse.getStatus()).isEqualTo(204);
+    }
+
+    @Test
+    void lockRefreshShouldReturnOk() throws Exception {
+        WebDavProtocolDispatcher dispatcher = new WebDavProtocolDispatcher(new FakeStore());
+        MockHttpServletResponse lockResponse = new MockHttpServletResponse();
+        dispatcher.dispatch(principal, request("LOCK", "/dav/Docs/a.txt"), lockResponse);
+        MockHttpServletResponse refreshResponse = new MockHttpServletResponse();
+
+        dispatcher.dispatch(principal, request("LOCK", "/dav/Docs/a.txt"), refreshResponse);
+
+        assertThat(refreshResponse.getStatus()).isEqualTo(200);
+        assertThat(refreshResponse.getHeader("Lock-Token")).isEqualTo(lockResponse.getHeader("Lock-Token"));
+
+        MockHttpServletRequest unlockRequest = request("UNLOCK", "/dav/Docs/a.txt");
+        unlockRequest.addHeader("Lock-Token", lockResponse.getHeader("Lock-Token"));
         MockHttpServletResponse unlockResponse = new MockHttpServletResponse();
         dispatcher.dispatch(principal, unlockRequest, unlockResponse);
 
@@ -161,16 +186,77 @@ class WebDavProtocolDispatcherTest {
     }
 
     @Test
-    void putShouldRejectUnknownContentLength() throws Exception {
-        WebDavProtocolDispatcher dispatcher = new WebDavProtocolDispatcher(new FakeStore());
-        MockHttpServletRequest putRequest = request("PUT", "/dav/Docs/chunked.txt");
-        putRequest.setContent("changed".getBytes(UTF_8));
+    void putShouldAcceptChunkedTransferAndForwardCountedSize() throws Exception {
+        FakeStore store = new FakeStore();
+        WebDavProtocolDispatcher dispatcher = new WebDavProtocolDispatcher(store);
+        MockHttpServletRequest putRequest = unknownLengthRequest("PUT", "/dav/Docs/chunked.txt", "changed");
         putRequest.addHeader("Transfer-Encoding", "chunked");
         MockHttpServletResponse response = new MockHttpServletResponse();
 
         dispatcher.dispatch(principal, putRequest, response);
 
-        assertThat(response.getStatus()).isEqualTo(411);
+        assertThat(response.getStatus()).isEqualTo(201);
+        assertThat(store.writtenPath).isEqualTo("/Docs/chunked.txt");
+        assertThat(store.writtenSize).isEqualTo(7L);
+    }
+
+    @Test
+    void unknownLengthPutShouldRecheckExistingResourceAfterBodyIsCounted() throws Exception {
+        ExistingAtWriteTimeStore store = new ExistingAtWriteTimeStore();
+        WebDavProtocolDispatcher dispatcher = new WebDavProtocolDispatcher(store);
+        MockHttpServletRequest putRequest = unknownLengthRequest("PUT", "/dav/Docs/race.txt", "changed");
+        MockHttpServletResponse response = new MockHttpServletResponse();
+
+        dispatcher.dispatch(principal, putRequest, response);
+
+        assertThat(response.getStatus()).isEqualTo(204);
+        assertThat(store.writtenPath).isEqualTo("/Docs/race.txt");
+    }
+
+    @Test
+    void putShouldRejectKnownContentLengthAboveMaxUploadSize() throws Exception {
+        FakeStore store = new FakeStore();
+        WebDavProtocolDispatcher dispatcher = new WebDavProtocolDispatcher(store);
+        MockHttpServletRequest putRequest = request("PUT", "/dav/Docs/large.txt");
+        putRequest.setContent("too-large".getBytes(UTF_8));
+        MockHttpServletResponse response = new MockHttpServletResponse();
+
+        dispatcher.dispatch(new WebDavPrincipal(7L, "alice", 1024L, 4L), putRequest, response);
+
+        assertThat(response.getStatus()).isEqualTo(413);
+        assertThat(store.writtenPath).isNull();
+    }
+
+    @Test
+    void putShouldDrainUnknownLengthBodyAfterUploadLimitExceeded() throws Exception {
+        FakeStore store = new FakeStore();
+        WebDavProtocolDispatcher dispatcher = new WebDavProtocolDispatcher(store);
+        byte[] body = new byte[9000];
+        Arrays.fill(body, (byte) 'x');
+        CountingUnknownLengthRequest putRequest = new CountingUnknownLengthRequest("PUT", "/dav/Docs/large.bin", body);
+        MockHttpServletResponse response = new MockHttpServletResponse();
+
+        dispatcher.dispatch(new WebDavPrincipal(7L, "alice", 1024L, 4L), putRequest, response);
+
+        assertThat(response.getStatus()).isEqualTo(413);
+        assertThat(putRequest.bytesRead()).isEqualTo(body.length);
+        assertThat(store.writtenPath).isNull();
+    }
+
+    @Test
+    void putShouldLimitDrainAfterUploadLimitExceeded() throws Exception {
+        FakeStore store = new FakeStore();
+        WebDavProtocolDispatcher dispatcher = new WebDavProtocolDispatcher(store);
+        byte[] body = new byte[11 * 1024 * 1024];
+        Arrays.fill(body, (byte) 'x');
+        CountingUnknownLengthRequest putRequest = new CountingUnknownLengthRequest("PUT", "/dav/Docs/huge.bin", body);
+        MockHttpServletResponse response = new MockHttpServletResponse();
+
+        dispatcher.dispatch(new WebDavPrincipal(7L, "alice", 1024L, 4L), putRequest, response);
+
+        assertThat(response.getStatus()).isEqualTo(413);
+        assertThat(putRequest.bytesRead()).isLessThan(body.length);
+        assertThat(store.writtenPath).isNull();
     }
 
     @Test
@@ -236,6 +322,35 @@ class WebDavProtocolDispatcherTest {
         return request;
     }
 
+    private MockHttpServletRequest unknownLengthRequest(String method, String uri, String body) {
+        byte[] content = body.getBytes(StandardCharsets.UTF_8);
+        MockHttpServletRequest request = new MockHttpServletRequest(method, uri) {
+            @Override
+            public long getContentLengthLong() {
+                return -1L;
+            }
+        };
+        request.setContent(content);
+        request.setScheme("http");
+        request.setServerName("localhost");
+        request.setServerPort(80);
+        request.setContextPath("");
+        request.setServletPath("/dav");
+        request.setPathInfo(uri.length() == 4 ? null : uri.substring(4));
+        request.setRequestURI(uri);
+        return request;
+    }
+
+    private static void applyDavRequestFields(MockHttpServletRequest request, String uri) {
+        request.setScheme("http");
+        request.setServerName("localhost");
+        request.setServerPort(80);
+        request.setContextPath("");
+        request.setServletPath("/dav");
+        request.setPathInfo(uri.length() == 4 ? null : uri.substring(4));
+        request.setRequestURI(uri);
+    }
+
     private static WebDavStoredResource resource(String path, boolean directory) {
         return new WebDavStoredResource(
                 path,
@@ -249,12 +364,14 @@ class WebDavProtocolDispatcherTest {
         );
     }
 
-    private static final class FakeStore implements WebDavResourceStore {
+    private static class FakeStore implements WebDavResourceStore {
 
         private final List<WebDavStoredResource> resources = new ArrayList<>();
         private String copiedFrom;
         private String copiedTo;
         private boolean copiedOverwrite;
+        String writtenPath;
+        private long writtenSize;
 
         @Override
         public Optional<WebDavStoredResource> find(WebDavPrincipal principal, String path) {
@@ -275,6 +392,8 @@ class WebDavProtocolDispatcherTest {
 
         @Override
         public void write(WebDavPrincipal principal, String path, String contentType, long size, InputStream content, boolean overwrite) {
+            writtenPath = path;
+            writtenSize = size;
         }
 
         @Override
@@ -294,6 +413,85 @@ class WebDavProtocolDispatcherTest {
 
         @Override
         public void delete(WebDavPrincipal principal, String path) {
+        }
+    }
+
+    private static final class ExistingAtWriteTimeStore extends FakeStore {
+
+        @Override
+        public Optional<WebDavStoredResource> find(WebDavPrincipal principal, String path) {
+            return Optional.of(resource(path, false));
+        }
+    }
+
+    private static final class CountingUnknownLengthRequest extends MockHttpServletRequest {
+
+        private final CountingServletInputStream stream;
+
+        private CountingUnknownLengthRequest(String method, String uri, byte[] body) {
+            super(method, uri);
+            this.stream = new CountingServletInputStream(body);
+            applyDavRequestFields(this, uri);
+        }
+
+        @Override
+        public long getContentLengthLong() {
+            return -1L;
+        }
+
+        @Override
+        public ServletInputStream getInputStream() {
+            return stream;
+        }
+
+        private int bytesRead() {
+            return stream.bytesRead();
+        }
+    }
+
+    private static final class CountingServletInputStream extends ServletInputStream {
+
+        private final ByteArrayInputStream delegate;
+        private int bytesRead;
+
+        private CountingServletInputStream(byte[] body) {
+            this.delegate = new ByteArrayInputStream(body);
+        }
+
+        @Override
+        public int read() {
+            int value = delegate.read();
+            if (value != -1) {
+                bytesRead++;
+            }
+            return value;
+        }
+
+        @Override
+        public int read(byte[] buffer, int offset, int length) {
+            int read = delegate.read(buffer, offset, length);
+            if (read > 0) {
+                bytesRead += read;
+            }
+            return read;
+        }
+
+        @Override
+        public boolean isFinished() {
+            return delegate.available() == 0;
+        }
+
+        @Override
+        public boolean isReady() {
+            return true;
+        }
+
+        @Override
+        public void setReadListener(ReadListener readListener) {
+        }
+
+        private int bytesRead() {
+            return bytesRead;
         }
     }
 }

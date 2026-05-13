@@ -10,14 +10,18 @@ import com.yoyuzh.files.webdav.internal.application.WebDavReadResult;
 import com.yoyuzh.files.webdav.internal.application.WebDavResourceStore;
 import com.yoyuzh.files.webdav.internal.application.WebDavStoredResource;
 import org.springframework.http.MediaType;
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
 import java.io.IOException;
+import java.io.InputStream;
 import java.net.URI;
 import java.net.URISyntaxException;
 import java.net.URLDecoder;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
@@ -49,10 +53,11 @@ public class WebDavProtocolDispatcher implements WebDavProtocolGateway {
     private static final int SC_TOO_MANY_REQUESTS = 429;
     private static final int MAX_LOCKS_PER_USER = 100;
     private static final long LOCK_TIMEOUT_SECONDS = 300L;
+    private static final long MAX_DRAIN_BYTES = 10L * 1024L * 1024L;
     private static final String XML_CONTENT_TYPE = MediaType.APPLICATION_XML_VALUE + ";charset=UTF-8";
 
     private final WebDavResourceStore resourceStore;
-    private final Map<String, LockInfo> locks = new ConcurrentHashMap<>();
+    private final Map<LockKey, LockInfo> locks = new ConcurrentHashMap<>();
 
     public WebDavProtocolDispatcher(WebDavResourceStore resourceStore) {
         this.resourceStore = resourceStore;
@@ -95,7 +100,7 @@ public class WebDavProtocolDispatcher implements WebDavProtocolGateway {
 
     private void options(HttpServletResponse response) {
         response.setStatus(HttpServletResponse.SC_OK);
-        response.setHeader(DAV_HEADER, "1,2,3");
+        response.setHeader(DAV_HEADER, "1,2");
         response.setHeader(ALLOW_HEADER, ALLOW_METHODS);
         response.setHeader("MS-Author-Via", "DAV");
     }
@@ -166,8 +171,13 @@ public class WebDavProtocolDispatcher implements WebDavProtocolGateway {
             response.sendError(SC_LOCKED);
             return;
         }
-        if (unknownContentLength(request)) {
-            response.sendError(HttpServletResponse.SC_LENGTH_REQUIRED);
+        long contentLength = request.getContentLengthLong();
+        if (contentLength > principal.maxUploadSizeBytes()) {
+            response.sendError(HttpServletResponse.SC_REQUEST_ENTITY_TOO_LARGE);
+            return;
+        }
+        if (contentLength < 0) {
+            writeUnknownLengthPut(principal, path, request, response);
             return;
         }
         boolean existed = resourceStore.find(principal, path).isPresent();
@@ -175,11 +185,49 @@ public class WebDavProtocolDispatcher implements WebDavProtocolGateway {
                 principal,
                 path,
                 request.getContentType(),
-                Math.max(0L, request.getContentLengthLong()),
+                contentLength,
                 request.getInputStream(),
                 true
         );
         response.setStatus(existed ? HttpServletResponse.SC_NO_CONTENT : HttpServletResponse.SC_CREATED);
+    }
+
+    private void writeUnknownLengthPut(WebDavPrincipal principal,
+                                       String path,
+                                       HttpServletRequest request,
+                                       HttpServletResponse response) throws IOException {
+        Path tempFile = Files.createTempFile("webdav-put-", ".bin");
+        long size = 0L;
+        try {
+            try (InputStream content = request.getInputStream();
+                 var output = Files.newOutputStream(tempFile)) {
+                byte[] buffer = new byte[8192];
+                int read;
+                while ((read = content.read(buffer)) != -1) {
+                    size += read;
+                    if (size > principal.maxUploadSizeBytes()) {
+                        drain(content, buffer);
+                        response.sendError(HttpServletResponse.SC_REQUEST_ENTITY_TOO_LARGE);
+                        return;
+                    }
+                    output.write(buffer, 0, read);
+                }
+            }
+            boolean existed = resourceStore.find(principal, path).isPresent();
+            try (InputStream countedContent = Files.newInputStream(tempFile)) {
+                resourceStore.write(
+                        principal,
+                        path,
+                        request.getContentType(),
+                        size,
+                        countedContent,
+                        true
+                );
+            }
+            response.setStatus(existed ? HttpServletResponse.SC_NO_CONTENT : HttpServletResponse.SC_CREATED);
+        } finally {
+            Files.deleteIfExists(tempFile);
+        }
     }
 
     private void mkcol(WebDavPrincipal principal,
@@ -244,6 +292,18 @@ public class WebDavProtocolDispatcher implements WebDavProtocolGateway {
         response.setStatus(existed ? HttpServletResponse.SC_NO_CONTENT : HttpServletResponse.SC_CREATED);
     }
 
+    private void drain(InputStream content, byte[] buffer) throws IOException {
+        long drained = 0L;
+        int read;
+        while ((read = content.read(buffer)) != -1) {
+            drained += read;
+            if (drained >= MAX_DRAIN_BYTES) {
+                return;
+            }
+            // Consume the remaining oversized request body so the connector can reuse the connection cleanly.
+        }
+    }
+
     private void move(WebDavPrincipal principal,
                       String path,
                       HttpServletRequest request,
@@ -272,15 +332,20 @@ public class WebDavProtocolDispatcher implements WebDavProtocolGateway {
 
     private void lock(WebDavPrincipal principal, String path, HttpServletResponse response) throws IOException {
         removeExpiredLocks();
-        if (lockCountFor(principal) >= MAX_LOCKS_PER_USER && !locks.containsKey(path)) {
+        LockKey lockKey = LockKey.from(principal, path);
+        if (lockCountFor(principal) >= MAX_LOCKS_PER_USER && !locks.containsKey(lockKey)) {
             response.sendError(SC_TOO_MANY_REQUESTS);
             return;
         }
         String token = UUID.randomUUID().toString();
         LockInfo lock = new LockInfo(path, principal.userId(), token, Instant.now().plusSeconds(LOCK_TIMEOUT_SECONDS));
-        locks.put(path, lock);
-        response.setStatus(HttpServletResponse.SC_OK);
-        response.setHeader(LOCK_TOKEN_HEADER, "<" + LOCK_SCHEME + token + ">");
+        LockInfo previous = locks.putIfAbsent(lockKey, lock);
+        if (previous != null) {
+            lock = new LockInfo(path, principal.userId(), previous.token(), Instant.now().plusSeconds(LOCK_TIMEOUT_SECONDS));
+            locks.put(lockKey, lock);
+        }
+        response.setStatus(previous == null ? HttpServletResponse.SC_CREATED : HttpServletResponse.SC_OK);
+        response.setHeader(LOCK_TOKEN_HEADER, "<" + LOCK_SCHEME + lock.token() + ">");
         response.setHeader("Timeout", "Second-" + LOCK_TIMEOUT_SECONDS);
         response.setCharacterEncoding(StandardCharsets.UTF_8.name());
         response.setContentType(XML_CONTENT_TYPE);
@@ -291,25 +356,27 @@ public class WebDavProtocolDispatcher implements WebDavProtocolGateway {
                         String path,
                         HttpServletRequest request,
                         HttpServletResponse response) throws IOException {
-        LockInfo lock = locks.get(path);
+        LockKey lockKey = LockKey.from(principal, path);
+        LockInfo lock = locks.get(lockKey);
         if (lock == null || lock.expired() || !lock.ownedBy(principal) || !tokenMatches(lock, request.getHeader(LOCK_TOKEN_HEADER))) {
             if (lock != null && lock.expired()) {
-                locks.remove(path);
+                locks.remove(lockKey);
             }
             response.sendError(HttpServletResponse.SC_PRECONDITION_FAILED);
             return;
         }
-        locks.remove(path);
+        locks.remove(lockKey);
         response.setStatus(HttpServletResponse.SC_NO_CONTENT);
     }
 
     private boolean isLocked(String path, WebDavPrincipal principal, HttpServletRequest request) {
-        LockInfo lock = locks.get(path);
+        LockKey lockKey = LockKey.from(principal, path);
+        LockInfo lock = locks.get(lockKey);
         if (lock == null) {
             return false;
         }
         if (lock.expired()) {
-            locks.remove(path);
+            locks.remove(lockKey);
             return false;
         }
         if (!lock.ownedBy(principal)) {
@@ -403,12 +470,6 @@ public class WebDavProtocolDispatcher implements WebDavProtocolGateway {
         return destinationPort == requestPort;
     }
 
-    private boolean unknownContentLength(HttpServletRequest request) {
-        String transferEncoding = request.getHeader("Transfer-Encoding");
-        return request.getContentLengthLong() < 0
-                || (transferEncoding != null && transferEncoding.toLowerCase().contains("chunked"));
-    }
-
     private String decodePath(String path) {
         if (path == null) {
             return null;
@@ -469,7 +530,8 @@ public class WebDavProtocolDispatcher implements WebDavProtocolGateway {
                 .count();
     }
 
-    private void removeExpiredLocks() {
+    @Scheduled(fixedRate = 60_000L)
+    void removeExpiredLocks() {
         locks.entrySet().removeIf(entry -> entry.getValue().expired());
     }
 
@@ -489,6 +551,12 @@ public class WebDavProtocolDispatcher implements WebDavProtocolGateway {
 
         private boolean expired() {
             return Instant.now().isAfter(expiresAt);
+        }
+    }
+
+    private record LockKey(Long userId, String path) {
+        private static LockKey from(WebDavPrincipal principal, String path) {
+            return new LockKey(principal.userId(), path);
         }
     }
 }
