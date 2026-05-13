@@ -483,8 +483,12 @@ public class WebDavProtocolDispatcher implements WebDavProtocolGateway {
     private String hrefFor(HttpServletRequest request, WebDavStoredResource resource) {
         String requestPrefix = davPrefix(request.getRequestURI());
         String prefix = request.getContextPath() + (requestPrefix == null ? "/dav" : requestPrefix);
-        String href = "/".equals(resource.path()) ? prefix + "/" : prefix + encodePath(resource.path());
+        String href = "/".equals(resource.path()) ? rootHref(prefix) : prefix + encodePath(resource.path());
         return resource.directory() && !href.endsWith("/") ? href + "/" : href;
+    }
+
+    private String rootHref(String prefix) {
+        return "/".equals(prefix) ? "/" : prefix + "/";
     }
 
     private String davPrefix(String requestPath) {
@@ -496,6 +500,11 @@ public class WebDavProtocolDispatcher implements WebDavProtocolGateway {
         }
         if ("/api/dav".equals(requestPath) || requestPath.startsWith("/api/dav/")) {
             return "/api/dav";
+        }
+        if ("/".equals(requestPath) || "/api".equals(requestPath) || "/api/".equals(requestPath)) {
+            return requestPath.endsWith("/") && requestPath.length() > 1
+                    ? requestPath.substring(0, requestPath.length() - 1)
+                    : requestPath;
         }
         return null;
     }

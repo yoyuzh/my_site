@@ -70,6 +70,43 @@ class WebDavProtocolDispatcherTest {
     }
 
     @Test
+    void microsoftOfficeDiscoveryPathsShouldResolveToRoot() throws Exception {
+        FakeStore store = new FakeStore();
+        store.resources.add(resource("/", true));
+        WebDavProtocolDispatcher dispatcher = new WebDavProtocolDispatcher(store);
+        MockHttpServletRequest propfindRequest = request("PROPFIND", "/api");
+        MockHttpServletResponse response = new MockHttpServletResponse();
+
+        dispatcher.dispatch(principal, propfindRequest, response);
+
+        assertThat(response.getStatus()).isEqualTo(207);
+        assertThat(response.getContentAsString(UTF_8)).contains("<D:href>/api/</D:href>");
+    }
+
+    @Test
+    void microsoftRootDiscoveryPathShouldUseSingleSlashHref() throws Exception {
+        FakeStore store = new FakeStore();
+        store.resources.add(resource("/", true));
+        WebDavProtocolDispatcher dispatcher = new WebDavProtocolDispatcher(store);
+        MockHttpServletRequest propfindRequest = new MockHttpServletRequest("PROPFIND", "/");
+        propfindRequest.setScheme("http");
+        propfindRequest.setServerName("localhost");
+        propfindRequest.setServerPort(80);
+        propfindRequest.setContextPath("");
+        propfindRequest.setServletPath("/");
+        propfindRequest.setPathInfo(null);
+        propfindRequest.setRequestURI("/");
+        MockHttpServletResponse response = new MockHttpServletResponse();
+
+        dispatcher.dispatch(principal, propfindRequest, response);
+
+        assertThat(response.getStatus()).isEqualTo(207);
+        assertThat(response.getContentAsString(UTF_8))
+                .contains("<D:href>/</D:href>")
+                .doesNotContain("<D:href>//</D:href>");
+    }
+
+    @Test
     void shouldRejectDestinationWithDifferentPort() throws Exception {
         FakeStore store = new FakeStore();
         store.resources.add(resource("/Docs/a.txt", false));

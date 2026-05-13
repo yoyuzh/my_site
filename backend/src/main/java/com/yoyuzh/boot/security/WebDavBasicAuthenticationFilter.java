@@ -44,6 +44,10 @@ public class WebDavBasicAuthenticationFilter extends OncePerRequestFilter {
             response.sendError(HttpServletResponse.SC_BAD_REQUEST);
             return;
         }
+        if ("OPTIONS".equals(request.getMethod())) {
+            writeDavOptions(response);
+            return;
+        }
         Optional<BasicCredential> credential = parseBasicCredential(request.getHeader("Authorization"));
         if (credential.isEmpty()) {
             reject(response);
@@ -62,7 +66,7 @@ public class WebDavBasicAuthenticationFilter extends OncePerRequestFilter {
     }
 
     private boolean isWebDavRequest(HttpServletRequest request) {
-        return WebDavRequestPathMatcher.isWebDavRequest(request.getRequestURI());
+        return WebDavRequestPathMatcher.isWebDavRequest(request);
     }
 
     private Optional<BasicCredential> parseBasicCredential(String authorizationHeader) {
@@ -111,6 +115,14 @@ public class WebDavBasicAuthenticationFilter extends OncePerRequestFilter {
         response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
         response.setHeader("WWW-Authenticate", AUTHENTICATE_HEADER);
         response.flushBuffer();
+    }
+
+    private void writeDavOptions(HttpServletResponse response) {
+        response.setStatus(HttpServletResponse.SC_OK);
+        response.setHeader("DAV", "1,2");
+        response.setHeader("Allow", "OPTIONS, GET, HEAD, PUT, DELETE, PROPFIND, MKCOL, COPY, MOVE, LOCK, UNLOCK");
+        response.setHeader("MS-Author-Via", "DAV");
+        response.setContentLength(0);
     }
 
     private record BasicCredential(String username, String password) {

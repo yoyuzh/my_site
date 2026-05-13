@@ -77,6 +77,37 @@ class WebDavBasicAuthenticationFilterTest {
     }
 
     @Test
+    void shouldAllowMicrosoftOfficeDiscoveryOptionsWithoutPromptingForCredentials() throws Exception {
+        MockHttpServletRequest request = request("/api/");
+        request.setMethod("OPTIONS");
+        request.addHeader("User-Agent", "Microsoft Office Word 2014");
+        MockHttpServletResponse response = new MockHttpServletResponse();
+
+        filter.doFilterInternal(request, response, filterChain);
+
+        assertThat(response.getStatus()).isEqualTo(200);
+        assertThat(response.getHeader("DAV")).isEqualTo("1,2");
+        assertThat(response.getHeader("MS-Author-Via")).isEqualTo("DAV");
+        verifyNoInteractions(identityWebDavCredentialApi);
+    }
+
+    @Test
+    void shouldAuthenticateMicrosoftMiniRedirectorParentDiscoveryRequest() throws Exception {
+        MockHttpServletRequest request = request("/api");
+        request.setMethod("PROPFIND");
+        request.addHeader("User-Agent", "Microsoft-WebDAV-MiniRedir/10.0.26120");
+        request.addHeader("Authorization", basic("alice", "webdav-password"));
+        MockHttpServletResponse response = new MockHttpServletResponse();
+        when(identityWebDavCredentialApi.authenticate("alice", "webdav-password"))
+                .thenReturn(Optional.of(authenticatedUser()));
+
+        filter.doFilterInternal(request, response, filterChain);
+
+        verify(filterChain).doFilter(request, response);
+        assertThat(SecurityContextHolder.getContext().getAuthentication()).isNotNull();
+    }
+
+    @Test
     void shouldRejectDavPathTraversalBeforeAuthentication() throws Exception {
         MockHttpServletRequest request = request("/dav/../api/files/list");
         request.addHeader("Authorization", basic("alice", "webdav-password"));

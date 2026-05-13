@@ -1,5 +1,8 @@
 package com.yoyuzh.boot.security;
 
+import jakarta.servlet.http.HttpServletRequest;
+import org.springframework.util.StringUtils;
+
 final class WebDavRequestPathMatcher {
 
     private WebDavRequestPathMatcher() {
@@ -9,6 +12,11 @@ final class WebDavRequestPathMatcher {
         return "/dav".equals(requestUri)
                 || "/api/dav".equals(requestUri)
                 || (requestUri != null && (requestUri.startsWith("/dav/") || requestUri.startsWith("/api/dav/")));
+    }
+
+    static boolean isWebDavRequest(HttpServletRequest request) {
+        String requestUri = request.getRequestURI();
+        return isWebDavRequest(requestUri) || isMicrosoftDiscoveryRequest(request);
     }
 
     static boolean hasUnsafePath(String requestUri) {
@@ -21,5 +29,22 @@ final class WebDavRequestPathMatcher {
             }
         }
         return false;
+    }
+
+    private static boolean isMicrosoftDiscoveryRequest(HttpServletRequest request) {
+        String requestUri = request.getRequestURI();
+        if (!"/".equals(requestUri) && !"/api".equals(requestUri) && !"/api/".equals(requestUri)) {
+            return false;
+        }
+        String method = request.getMethod();
+        if (!"OPTIONS".equals(method) && !"PROPFIND".equals(method)) {
+            return false;
+        }
+        String userAgent = request.getHeader("User-Agent");
+        if (!StringUtils.hasText(userAgent)) {
+            return false;
+        }
+        return userAgent.contains("Microsoft-WebDAV-MiniRedir")
+                || userAgent.contains("Microsoft Office");
     }
 }

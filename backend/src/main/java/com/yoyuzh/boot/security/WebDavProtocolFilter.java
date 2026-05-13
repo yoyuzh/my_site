@@ -43,7 +43,7 @@ public class WebDavProtocolFilter extends OncePerRequestFilter {
     }
 
     private boolean isWebDavRequest(HttpServletRequest request) {
-        return WebDavRequestPathMatcher.isWebDavRequest(request.getRequestURI());
+        return WebDavRequestPathMatcher.isWebDavRequest(request);
     }
 
     private WebDavRequestPrincipal toWebDavPrincipal(AuthenticatedUserPrincipal principal) {
