@@ -37,6 +37,26 @@ class WebDavProtocolFilterTest {
         SecurityContextHolder.clearContext();
     }
 
+    @Test
+    void shouldDispatchApiDavCompatibilityRequest() throws Exception {
+        WebDavProtocolGateway gateway = mock(WebDavProtocolGateway.class);
+        WebDavProtocolFilter filter = new WebDavProtocolFilter(gateway);
+        MockHttpServletRequest request = new MockHttpServletRequest("PROPFIND", "/api/dav");
+        MockHttpServletResponse response = new MockHttpServletResponse();
+        FilterChain chain = mock(FilterChain.class);
+        SecurityContextHolder.getContext().setAuthentication(new UsernamePasswordAuthenticationToken(
+                userPrincipal(),
+                null,
+                userPrincipal().getAuthorities()
+        ));
+
+        filter.doFilter(request, response, chain);
+
+        verify(gateway).dispatch(any(), any(), any());
+        verify(chain, never()).doFilter(any(), any());
+        SecurityContextHolder.clearContext();
+    }
+
     private AuthenticatedUserPrincipal userPrincipal() {
         return new AuthenticatedUserPrincipal(
                 7L,

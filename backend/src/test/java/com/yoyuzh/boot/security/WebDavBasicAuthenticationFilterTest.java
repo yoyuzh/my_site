@@ -65,6 +65,18 @@ class WebDavBasicAuthenticationFilterTest {
     }
 
     @Test
+    void shouldTreatApiDavAsWebDavCompatibilityPath() throws Exception {
+        MockHttpServletRequest request = request("/api/dav");
+        MockHttpServletResponse response = new MockHttpServletResponse();
+
+        filter.doFilterInternal(request, response, filterChain);
+
+        assertThat(response.getStatus()).isEqualTo(401);
+        assertThat(response.getHeader("WWW-Authenticate")).contains("Basic");
+        verifyNoInteractions(identityWebDavCredentialApi);
+    }
+
+    @Test
     void shouldRejectDavPathTraversalBeforeAuthentication() throws Exception {
         MockHttpServletRequest request = request("/dav/../api/files/list");
         request.addHeader("Authorization", basic("alice", "webdav-password"));

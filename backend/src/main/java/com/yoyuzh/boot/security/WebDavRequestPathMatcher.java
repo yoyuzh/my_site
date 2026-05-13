@@ -6,7 +6,9 @@ final class WebDavRequestPathMatcher {
     }
 
     static boolean isWebDavRequest(String requestUri) {
-        return "/dav".equals(requestUri) || (requestUri != null && requestUri.startsWith("/dav/"));
+        return "/dav".equals(requestUri)
+                || "/api/dav".equals(requestUri)
+                || (requestUri != null && (requestUri.startsWith("/dav/") || requestUri.startsWith("/api/dav/")));
     }
 
     static boolean hasUnsafePath(String requestUri) {

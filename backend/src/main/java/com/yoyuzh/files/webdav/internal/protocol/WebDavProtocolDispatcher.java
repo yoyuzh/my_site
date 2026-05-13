@@ -415,11 +415,12 @@ public class WebDavProtocolDispatcher implements WebDavProtocolGateway {
             return null;
         }
         String destinationPath = uri.getPath();
-        if (destinationPath == null || !destinationPath.startsWith("/dav")) {
+        String davPrefix = davPrefix(destinationPath);
+        if (davPrefix == null) {
             response.sendError(HttpServletResponse.SC_FORBIDDEN);
             return null;
         }
-        String normalized = normalizeDavPath(destinationPath.substring("/dav".length()));
+        String normalized = normalizeDavPath(destinationPath.substring(davPrefix.length()));
         if (normalized == null) {
             response.sendError(HttpServletResponse.SC_BAD_REQUEST);
         }
@@ -430,7 +431,11 @@ public class WebDavProtocolDispatcher implements WebDavProtocolGateway {
         String pathInfo = request.getPathInfo();
         if (pathInfo == null || pathInfo.isBlank()) {
             String requestUri = request.getRequestURI();
-            pathInfo = requestUri == null || requestUri.length() <= 4 ? "/" : requestUri.substring(4);
+            String davPrefix = davPrefix(requestUri);
+            if (davPrefix == null) {
+                return null;
+            }
+            pathInfo = requestUri.length() <= davPrefix.length() ? "/" : requestUri.substring(davPrefix.length());
         }
         return normalizeDavPath(decodePath(pathInfo));
     }
@@ -451,9 +456,23 @@ public class WebDavProtocolDispatcher implements WebDavProtocolGateway {
     }
 
     private String hrefFor(HttpServletRequest request, WebDavStoredResource resource) {
-        String prefix = request.getContextPath() + "/dav";
+        String requestPrefix = davPrefix(request.getRequestURI());
+        String prefix = request.getContextPath() + (requestPrefix == null ? "/dav" : requestPrefix);
         String href = "/".equals(resource.path()) ? prefix + "/" : prefix + encodePath(resource.path());
         return resource.directory() && !href.endsWith("/") ? href + "/" : href;
+    }
+
+    private String davPrefix(String requestPath) {
+        if (requestPath == null) {
+            return null;
+        }
+        if ("/dav".equals(requestPath) || requestPath.startsWith("/dav/")) {
+            return "/dav";
+        }
+        if ("/api/dav".equals(requestPath) || requestPath.startsWith("/api/dav/")) {
+            return "/api/dav";
+        }
+        return null;
     }
 
     private String httpDate(Instant instant) {

@@ -291,6 +291,27 @@ class WebDavProtocolDispatcherTest {
     }
 
     @Test
+    void propfindShouldIncludeWindowsCompatibleResourceProperties() throws Exception {
+        FakeStore store = new FakeStore();
+        store.resources.add(resource("/", true));
+        store.resources.add(resource("/Docs/a.txt", false));
+        WebDavProtocolDispatcher dispatcher = new WebDavProtocolDispatcher(store);
+        MockHttpServletRequest propfindRequest = request("PROPFIND", "/dav");
+        propfindRequest.addHeader("Depth", "1");
+        MockHttpServletResponse response = new MockHttpServletResponse();
+
+        dispatcher.dispatch(principal, propfindRequest, response);
+
+        assertThat(response.getStatus()).isEqualTo(207);
+        assertThat(response.getContentAsString(UTF_8))
+                .contains("<D:getcontentlength>0</D:getcontentlength>")
+                .contains("<D:getetag>")
+                .contains("<D:getcontenttype>httpd/unix-directory</D:getcontenttype>")
+                .contains("<D:supportedlock>")
+                .contains("<D:lockentry>");
+    }
+
+    @Test
     void propfindShouldUseDavBaseHrefForNestedResources() throws Exception {
         FakeStore store = new FakeStore();
         store.resources.add(resource("/资料", true));

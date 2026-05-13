@@ -36,6 +36,11 @@ final class WebDavXmlResponseWriter {
         writer.write("</D:getlastmodified>");
         if (resource.directory()) {
             writer.write("<D:resourcetype><D:collection/></D:resourcetype>");
+            writer.write("<D:getcontentlength>0</D:getcontentlength>");
+            writer.write("<D:getcontenttype>httpd/unix-directory</D:getcontenttype>");
+            writer.write("<D:getetag>");
+            writer.write(escape(resource.etag()));
+            writer.write("</D:getetag>");
         } else {
             writer.write("<D:resourcetype/>");
             writer.write("<D:getcontentlength>");
@@ -48,6 +53,9 @@ final class WebDavXmlResponseWriter {
             writer.write(escape(resource.etag()));
             writer.write("</D:getetag>");
         }
+        writer.write("<D:supportedlock>");
+        writer.write("<D:lockentry><D:lockscope><D:exclusive/></D:lockscope><D:locktype><D:write/></D:locktype></D:lockentry>");
+        writer.write("</D:supportedlock>");
         writer.write("</D:prop><D:status>HTTP/1.1 200 OK</D:status></D:propstat>");
         writer.write("</D:response>");
     }
