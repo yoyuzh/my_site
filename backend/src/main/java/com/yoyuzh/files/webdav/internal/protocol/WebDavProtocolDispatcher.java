@@ -76,7 +76,7 @@ public class WebDavProtocolDispatcher implements WebDavProtocolGateway {
         String method = request.getMethod();
         String path = relativePath(request);
         if (path == null) {
-            response.sendError(HttpServletResponse.SC_BAD_REQUEST);
+            fail(response, HttpServletResponse.SC_BAD_REQUEST);
             return;
         }
         switch (method) {
@@ -93,7 +93,7 @@ public class WebDavProtocolDispatcher implements WebDavProtocolGateway {
             case "UNLOCK" -> unlock(principal, path, request, response);
             default -> {
                 response.setHeader(ALLOW_HEADER, ALLOW_METHODS);
-                response.sendError(HttpServletResponse.SC_METHOD_NOT_ALLOWED);
+                fail(response, HttpServletResponse.SC_METHOD_NOT_ALLOWED);
             }
         }
     }
@@ -111,16 +111,16 @@ public class WebDavProtocolDispatcher implements WebDavProtocolGateway {
                           HttpServletResponse response) throws IOException {
         String depth = request.getHeader("Depth");
         if ("infinity".equalsIgnoreCase(depth)) {
-            response.sendError(HttpServletResponse.SC_NOT_IMPLEMENTED);
+            fail(response, HttpServletResponse.SC_NOT_IMPLEMENTED);
             return;
         }
         if (depth != null && !"0".equals(depth) && !"1".equals(depth)) {
-            response.sendError(HttpServletResponse.SC_BAD_REQUEST);
+            fail(response, HttpServletResponse.SC_BAD_REQUEST);
             return;
         }
         Optional<WebDavStoredResource> resource = resourceStore.find(principal, path);
         if (resource.isEmpty()) {
-            response.sendError(HttpServletResponse.SC_NOT_FOUND);
+            fail(response, HttpServletResponse.SC_NOT_FOUND);
             return;
         }
         response.setStatus(SC_MULTI_STATUS);
@@ -143,11 +143,11 @@ public class WebDavProtocolDispatcher implements WebDavProtocolGateway {
                      boolean includeBody) throws IOException {
         Optional<WebDavStoredResource> resource = resourceStore.find(principal, path);
         if (resource.isEmpty()) {
-            response.sendError(HttpServletResponse.SC_NOT_FOUND);
+            fail(response, HttpServletResponse.SC_NOT_FOUND);
             return;
         }
         if (resource.get().directory()) {
-            response.sendError(HttpServletResponse.SC_METHOD_NOT_ALLOWED);
+            fail(response, HttpServletResponse.SC_METHOD_NOT_ALLOWED);
             return;
         }
         WebDavReadResult result = resourceStore.read(principal, path);
@@ -168,12 +168,12 @@ public class WebDavProtocolDispatcher implements WebDavProtocolGateway {
                      HttpServletRequest request,
                      HttpServletResponse response) throws IOException {
         if (isLocked(path, principal, request)) {
-            response.sendError(SC_LOCKED);
+            fail(response, SC_LOCKED);
             return;
         }
         long contentLength = request.getContentLengthLong();
         if (contentLength > principal.maxUploadSizeBytes()) {
-            response.sendError(HttpServletResponse.SC_REQUEST_ENTITY_TOO_LARGE);
+            fail(response, HttpServletResponse.SC_REQUEST_ENTITY_TOO_LARGE);
             return;
         }
         if (contentLength < 0) {
@@ -207,7 +207,7 @@ public class WebDavProtocolDispatcher implements WebDavProtocolGateway {
                     size += read;
                     if (size > principal.maxUploadSizeBytes()) {
                         drain(content, buffer);
-                        response.sendError(HttpServletResponse.SC_REQUEST_ENTITY_TOO_LARGE);
+                        fail(response, HttpServletResponse.SC_REQUEST_ENTITY_TOO_LARGE);
                         return;
                     }
                     output.write(buffer, 0, read);
@@ -235,15 +235,15 @@ public class WebDavProtocolDispatcher implements WebDavProtocolGateway {
                        HttpServletRequest request,
                        HttpServletResponse response) throws IOException {
         if (isLocked(path, principal, request)) {
-            response.sendError(SC_LOCKED);
+            fail(response, SC_LOCKED);
             return;
         }
         if (request.getContentLengthLong() > 0) {
-            response.sendError(HttpServletResponse.SC_UNSUPPORTED_MEDIA_TYPE);
+            fail(response, HttpServletResponse.SC_UNSUPPORTED_MEDIA_TYPE);
             return;
         }
         if (resourceStore.find(principal, path).isPresent()) {
-            response.sendError(HttpServletResponse.SC_METHOD_NOT_ALLOWED);
+            fail(response, HttpServletResponse.SC_METHOD_NOT_ALLOWED);
             return;
         }
         resourceStore.createDirectory(principal, path);
@@ -255,11 +255,11 @@ public class WebDavProtocolDispatcher implements WebDavProtocolGateway {
                         HttpServletRequest request,
                         HttpServletResponse response) throws IOException {
         if (isLocked(path, principal, request)) {
-            response.sendError(SC_LOCKED);
+            fail(response, SC_LOCKED);
             return;
         }
         if (resourceStore.find(principal, path).isEmpty()) {
-            response.sendError(HttpServletResponse.SC_NOT_FOUND);
+            fail(response, HttpServletResponse.SC_NOT_FOUND);
             return;
         }
         resourceStore.delete(principal, path);
@@ -275,16 +275,16 @@ public class WebDavProtocolDispatcher implements WebDavProtocolGateway {
             return;
         }
         if (resourceStore.find(principal, path).isEmpty()) {
-            response.sendError(HttpServletResponse.SC_NOT_FOUND);
+            fail(response, HttpServletResponse.SC_NOT_FOUND);
             return;
         }
         if (isLocked(destinationPath, principal, request)) {
-            response.sendError(SC_LOCKED);
+            fail(response, SC_LOCKED);
             return;
         }
         boolean overwrite = overwrite(request);
         if (!overwrite && resourceStore.find(principal, destinationPath).isPresent()) {
-            response.sendError(HttpServletResponse.SC_PRECONDITION_FAILED);
+            fail(response, HttpServletResponse.SC_PRECONDITION_FAILED);
             return;
         }
         boolean existed = resourceStore.find(principal, destinationPath).isPresent();
@@ -313,16 +313,16 @@ public class WebDavProtocolDispatcher implements WebDavProtocolGateway {
             return;
         }
         if (isLocked(path, principal, request) || isLocked(destinationPath, principal, request)) {
-            response.sendError(SC_LOCKED);
+            fail(response, SC_LOCKED);
             return;
         }
         if (resourceStore.find(principal, path).isEmpty()) {
-            response.sendError(HttpServletResponse.SC_NOT_FOUND);
+            fail(response, HttpServletResponse.SC_NOT_FOUND);
             return;
         }
         boolean overwrite = overwrite(request);
         if (!overwrite && resourceStore.find(principal, destinationPath).isPresent()) {
-            response.sendError(HttpServletResponse.SC_PRECONDITION_FAILED);
+            fail(response, HttpServletResponse.SC_PRECONDITION_FAILED);
             return;
         }
         boolean existed = resourceStore.find(principal, destinationPath).isPresent();
@@ -334,7 +334,7 @@ public class WebDavProtocolDispatcher implements WebDavProtocolGateway {
         removeExpiredLocks();
         LockKey lockKey = LockKey.from(principal, path);
         if (lockCountFor(principal) >= MAX_LOCKS_PER_USER && !locks.containsKey(lockKey)) {
-            response.sendError(SC_TOO_MANY_REQUESTS);
+            fail(response, SC_TOO_MANY_REQUESTS);
             return;
         }
         String token = UUID.randomUUID().toString();
@@ -362,7 +362,7 @@ public class WebDavProtocolDispatcher implements WebDavProtocolGateway {
             if (lock != null && lock.expired()) {
                 locks.remove(lockKey);
             }
-            response.sendError(HttpServletResponse.SC_PRECONDITION_FAILED);
+            fail(response, HttpServletResponse.SC_PRECONDITION_FAILED);
             return;
         }
         locks.remove(lockKey);
@@ -396,35 +396,39 @@ public class WebDavProtocolDispatcher implements WebDavProtocolGateway {
     private String parseDestinationPath(HttpServletRequest request, HttpServletResponse response) throws IOException {
         String destinationHeader = request.getHeader(DESTINATION_HEADER);
         if (destinationHeader == null || destinationHeader.isBlank()) {
-            response.sendError(HttpServletResponse.SC_BAD_REQUEST);
+            fail(response, HttpServletResponse.SC_BAD_REQUEST);
             return null;
         }
         URI uri;
         try {
             uri = new URI(destinationHeader);
         } catch (URISyntaxException ex) {
-            response.sendError(HttpServletResponse.SC_BAD_REQUEST);
+            fail(response, HttpServletResponse.SC_BAD_REQUEST);
             return null;
         }
         if (uri.isAbsolute() && (!request.getScheme().equals(uri.getScheme()) || !request.getServerName().equals(uri.getHost()))) {
-            response.sendError(HttpServletResponse.SC_FORBIDDEN);
+            fail(response, HttpServletResponse.SC_FORBIDDEN);
             return null;
         }
         if (uri.isAbsolute() && !portMatches(request, uri)) {
-            response.sendError(HttpServletResponse.SC_FORBIDDEN);
+            fail(response, HttpServletResponse.SC_FORBIDDEN);
             return null;
         }
         String destinationPath = uri.getPath();
         String davPrefix = davPrefix(destinationPath);
         if (davPrefix == null) {
-            response.sendError(HttpServletResponse.SC_FORBIDDEN);
+            fail(response, HttpServletResponse.SC_FORBIDDEN);
             return null;
         }
         String normalized = normalizeDavPath(destinationPath.substring(davPrefix.length()));
         if (normalized == null) {
-            response.sendError(HttpServletResponse.SC_BAD_REQUEST);
+            fail(response, HttpServletResponse.SC_BAD_REQUEST);
         }
         return normalized;
+    }
+
+    private void fail(HttpServletResponse response, int status) {
+        response.setStatus(status);
     }
 
     private String relativePath(HttpServletRequest request) {

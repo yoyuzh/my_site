@@ -98,6 +98,19 @@ class WebDavProtocolDispatcherTest {
     }
 
     @Test
+    void propfindShouldReturnEmptyNotFoundWithoutErrorDispatchBody() throws Exception {
+        WebDavProtocolDispatcher dispatcher = new WebDavProtocolDispatcher(new FakeStore());
+        MockHttpServletResponse response = new MockHttpServletResponse();
+
+        dispatcher.dispatch(principal, request("PROPFIND", "/dav/desktop.ini"), response);
+
+        assertThat(response.getStatus()).isEqualTo(404);
+        assertThat(response.getErrorMessage()).isNull();
+        assertThat(response.isCommitted()).isFalse();
+        assertThat(response.getContentAsString()).isEmpty();
+    }
+
+    @Test
     void proppatchShouldBeMethodNotAllowed() throws Exception {
         WebDavProtocolDispatcher dispatcher = new WebDavProtocolDispatcher(new FakeStore());
         MockHttpServletResponse response = new MockHttpServletResponse();
