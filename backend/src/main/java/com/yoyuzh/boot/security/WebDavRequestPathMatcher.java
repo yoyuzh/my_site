@@ -16,7 +16,21 @@ final class WebDavRequestPathMatcher {
 
     static boolean isWebDavRequest(HttpServletRequest request) {
         String requestUri = request.getRequestURI();
-        return isWebDavRequest(requestUri) || isMicrosoftDiscoveryRequest(request);
+        return isWebDavRequest(requestUri)
+                || isMicrosoftDiscoveryRequest(request)
+                || isMicrosoftSharePointProbe(request);
+    }
+
+    static boolean isMicrosoftOfficeProbeWithoutWebDavCredentials(HttpServletRequest request) {
+        return !hasBasicAuthorization(request.getHeader("Authorization"))
+                && (isMicrosoftOfficeWebDavHeadProbe(request) || isMicrosoftSharePointProbe(request));
+    }
+
+    private static boolean isMicrosoftOfficeWebDavHeadProbe(HttpServletRequest request) {
+        String requestUri = request.getRequestURI();
+        return "HEAD".equals(request.getMethod())
+                && isWebDavRequest(requestUri)
+                && isMicrosoftOfficeUserAgent(request.getHeader("User-Agent"));
     }
 
     static boolean hasUnsafePath(String requestUri) {
@@ -40,11 +54,29 @@ final class WebDavRequestPathMatcher {
         if (!"OPTIONS".equals(method) && !"PROPFIND".equals(method)) {
             return false;
         }
-        String userAgent = request.getHeader("User-Agent");
+        return isMicrosoftWebDavUserAgent(request.getHeader("User-Agent"));
+    }
+
+    private static boolean isMicrosoftSharePointProbe(HttpServletRequest request) {
+        String requestUri = request.getRequestURI();
+        return requestUri != null
+                && requestUri.startsWith("/_api/v2.0/shares/")
+                && isMicrosoftOfficeUserAgent(request.getHeader("User-Agent"));
+    }
+
+    private static boolean isMicrosoftWebDavUserAgent(String userAgent) {
         if (!StringUtils.hasText(userAgent)) {
             return false;
         }
         return userAgent.contains("Microsoft-WebDAV-MiniRedir")
                 || userAgent.contains("Microsoft Office");
+    }
+
+    private static boolean isMicrosoftOfficeUserAgent(String userAgent) {
+        return StringUtils.hasText(userAgent) && userAgent.contains("Microsoft Office");
+    }
+
+    private static boolean hasBasicAuthorization(String authorizationHeader) {
+        return StringUtils.hasText(authorizationHeader) && authorizationHeader.startsWith("Basic ");
     }
 }

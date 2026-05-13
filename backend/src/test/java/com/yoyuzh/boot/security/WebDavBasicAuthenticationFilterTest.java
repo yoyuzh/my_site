@@ -108,6 +108,80 @@ class WebDavBasicAuthenticationFilterTest {
     }
 
     @Test
+    void shouldSuppressMicrosoftOfficeHeadProbeWithoutPromptingForBrowserCredentials() throws Exception {
+        MockHttpServletRequest request = request("/api/dav/report.docx");
+        request.setMethod("HEAD");
+        request.addHeader("User-Agent", "Microsoft Office Word 2014");
+        MockHttpServletResponse response = new MockHttpServletResponse();
+
+        filter.doFilterInternal(request, response, filterChain);
+
+        assertThat(response.getStatus()).isEqualTo(404);
+        assertThat(response.getHeader("WWW-Authenticate")).isNull();
+        verifyNoInteractions(identityWebDavCredentialApi);
+    }
+
+    @Test
+    void shouldSuppressMicrosoftOfficeHeadProbeWithNonBasicAuthorization() throws Exception {
+        MockHttpServletRequest request = request("/api/dav/report.docx");
+        request.setMethod("HEAD");
+        request.addHeader("User-Agent", "Microsoft Office Word 2014");
+        request.addHeader("Authorization", "Bearer office-token");
+        MockHttpServletResponse response = new MockHttpServletResponse();
+
+        filter.doFilterInternal(request, response, filterChain);
+
+        assertThat(response.getStatus()).isEqualTo(404);
+        assertThat(response.getHeader("WWW-Authenticate")).isNull();
+        verifyNoInteractions(identityWebDavCredentialApi);
+    }
+
+    @Test
+    void shouldAuthenticateMicrosoftOfficeHeadWhenWebDavCredentialIsPresent() throws Exception {
+        MockHttpServletRequest request = request("/api/dav/report.docx");
+        request.setMethod("HEAD");
+        request.addHeader("User-Agent", "Microsoft Office Word 2014");
+        request.addHeader("Authorization", basic("alice", "webdav-password"));
+        MockHttpServletResponse response = new MockHttpServletResponse();
+        when(identityWebDavCredentialApi.authenticate("alice", "webdav-password"))
+                .thenReturn(Optional.of(authenticatedUser()));
+
+        filter.doFilterInternal(request, response, filterChain);
+
+        verify(filterChain).doFilter(request, response);
+        assertThat(SecurityContextHolder.getContext().getAuthentication()).isNotNull();
+    }
+
+    @Test
+    void shouldSuppressMicrosoftOfficeSharePointProbeWithoutPromptingForBrowserCredentials() throws Exception {
+        MockHttpServletRequest request = request("/_api/v2.0/shares/u!abc/driveitem/");
+        request.setMethod("GET");
+        request.addHeader("User-Agent", "Microsoft Office/16.0 (Windows NT 10.0; Microsoft Word 16.0.19929; Pro)");
+        MockHttpServletResponse response = new MockHttpServletResponse();
+
+        filter.doFilterInternal(request, response, filterChain);
+
+        assertThat(response.getStatus()).isEqualTo(404);
+        assertThat(response.getHeader("WWW-Authenticate")).isNull();
+        verifyNoInteractions(identityWebDavCredentialApi);
+    }
+
+    @Test
+    void shouldSuppressMicrosoftOfficeSharePointProbeWithNonBasicAuthorization() throws Exception {
+        MockHttpServletRequest request = request("/_api/v2.0/shares/u!abc/driveitem/");
+        request.setMethod("GET");
+        request.addHeader("User-Agent", "Microsoft Office/16.0 (Windows NT 10.0; Microsoft Word 16.0.19929; Pro)");
+        request.addHeader("Authorization", "Bearer office-token");
+        MockHttpServletResponse response = new MockHttpServletResponse();
+
+        filter.doFilterInternal(request, response, filterChain);
+
+        assertThat(response.getStatus()).isEqualTo(404);
+        assertThat(response.getHeader("WWW-Authenticate")).isNull();
+        verifyNoInteractions(identityWebDavCredentialApi);
+    }
+
+    @Test
     void shouldRejectDavPathTraversalBeforeAuthentication() throws Exception {
         MockHttpServletRequest request = request("/dav/../api/files/list");
         request.addHeader("Authorization", basic("alice", "webdav-password"));

@@ -48,6 +48,10 @@ public class WebDavBasicAuthenticationFilter extends OncePerRequestFilter {
             writeDavOptions(response);
             return;
         }
+        if (WebDavRequestPathMatcher.isMicrosoftOfficeProbeWithoutWebDavCredentials(request)) {
+            writeNotFoundWithoutAuthenticationChallenge(response);
+            return;
+        }
         Optional<BasicCredential> credential = parseBasicCredential(request.getHeader("Authorization"));
         if (credential.isEmpty()) {
             reject(response);
@@ -122,6 +126,12 @@ public class WebDavBasicAuthenticationFilter extends OncePerRequestFilter {
         response.setHeader("DAV", "1,2");
         response.setHeader("Allow", "OPTIONS, GET, HEAD, PUT, DELETE, PROPFIND, MKCOL, COPY, MOVE, LOCK, UNLOCK");
         response.setHeader("MS-Author-Via", "DAV");
+        response.setContentLength(0);
+    }
+
+    private void writeNotFoundWithoutAuthenticationChallenge(HttpServletResponse response) {
+        SecurityContextHolder.clearContext();
+        response.setStatus(HttpServletResponse.SC_NOT_FOUND);
         response.setContentLength(0);
     }
 
