@@ -49,6 +49,7 @@ public class WebDavProtocolDispatcher implements WebDavProtocolGateway {
     private static final int SC_TOO_MANY_REQUESTS = 429;
     private static final int MAX_LOCKS_PER_USER = 100;
     private static final long LOCK_TIMEOUT_SECONDS = 300L;
+    private static final String XML_CONTENT_TYPE = MediaType.APPLICATION_XML_VALUE + ";charset=UTF-8";
 
     private final WebDavResourceStore resourceStore;
     private final Map<String, LockInfo> locks = new ConcurrentHashMap<>();
@@ -118,7 +119,8 @@ public class WebDavProtocolDispatcher implements WebDavProtocolGateway {
             return;
         }
         response.setStatus(SC_MULTI_STATUS);
-        response.setContentType(MediaType.APPLICATION_XML_VALUE);
+        response.setCharacterEncoding(StandardCharsets.UTF_8.name());
+        response.setContentType(XML_CONTENT_TYPE);
         WebDavXmlResponseWriter writer = new WebDavXmlResponseWriter(response.getWriter());
         writer.startMultistatus();
         writer.writeResponse(resource.get(), hrefFor(request, resource.get()));
@@ -280,7 +282,8 @@ public class WebDavProtocolDispatcher implements WebDavProtocolGateway {
         response.setStatus(HttpServletResponse.SC_OK);
         response.setHeader(LOCK_TOKEN_HEADER, "<" + LOCK_SCHEME + token + ">");
         response.setHeader("Timeout", "Second-" + LOCK_TIMEOUT_SECONDS);
-        response.setContentType(MediaType.APPLICATION_XML_VALUE);
+        response.setCharacterEncoding(StandardCharsets.UTF_8.name());
+        response.setContentType(XML_CONTENT_TYPE);
         response.getWriter().write(lockDiscoveryXml(principal, lock));
     }
 
@@ -381,7 +384,7 @@ public class WebDavProtocolDispatcher implements WebDavProtocolGateway {
     }
 
     private String hrefFor(HttpServletRequest request, WebDavStoredResource resource) {
-        String prefix = request.getContextPath() + request.getServletPath();
+        String prefix = request.getContextPath() + "/dav";
         String href = "/".equals(resource.path()) ? prefix + "/" : prefix + encodePath(resource.path());
         return resource.directory() && !href.endsWith("/") ? href + "/" : href;
     }

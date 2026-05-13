@@ -187,6 +187,43 @@ class WebDavProtocolDispatcherTest {
         assertThat(response.getContentAsString()).contains("/dav/%E8%B5%84%E6%96%99/a%20b.txt");
     }
 
+    @Test
+    void propfindShouldWriteUtf8XmlDisplayNames() throws Exception {
+        FakeStore store = new FakeStore();
+        store.resources.add(resource("/", true));
+        store.resources.add(resource("/资料", true));
+        WebDavProtocolDispatcher dispatcher = new WebDavProtocolDispatcher(store);
+        MockHttpServletRequest propfindRequest = request("PROPFIND", "/dav");
+        propfindRequest.addHeader("Depth", "1");
+        MockHttpServletResponse response = new MockHttpServletResponse();
+
+        dispatcher.dispatch(principal, propfindRequest, response);
+
+        assertThat(response.getStatus()).isEqualTo(207);
+        assertThat(response.getContentType()).isEqualTo("application/xml;charset=UTF-8");
+        assertThat(response.getContentAsString(UTF_8)).contains("<D:displayname>资料</D:displayname>");
+    }
+
+    @Test
+    void propfindShouldUseDavBaseHrefForNestedResources() throws Exception {
+        FakeStore store = new FakeStore();
+        store.resources.add(resource("/资料", true));
+        store.resources.add(resource("/资料/电路图.pdf", false));
+        WebDavProtocolDispatcher dispatcher = new WebDavProtocolDispatcher(store);
+        MockHttpServletRequest propfindRequest = request("PROPFIND", "/dav/%E8%B5%84%E6%96%99");
+        propfindRequest.setServletPath("/dav/%E8%B5%84%E6%96%99");
+        propfindRequest.addHeader("Depth", "1");
+        MockHttpServletResponse response = new MockHttpServletResponse();
+
+        dispatcher.dispatch(principal, propfindRequest, response);
+
+        assertThat(response.getStatus()).isEqualTo(207);
+        assertThat(response.getContentAsString(UTF_8))
+                .contains("<D:href>/dav/%E8%B5%84%E6%96%99/</D:href>")
+                .contains("<D:href>/dav/%E8%B5%84%E6%96%99/%E7%94%B5%E8%B7%AF%E5%9B%BE.pdf</D:href>")
+                .doesNotContain("/dav/%E8%B5%84%E6%96%99/%E8%B5%84%E6%96%99");
+    }
+
     private MockHttpServletRequest request(String method, String uri) {
         MockHttpServletRequest request = new MockHttpServletRequest(method, uri);
         request.setScheme("http");
