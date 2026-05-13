@@ -420,7 +420,7 @@ class AdminControllerIntegrationTest {
                 .andExpect(jsonPath("$.data.upload.directMultipartUpload").value(false))
                 .andExpect(jsonPath("$.data.mediaProcessing.metadataExtractionEnabled").value(true))
                 .andExpect(jsonPath("$.data.cache.backend").value("disabled"))
-                .andExpect(jsonPath("$.data.webdav.enabled").value(false));
+                .andExpect(jsonPath("$.data.webdav.enabled").value(true));
     }
 
     @Test

@@ -17,6 +17,7 @@ const SharedWithMe = lazy(() => import('./pages/SharedWithMe'));
 const RecycleBin = lazy(() => import('./pages/RecycleBin'));
 const TransferSend = lazy(() => import('./pages/TransferSend'));
 const AccountSettings = lazy(() => import('./pages/AccountSettings'));
+const Connections = lazy(() => import('./pages/Connections'));
 const OfflineDownloads = lazy(() => import('./pages/OfflineDownloads'));
 const DashboardUnderConstruction = lazy(() => import('./pages/DashboardUnderConstruction'));
 
@@ -118,7 +119,7 @@ function App() {
                 <Route path="tasks" element={<RequireAuth><Tasks /></RequireAuth>} />
                 <Route path="shares" element={<RequireAuth><Shares /></RequireAuth>} />
                 <Route path="recycle-bin" element={<RequireAuth><RecycleBin /></RequireAuth>} />
-                <Route path="connections" element={<RequireAuth><DashboardUnderConstruction /></RequireAuth>} />
+                <Route path="connections" element={<RequireAuth><Connections /></RequireAuth>} />
                 <Route path="offline-downloads" element={<RequireAuth><OfflineDownloads /></RequireAuth>} />
                 <Route path="transfer-send" element={<RequireAuth><TransferSend /></RequireAuth>} />
                 <Route path="settings" element={<RequireAuth><AccountSettings /></RequireAuth>} />

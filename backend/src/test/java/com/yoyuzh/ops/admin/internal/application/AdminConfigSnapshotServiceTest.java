@@ -163,14 +163,14 @@ class AdminConfigSnapshotServiceTest {
         assertThat(response.cache().backend()).isEqualTo("redis");
         assertThat(response.cache().filesListTtlSeconds()).isEqualTo(45L);
         assertThat(response.cache().directoryVersionTtlSeconds()).isEqualTo(3600L);
-        assertThat(response.webdav().enabled()).isFalse();
+        assertThat(response.webdav().enabled()).isTrue();
     }
 
     @Test
-    void shouldExposeWebDavEnabledWhenRuntimeProviderIsWebDav() {
-        fileStorageProperties.setProvider("webdav");
+    void shouldExposeWebDavServiceAsEnabledIndependentlyFromStorageProvider() {
+        fileStorageProperties.setProvider("s3");
         when(storagePolicyAdminApi.readDefaultStoragePolicyAsAdmin())
-                .thenReturn(createStoragePolicy(7L, "Default WebDAV Storage"));
+                .thenReturn(createStoragePolicy(7L, "Default S3 Storage"));
 
         AdminFilesystemResponse response = adminConfigSnapshotService.getFilesystem();
 

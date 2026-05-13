@@ -1,15 +1,6 @@
 import React from 'react';
 import { useLocation } from 'react-router-dom';
-import {
-  CloudDownload,
-  FileText,
-  Image as ImageIcon,
-  Link2,
-  type LucideIcon,
-  Music2,
-  UsersRound,
-  Video,
-} from 'lucide-react';
+import { CloudDownload, FileText, Image as ImageIcon, type LucideIcon, Music2, UsersRound, Video } from 'lucide-react';
 import DashboardLayout from '../components/DashboardLayout';
 import GlassPanel from '../components/ui/GlassPanel';
 
@@ -44,11 +35,6 @@ const PLACEHOLDER_META: Record<string, PlaceholderMeta> = {
     title: '与我共享',
     description: '共享给我的文件列表和接收视图还在整理。',
     icon: UsersRound,
-  },
-  connections: {
-    title: '连接与挂载',
-    description: '外部存储连接、WebDAV 挂载和接入管理还未完成。',
-    icon: Link2,
   },
   'offline-downloads': {
     title: '离线下载',

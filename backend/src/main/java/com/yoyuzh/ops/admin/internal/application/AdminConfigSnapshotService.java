@@ -95,7 +95,7 @@ public class AdminConfigSnapshotService {
                         redisProperties.getCache().getFilesListTtlSeconds(),
                         redisProperties.getCache().getDirectoryVersionTtlSeconds()
                 ),
-                new AdminFilesystemResponse.WebdavSection(isWebDavEnabled())
+                new AdminFilesystemResponse.WebdavSection(true)
         );
     }
 
@@ -115,16 +115,6 @@ public class AdminConfigSnapshotService {
             effectiveMaxFileSize = Math.min(effectiveMaxFileSize, policy.capabilities().maxObjectSize());
         }
         return effectiveMaxFileSize;
-    }
-
-    private boolean isWebDavEnabled() {
-        if ("webdav".equalsIgnoreCase(normalizeStorageProvider(storageRuntimeProperties.getProvider()))) {
-            return true;
-        }
-        StorageRuntimeProperties.WebDav webDav = storageRuntimeProperties.getWebDav();
-        return webDav != null
-                && StringUtils.hasText(webDav.getBaseUrl())
-                && webDav.hasCredentials();
     }
 
 }
