@@ -112,15 +112,16 @@ public class WorkspaceWebDavResourceStore implements WebDavResourceStore {
     private WebDavStoredResource toResource(WorkspaceFileSnapshot snapshot) {
         String path = buildLogicalPath(snapshot.path(), snapshot.filename());
         Instant createdAt = toInstant(snapshot.createdAt());
+        boolean root = "/".equals(path);
         return new WebDavStoredResource(
                 path,
-                snapshot.filename(),
+                root ? "dav" : snapshot.filename(),
                 snapshot.directory(),
                 snapshot.size() == null ? 0L : snapshot.size(),
                 snapshot.contentType(),
                 createdAt,
                 createdAt,
-                "\"" + snapshot.id() + "-" + (snapshot.blobId() == null ? 0L : snapshot.blobId()) + "\""
+                root ? "\"root-" + snapshot.userId() + "\"" : "\"" + snapshot.id() + "-" + (snapshot.blobId() == null ? 0L : snapshot.blobId()) + "\""
         );
     }
 

@@ -77,6 +77,34 @@ class WorkspaceWebDavResourceStoreTest {
         );
     }
 
+    @Test
+    void shouldExposeStableRootMetadata() {
+        WorkspaceWebDavResourceStore store = new WorkspaceWebDavResourceStore(
+                workspacePathNodeApi,
+                workspacePathDownloadApi,
+                workspacePathWriteApi
+        );
+        WebDavPrincipal principal = new WebDavPrincipal(7L, "alice", 1024L, 512L);
+        LocalDateTime now = LocalDateTime.now();
+        when(workspacePathNodeApi.findOwnedActiveNodeByPath(7L, "/"))
+                .thenReturn(java.util.Optional.of(new com.yoyuzh.files.workspace.api.WorkspaceFileSnapshot(
+                        null,
+                        7L,
+                        "",
+                        "/",
+                        0L,
+                        "directory",
+                        true,
+                        null,
+                        now
+                )));
+
+        WebDavStoredResource resource = store.find(principal, "/").orElseThrow();
+
+        assertThat(resource.name()).isEqualTo("dav");
+        assertThat(resource.etag()).isEqualTo("\"root-7\"");
+    }
+
     private FileMetadataResponse file(Long id, String path, String filename) {
         LocalDateTime now = LocalDateTime.now();
         return new FileMetadataResponse(

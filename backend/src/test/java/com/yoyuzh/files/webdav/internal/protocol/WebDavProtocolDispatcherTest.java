@@ -304,6 +304,31 @@ class WebDavProtocolDispatcherTest {
     }
 
     @Test
+    void propfindShouldUseWindowsCompatibleHttpDateWithTwoDigitDay() throws Exception {
+        FakeStore store = new FakeStore();
+        store.resources.add(new WebDavStoredResource(
+                "/early.txt",
+                "early.txt",
+                false,
+                5L,
+                "text/plain",
+                Instant.parse("2026-05-07T03:42:02Z"),
+                Instant.parse("2026-05-07T03:42:02Z"),
+                "\"early\""
+        ));
+        WebDavProtocolDispatcher dispatcher = new WebDavProtocolDispatcher(store);
+        MockHttpServletResponse response = new MockHttpServletResponse();
+
+        dispatcher.dispatch(principal, request("PROPFIND", "/dav/early.txt"), response);
+
+        assertThat(response.getStatus()).isEqualTo(207);
+        assertThat(response.getContentAsString(UTF_8))
+                .contains("<D:creationdate>2026-05-07T03:42:02Z</D:creationdate>")
+                .contains("<D:getlastmodified>Thu, 07 May 2026 03:42:02 GMT</D:getlastmodified>")
+                .doesNotContain("Thu, 7 May 2026");
+    }
+
+    @Test
     void propfindShouldIncludeWindowsCompatibleResourceProperties() throws Exception {
         FakeStore store = new FakeStore();
         store.resources.add(resource("/", true));
@@ -316,12 +341,39 @@ class WebDavProtocolDispatcherTest {
         dispatcher.dispatch(principal, propfindRequest, response);
 
         assertThat(response.getStatus()).isEqualTo(207);
+        assertThat(response.getContentLength()).isGreaterThan(0);
         assertThat(response.getContentAsString(UTF_8))
                 .contains("<D:getcontentlength>0</D:getcontentlength>")
                 .contains("<D:getetag>")
                 .contains("<D:getcontenttype>httpd/unix-directory</D:getcontenttype>")
                 .contains("<D:supportedlock>")
                 .contains("<D:lockentry>");
+    }
+
+    @Test
+    void propfindShouldExposeStableRootMetadata() throws Exception {
+        FakeStore store = new FakeStore();
+        store.resources.add(new WebDavStoredResource(
+                "/",
+                "",
+                true,
+                0L,
+                "directory",
+                Instant.parse("1970-01-01T00:00:00Z"),
+                Instant.parse("1970-01-01T00:00:00Z"),
+                "\"null-0\""
+        ));
+        WebDavProtocolDispatcher dispatcher = new WebDavProtocolDispatcher(store);
+        MockHttpServletResponse response = new MockHttpServletResponse();
+
+        dispatcher.dispatch(principal, request("PROPFIND", "/dav"), response);
+
+        assertThat(response.getStatus()).isEqualTo(207);
+        assertThat(response.getContentAsString(UTF_8))
+                .contains("<D:displayname>dav</D:displayname>")
+                .contains("<D:getetag>&quot;root-7&quot;</D:getetag>")
+                .doesNotContain("<D:displayname></D:displayname>")
+                .doesNotContain("&quot;null-0&quot;");
     }
 
     @Test

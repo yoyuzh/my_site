@@ -2,67 +2,89 @@ package com.yoyuzh.files.webdav.internal.protocol;
 
 import com.yoyuzh.files.webdav.internal.application.WebDavStoredResource;
 
-import java.io.PrintWriter;
+import java.io.IOException;
+import java.io.UncheckedIOException;
+import java.io.Writer;
 import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
+import java.util.Locale;
 
 final class WebDavXmlResponseWriter {
 
-    private final PrintWriter writer;
+    private static final DateTimeFormatter CREATION_DATE_FORMATTER = DateTimeFormatter
+            .ofPattern("yyyy-MM-dd'T'HH:mm:ss'Z'")
+            .withZone(ZoneOffset.UTC);
+    private static final DateTimeFormatter HTTP_DATE_FORMATTER = DateTimeFormatter
+            .ofPattern("EEE, dd MMM yyyy HH:mm:ss 'GMT'", Locale.US)
+            .withZone(ZoneOffset.UTC);
 
-    WebDavXmlResponseWriter(PrintWriter writer) {
+    private final Writer writer;
+
+    WebDavXmlResponseWriter(Writer writer) {
         this.writer = writer;
     }
 
     void startMultistatus() {
-        writer.write("<?xml version=\"1.0\" encoding=\"utf-8\" ?>");
-        writer.write("<D:multistatus xmlns:D=\"DAV:\">");
+        write("<?xml version=\"1.0\" encoding=\"utf-8\" ?>");
+        write("<D:multistatus xmlns:D=\"DAV:\">");
     }
 
     void writeResponse(WebDavStoredResource resource, String href) {
-        writer.write("<D:response>");
-        writer.write("<D:href>");
-        writer.write(escape(href));
-        writer.write("</D:href>");
-        writer.write("<D:propstat><D:prop>");
-        writer.write("<D:displayname>");
-        writer.write(escape(resource.name()));
-        writer.write("</D:displayname>");
-        writer.write("<D:creationdate>");
-        writer.write(DateTimeFormatter.ISO_OFFSET_DATE_TIME.format(resource.createdAt().atOffset(ZoneOffset.UTC)));
-        writer.write("</D:creationdate>");
-        writer.write("<D:getlastmodified>");
-        writer.write(DateTimeFormatter.RFC_1123_DATE_TIME.format(resource.lastModifiedAt().atOffset(ZoneOffset.UTC)));
-        writer.write("</D:getlastmodified>");
+        write("<D:response>");
+        write("<D:href>");
+        write(escape(href));
+        write("</D:href>");
+        write("<D:propstat><D:prop>");
+        write("<D:displayname>");
+        write(escape(resource.name()));
+        write("</D:displayname>");
+        write("<D:creationdate>");
+        write(CREATION_DATE_FORMATTER.format(resource.createdAt()));
+        write("</D:creationdate>");
+        write("<D:getlastmodified>");
+        write(HTTP_DATE_FORMATTER.format(resource.lastModifiedAt()));
+        write("</D:getlastmodified>");
         if (resource.directory()) {
-            writer.write("<D:resourcetype><D:collection/></D:resourcetype>");
-            writer.write("<D:getcontentlength>0</D:getcontentlength>");
-            writer.write("<D:getcontenttype>httpd/unix-directory</D:getcontenttype>");
-            writer.write("<D:getetag>");
-            writer.write(escape(resource.etag()));
-            writer.write("</D:getetag>");
+            write("<D:resourcetype><D:collection/></D:resourcetype>");
+            write("<D:getcontentlength>0</D:getcontentlength>");
+            write("<D:getcontenttype>httpd/unix-directory</D:getcontenttype>");
+            write("<D:getetag>");
+            write(escape(resource.etag()));
+            write("</D:getetag>");
         } else {
-            writer.write("<D:resourcetype/>");
-            writer.write("<D:getcontentlength>");
-            writer.write(Long.toString(resource.contentLength()));
-            writer.write("</D:getcontentlength>");
-            writer.write("<D:getcontenttype>");
-            writer.write(escape(resource.contentType()));
-            writer.write("</D:getcontenttype>");
-            writer.write("<D:getetag>");
-            writer.write(escape(resource.etag()));
-            writer.write("</D:getetag>");
+            write("<D:resourcetype/>");
+            write("<D:getcontentlength>");
+            write(Long.toString(resource.contentLength()));
+            write("</D:getcontentlength>");
+            write("<D:getcontenttype>");
+            write(escape(resource.contentType()));
+            write("</D:getcontenttype>");
+            write("<D:getetag>");
+            write(escape(resource.etag()));
+            write("</D:getetag>");
         }
-        writer.write("<D:supportedlock>");
-        writer.write("<D:lockentry><D:lockscope><D:exclusive/></D:lockscope><D:locktype><D:write/></D:locktype></D:lockentry>");
-        writer.write("</D:supportedlock>");
-        writer.write("</D:prop><D:status>HTTP/1.1 200 OK</D:status></D:propstat>");
-        writer.write("</D:response>");
+        write("<D:supportedlock>");
+        write("<D:lockentry><D:lockscope><D:exclusive/></D:lockscope><D:locktype><D:write/></D:locktype></D:lockentry>");
+        write("</D:supportedlock>");
+        write("</D:prop><D:status>HTTP/1.1 200 OK</D:status></D:propstat>");
+        write("</D:response>");
     }
 
     void endMultistatus() {
-        writer.write("</D:multistatus>");
-        writer.flush();
+        write("</D:multistatus>");
+        try {
+            writer.flush();
+        } catch (IOException ex) {
+            throw new UncheckedIOException(ex);
+        }
+    }
+
+    private void write(String value) {
+        try {
+            writer.write(value);
+        } catch (IOException ex) {
+            throw new UncheckedIOException(ex);
+        }
     }
 
     private String escape(String value) {

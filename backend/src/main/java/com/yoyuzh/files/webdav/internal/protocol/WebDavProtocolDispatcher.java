@@ -15,6 +15,7 @@ import org.springframework.stereotype.Component;
 
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.StringWriter;
 import java.net.URI;
 import java.net.URISyntaxException;
 import java.net.URLDecoder;
@@ -123,18 +124,38 @@ public class WebDavProtocolDispatcher implements WebDavProtocolGateway {
             fail(response, HttpServletResponse.SC_NOT_FOUND);
             return;
         }
-        response.setStatus(SC_MULTI_STATUS);
-        response.setCharacterEncoding(StandardCharsets.UTF_8.name());
-        response.setContentType(XML_CONTENT_TYPE);
-        WebDavXmlResponseWriter writer = new WebDavXmlResponseWriter(response.getWriter());
+        StringWriter xml = new StringWriter();
+        WebDavXmlResponseWriter writer = new WebDavXmlResponseWriter(xml);
         writer.startMultistatus();
-        writer.writeResponse(resource.get(), hrefFor(request, resource.get()));
+        writer.writeResponse(sanitizeRootResource(principal, resource.get()), hrefFor(request, resource.get()));
         if ("1".equals(depth) && resource.get().directory()) {
             for (WebDavStoredResource child : resourceStore.list(principal, path)) {
-                writer.writeResponse(child, hrefFor(request, child));
+                writer.writeResponse(sanitizeRootResource(principal, child), hrefFor(request, child));
             }
         }
         writer.endMultistatus();
+        byte[] body = xml.toString().getBytes(StandardCharsets.UTF_8);
+        response.setStatus(SC_MULTI_STATUS);
+        response.setCharacterEncoding(StandardCharsets.UTF_8.name());
+        response.setContentType(XML_CONTENT_TYPE);
+        response.setContentLength(body.length);
+        response.getOutputStream().write(body);
+    }
+
+    private WebDavStoredResource sanitizeRootResource(WebDavPrincipal principal, WebDavStoredResource resource) {
+        if (!"/".equals(resource.path())) {
+            return resource;
+        }
+        return new WebDavStoredResource(
+                resource.path(),
+                "dav",
+                resource.directory(),
+                resource.contentLength(),
+                resource.contentType(),
+                resource.createdAt(),
+                resource.lastModifiedAt(),
+                "\"root-" + principal.userId() + "\""
+        );
     }
 
     private void get(WebDavPrincipal principal,
