@@ -30,6 +30,7 @@ import com.yoyuzh.files.workspace.api.WorkspaceMoveConflictStrategy;
 import com.yoyuzh.files.workspace.api.WorkspaceMoveOutcomeStatus;
 import com.yoyuzh.files.workspace.api.WorkspaceDownloadOptions;
 import com.yoyuzh.files.workspace.api.WorkspaceDownloadResult;
+import com.yoyuzh.files.workspace.api.WorkspaceDownloadStreamResult;
 import com.yoyuzh.files.workspace.api.WorkspaceZipArchive;
 import com.yoyuzh.files.workspace.api.WorkspaceZipArchiveEntry;
 import com.yoyuzh.platform.storage.internal.infra.FileStorageProperties;
@@ -1260,6 +1261,25 @@ class FileServiceTest {
         verify(fileContentStorage).readBlob("blobs/blob-12");
         verify(fileContentStorage).readBlob("blobs/blob-13");
         verify(adminMetricsService).recordDownloadTraffic((long) response.body().length);
+    }
+
+    @Test
+    void shouldStreamFileWithoutDirectRedirectOrBuffering() throws Exception {
+        User user = createUser(7L);
+        StoredFile file = createFile(22L, user, "/docs", "notes.txt");
+        when(storedFileRepository.findDetailedById(22L)).thenReturn(Optional.of(file));
+        when(fileContentStorage.readBlobStream("blobs/blob-22"))
+                .thenReturn(new ByteArrayInputStream("hello".getBytes(StandardCharsets.UTF_8)));
+
+        WorkspaceDownloadStreamResult response = fileService.downloadStream(FileServiceTestSupport.workspaceUser(user), 22L);
+
+        assertThat(response.filename()).isEqualTo("notes.txt");
+        assertThat(response.contentType()).isEqualTo("text/plain");
+        assertThat(response.contentLength()).isEqualTo(5L);
+        assertThat(response.content().readAllBytes()).isEqualTo("hello".getBytes(StandardCharsets.UTF_8));
+        verify(fileContentStorage).readBlobStream("blobs/blob-22");
+        verify(fileContentStorage, never()).readBlob("blobs/blob-22");
+        verify(fileContentStorage, never()).createBlobDownloadUrl(any(), any());
     }
 
     @Test

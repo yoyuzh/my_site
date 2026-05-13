@@ -20,13 +20,15 @@ import org.springframework.security.config.annotation.method.configuration.Enabl
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
 import org.springframework.security.config.http.SessionCreationPolicy;
-import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
+import org.springframework.security.web.firewall.HttpFirewall;
+import org.springframework.security.web.firewall.StrictHttpFirewall;
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
+import org.springframework.web.filter.OncePerRequestFilter;
 import org.springframework.util.StringUtils;
 
 @Configuration
@@ -42,9 +44,27 @@ public class SecurityConfig {
     private final ObjectMapper objectMapper;
     private final CorsProperties corsProperties;
     private final AdminAccessPolicy adminAccessPolicy;
+    private final WebDavBasicAuthenticationFilter webDavBasicAuthenticationFilter;
+    private final OncePerRequestFilter webDavProtocolFilter;
+    private static final List<String> ALLOWED_HTTP_METHODS = List.of(
+            "GET",
+            "POST",
+            "PUT",
+            "PATCH",
+            "DELETE",
+            "HEAD",
+            "OPTIONS",
+            "PROPFIND",
+            "PROPPATCH",
+            "MKCOL",
+            "COPY",
+            "MOVE",
+            "LOCK",
+            "UNLOCK"
+    );
 
     @Bean
-    public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
+    public SecurityFilterChain securityFilterChain(HttpSecurity http, PasswordEncoder passwordEncoder) throws Exception {
         http
                 .csrf(csrf -> csrf.disable())
                 .cors(Customizer.withDefaults())
@@ -58,6 +78,8 @@ public class SecurityConfig {
                         .permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/v2/site/ping", "/api/v2/site/config")
                         .permitAll()
+                        .requestMatchers("/dav", "/dav/**")
+                        .authenticated()
                         .requestMatchers("/api/v2/tasks/**")
                         .authenticated()
                         .requestMatchers("/api/v2/files/**")
@@ -92,7 +114,7 @@ public class SecurityConfig {
                         .authenticated()
                         .anyRequest()
                         .denyAll())
-                .authenticationProvider(authenticationProvider())
+                .authenticationProvider(authenticationProvider(passwordEncoder))
                 .exceptionHandling(ex -> ex
                         .authenticationEntryPoint((request, response, e) -> {
                             logAuthProbe("unauthorized-entrypoint", request.getRequestURI(), request.getHeader("Authorization"));
@@ -111,15 +133,17 @@ public class SecurityConfig {
                                     ApiResponse.error(ErrorCode.PERMISSION_DENIED, "没有权限访问该资源"));
                         }))
                 .addFilterBefore(apiRequestMetricsFilter, UsernamePasswordAuthenticationFilter.class)
+                .addFilterBefore(webDavBasicAuthenticationFilter, UsernamePasswordAuthenticationFilter.class)
+                .addFilterAfter(webDavProtocolFilter, WebDavBasicAuthenticationFilter.class)
                 .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
         return http.build();
     }
 
     @Bean
-    public AuthenticationProvider authenticationProvider() {
+    public AuthenticationProvider authenticationProvider(PasswordEncoder passwordEncoder) {
         DaoAuthenticationProvider provider = new DaoAuthenticationProvider();
         provider.setUserDetailsService(userDetailsService);
-        provider.setPasswordEncoder(passwordEncoder());
+        provider.setPasswordEncoder(passwordEncoder);
         return provider;
     }
 
@@ -129,15 +153,17 @@ public class SecurityConfig {
     }
 
     @Bean
-    public PasswordEncoder passwordEncoder() {
-        return new BCryptPasswordEncoder();
+    public HttpFirewall httpFirewall() {
+        StrictHttpFirewall firewall = new StrictHttpFirewall();
+        firewall.setAllowedHttpMethods(ALLOWED_HTTP_METHODS);
+        return firewall;
     }
 
     @Bean
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration configuration = new CorsConfiguration();
         configuration.setAllowedOrigins(corsProperties.getAllowedOrigins());
-        configuration.setAllowedMethods(List.of("GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"));
+        configuration.setAllowedMethods(ALLOWED_HTTP_METHODS);
         configuration.setAllowedHeaders(List.of("*"));
         configuration.setExposedHeaders(List.of(
                 "Upload-Offset",

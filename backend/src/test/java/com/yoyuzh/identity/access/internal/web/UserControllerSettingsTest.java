@@ -4,6 +4,7 @@ import com.yoyuzh.identity.access.internal.application.AvatarDownloadResult;
 import com.yoyuzh.identity.access.api.UpdateUserSettingsRequest;
 import com.yoyuzh.identity.access.api.UserCapacityResponse;
 import com.yoyuzh.identity.access.api.UserSettingsResponse;
+import com.yoyuzh.identity.access.api.UserWebDavCredentialResponse;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.yoyuzh.identity.access.internal.application.AuthService;
 import org.hamcrest.Matchers;
@@ -24,12 +25,14 @@ import org.springframework.web.method.support.ModelAndViewContainer;
 
 import java.util.List;
 import java.util.Map;
+import java.time.LocalDateTime;
 
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
@@ -76,6 +79,34 @@ class UserControllerSettingsTest {
                 .andExpect(jsonPath("$.data.disableViewSync").value(false))
                 .andExpect(jsonPath("$.data.defaultOpenWithByExt.md").value("markdown"))
                 .andExpect(jsonPath("$.data.uploadConcurrency").value(2));
+    }
+
+    @Test
+    void shouldExposeWebDavCredentialStatus() throws Exception {
+        LocalDateTime updatedAt = LocalDateTime.of(2026, 5, 12, 12, 0);
+        when(authService.getWebDavCredential("demo"))
+                .thenReturn(new UserWebDavCredentialResponse("demo", "/dav", true, updatedAt, updatedAt, null));
+
+        mockMvc.perform(get("/api/user/webdav-credential").with(user(userDetails())))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.username").value("demo"))
+                .andExpect(jsonPath("$.data.endpoint").value("/dav"))
+                .andExpect(jsonPath("$.data.enabled").value(true))
+                .andExpect(jsonPath("$.data.plaintextPassword").doesNotExist());
+    }
+
+    @Test
+    void shouldIssueWebDavCredential() throws Exception {
+        LocalDateTime updatedAt = LocalDateTime.of(2026, 5, 12, 12, 0);
+        when(authService.issueWebDavCredential("demo"))
+                .thenReturn(new UserWebDavCredentialResponse("demo", "/dav", true, updatedAt, updatedAt, "one-time-secret"));
+
+        mockMvc.perform(post("/api/user/webdav-credential").with(user(userDetails())))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.username").value("demo"))
+                .andExpect(jsonPath("$.data.endpoint").value("/dav"))
+                .andExpect(jsonPath("$.data.enabled").value(true))
+                .andExpect(jsonPath("$.data.plaintextPassword").value("one-time-secret"));
     }
 
     @Test

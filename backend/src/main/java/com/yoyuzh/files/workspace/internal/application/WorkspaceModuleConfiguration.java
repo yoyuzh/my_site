@@ -1,12 +1,16 @@
 package com.yoyuzh.files.workspace.internal.application;
 
 import com.yoyuzh.files.content.api.ContentBlobQueryApi;
+import com.yoyuzh.files.content.api.ContentBlobLifecycleApi;
 import com.yoyuzh.files.content.api.ContentDuplicationApi;
 import com.yoyuzh.files.content.api.FileContentStorage;
 import com.yoyuzh.files.workspace.api.WorkspaceDirectoryApi;
 import com.yoyuzh.files.workspace.api.WorkspaceDownloadOptions;
 import com.yoyuzh.files.workspace.api.WorkspaceLifecycleApi;
 import com.yoyuzh.files.workspace.api.WorkspaceMutationApi;
+import com.yoyuzh.files.workspace.api.WorkspacePathDownloadApi;
+import com.yoyuzh.files.workspace.api.WorkspacePathNodeApi;
+import com.yoyuzh.files.workspace.api.WorkspacePathWriteApi;
 import com.yoyuzh.files.workspace.internal.infra.StoredFileRepository;
 import com.yoyuzh.platform.storage.api.StorageRuntimeProperties;
 import com.yoyuzh.platform.storage.api.StoragePolicyQuery;
@@ -53,6 +57,38 @@ public class WorkspaceModuleConfiguration {
                 contentBlobQueryApi,
                 workspacePathPolicy,
                 workspaceNodeRulesService
+        );
+    }
+
+    @Bean
+    WorkspacePathNodeApi workspacePathNodeApi(StoredFileRepository storedFileRepository,
+                                              RuntimeWorkspacePathPolicy workspacePathPolicy,
+                                              WorkspaceDirectoryApi workspaceDirectoryApi) {
+        return new RuntimeWorkspacePathNodeApi(storedFileRepository, workspacePathPolicy, workspaceDirectoryApi);
+    }
+
+    @Bean
+    WorkspacePathDownloadApi workspacePathDownloadApi(WorkspacePathNodeApi workspacePathNodeApi,
+                                                      FileService fileService) {
+        return new RuntimeWorkspacePathDownloadApi(workspacePathNodeApi, fileService);
+    }
+
+    @Bean
+    WorkspacePathWriteApi workspacePathWriteApi(StoredFileRepository storedFileRepository,
+                                                WorkspaceDirectoryApi workspaceDirectoryApi,
+                                                WorkspaceFileIngressService workspaceFileIngressService,
+                                                WorkspaceMutationApi workspaceMutationApi,
+                                                WorkspaceLifecycleApi workspaceLifecycleApi,
+                                                ContentBlobLifecycleApi contentBlobLifecycleApi,
+                                                RuntimeWorkspacePathPolicy workspacePathPolicy) {
+        return new RuntimeWorkspacePathWriteApi(
+                storedFileRepository,
+                workspaceDirectoryApi,
+                workspaceFileIngressService,
+                workspaceMutationApi,
+                workspaceLifecycleApi,
+                contentBlobLifecycleApi,
+                workspacePathPolicy
         );
     }
 

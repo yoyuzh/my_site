@@ -10,6 +10,9 @@ import com.yoyuzh.identity.access.api.IdentityRoleName;
 import com.yoyuzh.identity.access.api.IdentityCredentialIssuer;
 import com.yoyuzh.identity.access.api.IdentityStorageUsageQuery;
 import com.yoyuzh.identity.access.api.IdentityUserSnapshot;
+import com.yoyuzh.identity.access.api.IdentityWebDavCredentialApi;
+import com.yoyuzh.identity.access.api.IdentityWebDavCredentialIssueResult;
+import com.yoyuzh.identity.access.api.IdentityWebDavCredentialStatus;
 import com.yoyuzh.identity.access.api.IssuedAuthCredentials;
 import com.yoyuzh.identity.access.api.LoginRequest;
 import com.yoyuzh.identity.access.api.LoginAdmissionPolicy;
@@ -27,6 +30,7 @@ import com.yoyuzh.identity.access.api.UpdateUserSettingsRequest;
 import com.yoyuzh.identity.access.api.UserCapacityResponse;
 import com.yoyuzh.identity.access.api.UserProfileResponse;
 import com.yoyuzh.identity.access.api.UserSettingsResponse;
+import com.yoyuzh.identity.access.api.UserWebDavCredentialResponse;
 import com.yoyuzh.identity.access.internal.domain.User;
 import com.yoyuzh.identity.access.internal.domain.UserRole;
 import com.yoyuzh.identity.access.internal.infra.UserRepository;
@@ -62,6 +66,7 @@ public class AuthService {
     private final PasswordChangePolicy passwordChangePolicy;
     private final IdentityCredentialIssuer identityCredentialIssuer;
     private final IdentityStorageUsageQuery identityStorageUsageQuery;
+    private final IdentityWebDavCredentialApi identityWebDavCredentialApi;
     private final ObjectMapper objectMapper;
 
     private static final TypeReference<Map<String, String>> STRING_MAP_TYPE = new TypeReference<>() {
@@ -177,6 +182,20 @@ public class AuthService {
         );
     }
 
+    public UserWebDavCredentialResponse getWebDavCredential(String username) {
+        User user = findUserByUsername(username);
+        IdentityWebDavCredentialStatus status = identityWebDavCredentialApi.getCredentialStatus(user.getId());
+        return toWebDavCredentialResponse(user, status, null);
+    }
+
+    @Transactional
+    public UserWebDavCredentialResponse issueWebDavCredential(String username) {
+        User user = findUserByUsername(username);
+        IdentityWebDavCredentialIssueResult issued = identityWebDavCredentialApi.issueOrReplaceCredential(user.getId());
+        IdentityWebDavCredentialStatus status = identityWebDavCredentialApi.getCredentialStatus(user.getId());
+        return toWebDavCredentialResponse(user, status, issued.plaintextPassword());
+    }
+
     @Transactional
     public UserSettingsResponse updateSettings(String username, UpdateUserSettingsRequest request) {
         User user = findUserByUsername(username);
@@ -269,6 +288,19 @@ public class AuthService {
                 issuedAuthCredentials.accessToken(),
                 issuedAuthCredentials.refreshToken(),
                 toProfile(issuedAuthCredentials.user()));
+    }
+
+    private UserWebDavCredentialResponse toWebDavCredentialResponse(User user,
+                                                                    IdentityWebDavCredentialStatus status,
+                                                                    String plaintextPassword) {
+        return new UserWebDavCredentialResponse(
+                user.getUsername(),
+                "/dav",
+                status.enabled(),
+                status.createdAt(),
+                status.updatedAt(),
+                plaintextPassword
+        );
     }
 
     private UserProfileResponse toProfile(IdentityUserSnapshot user) {

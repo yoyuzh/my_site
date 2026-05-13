@@ -53,6 +53,18 @@ public class UserController {
         return ApiResponse.success(authService.getSettings(userDetails.getUsername()));
     }
 
+    @Operation(summary = "获取当前用户 WebDAV 凭据状态")
+    @GetMapping("/webdav-credential")
+    public ApiResponse<?> webDavCredential(@AuthenticationPrincipal UserDetails userDetails) {
+        return ApiResponse.success(authService.getWebDavCredential(userDetails.getUsername()));
+    }
+
+    @Operation(summary = "生成或重置当前用户 WebDAV 凭据")
+    @PostMapping("/webdav-credential")
+    public ApiResponse<?> issueWebDavCredential(@AuthenticationPrincipal UserDetails userDetails) {
+        return ApiResponse.success(authService.issueWebDavCredential(userDetails.getUsername()));
+    }
+
     @Operation(summary = "更新当前用户设置")
     @PutMapping("/settings")
     public ApiResponse<?> updateSettings(@AuthenticationPrincipal UserDetails userDetails,

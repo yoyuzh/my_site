@@ -25,6 +25,7 @@ import com.yoyuzh.files.workspace.api.WorkspaceBootstrapApi;
 import com.yoyuzh.files.workspace.api.WorkspaceDownloadMetricsPort;
 import com.yoyuzh.files.workspace.api.WorkspaceDownloadOptions;
 import com.yoyuzh.files.workspace.api.WorkspaceDownloadResult;
+import com.yoyuzh.files.workspace.api.WorkspaceDownloadStreamResult;
 import com.yoyuzh.files.workspace.api.WorkspaceDirectoryApi;
 import com.yoyuzh.files.workspace.api.WorkspaceExternalFileImport;
 import com.yoyuzh.files.workspace.api.WorkspaceExternalImportProgress;
@@ -822,6 +823,14 @@ public class FileService implements WorkspaceBootstrapApi, WorkspaceArchiveApi, 
         return download(toWorkspaceUser(userId), fileId);
     }
 
+    public WorkspaceDownloadResult downloadInline(Long userId, Long fileId) {
+        return downloadInline(toWorkspaceUser(userId), fileId);
+    }
+
+    public WorkspaceDownloadStreamResult downloadStream(Long userId, Long fileId) {
+        return downloadStream(toWorkspaceUser(userId), fileId);
+    }
+
     public WorkspaceDownloadResult download(WorkspaceUserContext user, Long fileId) {
         StoredFile storedFile = workspaceRequestProbe.measure(
                 "service.download.loadFile",
@@ -861,6 +870,59 @@ public class FileService implements WorkspaceBootstrapApi, WorkspaceArchiveApi, 
                 storedFile.getFilename(),
                 storedFile.getContentType() == null ? MediaType.APPLICATION_OCTET_STREAM_VALUE : storedFile.getContentType(),
                 body
+        );
+    }
+
+    WorkspaceDownloadResult downloadInline(WorkspaceUserContext user, Long fileId) {
+        StoredFile storedFile = workspaceRequestProbe.measure(
+                "service.downloadInline.loadFile",
+                () -> getOwnedActiveFile(user, fileId, "下载")
+        );
+        if (storedFile.isDirectory()) {
+            return workspaceRequestProbe.measure("service.downloadInline.archiveDirectory", () -> downloadDirectory(user, storedFile));
+        }
+        recordWorkspaceDownloadTraffic(storedFile.getSize());
+        ContentBlobReference blob = getRequiredBlob(storedFile);
+        byte[] body = workspaceRequestProbe.measure(
+                "service.downloadInline.readBlob",
+                () -> fileContentStorage.readBlob(blob.objectKey())
+        );
+        return WorkspaceDownloadResult.inline(
+                storedFile.getFilename(),
+                storedFile.getContentType() == null ? MediaType.APPLICATION_OCTET_STREAM_VALUE : storedFile.getContentType(),
+                body
+        );
+    }
+
+    WorkspaceDownloadStreamResult downloadStream(WorkspaceUserContext user, Long fileId) {
+        StoredFile storedFile = workspaceRequestProbe.measure(
+                "service.downloadStream.loadFile",
+                () -> getOwnedActiveFile(user, fileId, "下载")
+        );
+        if (storedFile.isDirectory()) {
+            WorkspaceDownloadResult directoryDownload = workspaceRequestProbe.measure(
+                    "service.downloadStream.archiveDirectory",
+                    () -> downloadDirectory(user, storedFile)
+            );
+            byte[] body = directoryDownload.body() == null ? new byte[0] : directoryDownload.body();
+            return new WorkspaceDownloadStreamResult(
+                    directoryDownload.filename(),
+                    directoryDownload.contentType(),
+                    new ByteArrayInputStream(body),
+                    body.length
+            );
+        }
+        recordWorkspaceDownloadTraffic(storedFile.getSize());
+        ContentBlobReference blob = getRequiredBlob(storedFile);
+        InputStream content = workspaceRequestProbe.measure(
+                "service.downloadStream.readBlobStream",
+                () -> fileContentStorage.readBlobStream(blob.objectKey())
+        );
+        return new WorkspaceDownloadStreamResult(
+                storedFile.getFilename(),
+                storedFile.getContentType() == null ? MediaType.APPLICATION_OCTET_STREAM_VALUE : storedFile.getContentType(),
+                content,
+                storedFile.getSize() == null ? blob.size() : storedFile.getSize()
         );
     }
 
