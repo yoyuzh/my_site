@@ -92,7 +92,7 @@ function resolveDefinition(file: FileLike): IconDefinition {
   }
 
   const ext = getExtension(file.filename);
-  const contentType = file.contentType || '';
+  const contentType = file.contentType ?? '';
 
   if (FLOWCHART_EXTS.has(ext)) {
     return { component: DocumentFlowchart, color: '#0f9d8a' };

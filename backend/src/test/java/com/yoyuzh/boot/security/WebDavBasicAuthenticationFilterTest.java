@@ -196,6 +196,22 @@ class WebDavBasicAuthenticationFilterTest {
     }
 
     @Test
+    void shouldAuthenticateLegacyMsOfficeGetProbeWhenWebDavCredentialIsPresent() throws Exception {
+        MockHttpServletRequest request = request("/api/dav/report.docx");
+        request.setMethod("GET");
+        request.addHeader("User-Agent", "Mozilla/4.0 (compatible; ms-office; MSOffice 16)");
+        request.addHeader("Authorization", basic("alice", "webdav-password"));
+        MockHttpServletResponse response = new MockHttpServletResponse();
+        when(identityWebDavCredentialApi.authenticate("alice", "webdav-password"))
+                .thenReturn(Optional.of(authenticatedUser()));
+
+        filter.doFilterInternal(request, response, filterChain);
+
+        verify(filterChain).doFilter(request, response);
+        assertThat(SecurityContextHolder.getContext().getAuthentication()).isNotNull();
+    }
+
+    @Test
     void shouldRejectDavPathTraversalBeforeAuthentication() throws Exception {
         MockHttpServletRequest request = request("/dav/../api/files/list");
         request.addHeader("Authorization", basic("alice", "webdav-password"));

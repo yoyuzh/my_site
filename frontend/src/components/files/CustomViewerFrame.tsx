@@ -76,6 +76,9 @@ export const CustomViewerFrame: React.FC<CustomViewerFrameProps> = ({ file, view
     setSourceUrl(null);
     void getFileDownloadUrl(file.id, { viewer: true })
       .then((result) => {
+        if (!result.url) {
+          throw new Error('下载地址暂不可用');
+        }
         if (!disposed) {
           setSourceUrl(resolveApiUrl(result.url));
         }

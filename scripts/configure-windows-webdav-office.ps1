@@ -5,6 +5,10 @@ param(
 
 $ErrorActionPreference = "Stop"
 
+if (-not $DavUrl.StartsWith("https://", [System.StringComparison]::OrdinalIgnoreCase)) {
+    throw "DavUrl 必须使用 https://，否则 Windows WebClient 不会发送 Basic Auth 凭据。"
+}
+
 function Assert-Administrator {
     $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
     $principal = [Security.Principal.WindowsPrincipal]::new($identity)

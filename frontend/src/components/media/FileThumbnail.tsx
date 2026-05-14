@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import type { FileItem } from '../../api/types';
+import { resolveApiUrl } from '../../api/client';
 import CloudreveFileTypeIcon from '../files/CloudreveFileTypeIcon';
 import { getThumbnail } from '../../lib/files';
 
@@ -32,7 +33,7 @@ const FileThumbnail: React.FC<FileThumbnailProps> = ({ file, variant = 'compact'
     void getThumbnail(file.id)
       .then((response) => {
         if (!disposed) {
-          setThumbnailUrl(response.available ? response.url : null);
+          setThumbnailUrl(response.available && response.url ? resolveApiUrl(response.url) : null);
         }
       })
       .catch(() => {

@@ -26,6 +26,9 @@ export const EpubViewerDialog: React.FC<EpubViewerDialogProps> = ({ file, onClos
     setLocation(0);
     void getFileDownloadUrl(file.id, { viewer: true })
       .then((result) => {
+        if (!result.url) {
+          throw new Error('下载地址暂不可用');
+        }
         if (!disposed) {
           setSourceUrl(resolveApiUrl(result.url));
         }
