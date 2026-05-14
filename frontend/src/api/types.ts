@@ -104,7 +104,7 @@ export interface FileItem {
   filename: string;
   path: string;
   size: number;
-  contentType: string;
+  contentType: string | null;
   directory: boolean;
   createdAt: string;
   updatedAt: string | null;
@@ -156,11 +156,11 @@ export interface FavoriteFileResponse {
 export interface ThumbnailResponse {
   fileId: number;
   available: boolean;
-  url: string;
+  url: string | null;
 }
 
 export interface DownloadUrlResponse {
-  url: string;
+  url: string | null;
 }
 
 export interface ArchiveEntry {

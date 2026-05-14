@@ -7,11 +7,17 @@ import { formatBytes, formatDateTime } from '../../lib/format';
 import { downloadFileBlob, getFileDownloadUrl } from '../../lib/files';
 import CloudreveFileTypeIcon from './CloudreveFileTypeIcon';
 
-function isExternalUrl(url: string) {
+function isExternalUrl(url: string | null | undefined) {
+  if (!url) {
+    return false;
+  }
   return /^https?:\/\//i.test(url) || url.startsWith('//');
 }
 
-function isEmbeddableViewerUrl(url: string) {
+function isEmbeddableViewerUrl(url: string | null | undefined) {
+  if (!url) {
+    return false;
+  }
   return isExternalUrl(url) || url.startsWith('/api/files/viewer/');
 }
 

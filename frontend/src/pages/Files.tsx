@@ -84,6 +84,7 @@ import { setDefaultViewerPreference } from '../lib/file-open-preferences';
 import { getTask, readTaskPublicState } from '../lib/tasks';
 import { useTheme as useAppTheme } from '../hooks/useTheme';
 import { useWorkspaceDragMove } from '../hooks/useWorkspaceDragMove';
+import { getLocalStorageItem, setLocalStorageItem } from '../lib/browser-storage';
 import {
   emitWorkspaceFolderTreeRefresh,
   FILES_PATH_SEARCH_PARAM,
@@ -310,7 +311,10 @@ function replaceLogicalPathPrefix(currentPath: string, sourcePath: string, targe
   );
 }
 
-function isExternalUrl(url: string) {
+function isExternalUrl(url: string | null | undefined) {
+  if (!url) {
+    return false;
+  }
   return /^https?:\/\//i.test(url) || url.startsWith('//');
 }
 
@@ -557,15 +561,15 @@ const Files: React.FC<FilesProps> = ({ mediaCategory }) => {
   const [page, setPage] = useState(1);
   const [allRows, setAllRows] = useState<FileItem[]>([]);
   const [sortBy, setSortBy] = useState<SortBy>(() => {
-    const stored = window.localStorage.getItem(SORT_BY_STORAGE_KEY);
+    const stored = getLocalStorageItem(SORT_BY_STORAGE_KEY);
     return (stored as SortBy) || 'createdAt';
   });
   const [sortOrder, setSortOrder] = useState<SortOrder>(() => {
-    const stored = window.localStorage.getItem(SORT_ORDER_STORAGE_KEY);
+    const stored = getLocalStorageItem(SORT_ORDER_STORAGE_KEY);
     return (stored as SortOrder) || 'desc';
   });
   const [viewMode, setViewMode] = useState<ViewMode>(() => {
-    const stored = window.localStorage.getItem(VIEW_MODE_STORAGE_KEY);
+    const stored = getLocalStorageItem(VIEW_MODE_STORAGE_KEY);
     return stored === 'list' || stored === 'grid' ? stored : 'grid';
   });
   const [selectedById, setSelectedById] = useState<SelectedFileMap>({});
@@ -1700,15 +1704,15 @@ const Files: React.FC<FilesProps> = ({ mediaCategory }) => {
   });
 
   useEffect(() => {
-    window.localStorage.setItem(VIEW_MODE_STORAGE_KEY, viewMode);
+    setLocalStorageItem(VIEW_MODE_STORAGE_KEY, viewMode);
   }, [viewMode]);
 
   useEffect(() => {
-    window.localStorage.setItem(SORT_BY_STORAGE_KEY, sortBy);
+    setLocalStorageItem(SORT_BY_STORAGE_KEY, sortBy);
   }, [sortBy]);
 
   useEffect(() => {
-    window.localStorage.setItem(SORT_ORDER_STORAGE_KEY, sortOrder);
+    setLocalStorageItem(SORT_ORDER_STORAGE_KEY, sortOrder);
   }, [sortOrder]);
 
   useEffect(() => {
@@ -2182,6 +2186,9 @@ const Files: React.FC<FilesProps> = ({ mediaCategory }) => {
   async function getDirectLink(file: FileItem) {
     try {
       const result = await getFileDownloadUrl(file.id);
+      if (!result.url) {
+        throw new Error('直链暂不可用');
+      }
       await navigator.clipboard.writeText(result.url);
       showToast({ message: '直链已复制到剪贴板', severity: 'success' });
     } catch (e) {

@@ -3,6 +3,7 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import { Loader2, RefreshCw } from 'lucide-react';
 import type { FileItem } from '../../api/types';
 import { listFiles } from '../../lib/files';
+import { getLocalStorageItem, setLocalStorageItem } from '../../lib/browser-storage';
 import { getSession } from '../../lib/session';
 import {
   buildWorkspaceFilesHref,
@@ -118,7 +119,7 @@ function restoreExpandedPaths() {
   }
 
   try {
-    const raw = window.localStorage.getItem(WORKSPACE_FOLDER_TREE_STORAGE_KEY);
+    const raw = getLocalStorageItem(WORKSPACE_FOLDER_TREE_STORAGE_KEY);
     if (!raw) {
       return [];
     }
@@ -195,7 +196,7 @@ const WorkspaceFolderTree: React.FC<{
       return;
     }
 
-    window.localStorage.setItem(
+    setLocalStorageItem(
       WORKSPACE_FOLDER_TREE_STORAGE_KEY,
       JSON.stringify(Array.from(new Set(expandedPaths))),
     );

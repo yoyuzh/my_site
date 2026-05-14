@@ -88,19 +88,24 @@ function getEditableContentType(file: FileItem) {
   return 'text/plain;charset=utf-8';
 }
 
-function isExternalUrl(url: string) {
+function isExternalUrl(url: string | null | undefined) {
+  if (!url) {
+    return false;
+  }
   return /^https?:\/\//i.test(url) || url.startsWith('//');
 }
 
-function isEmbeddableViewerUrl(url: string) {
+function isEmbeddableViewerUrl(url: string | null | undefined) {
+  if (!url) {
+    return false;
+  }
   return isExternalUrl(url) || url.startsWith('/api/files/viewer/');
 }
 
 async function loadPreviewSource(fileId: number) {
   const result = await getFileDownloadUrl(fileId, { viewer: true });
-  const resolvedUrl = resolveApiUrl(result.url);
   if (isEmbeddableViewerUrl(result.url)) {
-    return { url: resolvedUrl, shouldRevoke: false };
+    return { url: resolveApiUrl(result.url), shouldRevoke: false };
   }
 
   const blob = await downloadFileBlob(fileId);

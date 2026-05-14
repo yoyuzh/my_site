@@ -4,6 +4,7 @@ import { ArrowLeft, ChevronRight, Menu, X } from 'lucide-react';
 import { Link, useLocation } from 'react-router-dom';
 import BackgroundEffects from '../BackgroundEffects';
 import Topbar from '../Topbar';
+import { getSessionStorageItem, setSessionStorageItem } from '../../lib/browser-storage';
 import { adminNavGroups } from './adminNavigation';
 
 export interface AdminShellProps {
@@ -40,7 +41,7 @@ const AdminShell: React.FC<AdminShellProps> = ({ children, title }) => {
       return;
     }
 
-    const storedScrollTop = window.sessionStorage.getItem(ADMIN_SIDEBAR_SCROLL_STORAGE_KEY);
+    const storedScrollTop = getSessionStorageItem(ADMIN_SIDEBAR_SCROLL_STORAGE_KEY);
     const nextScrollTop = storedScrollTop ? Number(storedScrollTop) : lastAdminSidebarScrollTop;
     if (!navScrollRef.current || !Number.isFinite(nextScrollTop) || nextScrollTop <= 0) {
       return;
@@ -65,7 +66,7 @@ const AdminShell: React.FC<AdminShellProps> = ({ children, title }) => {
 
     const handleScroll = () => {
       lastAdminSidebarScrollTop = element.scrollTop;
-      window.sessionStorage.setItem(ADMIN_SIDEBAR_SCROLL_STORAGE_KEY, String(element.scrollTop));
+      setSessionStorageItem(ADMIN_SIDEBAR_SCROLL_STORAGE_KEY, String(element.scrollTop));
     };
 
     element.addEventListener('scroll', handleScroll, { passive: true });
@@ -94,7 +95,7 @@ const AdminShell: React.FC<AdminShellProps> = ({ children, title }) => {
     const scrollTop = navScrollRef.current?.scrollTop ?? lastAdminSidebarScrollTop;
     lastAdminSidebarScrollTop = scrollTop;
     if (typeof window !== 'undefined') {
-      window.sessionStorage.setItem(ADMIN_SIDEBAR_SCROLL_STORAGE_KEY, String(scrollTop));
+      setSessionStorageItem(ADMIN_SIDEBAR_SCROLL_STORAGE_KEY, String(scrollTop));
     }
   }
 

@@ -1,3 +1,5 @@
+import { getLocalStorageItem, removeLocalStorageItem, setLocalStorageItem } from './browser-storage';
+
 export type PortalUserRole = 'USER' | 'MODERATOR' | 'ADMIN';
 
 export type PortalUser = {
@@ -33,7 +35,7 @@ export function getDefaultSignedInRoute(role?: PortalUserRole | null) {
 }
 
 export function getSession() {
-  const raw = window.localStorage.getItem(SESSION_KEY);
+  const raw = getLocalStorageItem(SESSION_KEY);
   if (!raw) {
     return null;
   }
@@ -41,17 +43,17 @@ export function getSession() {
   try {
     return JSON.parse(raw) as PortalSession;
   } catch {
-    window.localStorage.removeItem(SESSION_KEY);
+    removeLocalStorageItem(SESSION_KEY);
     return null;
   }
 }
 
 export function setSession(session: PortalSession) {
-  window.localStorage.setItem(SESSION_KEY, JSON.stringify(session));
+  setLocalStorageItem(SESSION_KEY, JSON.stringify(session));
   window.dispatchEvent(new CustomEvent('portal-session-changed', { detail: session }));
 }
 
 export function clearSession() {
-  window.localStorage.removeItem(SESSION_KEY);
+  removeLocalStorageItem(SESSION_KEY);
   window.dispatchEvent(new CustomEvent('portal-session-changed', { detail: null }));
 }

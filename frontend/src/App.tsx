@@ -1,4 +1,4 @@
-import { lazy, Suspense } from 'react';
+import { Component, lazy, Suspense, type ErrorInfo, type ReactNode } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { BrowserRouter as Router, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { ThemeProvider } from './hooks/useTheme';
@@ -41,6 +41,55 @@ const queryClient = new QueryClient({
     },
   },
 });
+
+type AppErrorBoundaryProps = {
+  children: ReactNode;
+};
+
+type AppErrorBoundaryState = {
+  error: Error | null;
+};
+
+class AppErrorBoundary extends Component<AppErrorBoundaryProps, AppErrorBoundaryState> {
+  state: AppErrorBoundaryState = {
+    error: null,
+  };
+
+  static getDerivedStateFromError(error: Error) {
+    return { error };
+  }
+
+  componentDidCatch(error: Error, info: ErrorInfo) {
+    console.error('Application render failed', error, info);
+  }
+
+  render() {
+    if (this.state.error) {
+      return (
+        <div className="flex min-h-screen items-center justify-center bg-bg-light px-6 text-center text-sm text-slate-500 dark:bg-bg-dark dark:text-slate-400">
+          <div>
+            <h1 className="text-lg font-semibold text-slate-900 dark:text-white">页面加载失败</h1>
+            <p className="mt-3 max-w-md">
+              当前页面资源没有正确加载。请刷新页面，或清理浏览器缓存后重新登录。
+            </p>
+            <p className="mt-4 max-w-md break-words rounded-lg bg-black/5 px-4 py-3 text-left font-mono text-xs text-slate-600 dark:bg-white/5 dark:text-slate-300">
+              {this.state.error.name}: {this.state.error.message}
+            </p>
+            <button
+              type="button"
+              className="btn-primary mt-6"
+              onClick={() => window.location.reload()}
+            >
+              重新加载
+            </button>
+          </div>
+        </div>
+      );
+    }
+
+    return this.props.children;
+  }
+}
 
 function AuthCheckFallback() {
   return (
@@ -91,13 +140,22 @@ function HomeRedirect() {
   return <Navigate to={getDefaultSignedInRoute(session.user.role)} replace />;
 }
 
+function RouteLoadingFallback() {
+  return (
+    <div className="flex min-h-screen items-center justify-center bg-bg-light px-6 text-sm font-medium text-slate-500 dark:bg-bg-dark dark:text-slate-400">
+      正在加载页面...
+    </div>
+  );
+}
+
 function App() {
   return (
-    <QueryClientProvider client={queryClient}>
-      <ThemeProvider>
-        <Router future={{ v7_startTransition: true }}>
-          <Suspense fallback={null}>
-            <Routes>
+    <AppErrorBoundary>
+      <QueryClientProvider client={queryClient}>
+        <ThemeProvider>
+          <Router future={{ v7_startTransition: true }}>
+            <Suspense fallback={<RouteLoadingFallback />}>
+              <Routes>
               {/* 公共登录路由 */}
               <Route path="/login" element={<Login />} />
               <Route path="/register" element={<Register />} />
@@ -154,11 +212,12 @@ function App() {
 
               {/* 默认入口 */}
               <Route path="/" element={<HomeRedirect />} />
-            </Routes>
-          </Suspense>
-        </Router>
-      </ThemeProvider>
-    </QueryClientProvider>
+              </Routes>
+            </Suspense>
+          </Router>
+        </ThemeProvider>
+      </QueryClientProvider>
+    </AppErrorBoundary>
   );
 }
 

@@ -1,5 +1,6 @@
 import axios, { AxiosError, type AxiosRequestConfig, type AxiosResponse } from 'axios';
 import { clearSession, getSession, setSession, type PortalSession } from '../lib/session';
+import { getLocalStorageItem, setLocalStorageItem } from '../lib/browser-storage';
 
 const CLIENT_HEADER = 'X-Yoyuzh-Client';
 const CLIENT_ID_HEADER = 'X-Yoyuzh-Client-Id';
@@ -95,9 +96,9 @@ export const apiClient = axios.create({
 
 let refreshPromise: Promise<PortalSession> | null = null;
 
-export function resolveApiUrl(url: string) {
-  if (!url) {
-    return url;
+export function resolveApiUrl(url: string | null | undefined) {
+  if (typeof url !== 'string' || url.length === 0) {
+    return '';
   }
 
   if (typeof window === 'undefined') {
@@ -124,7 +125,7 @@ export function resolveApiUrl(url: string) {
 
 export function getClientId() {
   const storageKey = 'portal-client-id';
-  const existing = window.localStorage.getItem(storageKey);
+  const existing = getLocalStorageItem(storageKey);
   if (existing) {
     return existing;
   }
@@ -133,7 +134,7 @@ export function getClientId() {
     typeof crypto.randomUUID === 'function'
       ? `web-${crypto.randomUUID()}`
       : `web-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
-  window.localStorage.setItem(storageKey, generated);
+  setLocalStorageItem(storageKey, generated);
   return generated;
 }
 

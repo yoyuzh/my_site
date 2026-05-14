@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
+import { getLocalStorageItem, setLocalStorageItem } from '../lib/browser-storage';
 
 type Theme = 'light' | 'dark';
 
@@ -11,7 +12,7 @@ const ThemeContext = createContext<ThemeContextType | undefined>(undefined);
 
 export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [theme, setTheme] = useState<Theme>(() => {
-    const saved = localStorage.getItem('theme');
+    const saved = getLocalStorageItem('theme');
     return (saved as Theme) || 'light';
   });
 
@@ -22,7 +23,7 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     } else {
       root.classList.remove('dark');
     }
-    localStorage.setItem('theme', theme);
+    setLocalStorageItem('theme', theme);
   }, [theme]);
 
   const toggleTheme = () => {

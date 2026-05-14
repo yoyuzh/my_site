@@ -73,7 +73,8 @@ final class WebDavRequestPathMatcher {
     }
 
     private static boolean isMicrosoftOfficeUserAgent(String userAgent) {
-        return StringUtils.hasText(userAgent) && userAgent.contains("Microsoft Office");
+        return StringUtils.hasText(userAgent)
+                && (userAgent.contains("Microsoft Office") || userAgent.contains("ms-office"));
     }
 
     private static boolean hasBasicAuthorization(String authorizationHeader) {

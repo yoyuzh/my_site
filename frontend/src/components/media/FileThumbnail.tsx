@@ -9,7 +9,8 @@ type FileThumbnailProps = {
 };
 
 function isPreviewable(file: FileItem) {
-  return !file.directory && (file.contentType.startsWith('image/') || file.contentType.startsWith('video/'));
+  const contentType = file.contentType ?? '';
+  return !file.directory && (contentType.startsWith('image/') || contentType.startsWith('video/'));
 }
 
 function getFileExtension(file: FileItem) {

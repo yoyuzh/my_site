@@ -21,6 +21,7 @@ import {
 import { useUserCapacity } from '../../api/queries';
 import type { FileItem } from '../../api/types';
 import { formatBytes } from '../../lib/format';
+import { getLocalStorageItem, getSessionStorageItem, setLocalStorageItem, setSessionStorageItem } from '../../lib/browser-storage';
 import { WORKSPACE_FOLDER_TREE_SECTION_STORAGE_KEY } from '../../lib/workspace-folder-tree';
 import WorkspaceFolderTree from './WorkspaceFolderTree';
 
@@ -46,7 +47,7 @@ function restoreFilesSectionCollapsed() {
     return false;
   }
 
-  return window.localStorage.getItem(WORKSPACE_FOLDER_TREE_SECTION_STORAGE_KEY) === 'true';
+  return getLocalStorageItem(WORKSPACE_FOLDER_TREE_SECTION_STORAGE_KEY) === 'true';
 }
 
 const WorkspaceSidebar: React.FC<{ 
@@ -79,7 +80,7 @@ const WorkspaceSidebar: React.FC<{
     if (typeof window === 'undefined') {
       return;
     }
-    window.localStorage.setItem(
+    setLocalStorageItem(
       WORKSPACE_FOLDER_TREE_SECTION_STORAGE_KEY,
       filesSectionCollapsed ? 'true' : 'false',
     );
@@ -90,7 +91,7 @@ const WorkspaceSidebar: React.FC<{
       return;
     }
 
-    const scrollTop = window.sessionStorage.getItem(WORKSPACE_SIDEBAR_SCROLL_STORAGE_KEY);
+    const scrollTop = getSessionStorageItem(WORKSPACE_SIDEBAR_SCROLL_STORAGE_KEY);
     if (!scrollTop || !scrollContainerRef.current) {
       return;
     }
@@ -109,7 +110,7 @@ const WorkspaceSidebar: React.FC<{
     }
 
     const handleScroll = () => {
-      window.sessionStorage.setItem(WORKSPACE_SIDEBAR_SCROLL_STORAGE_KEY, String(element.scrollTop));
+      setSessionStorageItem(WORKSPACE_SIDEBAR_SCROLL_STORAGE_KEY, String(element.scrollTop));
     };
 
     handleScroll();
