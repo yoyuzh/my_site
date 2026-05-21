@@ -17,6 +17,8 @@ import com.yoyuzh.platform.storage.api.StoragePolicyQuery;
 import com.yoyuzh.platform.storage.api.UploadConstraintPolicy;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
 
 @Configuration
 public class WorkspaceModuleConfiguration {
@@ -80,7 +82,8 @@ public class WorkspaceModuleConfiguration {
                                                 WorkspaceMutationApi workspaceMutationApi,
                                                 WorkspaceLifecycleApi workspaceLifecycleApi,
                                                 ContentBlobLifecycleApi contentBlobLifecycleApi,
-                                                RuntimeWorkspacePathPolicy workspacePathPolicy) {
+                                                RuntimeWorkspacePathPolicy workspacePathPolicy,
+                                                WorkspaceRequestProbe workspaceRequestProbe) {
         return new RuntimeWorkspacePathWriteApi(
                 storedFileRepository,
                 workspaceDirectoryApi,
@@ -88,7 +91,8 @@ public class WorkspaceModuleConfiguration {
                 workspaceMutationApi,
                 workspaceLifecycleApi,
                 contentBlobLifecycleApi,
-                workspacePathPolicy
+                workspacePathPolicy,
+                workspaceRequestProbe
         );
     }
 
@@ -111,6 +115,11 @@ public class WorkspaceModuleConfiguration {
     ExternalImportRulesService externalImportRulesService(WorkspaceNodeRulesService workspaceNodeRulesService,
                                                           FileUploadRulesService fileUploadRulesService) {
         return new ExternalImportRulesService(workspaceNodeRulesService, fileUploadRulesService);
+    }
+
+    @Bean
+    TransactionTemplate workspaceTransactionTemplate(PlatformTransactionManager transactionManager) {
+        return new TransactionTemplate(transactionManager);
     }
 
     @Bean

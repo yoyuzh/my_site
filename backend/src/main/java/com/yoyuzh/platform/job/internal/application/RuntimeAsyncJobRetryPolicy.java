@@ -19,6 +19,9 @@ public class RuntimeAsyncJobRetryPolicy implements AsyncJobRetryPolicy {
         if (type == BackgroundTaskType.MEDIA_META) {
             return 2;
         }
+        if (type == BackgroundTaskType.BLOB_UPLOAD) {
+            return 3;
+        }
         return 1;
     }
 
@@ -50,6 +53,9 @@ public class RuntimeAsyncJobRetryPolicy implements AsyncJobRetryPolicy {
         }
         if (type == BackgroundTaskType.MEDIA_META) {
             return 15L;
+        }
+        if (type == BackgroundTaskType.BLOB_UPLOAD) {
+            return 10L;
         }
         return 30L;
     }

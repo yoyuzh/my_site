@@ -1,7 +1,8 @@
 package com.yoyuzh.files.workspace.internal.application;
 
-import com.yoyuzh.files.content.api.ContentAssetApi;
+import com.yoyuzh.files.content.api.ContentPrimaryEntityApi;
 import com.yoyuzh.files.content.api.ContentDuplicationApi;
+import com.yoyuzh.files.content.api.ContentBlobLifecycleApi;
 import com.yoyuzh.files.content.api.ContentPrimaryEntity;
 import com.yoyuzh.files.content.api.ContentPrimaryEntityRelationCommand;
 import com.yoyuzh.files.content.api.ContentRegistrationApi;
@@ -18,28 +19,20 @@ import org.springframework.stereotype.Service;
 public final class RuntimeWorkspaceContentRegistrationApi implements ContentRegistrationApi, ContentDuplicationApi {
 
     private final StoredFileRepository storedFileRepository;
-    private final ContentAssetApi contentAssetApi;
+    private final ContentPrimaryEntityApi contentPrimaryEntityApi;
+    private final ContentBlobLifecycleApi contentBlobLifecycleApi;
     private final FileListDirectoryCacheService fileListDirectoryCacheService;
     private final WorkspacePathPolicy workspacePathPolicy;
 
-    public RuntimeWorkspaceContentRegistrationApi(StoredFileRepository storedFileRepository,
-                                                  ContentAssetApi contentAssetApi) {
-        this(storedFileRepository, contentAssetApi, FileListDirectoryCacheService.noOp(), new RuntimeWorkspacePathPolicy(storedFileRepository, null));
-    }
-
-    public RuntimeWorkspaceContentRegistrationApi(StoredFileRepository storedFileRepository,
-                                                  ContentAssetApi contentAssetApi,
-                                                  FileListDirectoryCacheService fileListDirectoryCacheService) {
-        this(storedFileRepository, contentAssetApi, fileListDirectoryCacheService, new RuntimeWorkspacePathPolicy(storedFileRepository, null));
-    }
-
     @Autowired
     public RuntimeWorkspaceContentRegistrationApi(StoredFileRepository storedFileRepository,
-                                                  ContentAssetApi contentAssetApi,
+                                                  ContentPrimaryEntityApi contentPrimaryEntityApi,
+                                                  ContentBlobLifecycleApi contentBlobLifecycleApi,
                                                   FileListDirectoryCacheService fileListDirectoryCacheService,
                                                   WorkspacePathPolicy workspacePathPolicy) {
         this.storedFileRepository = storedFileRepository;
-        this.contentAssetApi = contentAssetApi;
+        this.contentPrimaryEntityApi = contentPrimaryEntityApi;
+        this.contentBlobLifecycleApi = contentBlobLifecycleApi;
         this.fileListDirectoryCacheService = fileListDirectoryCacheService == null
                 ? FileListDirectoryCacheService.noOp()
                 : fileListDirectoryCacheService;
@@ -69,7 +62,7 @@ public final class RuntimeWorkspaceContentRegistrationApi implements ContentRegi
     }
 
     private RegisteredContentFile persistBlobBackedFile(ContentRegistrationCommand command) {
-        ContentPrimaryEntity primaryEntity = contentAssetApi.createOrReferencePrimaryEntity(command.userId(), command.blob());
+        ContentPrimaryEntity primaryEntity = contentPrimaryEntityApi.createOrReferencePrimaryEntity(command.userId(), command.blob());
         StoredFile storedFile = StoredFile.blobBackedFile(
                 command.userId(),
                 command.normalizedPath(),
@@ -81,9 +74,38 @@ public final class RuntimeWorkspaceContentRegistrationApi implements ContentRegi
                 primaryEntity.entityId()
         );
         StoredFile savedFile = storedFileRepository.save(storedFile);
-        contentAssetApi.savePrimaryEntityRelation(new ContentPrimaryEntityRelationCommand(savedFile.getId(), primaryEntity.entityId()));
+        contentPrimaryEntityApi.savePrimaryEntityRelation(new ContentPrimaryEntityRelationCommand(savedFile.getId(), primaryEntity.entityId()));
         fileListDirectoryCacheService.touchDirectory(command.userId(), command.normalizedPath());
         return toRegisteredContentFile(savedFile);
+    }
+
+    public void finalizeReplace(Long userId,
+                                Long targetFileId,
+                                String contentType,
+                                long size,
+                                Long newBlobId,
+                                String newObjectKey,
+                                Long newPrimaryEntityId) {
+        storedFileRepository.findDetailedByIdAndUserId(targetFileId, userId)
+                .ifPresent(file -> {
+                    Long oldBlobId = file.getBlobId();
+                    Long oldPrimaryEntityId = file.getPrimaryEntityId();
+                    file.setBlobId(newBlobId);
+                    file.setPrimaryEntityId(newPrimaryEntityId);
+                    file.setLegacyStorageName(newObjectKey);
+                    file.setContentType(contentType);
+                    file.setSize(size);
+                    storedFileRepository.save(file);
+                    if (contentPrimaryEntityApi != null && oldPrimaryEntityId != null && !oldPrimaryEntityId.equals(newPrimaryEntityId)) {
+                        contentPrimaryEntityApi.releasePrimaryEntity(file.getId(), oldPrimaryEntityId);
+                    }
+                    if (contentBlobLifecycleApi != null && oldBlobId != null && !oldBlobId.equals(newBlobId)) {
+                        contentBlobLifecycleApi.deleteBlobReferences(
+                                contentBlobLifecycleApi.collectBlobReferencesToDelete(java.util.List.of(oldBlobId))
+                        );
+                    }
+                    fileListDirectoryCacheService.touchDirectory(userId, file.getPath());
+                });
     }
 
     private RegisteredContentFile toRegisteredContentFile(StoredFile storedFile) {

@@ -1,7 +1,11 @@
 package com.yoyuzh.files.content.internal.domain;
 
+import com.yoyuzh.files.content.api.FileBlobStatus;
+
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
@@ -31,11 +35,24 @@ public class FileBlob {
     @Column(nullable = false)
     private Long size;
 
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false, length = 16)
+    private FileBlobStatus status;
+
+    @Column(name = "local_temp_path", length = 512)
+    private String localTempPath;
+
+    @Column(name = "upload_task_id")
+    private Long uploadTaskId;
+
     @Column(name = "created_at", nullable = false)
     private LocalDateTime createdAt;
 
     @PrePersist
     public void prePersist() {
+        if (status == null) {
+            status = FileBlobStatus.READY;
+        }
         if (createdAt == null) {
             createdAt = LocalDateTime.now();
         }
@@ -71,6 +88,30 @@ public class FileBlob {
 
     public void setSize(Long size) {
         this.size = size;
+    }
+
+    public FileBlobStatus getStatus() {
+        return status;
+    }
+
+    public void setStatus(FileBlobStatus status) {
+        this.status = status;
+    }
+
+    public String getLocalTempPath() {
+        return localTempPath;
+    }
+
+    public void setLocalTempPath(String localTempPath) {
+        this.localTempPath = localTempPath;
+    }
+
+    public Long getUploadTaskId() {
+        return uploadTaskId;
+    }
+
+    public void setUploadTaskId(Long uploadTaskId) {
+        this.uploadTaskId = uploadTaskId;
     }
 
     public LocalDateTime getCreatedAt() {

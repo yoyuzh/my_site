@@ -1,9 +1,11 @@
 package com.yoyuzh.files.content.internal.infra;
 
+import com.yoyuzh.files.content.api.FileBlobStatus;
 import com.yoyuzh.files.content.internal.domain.FileBlob;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 
+import java.time.LocalDateTime;
 import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
@@ -13,6 +15,8 @@ public interface FileBlobRepository extends JpaRepository<FileBlob, Long> {
     Optional<FileBlob> findByObjectKey(String objectKey);
 
     List<FileBlob> findAllByObjectKeyIn(Collection<String> objectKeys);
+
+    List<FileBlob> findAllByStatusAndCreatedAtBefore(FileBlobStatus status, LocalDateTime createdAtBefore);
 
     @Query("""
             select coalesce(sum(b.size), 0)

@@ -235,6 +235,14 @@ public class BackgroundTaskService {
                 .orElseThrow(() -> new BusinessException(ErrorCode.TASK_NOT_FOUND, "task not found"));
     }
 
+    @Transactional(readOnly = true)
+    public Optional<BackgroundTask> findTaskById(Long id) {
+        if (id == null) {
+            return Optional.empty();
+        }
+        return backgroundTaskRepository.findById(id);
+    }
+
     public TaskProgressResponse getOwnedTaskProgress(Long userId, Long id) {
         BackgroundTask task = getOwnedTask(userId, id);
         Map<String, Object> state = stateManager.parseJsonObject(task.getPublicStateJson(), "Failed to parse background task state");

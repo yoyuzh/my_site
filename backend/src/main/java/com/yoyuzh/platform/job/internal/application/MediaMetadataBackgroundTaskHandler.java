@@ -7,11 +7,12 @@ import com.yoyuzh.platform.job.api.BackgroundTaskStatus;
 import com.yoyuzh.platform.job.api.BackgroundTaskType;
 
 import com.yoyuzh.files.content.api.ContentBlobQueryApi;
+import com.yoyuzh.files.content.api.ContentBlobReadApi;
+import com.yoyuzh.files.content.api.ContentBlobReadResult;
 import com.yoyuzh.files.content.api.ContentBlobReference;
 import com.yoyuzh.files.search.api.FileMetadataWriteApi;
 import com.yoyuzh.files.workspace.api.WorkspaceFileQueryApi;
 import com.yoyuzh.files.workspace.api.WorkspaceFileSnapshot;
-import com.yoyuzh.files.content.api.FileContentStorage;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
@@ -35,18 +36,28 @@ public class MediaMetadataBackgroundTaskHandler implements BackgroundTaskHandler
     private final WorkspaceFileQueryApi workspaceFileQueryApi;
     private final ContentBlobQueryApi contentBlobQueryApi;
     private final FileMetadataWriteApi fileMetadataWriteApi;
-    private final FileContentStorage fileContentStorage;
+    private final ContentBlobReadApi contentBlobReadApi;
     private final BackgroundTaskStateManager stateManager;
 
     public MediaMetadataBackgroundTaskHandler(WorkspaceFileQueryApi workspaceFileQueryApi,
                                               FileMetadataWriteApi fileMetadataWriteApi,
-                                              FileContentStorage fileContentStorage,
+                                              ContentBlobReadApi contentBlobReadApi,
                                               BackgroundTaskStateManager stateManager) {
         this(
                 workspaceFileQueryApi,
-                blobId -> Optional.empty(),
+                new ContentBlobQueryApi() {
+                    @Override
+                    public Optional<ContentBlobReference> findBlobReferenceById(Long blobId) {
+                        return Optional.empty();
+                    }
+
+                    @Override
+                    public Optional<com.yoyuzh.files.content.api.ContentBlobStateView> findBlobStateById(Long blobId) {
+                        return Optional.empty();
+                    }
+                },
                 fileMetadataWriteApi,
-                fileContentStorage,
+                contentBlobReadApi,
                 stateManager
         );
     }
@@ -55,12 +66,12 @@ public class MediaMetadataBackgroundTaskHandler implements BackgroundTaskHandler
     public MediaMetadataBackgroundTaskHandler(WorkspaceFileQueryApi workspaceFileQueryApi,
                                               ContentBlobQueryApi contentBlobQueryApi,
                                               FileMetadataWriteApi fileMetadataWriteApi,
-                                              FileContentStorage fileContentStorage,
+                                              ContentBlobReadApi contentBlobReadApi,
                                               BackgroundTaskStateManager stateManager) {
         this.workspaceFileQueryApi = workspaceFileQueryApi;
         this.contentBlobQueryApi = contentBlobQueryApi;
         this.fileMetadataWriteApi = fileMetadataWriteApi;
-        this.fileContentStorage = fileContentStorage;
+        this.contentBlobReadApi = contentBlobReadApi;
         this.stateManager = stateManager;
     }
 
@@ -103,8 +114,8 @@ public class MediaMetadataBackgroundTaskHandler implements BackgroundTaskHandler
         upsertMetadata(file, MEDIA_CONTENT_TYPE, contentType);
         upsertMetadata(file, MEDIA_SIZE, String.valueOf(size));
 
-        try (InputStream contentStream = Optional.ofNullable(fileContentStorage.readBlobStream(blob.objectKey()))
-                .orElseThrow(() -> new IllegalStateException("media metadata task requires blob content"))) {
+        ContentBlobReadResult blobReadResult = contentBlobReadApi.readBlob(file.blobId(), file.directory());
+        try (InputStream contentStream = blobReadResult.content()) {
             progressReporter.report(Map.of("metadataStage", "reading-image"));
             BufferedImage image = ImageIO.read(contentStream);
             if (image != null) {

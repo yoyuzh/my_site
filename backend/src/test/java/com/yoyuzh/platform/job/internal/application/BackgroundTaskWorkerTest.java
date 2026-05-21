@@ -89,6 +89,23 @@ class BackgroundTaskWorkerTest {
     }
 
     @Test
+    void shouldProcessBlobUploadTasksForLightweightWakeup() {
+        BackgroundTask task = createTask(10L, BackgroundTaskType.BLOB_UPLOAD, BackgroundTaskStatus.RUNNING);
+        when(backgroundTaskExecutionGateway.findQueuedTaskIdsByTypes(Set.of(BackgroundTaskType.BLOB_UPLOAD), 1))
+                .thenReturn(List.of(10L));
+        when(backgroundTaskExecutionGateway.claimQueuedTask(eq(10L), anyString(), anyLong())).thenReturn(Optional.of(task));
+        when(backgroundTaskHandler.supports(BackgroundTaskType.BLOB_UPLOAD)).thenReturn(true);
+        when(backgroundTaskHandler.handle(eq(task), any(BackgroundTaskProgressReporter.class)))
+                .thenReturn(new BackgroundTaskHandlerResult(Map.of("phase", "completed")));
+
+        int processedCount = backgroundTaskWorker.processQueuedTasksByTypes(Set.of(BackgroundTaskType.BLOB_UPLOAD), 1);
+
+        assertThat(processedCount).isEqualTo(1);
+        verify(backgroundTaskExecutionGateway).findQueuedTaskIdsByTypes(Set.of(BackgroundTaskType.BLOB_UPLOAD), 1);
+        verify(backgroundTaskExecutionGateway).markWorkerTaskProgress(eq(10L), anyString(), eq(Map.of("phase", "uploading-blob")), anyLong());
+    }
+
+    @Test
     void shouldMarkTaskFailedWhenHandlerThrows() {
         BackgroundTask task = createTask(2L, BackgroundTaskType.MEDIA_META, BackgroundTaskStatus.RUNNING);
         when(backgroundTaskExecutionGateway.findQueuedTaskIds(5)).thenReturn(List.of(2L));

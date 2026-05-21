@@ -8,6 +8,7 @@ public enum BackgroundTaskType {
     THUMBNAIL,
     MEDIA_META,
     WORKSPACE_MUTATION,
+    BLOB_UPLOAD,
     REMOTE_DOWNLOAD,
     HLS_TRANSCODE,
     CLEANUP

@@ -31,6 +31,7 @@ public class GlobalExceptionHandler {
             case SESSION_EXPIRED -> HttpStatus.GONE;
             case DUPLICATE_NAME -> HttpStatus.CONFLICT;
             case QUOTA_EXCEEDED -> HttpStatus.TOO_MANY_REQUESTS;
+            case SERVICE_UNAVAILABLE -> HttpStatus.SERVICE_UNAVAILABLE;
             case INVALID_INPUT, UNKNOWN, ARCHIVE_READ_FAILED -> HttpStatus.BAD_REQUEST;
         };
         return ResponseEntity.status(status).body(ApiResponse.error(ex.getErrorCode(), ex.getMessage()));

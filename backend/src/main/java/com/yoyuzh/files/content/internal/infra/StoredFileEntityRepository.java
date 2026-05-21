@@ -8,6 +8,7 @@ import org.springframework.data.repository.query.Param;
 
 import java.util.Collection;
 import java.util.List;
+import java.util.Optional;
 
 public interface StoredFileEntityRepository extends JpaRepository<StoredFileEntity, Long> {
 
@@ -33,6 +34,8 @@ public interface StoredFileEntityRepository extends JpaRepository<StoredFileEnti
                                                                 @Param("entityType") FileEntityType entityType);
 
     long countByFileEntityId(Long fileEntityId);
+
+    Optional<StoredFileEntity> findByStoredFileIdAndEntityRole(Long storedFileId, String entityRole);
 
     @Query("""
             select count(distinct storedFile.userId)

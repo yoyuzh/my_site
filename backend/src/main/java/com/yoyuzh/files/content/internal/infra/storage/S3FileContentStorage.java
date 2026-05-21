@@ -211,6 +211,11 @@ public class S3FileContentStorage implements FileContentStorage, AutoCloseable {
     }
 
     @Override
+    public boolean supportsDeferredBlobUpload() {
+        return true;
+    }
+
+    @Override
     public void deleteBlob(String objectKey) {
         S3FileRuntimeSession session = sessionProvider.currentSession();
         try {

@@ -11,6 +11,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.io.IOException;
 import java.util.function.Supplier;
 
 @Component
@@ -88,6 +89,22 @@ public class WorkspaceRequestProbe {
         });
     }
 
+    public <T> T measureIo(String stage, IoSupplier<T> supplier) throws IOException {
+        if (!enabled) {
+            return supplier.get();
+        }
+        ProbeSession session = CURRENT.get();
+        if (session == null) {
+            return supplier.get();
+        }
+        long startedAt = System.nanoTime();
+        try {
+            return supplier.get();
+        } finally {
+            session.stages().add(new StageTiming(stage, System.nanoTime() - startedAt));
+        }
+    }
+
     public void putMetadata(String key, Object value) {
         if (!enabled || key == null || key.isBlank() || value == null) {
             return;
@@ -137,5 +154,10 @@ public class WorkspaceRequestProbe {
     }
 
     private record StageTiming(String name, long durationNanos) {
+    }
+
+    @FunctionalInterface
+    public interface IoSupplier<T> {
+        T get() throws IOException;
     }
 }

@@ -1,6 +1,8 @@
 package com.yoyuzh.files.workspace.internal.application;
 
 import com.yoyuzh.files.content.api.ContentBlobLifecycleApi;
+import com.yoyuzh.files.content.api.ContentBlobReadApi;
+import com.yoyuzh.files.content.api.ContentBlobReadResult;
 import com.yoyuzh.files.content.api.ContentBlobReference;
 import com.yoyuzh.files.content.api.FileContentStorage;
 import com.yoyuzh.files.content.api.RegisteredContentFile;
@@ -78,6 +80,7 @@ class WorkspaceArchiveService {
     private final StoredFileRepository storedFileRepository;
     private final FileContentStorage fileContentStorage;
     private final ContentBlobLifecycleApi contentBlobLifecycleApi;
+    private final ContentBlobReadApi contentBlobReadApi;
     private final WorkspaceNodeRulesService workspaceNodeRulesService;
     private final WorkspaceDirectoryApi workspaceDirectoryApi;
     private final ExternalImportRulesService externalImportRulesService;
@@ -88,6 +91,7 @@ class WorkspaceArchiveService {
     WorkspaceArchiveService(StoredFileRepository storedFileRepository,
                             FileContentStorage fileContentStorage,
                             ContentBlobLifecycleApi contentBlobLifecycleApi,
+                            ContentBlobReadApi contentBlobReadApi,
                             WorkspaceNodeRulesService workspaceNodeRulesService,
                             WorkspaceDirectoryApi workspaceDirectoryApi,
                             ExternalImportRulesService externalImportRulesService,
@@ -96,6 +100,7 @@ class WorkspaceArchiveService {
         this.storedFileRepository = storedFileRepository;
         this.fileContentStorage = fileContentStorage;
         this.contentBlobLifecycleApi = contentBlobLifecycleApi;
+        this.contentBlobReadApi = contentBlobReadApi;
         this.workspaceNodeRulesService = workspaceNodeRulesService;
         this.workspaceDirectoryApi = workspaceDirectoryApi;
         this.externalImportRulesService = externalImportRulesService;
@@ -1123,7 +1128,7 @@ class WorkspaceArchiveService {
                 createdEntries,
                 entryName,
                 progressState,
-                fileContentStorage.readBlob(getRequiredBlob(file).objectKey())
+                readBlobBytes(file)
         );
     }
 
@@ -1481,8 +1486,20 @@ class WorkspaceArchiveService {
     }
 
     private InputStream requireZipCompatibleArchiveStream(StoredFile source, String failureMessage) {
-        return Optional.ofNullable(fileContentStorage.readBlobStream(getRequiredBlob(source).objectKey()))
-                .orElseThrow(() -> new BusinessException(ErrorCode.ARCHIVE_READ_FAILED, failureMessage));
+        try {
+            ContentBlobReadResult result = contentBlobReadApi.readBlob(source.getBlobId(), source.isDirectory());
+            return result.content();
+        } catch (BusinessException ex) {
+            throw new BusinessException(ErrorCode.ARCHIVE_READ_FAILED, failureMessage);
+        }
+    }
+
+    private byte[] readBlobBytes(StoredFile file) {
+        try (InputStream inputStream = contentBlobReadApi.readBlob(file.getBlobId(), file.isDirectory()).content()) {
+            return inputStream.readAllBytes();
+        } catch (IOException ex) {
+            throw archiveReadFailed();
+        }
     }
 
     private String buildLogicalPath(String path, String filename) {

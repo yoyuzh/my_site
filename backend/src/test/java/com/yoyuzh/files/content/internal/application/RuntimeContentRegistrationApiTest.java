@@ -8,6 +8,7 @@ import com.yoyuzh.files.content.internal.domain.FileEntity;
 import com.yoyuzh.files.content.internal.infra.FileEntityRepository;
 import com.yoyuzh.files.content.internal.domain.FileEntityType;
 import com.yoyuzh.files.workspace.internal.application.RuntimeWorkspaceContentRegistrationApi;
+import com.yoyuzh.files.workspace.internal.application.RuntimeWorkspacePathPolicy;
 import com.yoyuzh.files.workspace.internal.domain.StoredFile;
 import com.yoyuzh.files.workspace.internal.infra.FileListDirectoryCacheService;
 import com.yoyuzh.files.content.internal.infra.StoredFileEntityRepository;
@@ -45,7 +46,10 @@ class RuntimeContentRegistrationApiTest {
     void shouldRegisterBlobAndPrimaryEntity() {
         RuntimeWorkspaceContentRegistrationApi api = new RuntimeWorkspaceContentRegistrationApi(
                 storedFileRepository,
-                new RuntimeContentAssetApi(null, null, fileEntityRepository, storedFileEntityRepository, null)
+                new RuntimeContentAssetApi(null, null, fileEntityRepository, storedFileEntityRepository, null),
+                null,
+                FileListDirectoryCacheService.noOp(),
+                new RuntimeWorkspacePathPolicy(storedFileRepository, null)
         );
         FileBlob blob = createBlob("blobs/blob-1");
         when(fileEntityRepository.findByObjectKeyAndEntityType("blobs/blob-1", FileEntityType.VERSION))
@@ -80,7 +84,9 @@ class RuntimeContentRegistrationApiTest {
         RuntimeWorkspaceContentRegistrationApi api = new RuntimeWorkspaceContentRegistrationApi(
                 storedFileRepository,
                 new RuntimeContentAssetApi(null, null, fileEntityRepository, storedFileEntityRepository, null),
-                fileListDirectoryCacheService
+                null,
+                fileListDirectoryCacheService,
+                new RuntimeWorkspacePathPolicy(storedFileRepository, null)
         );
         FileBlob blob = createBlob("blobs/blob-cache");
         when(fileEntityRepository.findByObjectKeyAndEntityType("blobs/blob-cache", FileEntityType.VERSION))
@@ -112,7 +118,10 @@ class RuntimeContentRegistrationApiTest {
     void shouldReuseExistingPrimaryEntityWhenBlobAlreadyKnown() {
         RuntimeWorkspaceContentRegistrationApi api = new RuntimeWorkspaceContentRegistrationApi(
                 storedFileRepository,
-                new RuntimeContentAssetApi(null, null, fileEntityRepository, storedFileEntityRepository, null)
+                new RuntimeContentAssetApi(null, null, fileEntityRepository, storedFileEntityRepository, null),
+                null,
+                FileListDirectoryCacheService.noOp(),
+                new RuntimeWorkspacePathPolicy(storedFileRepository, null)
         );
         FileBlob blob = createBlob("blobs/blob-2");
         FileEntity existingEntity = new FileEntity();
@@ -142,7 +151,10 @@ class RuntimeContentRegistrationApiTest {
     void shouldDuplicateBlobBackedFileThroughContentSeam() {
         RuntimeWorkspaceContentRegistrationApi api = new RuntimeWorkspaceContentRegistrationApi(
                 storedFileRepository,
-                new RuntimeContentAssetApi(null, null, fileEntityRepository, storedFileEntityRepository, null)
+                new RuntimeContentAssetApi(null, null, fileEntityRepository, storedFileEntityRepository, null),
+                null,
+                FileListDirectoryCacheService.noOp(),
+                new RuntimeWorkspacePathPolicy(storedFileRepository, null)
         );
         FileBlob blob = createBlob("blobs/blob-copy");
         when(fileEntityRepository.findByObjectKeyAndEntityType("blobs/blob-copy", FileEntityType.VERSION))
@@ -175,7 +187,10 @@ class RuntimeContentRegistrationApiTest {
     void shouldAutoRenameRegisteredFileWhenTargetNameAlreadyExists() {
         RuntimeWorkspaceContentRegistrationApi api = new RuntimeWorkspaceContentRegistrationApi(
                 storedFileRepository,
-                new RuntimeContentAssetApi(null, null, fileEntityRepository, storedFileEntityRepository, null)
+                new RuntimeContentAssetApi(null, null, fileEntityRepository, storedFileEntityRepository, null),
+                null,
+                FileListDirectoryCacheService.noOp(),
+                new RuntimeWorkspacePathPolicy(storedFileRepository, null)
         );
         FileBlob blob = createBlob("blobs/blob-rename");
         when(fileEntityRepository.findByObjectKeyAndEntityType("blobs/blob-rename", FileEntityType.VERSION))

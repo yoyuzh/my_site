@@ -14,6 +14,8 @@ public interface StorageRuntimeProperties {
 
     long getMaxFileSize();
 
+    String getPendingBlobTempDir();
+
     interface Local {
         String getRootDir();
     }

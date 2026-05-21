@@ -22,11 +22,15 @@ import java.util.concurrent.ThreadLocalRandom;
 import java.util.function.Function;
 import java.util.function.Predicate;
 import java.util.function.Supplier;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import lombok.extern.slf4j.Slf4j;
 
 @Component
 @Slf4j
 public class TransferSessionStore {
+
+    private static final Logger log = LoggerFactory.getLogger(TransferSessionStore.class);
 
     private static final String RESERVED_PICKUP_CODE = "__reserved__";
     private static final Duration SESSION_LOCK_TTL = Duration.ofSeconds(5);

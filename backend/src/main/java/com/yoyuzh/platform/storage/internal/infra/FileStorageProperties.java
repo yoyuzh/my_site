@@ -22,6 +22,7 @@ public class FileStorageProperties implements StorageRuntimeProperties {
     private final Oss oss = new Oss();
     private final WebDav webDav = new WebDav();
     private long maxFileSize = 500L * 1024 * 1024L;
+    private String pendingBlobTempDir = System.getProperty("java.io.tmpdir") + "/yoyuzh-pending-blobs";
 
     public String getProvider() {
         return provider;
@@ -53,6 +54,15 @@ public class FileStorageProperties implements StorageRuntimeProperties {
 
     public void setMaxFileSize(long maxFileSize) {
         this.maxFileSize = maxFileSize;
+    }
+
+    @Override
+    public String getPendingBlobTempDir() {
+        return pendingBlobTempDir;
+    }
+
+    public void setPendingBlobTempDir(String pendingBlobTempDir) {
+        this.pendingBlobTempDir = pendingBlobTempDir;
     }
 
     // Backward-compatible convenience accessors used by existing tests and dev tooling.

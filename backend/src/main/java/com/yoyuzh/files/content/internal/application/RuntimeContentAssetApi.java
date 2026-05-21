@@ -91,6 +91,27 @@ public final class RuntimeContentAssetApi implements ContentAssetApi {
     }
 
     @Override
+    public void releasePrimaryEntity(Long storedFileId, Long primaryEntityId) {
+        if (storedFileEntityRepository == null || fileEntityRepository == null || storedFileId == null || primaryEntityId == null) {
+            return;
+        }
+        storedFileEntityRepository.findByStoredFileIdAndEntityRole(storedFileId, PRIMARY_ENTITY_ROLE)
+                .filter(relation -> relation.getFileEntity() != null && primaryEntityId.equals(relation.getFileEntity().getId()))
+                .ifPresent(relation -> {
+                    storedFileEntityRepository.delete(relation);
+                    fileEntityRepository.findById(primaryEntityId).ifPresent(entity -> {
+                        int nextReferenceCount = Math.max(0, (entity.getReferenceCount() == null ? 0 : entity.getReferenceCount()) - 1);
+                        if (nextReferenceCount == 0) {
+                            fileEntityRepository.delete(entity);
+                            return;
+                        }
+                        entity.setReferenceCount(nextReferenceCount);
+                        fileEntityRepository.save(entity);
+                    });
+                });
+    }
+
+    @Override
     public StoragePolicyCapabilities resolveDefaultStoragePolicyCapabilities() {
         if (storagePolicyQuery == null) {
             return null;

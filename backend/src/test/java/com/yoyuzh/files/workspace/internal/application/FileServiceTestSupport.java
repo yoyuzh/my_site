@@ -1,12 +1,14 @@
 package com.yoyuzh.files.workspace.internal.application;
 
 import com.yoyuzh.files.content.api.ContentAssetApi;
+import com.yoyuzh.files.content.api.ContentBlobReadApi;
 import com.yoyuzh.files.content.api.ContentBlobLifecycleApi;
 import com.yoyuzh.files.content.api.ContentBlobQueryApi;
 import com.yoyuzh.files.content.api.ContentBlobRegistrationApi;
 import com.yoyuzh.files.content.api.ContentRegistrationApi;
 import com.yoyuzh.files.content.internal.application.ContentBlobLifecycleService;
 import com.yoyuzh.files.content.internal.application.RuntimeContentAssetApi;
+import com.yoyuzh.files.content.internal.application.RuntimeContentBlobReadApi;
 import com.yoyuzh.files.content.internal.application.RuntimeContentBlobQueryApi;
 import com.yoyuzh.files.content.internal.application.RuntimeContentBlobRegistrationApi;
 import com.yoyuzh.files.content.internal.infra.FileBlobRepository;
@@ -129,11 +131,20 @@ final class FileServiceTestSupport {
                 storedFileEntityRepository,
                 storagePolicyQuery
         );
+        ContentBlobLifecycleApi contentBlobLifecycleApi = new ContentBlobLifecycleService(
+                workspaceContentBindingApi,
+                fileBlobRepository,
+                fileContentStorage
+        );
         RuntimeWorkspaceContentRegistrationApi contentRegistrationApi = new RuntimeWorkspaceContentRegistrationApi(
                 storedFileRepository,
-                contentAssetApi
+                contentAssetApi,
+                contentBlobLifecycleApi,
+                FileListDirectoryCacheService.noOp(),
+                workspacePathPolicy
         );
         ContentBlobQueryApi contentBlobQueryApi = new RuntimeContentBlobQueryApi(fileBlobRepository);
+        ContentBlobReadApi contentBlobReadApi = new RuntimeContentBlobReadApi(contentBlobQueryApi, fileContentStorage);
         WorkspaceLifecycleApi workspaceLifecycleApi = new RuntimeWorkspaceLifecycleApi(
                 storedFileRepository,
                 contentRegistrationApi,
@@ -153,11 +164,6 @@ final class FileServiceTestSupport {
                 fileUploadRulesService
         );
         ContentBlobRegistrationApi contentBlobRegistrationApi = new RuntimeContentBlobRegistrationApi(fileBlobRepository);
-        ContentBlobLifecycleApi contentBlobLifecycleApi = new ContentBlobLifecycleService(
-                workspaceContentBindingApi,
-                fileBlobRepository,
-                fileContentStorage
-        );
         UploadCompletionApi uploadCompletionApi = new RuntimeUploadCompletionApi(
                 workspacePathPolicy,
                 contentRegistrationApi,
@@ -167,10 +173,12 @@ final class FileServiceTestSupport {
         WorkspaceFileIngressService workspaceFileIngressService = new WorkspaceFileIngressService(
                 fileContentStorage,
                 contentAssetApi,
+                contentBlobQueryApi,
                 contentRegistrationApi,
                 contentBlobRegistrationApi,
                 uploadCompletionApi,
                 contentBlobLifecycleApi,
+                storedFileRepository,
                 fileUploadRulesService,
                 workspaceNodeRulesService,
                 WorkspaceRequestProbe.disabled()
@@ -185,6 +193,7 @@ final class FileServiceTestSupport {
                 storedFileRepository,
                 fileContentStorage,
                 contentBlobLifecycleApi,
+                contentBlobReadApi,
                 workspaceNodeRulesService,
                 workspaceDirectoryApi,
                 externalImportRulesService,
@@ -202,6 +211,7 @@ final class FileServiceTestSupport {
                 fileUploadRulesService,
                 externalImportRulesService,
                 contentBlobLifecycleApi,
+                contentBlobReadApi,
                 workspaceDownloadMetricsPort,
                 FileListDirectoryCacheService.noOp(),
                 workspaceFileIngressService,

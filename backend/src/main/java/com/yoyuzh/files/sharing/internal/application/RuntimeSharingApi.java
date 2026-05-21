@@ -4,6 +4,8 @@ import com.yoyuzh.identity.access.api.IdentityUserDirectoryApi;
 import com.yoyuzh.identity.access.api.IdentityUserProfileSummary;
 import com.yoyuzh.identity.access.api.IdentityUserSnapshot;
 import com.yoyuzh.files.content.api.ContentBlobQueryApi;
+import com.yoyuzh.files.content.api.ContentBlobReadApi;
+import com.yoyuzh.files.content.api.ContentBlobReadResult;
 import com.yoyuzh.files.content.api.ContentDuplicationApi;
 import com.yoyuzh.files.content.api.ContentBlobReference;
 import com.yoyuzh.files.content.api.ContentRegistrationCommand;
@@ -62,6 +64,7 @@ public class RuntimeSharingApi implements SharingApi {
     private final UploadTargetPolicy uploadTargetPolicy;
     private final ContentDuplicationApi contentDuplicationApi;
     private final ContentBlobQueryApi contentBlobQueryApi;
+    private final ContentBlobReadApi contentBlobReadApi;
     private final FileContentStorage fileContentStorage;
     private final PasswordEncoder passwordEncoder;
     private final IdentityUserDirectoryApi identityUserDirectoryApi;
@@ -75,6 +78,7 @@ public class RuntimeSharingApi implements SharingApi {
                              UploadTargetPolicy uploadTargetPolicy,
                              ContentDuplicationApi contentDuplicationApi,
                              ContentBlobQueryApi contentBlobQueryApi,
+                             ContentBlobReadApi contentBlobReadApi,
                              FileContentStorage fileContentStorage,
                              PasswordEncoder passwordEncoder,
                              IdentityUserDirectoryApi identityUserDirectoryApi) {
@@ -86,6 +90,7 @@ public class RuntimeSharingApi implements SharingApi {
                 uploadTargetPolicy,
                 contentDuplicationApi,
                 contentBlobQueryApi,
+                contentBlobReadApi,
                 fileContentStorage,
                 passwordEncoder,
                 identityUserDirectoryApi,
@@ -100,6 +105,7 @@ public class RuntimeSharingApi implements SharingApi {
                       UploadTargetPolicy uploadTargetPolicy,
                       ContentDuplicationApi contentDuplicationApi,
                       ContentBlobQueryApi contentBlobQueryApi,
+                      ContentBlobReadApi contentBlobReadApi,
                       FileContentStorage fileContentStorage,
                       PasswordEncoder passwordEncoder,
                       IdentityUserDirectoryApi identityUserDirectoryApi,
@@ -111,6 +117,7 @@ public class RuntimeSharingApi implements SharingApi {
         this.uploadTargetPolicy = uploadTargetPolicy;
         this.contentDuplicationApi = contentDuplicationApi;
         this.contentBlobQueryApi = contentBlobQueryApi;
+        this.contentBlobReadApi = contentBlobReadApi;
         this.fileContentStorage = fileContentStorage;
         this.passwordEncoder = passwordEncoder;
         this.identityUserDirectoryApi = identityUserDirectoryApi;
@@ -285,15 +292,24 @@ public class RuntimeSharingApi implements SharingApi {
         shareLink.recordDownload();
         consumeIfNeeded(shareLink);
         ContentBlobReference blob = requireShareBlob(sourceFile);
-        if (fileContentStorage.supportsDirectDownload()) {
+        if (fileContentStorage.supportsDirectDownload() && contentBlobReadApi.isBlobReady(sourceFile.blobId(), sourceFile.directory())) {
             return ShareDownloadResult.redirect(fileContentStorage.createBlobDownloadUrl(blob.objectKey(), sourceFile.filename()));
         }
 
+        ContentBlobReadResult blobReadResult = contentBlobReadApi.readBlob(sourceFile.blobId(), sourceFile.directory());
         return ShareDownloadResult.inline(
                 sourceFile.filename(),
                 sourceFile.contentType() == null ? MediaType.APPLICATION_OCTET_STREAM_VALUE : sourceFile.contentType(),
-                fileContentStorage.readBlob(blob.objectKey())
+                readAllBytes(blobReadResult)
         );
+    }
+
+    private byte[] readAllBytes(ContentBlobReadResult blobReadResult) {
+        try (var inputStream = blobReadResult.content()) {
+            return inputStream.readAllBytes();
+        } catch (java.io.IOException ex) {
+            throw new IllegalStateException("failed to read shared file content", ex);
+        }
     }
 
     @Override

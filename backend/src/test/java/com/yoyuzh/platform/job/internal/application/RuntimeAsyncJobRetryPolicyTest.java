@@ -15,6 +15,7 @@ class RuntimeAsyncJobRetryPolicyTest {
         assertThat(retryPolicy.resolveMaxAttempts(BackgroundTaskType.ARCHIVE)).isEqualTo(4);
         assertThat(retryPolicy.resolveMaxAttempts(BackgroundTaskType.EXTRACT)).isEqualTo(3);
         assertThat(retryPolicy.resolveMaxAttempts(BackgroundTaskType.MEDIA_META)).isEqualTo(2);
+        assertThat(retryPolicy.resolveMaxAttempts(BackgroundTaskType.BLOB_UPLOAD)).isEqualTo(3);
     }
 
     @Test

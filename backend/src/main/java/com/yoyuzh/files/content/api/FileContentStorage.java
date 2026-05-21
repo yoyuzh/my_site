@@ -68,6 +68,15 @@ public interface FileContentStorage {
 
     void deleteBlob(String objectKey);
 
+    default boolean blobExists(String objectKey) {
+        try {
+            readBlobStream(objectKey).close();
+            return true;
+        } catch (RuntimeException | IOException ex) {
+            return false;
+        }
+    }
+
     default String createMultipartUpload(String objectKey, String contentType) {
         throw new UnsupportedOperationException("Multipart upload is not supported by this storage");
     }
@@ -107,6 +116,10 @@ public interface FileContentStorage {
     String createTransferDownloadUrl(String sessionId, String storageName, String filename);
 
     boolean supportsDirectDownload();
+
+    default boolean supportsDeferredBlobUpload() {
+        return false;
+    }
 
     String resolveLegacyFileObjectKey(Long userId, String path, String storageName);
 }

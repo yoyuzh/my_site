@@ -41,7 +41,17 @@ public final class RuntimeWorkspaceLifecycleApi implements WorkspaceLifecycleApi
                 storedFileRepository,
                 fileContentStorage,
                 contentDuplicationApi,
-                blobId -> java.util.Optional.empty()
+                new ContentBlobQueryApi() {
+                    @Override
+                    public java.util.Optional<ContentBlobReference> findBlobReferenceById(Long blobId) {
+                        return java.util.Optional.empty();
+                    }
+
+                    @Override
+                    public java.util.Optional<com.yoyuzh.files.content.api.ContentBlobStateView> findBlobStateById(Long blobId) {
+                        return java.util.Optional.empty();
+                    }
+                }
         );
     }
 

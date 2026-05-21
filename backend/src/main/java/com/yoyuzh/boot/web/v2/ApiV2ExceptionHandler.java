@@ -66,6 +66,9 @@ public class ApiV2ExceptionHandler {
         if (errorCode == ErrorCode.DUPLICATE_NAME) {
             return ApiV2ErrorCode.DUPLICATE_NAME;
         }
+        if (errorCode == ErrorCode.SERVICE_UNAVAILABLE) {
+            return ApiV2ErrorCode.SERVICE_UNAVAILABLE;
+        }
         return ApiV2ErrorCode.BAD_REQUEST;
     }
 }

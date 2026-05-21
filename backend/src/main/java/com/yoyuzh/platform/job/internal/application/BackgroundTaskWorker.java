@@ -36,7 +36,10 @@ public class BackgroundTaskWorker {
     private static final int DEFAULT_BATCH_SIZE = 5;
     private static final int DEFAULT_LIGHTWEIGHT_BATCH_SIZE = 1;
     private static final long DEFAULT_LEASE_DURATION_SECONDS = 120L;
-    private static final Set<BackgroundTaskType> LIGHTWEIGHT_TASK_TYPES = Set.of(BackgroundTaskType.WORKSPACE_MUTATION);
+    private static final Set<BackgroundTaskType> LIGHTWEIGHT_TASK_TYPES = Set.of(
+            BackgroundTaskType.WORKSPACE_MUTATION,
+            BackgroundTaskType.BLOB_UPLOAD
+    );
 
     private final BackgroundTaskExecutionGateway backgroundTaskExecutionGateway;
     private final List<BackgroundTaskHandler> handlers;
@@ -201,6 +204,9 @@ public class BackgroundTaskWorker {
         }
         if (type == BackgroundTaskType.WORKSPACE_MUTATION) {
             return "mutating-workspace";
+        }
+        if (type == BackgroundTaskType.BLOB_UPLOAD) {
+            return "uploading-blob";
         }
         if (type == BackgroundTaskType.SEARCH_INDEX_REBUILD) {
             return "rebuilding-search-index";

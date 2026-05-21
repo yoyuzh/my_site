@@ -37,10 +37,6 @@ public class RuntimeUploadSessionTransportPolicy implements UploadSessionTranspo
 
     @Override
     public boolean usesTusUpload(Long storagePolicyId) {
-        if (storagePolicyId == null) {
-            return false;
-        }
-        StoragePolicyDescriptor descriptor = storagePolicyQuery.readPolicyDescriptor(storagePolicyId);
-        return uploadSessionTusService.supportsTus(descriptor);
+        return false;
     }
 }

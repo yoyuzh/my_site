@@ -164,6 +164,11 @@ public class OssSdkFileContentStorage implements FileContentStorage, AutoCloseab
     }
 
     @Override
+    public boolean supportsDeferredBlobUpload() {
+        return true;
+    }
+
+    @Override
     public void deleteBlob(String objectKey) {
         client.deleteObject(properties.getBucketName(), normalizeObjectKey(objectKey));
     }

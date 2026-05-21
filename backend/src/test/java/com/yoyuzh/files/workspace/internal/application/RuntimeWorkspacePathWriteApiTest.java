@@ -76,14 +76,13 @@ class RuntimeWorkspacePathWriteApiTest {
         WebDavWorkspacePutCommand command = command("/Docs/a.txt", false, "hello");
         when(storedFileRepository.findByUserIdAndPathAndFilename(7L, "/Docs", "a.txt"))
                 .thenReturn(Optional.empty());
-        when(workspaceFileIngressService.importExternalFile(
+        when(workspaceFileIngressService.storeWebDavFile(
                 any(),
                 any(),
                 any(),
                 any(),
                 any(Long.class),
-                any(java.io.InputStream.class),
-                any()
+                any(java.io.InputStream.class)
         )).thenReturn(new WorkspaceFileIngressService.CreatedFile(
                 "/Docs",
                 new com.yoyuzh.files.content.api.RegisteredContentFile(
@@ -101,6 +100,7 @@ class RuntimeWorkspacePathWriteApiTest {
 
         assertThat(response.filename()).isEqualTo("a.txt");
         assertThat(response.size()).isEqualTo(5L);
+        verify(workspaceFileIngressService).storeWebDavFile(any(), eq("/Docs"), eq("a.txt"), eq("text/plain"), eq(5L), any());
     }
 
     @Test
@@ -112,14 +112,22 @@ class RuntimeWorkspacePathWriteApiTest {
                 .thenReturn(Optional.of(existing));
         when(contentBlobLifecycleApi.collectBlobReferencesToDelete(List.of(99L)))
                 .thenReturn(List.of(new ContentBlobReference(99L, "old-object", "text/plain", 3L)));
-        when(workspaceFileIngressService.replaceFileContent(any(), any(), any(), any(Long.class), any(Long.class), any()))
-                .thenReturn(new WorkspaceFileIngressService.ReplacementContent(100L, "new-object", 101L));
-        when(storedFileRepository.save(existing)).thenReturn(existing);
+        when(workspaceFileIngressService.replaceWebDavFileContent(any(), any(StoredFile.class), any(), any(Long.class), any(Long.class), any()))
+                .thenAnswer(invocation -> {
+                    StoredFile file = invocation.getArgument(1);
+                    file.setBlobId(100L);
+                    file.setPrimaryEntityId(101L);
+                    file.setLegacyStorageName("new-object");
+                    file.setContentType(invocation.getArgument(2));
+                    file.setSize(invocation.getArgument(3));
+                    return new WorkspaceFileIngressService.ReplacementContent(100L, "new-object", 101L);
+                });
 
         FileMetadataResponse response = api.putFileByPath(command("/Docs/a.txt", true, "new"));
 
         assertThat(response.filename()).isEqualTo("a.txt");
         assertThat(response.size()).isEqualTo(3L);
+        verify(workspaceFileIngressService).replaceWebDavFileContent(any(), eq(existing), eq("text/plain"), eq(3L), eq(5L), any());
         verify(contentBlobLifecycleApi).deleteBlobReferences(any());
     }
 
@@ -293,7 +301,8 @@ class RuntimeWorkspacePathWriteApiTest {
                 workspaceMutationApi,
                 workspaceLifecycleApi,
                 contentBlobLifecycleApi,
-                new RuntimeWorkspacePathPolicy(storedFileRepository, null)
+                new RuntimeWorkspacePathPolicy(storedFileRepository, null),
+                WorkspaceRequestProbe.disabled()
         );
     }
 

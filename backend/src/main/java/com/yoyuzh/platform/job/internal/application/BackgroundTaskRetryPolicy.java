@@ -7,6 +7,7 @@ import com.yoyuzh.platform.job.api.BackgroundTaskStatus;
 import com.yoyuzh.platform.job.api.BackgroundTaskType;
 
 import com.yoyuzh.platform.job.api.AsyncJobRetryPolicy;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 @Component
@@ -14,6 +15,7 @@ public class BackgroundTaskRetryPolicy {
 
     private final AsyncJobRetryPolicy asyncJobRetryPolicy;
 
+    @Autowired
     public BackgroundTaskRetryPolicy(AsyncJobRetryPolicy asyncJobRetryPolicy) {
         this.asyncJobRetryPolicy = asyncJobRetryPolicy;
     }
@@ -30,6 +32,9 @@ public class BackgroundTaskRetryPolicy {
                 }
                 if (type == BackgroundTaskType.MEDIA_META) {
                     return 2;
+                }
+                if (type == BackgroundTaskType.BLOB_UPLOAD) {
+                    return 3;
                 }
                 return 1;
             }
@@ -51,6 +56,8 @@ public class BackgroundTaskRetryPolicy {
                     baseDelaySeconds = 45L;
                 } else if (type == BackgroundTaskType.MEDIA_META) {
                     baseDelaySeconds = 15L;
+                } else if (type == BackgroundTaskType.BLOB_UPLOAD) {
+                    baseDelaySeconds = 10L;
                 } else {
                     baseDelaySeconds = 30L;
                 }

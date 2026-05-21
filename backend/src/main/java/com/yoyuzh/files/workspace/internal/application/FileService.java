@@ -1,6 +1,8 @@
 package com.yoyuzh.files.workspace.internal.application;
 
 import com.yoyuzh.files.content.api.ContentBlobLifecycleApi;
+import com.yoyuzh.files.content.api.ContentBlobReadApi;
+import com.yoyuzh.files.content.api.ContentBlobReadResult;
 import com.yoyuzh.files.content.api.ContentBlobReference;
 import com.yoyuzh.files.content.api.ContentBlobQueryApi;
 import com.yoyuzh.files.content.api.RegisteredContentFile;
@@ -103,6 +105,7 @@ public class FileService implements WorkspaceBootstrapApi, WorkspaceArchiveApi, 
     private final FileUploadRulesService fileUploadRulesService;
     private final ExternalImportRulesService externalImportRulesService;
     private final ContentBlobLifecycleApi contentBlobLifecycleApi;
+    private final ContentBlobReadApi contentBlobReadApi;
     private final WorkspaceDownloadMetricsPort workspaceDownloadMetricsPort;
     private final FileListDirectoryCacheService fileListDirectoryCacheService;
     private final WorkspaceFileIngressService workspaceFileIngressService;
@@ -122,6 +125,7 @@ public class FileService implements WorkspaceBootstrapApi, WorkspaceArchiveApi, 
                        FileUploadRulesService fileUploadRulesService,
                        ExternalImportRulesService externalImportRulesService,
                        ContentBlobLifecycleApi contentBlobLifecycleApi,
+                       ContentBlobReadApi contentBlobReadApi,
                        WorkspaceDownloadMetricsPort workspaceDownloadMetricsPort,
                        WorkspaceFileIngressService workspaceFileIngressService,
                        WorkspaceFileActivityService workspaceFileActivityService,
@@ -140,6 +144,7 @@ public class FileService implements WorkspaceBootstrapApi, WorkspaceArchiveApi, 
                 fileUploadRulesService,
                 externalImportRulesService,
                 contentBlobLifecycleApi,
+                contentBlobReadApi,
                 workspaceDownloadMetricsPort,
                 fileListDirectoryCacheService.getIfAvailable(FileListDirectoryCacheService::noOp),
                 workspaceFileIngressService,
@@ -162,6 +167,7 @@ public class FileService implements WorkspaceBootstrapApi, WorkspaceArchiveApi, 
                 FileUploadRulesService fileUploadRulesService,
                 ExternalImportRulesService externalImportRulesService,
                 ContentBlobLifecycleApi contentBlobLifecycleApi,
+                ContentBlobReadApi contentBlobReadApi,
                 WorkspaceDownloadMetricsPort workspaceDownloadMetricsPort,
                 FileListDirectoryCacheService fileListDirectoryCacheService,
                 WorkspaceFileIngressService workspaceFileIngressService,
@@ -192,6 +198,7 @@ public class FileService implements WorkspaceBootstrapApi, WorkspaceArchiveApi, 
         this.fileUploadRulesService = fileUploadRulesService;
         this.externalImportRulesService = externalImportRulesService;
         this.contentBlobLifecycleApi = contentBlobLifecycleApi;
+        this.contentBlobReadApi = contentBlobReadApi;
         this.workspaceDownloadMetricsPort = workspaceDownloadMetricsPort == null
                 ? WorkspaceDownloadMetricsPort.noOp()
                 : workspaceDownloadMetricsPort;
@@ -848,7 +855,7 @@ public class FileService implements WorkspaceBootstrapApi, WorkspaceArchiveApi, 
             );
         }
 
-        if (fileContentStorage.supportsDirectDownload()) {
+        if (supportsDirectBlobDownload(storedFile)) {
             recordWorkspaceDownloadTraffic(storedFile.getSize());
             ContentBlobReference blob = getRequiredBlob(storedFile);
             return workspaceRequestProbe.measure(
@@ -861,11 +868,11 @@ public class FileService implements WorkspaceBootstrapApi, WorkspaceArchiveApi, 
         }
 
         recordWorkspaceDownloadTraffic(storedFile.getSize());
-        ContentBlobReference blob = getRequiredBlob(storedFile);
-        byte[] body = workspaceRequestProbe.measure(
+        ContentBlobReadResult blobReadResult = workspaceRequestProbe.measure(
                 "service.download.readBlob",
-                () -> fileContentStorage.readBlob(blob.objectKey())
+                () -> contentBlobReadApi.readBlob(storedFile.getBlobId(), storedFile.isDirectory())
         );
+        byte[] body = readAllBytes(blobReadResult.content());
         return WorkspaceDownloadResult.inline(
                 storedFile.getFilename(),
                 storedFile.getContentType() == null ? MediaType.APPLICATION_OCTET_STREAM_VALUE : storedFile.getContentType(),
@@ -882,11 +889,11 @@ public class FileService implements WorkspaceBootstrapApi, WorkspaceArchiveApi, 
             return workspaceRequestProbe.measure("service.downloadInline.archiveDirectory", () -> downloadDirectory(user, storedFile));
         }
         recordWorkspaceDownloadTraffic(storedFile.getSize());
-        ContentBlobReference blob = getRequiredBlob(storedFile);
-        byte[] body = workspaceRequestProbe.measure(
+        ContentBlobReadResult blobReadResult = workspaceRequestProbe.measure(
                 "service.downloadInline.readBlob",
-                () -> fileContentStorage.readBlob(blob.objectKey())
+                () -> contentBlobReadApi.readBlob(storedFile.getBlobId(), storedFile.isDirectory())
         );
+        byte[] body = readAllBytes(blobReadResult.content());
         return WorkspaceDownloadResult.inline(
                 storedFile.getFilename(),
                 storedFile.getContentType() == null ? MediaType.APPLICATION_OCTET_STREAM_VALUE : storedFile.getContentType(),
@@ -913,16 +920,15 @@ public class FileService implements WorkspaceBootstrapApi, WorkspaceArchiveApi, 
             );
         }
         recordWorkspaceDownloadTraffic(storedFile.getSize());
-        ContentBlobReference blob = getRequiredBlob(storedFile);
-        InputStream content = workspaceRequestProbe.measure(
+        ContentBlobReadResult blobReadResult = workspaceRequestProbe.measure(
                 "service.downloadStream.readBlobStream",
-                () -> fileContentStorage.readBlobStream(blob.objectKey())
+                () -> contentBlobReadApi.readBlob(storedFile.getBlobId(), storedFile.isDirectory())
         );
         return new WorkspaceDownloadStreamResult(
                 storedFile.getFilename(),
                 storedFile.getContentType() == null ? MediaType.APPLICATION_OCTET_STREAM_VALUE : storedFile.getContentType(),
-                content,
-                storedFile.getSize() == null ? blob.size() : storedFile.getSize()
+                blobReadResult.content(),
+                storedFile.getSize() == null ? blobReadResult.contentLength() : storedFile.getSize()
         );
     }
 
@@ -955,7 +961,7 @@ public class FileService implements WorkspaceBootstrapApi, WorkspaceArchiveApi, 
             return workspaceRequestProbe.measure("service.downloadUrl.buildPublicUrl", () -> buildPublicPackageDownloadUrl(storedFile));
         }
 
-        if (fileContentStorage.supportsDirectDownload()) {
+        if (supportsDirectBlobDownload(storedFile)) {
             ContentBlobReference blob = getRequiredBlob(storedFile);
             return workspaceRequestProbe.measure(
                     "service.downloadUrl.createDirectUrl",
@@ -1055,10 +1061,23 @@ public class FileService implements WorkspaceBootstrapApi, WorkspaceArchiveApi, 
     }
 
     private boolean shouldUsePublicPackageDownload(StoredFile storedFile) {
-        return fileContentStorage.supportsDirectDownload()
+        return supportsDirectBlobDownload(storedFile)
                 && StringUtils.hasText(packageDownloadBaseUrl)
                 && StringUtils.hasText(packageDownloadSecret)
                 && isAppPackage(storedFile);
+    }
+
+    private boolean supportsDirectBlobDownload(StoredFile storedFile) {
+        return fileContentStorage.supportsDirectDownload()
+                && contentBlobReadApi.isBlobReady(storedFile.getBlobId(), storedFile.isDirectory());
+    }
+
+    private byte[] readAllBytes(InputStream content) {
+        try (InputStream inputStream = content) {
+            return inputStream.readAllBytes();
+        } catch (IOException ex) {
+            throw new IllegalStateException("failed to read file content", ex);
+        }
     }
 
     private boolean isAppPackage(StoredFile storedFile) {

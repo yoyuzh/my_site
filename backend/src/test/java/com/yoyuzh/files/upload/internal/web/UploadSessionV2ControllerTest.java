@@ -190,17 +190,17 @@ class UploadSessionV2ControllerTest {
     }
 
     @Test
-    void shouldExposeTusStrategyForTusBackedProxySessions() throws Exception {
-        UploadSessionView session = createSessionView(UploadSessionUploadMode.PROXY, UploadSessionStatus.UPLOADING, null, true, 1, 20L);
+    void shouldKeepRegularProxyStrategyWithoutTusUrl() throws Exception {
+        UploadSessionView session = createSessionView(UploadSessionUploadMode.PROXY, UploadSessionStatus.UPLOADING, null, false, 1, 20L);
         when(uploadSessionService.getOwnedSession(7L, "session-1")).thenReturn(session);
 
         mockMvc.perform(get("/api/v2/files/upload-sessions/session-1")
                         .with(user(userDetails())))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.uploadMode").value("PROXY"))
-                .andExpect(jsonPath("$.data.strategy.tusUrl").value("/api/v2/files/upload-sessions/session-1/tus"))
-                .andExpect(jsonPath("$.data.strategy.tusHeaders['Tus-Resumable']").value("1.0.0"))
-                .andExpect(jsonPath("$.data.strategy.proxyContentUrl").doesNotExist());
+                .andExpect(jsonPath("$.data.strategy.proxyContentUrl").value("/api/v2/files/upload-sessions/session-1/content"))
+                .andExpect(jsonPath("$.data.strategy.proxyFormField").value("file"))
+                .andExpect(jsonPath("$.data.strategy.tusUrl").doesNotExist());
     }
 
     @Test

@@ -23,10 +23,9 @@ import com.yoyuzh.shared.kernel.ErrorCode;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.io.IOException;
 import java.time.LocalDateTime;
-import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 
 @Service
 public class RuntimeWorkspacePathWriteApi implements WorkspacePathWriteApi {
@@ -38,6 +37,7 @@ public class RuntimeWorkspacePathWriteApi implements WorkspacePathWriteApi {
     private final WorkspaceLifecycleApi workspaceLifecycleApi;
     private final ContentBlobLifecycleApi contentBlobLifecycleApi;
     private final WorkspacePathPolicy workspacePathPolicy;
+    private final WorkspaceRequestProbe workspaceRequestProbe;
 
     public RuntimeWorkspacePathWriteApi(StoredFileRepository storedFileRepository,
                                         WorkspaceDirectoryApi workspaceDirectoryApi,
@@ -45,7 +45,8 @@ public class RuntimeWorkspacePathWriteApi implements WorkspacePathWriteApi {
                                         WorkspaceMutationApi workspaceMutationApi,
                                         WorkspaceLifecycleApi workspaceLifecycleApi,
                                         ContentBlobLifecycleApi contentBlobLifecycleApi,
-                                        WorkspacePathPolicy workspacePathPolicy) {
+                                        WorkspacePathPolicy workspacePathPolicy,
+                                        WorkspaceRequestProbe workspaceRequestProbe) {
         this.storedFileRepository = storedFileRepository;
         this.workspaceDirectoryApi = workspaceDirectoryApi;
         this.workspaceFileIngressService = workspaceFileIngressService;
@@ -53,6 +54,9 @@ public class RuntimeWorkspacePathWriteApi implements WorkspacePathWriteApi {
         this.workspaceLifecycleApi = workspaceLifecycleApi;
         this.contentBlobLifecycleApi = contentBlobLifecycleApi;
         this.workspacePathPolicy = workspacePathPolicy;
+        this.workspaceRequestProbe = workspaceRequestProbe == null
+                ? WorkspaceRequestProbe.disabled()
+                : workspaceRequestProbe;
     }
 
     @Override
@@ -63,42 +67,62 @@ public class RuntimeWorkspacePathWriteApi implements WorkspacePathWriteApi {
     }
 
     @Override
-    @Transactional
     public FileMetadataResponse putFileByPath(WebDavWorkspacePutCommand command) {
-        String logicalPath = normalizeLogicalPath(command.normalizedLogicalPath());
-        String parentPath = workspacePathPolicy.extractParentPath(logicalPath);
-        String filename = workspacePathPolicy.extractLeafName(logicalPath);
-        StoredFile existing = findExisting(command.user().userId(), parentPath, filename);
-        if (existing == null) {
-            return createNewFile(command, parentPath, filename);
-        }
-        if (!command.overwrite()) {
-            throw new BusinessException(ErrorCode.DUPLICATE_NAME, "目标文件已存在");
-        }
-        if (existing.isDirectory()) {
-            throw new BusinessException(ErrorCode.INVALID_INPUT, "不能用文件内容覆盖目录");
-        }
-        return replaceExistingFile(command, existing);
+        return workspaceRequestProbe.trace(
+                "webdav.put",
+                Map.of(
+                        "path", command.normalizedLogicalPath(),
+                        "size", command.size()
+                ),
+                () -> {
+                    String logicalPath = workspaceRequestProbe.measure(
+                            "pathWrite.normalizeLogicalPath",
+                            () -> normalizeLogicalPath(command.normalizedLogicalPath())
+                    );
+                    String parentPath = workspaceRequestProbe.measure(
+                            "pathWrite.extractParentPath",
+                            () -> workspacePathPolicy.extractParentPath(logicalPath)
+                    );
+                    String filename = workspaceRequestProbe.measure(
+                            "pathWrite.extractLeafName",
+                            () -> workspacePathPolicy.extractLeafName(logicalPath)
+                    );
+                    StoredFile existing = workspaceRequestProbe.measure(
+                            "pathWrite.findExisting",
+                            () -> findExisting(command.user().userId(), parentPath, filename)
+                    );
+                    if (existing == null) {
+                        workspaceRequestProbe.putMetadata("mode", "CREATE");
+                        return createNewFile(command, parentPath, filename);
+                    }
+                    if (!command.overwrite()) {
+                        throw new BusinessException(ErrorCode.DUPLICATE_NAME, "目标文件已存在");
+                    }
+                    if (existing.isDirectory()) {
+                        throw new BusinessException(ErrorCode.INVALID_INPUT, "不能用文件内容覆盖目录");
+                    }
+                    workspaceRequestProbe.putMetadata("mode", "REPLACE");
+                    workspaceRequestProbe.putMetadata("targetFileId", existing.getId());
+                    return replaceExistingFile(command, existing);
+                }
+        );
     }
 
     private FileMetadataResponse createNewFile(WebDavWorkspacePutCommand command, String parentPath, String filename) {
-        ArrayList<String> writtenBlobObjectKeys = new ArrayList<>();
-        try {
-            WorkspaceFileIngressService.CreatedFile createdFile = workspaceFileIngressService.importExternalFile(
-                    command.user(),
-                    parentPath,
-                    filename,
-                    command.contentType(),
-                    command.size(),
-                    command.content(),
-                    writtenBlobObjectKeys
-            );
-            return toResponse(createdFile.file());
-        } catch (IOException ex) {
-            IllegalStateException wrapped = new IllegalStateException("failed to write WebDAV file content", ex);
-            workspaceFileIngressService.cleanupWrittenBlobs(writtenBlobObjectKeys, wrapped);
-            throw wrapped;
-        }
+        return workspaceRequestProbe.measure(
+                "pathWrite.storeWebDavFile",
+                () -> {
+                    WorkspaceFileIngressService.CreatedFile createdFile = workspaceFileIngressService.storeWebDavFile(
+                            command.user(),
+                            parentPath,
+                            filename,
+                            command.contentType(),
+                            command.size(),
+                            command.content()
+                    );
+                    return toResponse(createdFile.file());
+                }
+        );
     }
 
     @Override
@@ -165,22 +189,16 @@ public class RuntimeWorkspacePathWriteApi implements WorkspacePathWriteApi {
         List<ContentBlobReference> oldBlobsToDelete = contentBlobLifecycleApi.collectBlobReferencesToDelete(
                 existing.getBlobId() == null ? List.of() : List.of(existing.getBlobId())
         );
-        WorkspaceFileIngressService.ReplacementContent replacement = workspaceFileIngressService.replaceFileContent(
+        WorkspaceFileIngressService.ReplacementContent replacement = workspaceFileIngressService.replaceWebDavFileContent(
                 command.user(),
-                existing.getId(),
+                existing,
                 command.contentType(),
                 command.size(),
                 existing.getSize() == null ? 0L : existing.getSize(),
                 command.content()
         );
-        existing.setBlobId(replacement.blobId());
-        existing.setPrimaryEntityId(replacement.primaryEntityId());
-        existing.setLegacyStorageName(replacement.objectKey());
-        existing.setContentType(command.contentType());
-        existing.setSize(command.size());
-        StoredFile savedFile = storedFileRepository.save(existing);
         contentBlobLifecycleApi.deleteBlobReferences(oldBlobsToDelete);
-        return toResponse(savedFile);
+        return toResponse(existing);
     }
 
     private StoredFile requireExisting(Long userId, String logicalPath) {
