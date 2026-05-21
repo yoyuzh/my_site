@@ -1,4 +1,5 @@
 backend/target/
+target/
 data/
 /storage/
 /backend/storage/
@@ -23,6 +24,7 @@ frontend-dev.err.log
 .vscode/
 .idea/
 .gemini/
+.playwright-cli/
 .env
 .env.local
 .env.*.local
@@ -36,6 +38,12 @@ frontend-dev.err.log
 .DS_Store
 *.swp
 *.swo
+*.tmp
+*.bak
+*.orig
+*.rej
+~$*
+.~*
 coverage/
 *.tsbuildinfo
 
