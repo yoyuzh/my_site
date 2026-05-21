@@ -4,6 +4,7 @@ data/
 /backend/storage/
 node_modules/
 output/
+out/
 tmp/
 front/node_modules/
 front/dist/
